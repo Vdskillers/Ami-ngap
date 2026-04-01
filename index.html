@@ -1237,5 +1237,87 @@ const today = new Date().toISOString().split('T')[0];
 ['f-ds','f-pr-dt','v-ds'].forEach(id=>{const e=$(id);if(e)e.value=today;});
 checkAuth();
 </script>
+<script>
+const API = "https://ton-worker.cloudflare.dev";
+
+// switch tabs login/register
+function switchTab(tab){
+  document.getElementById("tab-l").classList.remove("on");
+  document.getElementById("tab-r").classList.remove("on");
+
+  document.getElementById("pan-l").style.display = "none";
+  document.getElementById("pan-r").style.display = "none";
+
+  if(tab === "l"){
+    document.getElementById("tab-l").classList.add("on");
+    document.getElementById("pan-l").style.display = "block";
+  } else {
+    document.getElementById("tab-r").classList.add("on");
+    document.getElementById("pan-r").style.display = "block";
+  }
+}
+
+// LOGIN
+async function login(){
+  const email = document.getElementById("l-em").value;
+  const password = document.getElementById("l-pw").value;
+
+  const res = await fetch(API + "/webhook/auth-login", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await res.json();
+
+  if(!data.ok){
+    alert(data.error);
+    return;
+  }
+
+  localStorage.setItem("token", data.token);
+
+  if(data.role === "admin"){
+    document.getElementById("auth-ov").classList.add("hide");
+    document.getElementById("adm").classList.add("show");
+    loadAdm();
+  } else {
+    document.getElementById("auth-ov").classList.add("hide");
+    document.getElementById("app").style.display = "grid";
+  }
+}
+
+// LOGOUT
+function logout(){
+  localStorage.removeItem("token");
+  location.reload();
+}
+
+// ADMIN LOAD
+async function loadAdm(){
+  const res = await fetch(API + "/webhook/admin-liste", {
+    headers:{ Authorization: "Bearer " + localStorage.getItem("token") }
+  });
+
+  const data = await res.json();
+
+  if(!data.ok){
+    alert(data.error);
+    return;
+  }
+
+  const el = document.getElementById("accs");
+
+  el.innerHTML = data.comptes.map(u => `
+    <div class="acc ${u.is_blocked ? 'blk' : ''}">
+      <div class="avat">${(u.nom[0]||'') + (u.prenom[0]||'')}</div>
+      <div class="acc-name">${u.nom} ${u.prenom}</div>
+      <div class="acc-st ${u.is_blocked?'blk':'on'}">
+        ${u.is_blocked ? 'Bloqué' : 'Actif'}
+      </div>
+    </div>
+  `).join("");
+}
+</script>
 </body>
 </html>
