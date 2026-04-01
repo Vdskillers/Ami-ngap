@@ -7,55 +7,81 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0b0f14;--surface:#111720;--card:#151d28;--border:#1e2d3d;--border-lit:#2a4060;--text:#e8f0f8;--muted:#6a8099;--accent:#00d4aa;--accent-dim:#00d4aa22;--accent2:#4fa8ff;--accent2-dim:#4fa8ff18;--warn:#ffb547;--warn-dim:#ffb54720;--danger:#ff5f6d;--danger-dim:#ff5f6d18;--success:#3dd68c;--r:12px;--r-lg:18px;--font-serif:'DM Serif Display',Georgia,serif;--font-sans:'Instrument Sans',sans-serif;--font-mono:'DM Mono',monospace;--shadow:0 4px 32px rgba(0,0,0,.45)}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html{font-size:16px;scroll-behavior:smooth}
+:root{
+  --bg:#0b0f14;--surface:#111720;--card:#151d28;--border:#1e2d3d;--border-lit:#2a4060;
+  --text:#e8f0f8;--muted:#6a8099;--accent:#00d4aa;--accent-dim:#00d4aa22;
+  --accent2:#4fa8ff;--accent2-dim:#4fa8ff18;--warn:#ffb547;--warn-dim:#ffb54720;
+  --danger:#ff5f6d;--danger-dim:#ff5f6d18;--success:#3dd68c;
+  --r:12px;--r-lg:18px;
+  --font-serif:'DM Serif Display',Georgia,serif;
+  --font-sans:'Instrument Sans',sans-serif;
+  --font-mono:'DM Mono',monospace;
+  --shadow:0 4px 32px rgba(0,0,0,.45)
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
 body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;line-height:1.6;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,170,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,170,.025) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
 
-/* AUTH OVERLAY */
-#auth-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(11,15,20,.97);backdrop-filter:blur(12px)}
+/* ── AUTH OVERLAY ── */
+#auth-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(11,15,20,.97);backdrop-filter:blur(12px);overflow-y:auto;padding:20px}
 #auth-overlay.hidden{display:none}
-.auth-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:48px 40px;width:100%;max-width:440px;box-shadow:0 0 80px rgba(0,212,170,.08),0 24px 64px rgba(0,0,0,.6)}
+.auth-wrap{width:100%;max-width:460px;margin:auto}
+.auth-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:44px 40px;box-shadow:0 0 80px rgba(0,212,170,.08),0 24px 64px rgba(0,0,0,.6)}
 .auth-logo{display:flex;align-items:center;gap:14px;margin-bottom:32px;justify-content:center}
-.auth-logo-mark{width:48px;height:48px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:14px;display:grid;place-items:center;font-family:var(--font-serif);font-size:24px;font-weight:700;color:#000;box-shadow:0 0 30px rgba(0,212,170,.35)}
-.auth-logo-name{font-family:var(--font-serif);font-size:24px}
+.auth-logo-mark{width:52px;height:52px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:15px;display:grid;place-items:center;font-family:var(--font-serif);font-size:26px;font-weight:700;color:#000;box-shadow:0 0 32px rgba(0,212,170,.4);flex-shrink:0}
+.auth-logo-name{font-family:var(--font-serif);font-size:26px}
 .auth-logo-sub{font-family:var(--font-mono);font-size:10px;color:var(--accent);letter-spacing:2px}
 .auth-tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:3px;margin-bottom:24px}
-.auth-tab{flex:1;padding:8px;border-radius:9px;border:none;background:none;font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s}
+.auth-tab{flex:1;padding:9px;border-radius:9px;border:none;background:none;font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s}
 .auth-tab.active{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(0,212,170,.2)}
-.auth-field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.auth-field{display:flex;flex-direction:column;gap:5px;margin-bottom:13px}
 .auth-field label{font-family:var(--font-mono);font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
 .auth-field input{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--r);padding:11px 14px;font-size:14px;font-family:var(--font-sans);transition:border-color .15s,box-shadow .15s;width:100%}
 .auth-field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
-.auth-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),#00b891);color:#000;border:none;border-radius:var(--r);font-family:var(--font-sans);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px}
-.auth-btn:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,170,.4)}
-.auth-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.auth-msg{border-radius:var(--r);padding:10px 14px;font-size:13px;margin-bottom:12px;display:none}
+.auth-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.auth-sep{height:1px;background:var(--border);margin:18px 0;position:relative}
+.auth-sep-label{position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--card);padding:0 12px;font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.auth-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),#00b891);color:#000;border:none;border-radius:var(--r);font-family:var(--font-sans);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px}
+.auth-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,170,.4)}
+.auth-btn:disabled{opacity:.5;cursor:not-allowed}
+.auth-msg{border-radius:var(--r);padding:11px 15px;font-size:13px;margin-bottom:13px;display:none;line-height:1.5}
 .auth-msg.error{background:var(--danger-dim);border:1px solid rgba(255,95,109,.3);color:#ff9aa2}
 .auth-msg.success{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.3);color:#7eedb3}
-.reg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.auth-msg.info{background:var(--accent2-dim);border:1px solid rgba(79,168,255,.3);color:#80c4ff}
+.auth-footer{text-align:center;margin-top:20px;font-size:11px;color:var(--muted);font-family:var(--font-mono)}
 
-/* APP SHELL */
-.app-shell{position:relative;z-index:1;display:grid;grid-template-columns:260px 1fr;grid-template-rows:64px 1fr;min-height:100vh}
+/* ── PROFILE MODAL ── */
+#profile-modal{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.85);backdrop-filter:blur(8px);padding:20px}
+#profile-modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:32px;width:100%;max-width:500px;box-shadow:var(--shadow);max-height:90vh;overflow-y:auto}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.modal-title{font-family:var(--font-serif);font-size:22px}
+.modal-close{background:var(--surface);border:1px solid var(--border);color:var(--muted);width:32px;height:32px;border-radius:50%;cursor:pointer;display:grid;place-items:center;font-size:16px;transition:all .15s}
+.modal-close:hover{border-color:var(--danger);color:var(--danger)}
+
+/* ── APP SHELL ── */
+.app-shell{position:relative;z-index:1;display:grid;grid-template-columns:256px 1fr;grid-template-rows:64px 1fr;min-height:100vh}
 .topbar{grid-column:1/-1;background:rgba(11,15,20,.92);border-bottom:1px solid var(--border);backdrop-filter:blur(20px);display:flex;align-items:center;padding:0 28px;gap:20px;position:sticky;top:0;z-index:100}
-.logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;cursor:pointer}
 .logo-mark{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:grid;place-items:center;font-family:var(--font-serif);font-size:18px;font-weight:700;color:#000;box-shadow:0 0 20px rgba(0,212,170,.3);flex-shrink:0}
 .logo-text{font-family:var(--font-serif);font-size:20px;letter-spacing:-.3px}
 .logo-sub{font-family:var(--font-mono);font-size:10px;color:var(--accent);letter-spacing:2px;text-transform:uppercase}
-.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
 .badge{font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px;padding:3px 10px;border-radius:20px;text-transform:uppercase}
 .badge-ngap{background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent)}
-.badge-user{background:var(--accent2-dim);border:1px solid var(--accent2);color:var(--accent2)}
-.btn-logout{background:rgba(255,95,109,.1);border:1px solid rgba(255,95,109,.3);color:#ff9aa2;font-family:var(--font-mono);font-size:11px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s}
-.btn-logout:hover{background:rgba(255,95,109,.2)}
-.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:24px 0;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
-.sidebar-section{padding:0 16px;margin-bottom:8px}
+.btn-user{background:var(--accent2-dim);border:1px solid var(--accent2);color:var(--accent2);font-family:var(--font-mono);font-size:11px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
+.btn-user:hover{background:rgba(79,168,255,.2)}
+.btn-logout{background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.25);color:#ff9aa2;font-family:var(--font-mono);font-size:11px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s}
+.btn-logout:hover{background:rgba(255,95,109,.18)}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:20px 0;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.sidebar-section{padding:0 14px;margin-bottom:6px}
 .sidebar-label{font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;padding:8px 8px 4px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);cursor:pointer;transition:all .15s;color:var(--muted);font-size:14px;font-weight:500;position:relative;user-select:none}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);cursor:pointer;transition:all .15s;color:var(--muted);font-size:13.5px;font-weight:500;position:relative;user-select:none}
 .nav-item:hover{background:var(--card);color:var(--text)}
-.nav-item.active{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(0,212,170,.2)}
-.nav-item.active::before{content:'';position:absolute;left:-1px;top:20%;bottom:20%;width:2px;background:var(--accent);border-radius:2px}
-.nav-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.nav-item.active{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(0,212,170,.18)}
+.nav-item.active::before{content:'';position:absolute;left:-1px;top:22%;bottom:22%;width:2px;background:var(--accent);border-radius:2px}
+.nav-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
 .main{overflow-y:auto;background:var(--bg)}
 .view{display:none;padding:32px;animation:fadein .25s ease}
 .view.active{display:block}
@@ -66,7 +92,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .section-label{font-family:var(--font-mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;box-shadow:var(--shadow)}
 .card+.card{margin-top:20px}
-.card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title{font-size:16px;font-weight:600;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .field-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:14px}
 .field{display:flex;flex-direction:column;gap:5px}
 label{font-family:var(--font-mono);font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
@@ -74,18 +100,19 @@ input,select,textarea{background:var(--surface);border:1px solid var(--border);c
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
 textarea{resize:vertical;min-height:90px}
 select option{background:var(--surface)}
-.privacy-notice{background:linear-gradient(135deg,rgba(255,95,109,.06),rgba(255,95,109,.02));border:1px solid rgba(255,95,109,.3);border-radius:var(--r);padding:12px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start}
-.privacy-notice p{font-size:12px;color:#ff8a93;line-height:1.5}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:var(--r);font-family:var(--font-sans);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s;text-decoration:none;white-space:nowrap}
+.privacy-notice{background:linear-gradient(135deg,rgba(255,95,109,.06),rgba(255,95,109,.02));border:1px solid rgba(255,95,109,.25);border-radius:var(--r);padding:12px 16px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start}
+.privacy-notice p{font-size:12px;color:#ff9aa2;line-height:1.5}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:var(--r);font-family:var(--font-sans);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s;white-space:nowrap}
 .btn-primary{background:linear-gradient(135deg,var(--accent),#00b891);color:#000;box-shadow:0 4px 20px rgba(0,212,170,.25)}
-.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,170,.4)}
+.btn-primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,170,.4)}
 .btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}
 .btn-secondary:hover{border-color:var(--border-lit);background:var(--card)}
 .btn-danger{background:var(--danger-dim);color:var(--danger);border:1px solid rgba(255,95,109,.3)}
+.btn-danger:hover{background:rgba(255,95,109,.2)}
 .btn-sm{padding:6px 14px;font-size:12px}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
 .spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
-.spinner-light{border-color:rgba(255,255,255,.2);border-top-color:var(--text)}
+.spinner-w{border-color:rgba(255,255,255,.2);border-top-color:var(--text)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .result-panel{display:none;margin-top:24px;animation:fadein .3s ease}
 .result-panel.visible{display:block}
@@ -94,10 +121,10 @@ select option{background:var(--surface)}
 .total-unit{font-family:var(--font-mono);font-size:20px;color:var(--muted)}
 .repartition-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
 .rep-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;text-align:center}
-.rep-card.amo{border-color:rgba(0,212,170,.3)}.rep-card.amc{border-color:rgba(79,168,255,.3)}.rep-card.patient{border-color:rgba(255,181,71,.3)}
+.rep-card.amo{border-color:rgba(0,212,170,.3)}.rep-card.amc{border-color:rgba(79,168,255,.3)}.rep-card.pat{border-color:rgba(255,181,71,.3)}
 .rep-label{font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
-.rep-card.amo .rep-label{color:var(--accent)}.rep-card.amc .rep-label{color:var(--accent2)}.rep-card.patient .rep-label{color:var(--warn)}
-.rep-amount{font-family:var(--font-serif);font-size:24px}.rep-percent{font-size:11px;color:var(--muted)}
+.rep-card.amo .rep-label{color:var(--accent)}.rep-card.amc .rep-label{color:var(--accent2)}.rep-card.pat .rep-label{color:var(--warn)}
+.rep-amount{font-family:var(--font-serif);font-size:24px}.rep-pct{font-size:11px;color:var(--muted)}
 .actes-list{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
 .acte-row{display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;gap:12px;transition:border-color .15s}
 .acte-row:hover{border-color:var(--border-lit)}
@@ -109,9 +136,9 @@ select option{background:var(--surface)}
 .alerts-container{display:flex;flex-direction:column;gap:8px}
 .alert-item{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:var(--r);font-size:13px;line-height:1.5}
 .alert-item.error{background:var(--danger-dim);border:1px solid rgba(255,95,109,.25);color:#ff9aa2}
+.alert-item.warn{background:var(--warn-dim);border:1px solid rgba(255,181,71,.25);color:#ffc96b}
 .alert-item.info{background:var(--accent2-dim);border:1px solid rgba(79,168,255,.25);color:#80c4ff}
-.alert-item.success{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.25);color:#7eedb3}
-.alert-item.warning{background:var(--warn-dim);border:1px solid rgba(255,181,71,.25);color:#ffc96b}
+.alert-item.ok{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.25);color:#7eedb3}
 .dre-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(79,168,255,.12);border:1px solid rgba(79,168,255,.3);color:var(--accent2);font-family:var(--font-mono);font-size:11px;padding:5px 12px;border-radius:20px}
 .rag-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .rag-chip{font-family:var(--font-mono);font-size:10px;color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:2px 8px;border-radius:20px}
@@ -124,88 +151,164 @@ th{text-align:left;padding:12px 16px;font-family:var(--font-mono);font-size:11px
 td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle}
 tbody tr{transition:background .1s}tbody tr:hover{background:var(--card)}tbody tr:last-child td{border-bottom:none}
 .td-id{font-family:var(--font-mono);font-size:12px;color:var(--muted)}.td-total{font-family:var(--font-mono);font-weight:600;color:var(--accent)}
-.td-dre{font-family:var(--font-mono);font-size:11px}.td-dre.yes{color:var(--accent2)}.td-dre.no{color:var(--muted)}
+.td-dre.yes{color:var(--accent2)}.td-dre.no{color:var(--muted)}
 .tag-list{display:flex;flex-wrap:wrap;gap:4px}
 .tag{font-family:var(--font-mono);font-size:10px;background:var(--accent-dim);color:var(--accent);border:1px solid rgba(0,212,170,.2);padding:1px 6px;border-radius:4px}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:28px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px;margin-bottom:28px}
 .stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;position:relative;overflow:hidden}
 .stat-card::after{content:'';position:absolute;bottom:-20px;right:-20px;width:80px;height:80px;border-radius:50%;opacity:.07}
-.stat-card.green::after{background:var(--accent)}.stat-card.blue::after{background:var(--accent2)}.stat-card.orange::after{background:var(--warn)}.stat-card.red::after{background:var(--danger)}
+.stat-card.g::after{background:var(--accent)}.stat-card.b::after{background:var(--accent2)}.stat-card.o::after{background:var(--warn)}.stat-card.r::after{background:var(--danger)}
 .stat-icon{font-size:22px;margin-bottom:10px}
 .stat-value{font-family:var(--font-serif);font-size:32px;line-height:1;margin-bottom:4px}
-.stat-card.green .stat-value{color:var(--accent)}.stat-card.blue .stat-value{color:var(--accent2)}.stat-card.orange .stat-value{color:var(--warn)}.stat-card.red .stat-value{color:var(--danger)}
+.stat-card.g .stat-value{color:var(--accent)}.stat-card.b .stat-value{color:var(--accent2)}.stat-card.o .stat-value{color:var(--warn)}.stat-card.r .stat-value{color:var(--danger)}
 .stat-label{font-size:12px;color:var(--muted)}
 .action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;padding-top:20px;border-top:1px solid var(--border)}
 .error-state{background:var(--danger-dim);border:1px solid rgba(255,95,109,.3);border-radius:var(--r);padding:16px 20px;color:#ff9aa2;font-size:13px;display:flex;gap:10px;align-items:center}
-.security-row{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)}
-.security-row:last-child{border-bottom:none}
-.security-status{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.security-status.ok{background:var(--success);box-shadow:0 0 8px var(--success)}
-.security-status.active{background:var(--accent2);box-shadow:0 0 8px var(--accent2);animation:pulse 2s infinite}
+.sec-row{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)}
+.sec-row:last-child{border-bottom:none}
+.sec-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.sec-dot.ok{background:var(--success);box-shadow:0 0 8px var(--success)}
+.sec-dot.live{background:var(--accent2);box-shadow:0 0 8px var(--accent2);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.security-info{flex:1}.security-info strong{font-size:14px;display:block}.security-info span{font-size:12px;color:var(--muted)}
-.ngap-version{font-family:var(--font-mono);font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.sec-info{flex:1}.sec-info strong{font-size:14px;display:block}.sec-info span{font-size:12px;color:var(--muted)}
+.ngap-ver{font-family:var(--font-mono);font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
-.verify-corrected{background:rgba(61,214,140,.06);border:1px solid rgba(61,214,140,.25);border-radius:var(--r);padding:16px}
-.verify-corrected-label{font-family:var(--font-mono);font-size:10px;color:var(--success);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
-.verify-corrected-text{font-size:15px;line-height:1.6;font-style:italic}
-@media(max-width:768px){.app-shell{grid-template-columns:1fr;grid-template-rows:64px auto 1fr}.sidebar{grid-row:2;display:flex;flex-direction:row;flex-wrap:wrap;padding:8px;gap:0;border-right:none;border-bottom:1px solid var(--border);overflow-x:auto}.sidebar-label{display:none}.nav-item{padding:8px 12px;font-size:12px}.main{grid-row:3}.view{padding:16px}.repartition-grid{grid-template-columns:1fr}.total-amount{font-size:38px}.stats-grid{grid-template-columns:repeat(2,1fr)}.auth-card{margin:16px;padding:32px 20px}}
+.verify-box{background:rgba(61,214,140,.06);border:1px solid rgba(61,214,140,.25);border-radius:var(--r);padding:16px}
+.verify-box-label{font-family:var(--font-mono);font-size:10px;color:var(--success);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+@media(max-width:768px){
+  .app-shell{grid-template-columns:1fr;grid-template-rows:64px auto 1fr}
+  .sidebar{grid-row:2;display:flex;flex-direction:row;flex-wrap:wrap;padding:8px;border-right:none;border-bottom:1px solid var(--border);overflow-x:auto}
+  .sidebar-label{display:none}.nav-item{padding:8px 10px;font-size:12px}
+  .main{grid-row:3}.view{padding:16px}
+  .repartition-grid{grid-template-columns:1fr}.total-amount{font-size:38px}
+  .auth-card{padding:32px 20px}.auth-grid-2{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 
-<!-- ══ AUTH OVERLAY ══ -->
+<!-- ══════════════════════════════════════
+     AUTH OVERLAY
+══════════════════════════════════════ -->
 <div id="auth-overlay">
-  <div class="auth-card">
-    <div class="auth-logo">
-      <div class="auth-logo-mark">A</div>
-      <div>
-        <div class="auth-logo-name">AMI</div>
-        <div class="auth-logo-sub">Cotation NGAP IA</div>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="auth-logo-mark">A</div>
+        <div>
+          <div class="auth-logo-name">AMI</div>
+          <div class="auth-logo-sub">Cotation NGAP IA</div>
+        </div>
       </div>
-    </div>
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Connexion</button>
-      <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Créer un compte</button>
-    </div>
 
-    <!-- LOGIN -->
-    <div id="panel-login">
-      <div class="auth-msg error" id="login-err"></div>
-      <div class="auth-field"><label>Email professionnel</label><input type="email" id="l-email" placeholder="infirmiere@cabinet.fr" autocomplete="email"></div>
-      <div class="auth-field"><label>Mot de passe</label><input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-      <button class="auth-btn" id="btn-login" onclick="doLogin()"><span>🔐</span> Se connecter</button>
-    </div>
-
-    <!-- REGISTER -->
-    <div id="panel-register" style="display:none">
-      <div class="auth-msg error" id="reg-err"></div>
-      <div class="auth-msg success" id="reg-ok"></div>
-      <div class="auth-field"><label>Email professionnel</label><input type="email" id="r-email" placeholder="infirmiere@cabinet.fr"></div>
-      <div class="auth-field"><label>Mot de passe (min. 8 car.)</label><input type="password" id="r-pass" placeholder="••••••••"></div>
-      <div class="auth-field"><label>Confirmer le mot de passe</label><input type="password" id="r-pass2" placeholder="••••••••"></div>
-      <div style="height:1px;background:var(--border);margin:16px 0"></div>
-      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px">Informations professionnelles (optionnel)</div>
-      <div class="auth-field"><label>Nom / Prénom</label><input type="text" id="r-nom" placeholder="Dr. Dupont Marie"></div>
-      <div class="reg-grid">
-        <div class="auth-field"><label>N° ADELI</label><input type="text" id="r-adeli" placeholder="123456789"></div>
-        <div class="auth-field"><label>RPPS</label><input type="text" id="r-rpps" placeholder="10001234567"></div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login"    onclick="switchTab('login')">Connexion</button>
+        <button class="auth-tab"        id="tab-register" onclick="switchTab('register')">Créer un compte</button>
       </div>
-      <div class="auth-field"><label>Cabinet / Structure</label><input type="text" id="r-struct" placeholder="Cabinet libéral de..."></div>
-      <button class="auth-btn" id="btn-register" onclick="doRegister()"><span>✨</span> Créer mon compte</button>
-    </div>
 
-    <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--muted);font-family:var(--font-mono)">🔒 JWT · SHA-256 · Données chiffrées · RGPD</div>
+      <!-- ── LOGIN ── -->
+      <div id="panel-login">
+        <div class="auth-msg error"   id="login-err"></div>
+        <div class="auth-msg info"    id="login-info"></div>
+        <div class="auth-field">
+          <label>Email professionnel</label>
+          <input type="email" id="l-email" placeholder="infirmiere@cabinet.fr" autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label>Mot de passe</label>
+          <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"
+                 onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="auth-btn" id="btn-login" onclick="doLogin()">
+          <span>🔐</span> Se connecter
+        </button>
+      </div>
+
+      <!-- ── REGISTER ── -->
+      <div id="panel-register" style="display:none">
+        <div class="auth-msg error"   id="reg-err"></div>
+        <div class="auth-msg success" id="reg-ok"></div>
+
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">Identité</div>
+        <div class="auth-grid-2">
+          <div class="auth-field"><label>Prénom <span style="color:var(--danger)">*</span></label><input type="text" id="r-prenom" placeholder="Marie"></div>
+          <div class="auth-field"><label>Nom <span style="color:var(--danger)">*</span></label><input type="text" id="r-nom" placeholder="DUPONT"></div>
+        </div>
+        <div class="auth-field"><label>Email <span style="color:var(--danger)">*</span></label><input type="email" id="r-email" placeholder="infirmiere@cabinet.fr"></div>
+        <div class="auth-field"><label>Mot de passe (min. 8 car.) <span style="color:var(--danger)">*</span></label><input type="password" id="r-pass" placeholder="••••••••"></div>
+        <div class="auth-field"><label>Confirmer le mot de passe</label><input type="password" id="r-pass2" placeholder="••••••••"></div>
+
+        <div class="auth-sep"><span class="auth-sep-label">Informations professionnelles (optionnel)</span></div>
+        <div class="auth-grid-2">
+          <div class="auth-field"><label>N° ADELI</label><input type="text" id="r-adeli" placeholder="123456789"></div>
+          <div class="auth-field"><label>RPPS</label><input type="text" id="r-rpps" placeholder="10001234567"></div>
+        </div>
+        <div class="auth-field"><label>Cabinet / Structure</label><input type="text" id="r-struct" placeholder="Cabinet libéral de..."></div>
+
+        <button class="auth-btn" id="btn-register" onclick="doRegister()">
+          <span>✨</span> Créer mon compte
+        </button>
+      </div>
+
+      <div class="auth-footer">🔒 Cloudflare · Supabase · SHA-256 · RGPD</div>
+    </div>
   </div>
 </div>
 
-<!-- ══ APP ══ -->
+<!-- ══════════════════════════════════════
+     PROFILE MODAL
+══════════════════════════════════════ -->
+<div id="profile-modal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">👤 Mon profil</div>
+      <button class="modal-close" onclick="closeProfile()">✕</button>
+    </div>
+    <div class="auth-msg error"   id="profile-err"></div>
+    <div class="auth-msg success" id="profile-ok"></div>
+
+    <div style="margin-bottom:20px">
+      <div class="section-label" style="margin-bottom:12px">Informations personnelles</div>
+      <div class="auth-grid-2">
+        <div class="auth-field"><label>Prénom</label><input type="text" id="p-prenom" placeholder="Marie"></div>
+        <div class="auth-field"><label>Nom</label><input type="text" id="p-nom" placeholder="DUPONT"></div>
+      </div>
+      <div class="auth-grid-2">
+        <div class="auth-field"><label>N° ADELI</label><input type="text" id="p-adeli"></div>
+        <div class="auth-field"><label>RPPS</label><input type="text" id="p-rpps"></div>
+      </div>
+      <div class="auth-field"><label>Cabinet / Structure</label><input type="text" id="p-struct"></div>
+      <div class="auth-field"><label>Adresse</label><input type="text" id="p-adresse"></div>
+      <div class="auth-field"><label>Téléphone</label><input type="tel" id="p-tel"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveProfile()">💾 Enregistrer</button>
+
+    <div class="auth-sep" style="margin-top:24px"><span class="auth-sep-label">Changer le mot de passe</span></div>
+    <div class="auth-msg error" id="pwd-err"></div>
+    <div class="auth-msg success" id="pwd-ok"></div>
+    <div class="auth-field"><label>Mot de passe actuel</label><input type="password" id="p-ancien" placeholder="••••••••"></div>
+    <div class="auth-field"><label>Nouveau mot de passe</label><input type="password" id="p-nouveau" placeholder="••••••••"></div>
+    <button class="btn btn-secondary" style="width:100%;justify-content:center;margin-top:6px" onclick="changePassword()">🔑 Changer le mot de passe</button>
+
+    <div class="auth-sep" style="margin-top:24px"><span class="auth-sep-label" style="color:var(--danger)">Zone dangereuse</span></div>
+    <button class="btn btn-danger" style="width:100%;justify-content:center" onclick="deleteAccount()">🗑️ Supprimer mon compte</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     APP SHELL
+══════════════════════════════════════ -->
 <div class="app-shell">
   <header class="topbar">
-    <a class="logo" href="#"><div class="logo-mark">A</div><div><div class="logo-text">AMI</div><div class="logo-sub">NGAP IA</div></div></a>
+    <div class="logo">
+      <div class="logo-mark">A</div>
+      <div><div class="logo-text">AMI</div><div class="logo-sub">NGAP IA</div></div>
+    </div>
     <div class="topbar-right">
       <div class="badge badge-ngap">NGAP 2026</div>
-      <div class="badge badge-user" id="user-badge">👤 —</div>
+      <button class="btn-user" id="btn-user-profile" onclick="openProfile()">
+        <span>👤</span><span id="user-badge-name">—</span>
+      </button>
       <button class="btn-logout" onclick="doLogout()">⏻ Déconnexion</button>
     </div>
   </header>
@@ -227,155 +330,207 @@ tbody tr{transition:background .1s}tbody tr:hover{background:var(--card)}tbody t
 
   <main class="main">
 
-    <!-- COTATION -->
+    <!-- ── COTATION ── -->
     <section class="view active" id="view-cotation">
       <div class="page-title">Cotation <em>intelligente</em></div>
       <div class="page-sub">Agent IA NGAP · RAG BM25 adaptatif · Tarifs 2026</div>
       <div class="card">
-        <div class="privacy-notice"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont jamais transmis à l'IA. Seuls ID anonymisé, actes et montants circulent dans les APIs.</p></div>
+        <div class="privacy-notice">
+          <span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span>
+          <p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA. Seuls ID anonymisé, actes et montants circulent dans les APIs.</p>
+        </div>
+
         <div class="section-label">Prescripteur (médecin)</div>
         <div class="field-grid" style="margin-bottom:20px">
-          <div class="field"><label>Médecin prescripteur</label><input type="text" id="f-prescripteur" placeholder="Dr. Martin Pierre"></div>
-          <div class="field"><label>RPPS Prescripteur</label><input type="text" id="f-prescripteur-rpps" placeholder="10009876543"></div>
-          <div class="field"><label>Date de prescription</label><input type="date" id="f-date-prescription"></div>
+          <div class="field"><label>Médecin prescripteur</label><input type="text" id="f-presc" placeholder="Dr. Martin Pierre"></div>
+          <div class="field"><label>RPPS Prescripteur</label><input type="text" id="f-presc-rpps" placeholder="10009876543"></div>
+          <div class="field"><label>Date de prescription</label><input type="date" id="f-date-presc"></div>
         </div>
-        <div class="section-label">Patient — données chiffrées côté serveur</div>
+
+        <div class="section-label">Patient — données locales uniquement</div>
         <div class="field-grid" style="margin-bottom:20px">
-          <div class="field"><label>Nom patient <span style="font-size:9px;color:var(--muted)">(local uniquement)</span></label><input type="text" id="f-patient" placeholder="NOM Prénom" autocomplete="off"></div>
+          <div class="field"><label>Nom patient <span style="font-size:9px;opacity:.6">(local)</span></label><input type="text" id="f-patient" placeholder="NOM Prénom" autocomplete="off"></div>
           <div class="field"><label>Date de naissance</label><input type="date" id="f-ddn"></div>
-          <div class="field"><label>N° Sécu <span style="font-size:9px;color:var(--muted)">(non transmis IA)</span></label><input type="text" id="f-secu" placeholder="1 85 06 ..." autocomplete="off"></div>
+          <div class="field"><label>N° Sécu <span style="font-size:9px;opacity:.6">(non transmis)</span></label><input type="text" id="f-secu" placeholder="1 85 06 ..." autocomplete="off"></div>
           <div class="field"><label>Caisse AMO</label><input type="text" id="f-amo" placeholder="CPAM Paris"></div>
           <div class="field"><label>Mutuelle AMC</label><input type="text" id="f-amc" placeholder="MGEN, Harmonie..."></div>
         </div>
+
         <div class="section-label">Facturation</div>
         <div class="field-grid" style="margin-bottom:20px">
-          <div class="field"><label>Exonération</label><select id="f-exo"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
-          <div class="field"><label>Mode règlement</label><select id="f-regl"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
+          <div class="field"><label>Exonération</label>
+            <select id="f-exo">
+              <option value="">Aucune (ticket modérateur)</option>
+              <option value="ALD">ALD — 100% SS</option>
+              <option value="maternite">Maternité — 100%</option>
+              <option value="accident">Accident travail — 100%</option>
+              <option value="cmu">CSS/C2S — 100%</option>
+            </select>
+          </div>
+          <div class="field"><label>Mode règlement</label>
+            <select id="f-regl">
+              <option value="patient">Patient</option>
+              <option value="tiers">Tiers payant AMO</option>
+              <option value="tiers_amc">Tiers payant AMO+AMC</option>
+            </select>
+          </div>
           <div class="field"><label>Date du soin</label><input type="date" id="f-date-soin"></div>
           <div class="field"><label>Heure du soin</label><input type="time" id="f-heure-soin"></div>
         </div>
+
         <div class="section-label">Description des soins <span style="color:var(--danger)">*</span></div>
-        <div class="field" style="margin-bottom:16px"><textarea id="f-texte" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."></textarea></div>
+        <div class="field" style="margin-bottom:16px">
+          <textarea id="f-texte" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."></textarea>
+        </div>
         <div class="action-row">
           <button class="btn btn-primary" id="btn-coter" onclick="submitCotation()"><span>⚡</span> Coter avec l'IA</button>
-          <button class="btn btn-secondary" onclick="clearForm()">↺ Réinitialiser</button>
+          <button class="btn btn-secondary" onclick="clearCotation()">↺ Réinitialiser</button>
         </div>
       </div>
-      <div id="result-cotation" class="result-panel"><div id="cotation-error" class="error-state" style="display:none">⚠️ <span id="cotation-error-msg"></span></div><div id="cotation-result-body"></div></div>
+      <div id="result-cotation" class="result-panel">
+        <div id="cot-err" class="error-state" style="display:none">⚠️ <span id="cot-err-msg"></span></div>
+        <div id="cot-body"></div>
+      </div>
     </section>
 
-    <!-- VERIFY -->
+    <!-- ── VERIFY ── -->
     <section class="view" id="view-verify">
       <div class="page-title">Vérifier <em>un soin</em></div>
       <div class="page-sub">Correction auto · Alertes URSSAF · DRE</div>
       <div class="card">
-        <div class="section-label">Contexte (calculé localement)</div>
+        <div class="section-label">Contexte</div>
         <div class="field-grid" style="margin-bottom:20px">
           <div class="field"><label>Date de naissance</label><input type="date" id="v-ddn"></div>
-          <div class="field"><label>Date du soin</label><input type="date" id="v-date-soin"></div>
-          <div class="field"><label>Heure du soin</label><input type="time" id="v-heure-soin"></div>
-          <div class="field"><label>Exonération</label><select id="v-exo"><option value="">Aucune</option><option value="ALD">ALD</option><option value="maternite">Maternité</option><option value="accident">Accident travail</option><option value="cmu">CSS/C2S</option></select></div>
-          <div class="field"><label>Mode règlement</label><select id="v-regl"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
+          <div class="field"><label>Date du soin</label><input type="date" id="v-date"></div>
+          <div class="field"><label>Heure du soin</label><input type="time" id="v-heure"></div>
+          <div class="field"><label>Exonération</label>
+            <select id="v-exo"><option value="">Aucune</option><option value="ALD">ALD</option><option value="maternite">Maternité</option><option value="accident">Accident travail</option><option value="cmu">CSS/C2S</option></select>
+          </div>
+          <div class="field"><label>Mode règlement</label>
+            <select id="v-regl"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select>
+          </div>
         </div>
         <div class="section-label">Description à vérifier <span style="color:var(--danger)">*</span></div>
         <div class="field" style="margin-bottom:16px"><textarea id="v-texte" placeholder="Ex : injection SC insuline + panse dimanche chez patient grabatère domisil..." style="min-height:100px"></textarea></div>
         <button class="btn btn-primary" id="btn-verify" onclick="submitVerify()"><span>🔍</span> Analyser & Corriger</button>
       </div>
-      <div id="result-verify" class="result-panel"><div id="verify-error" class="error-state" style="display:none">⚠️ <span id="verify-error-msg"></span></div><div id="verify-result-body"></div></div>
+      <div id="result-verify" class="result-panel">
+        <div id="ver-err" class="error-state" style="display:none">⚠️ <span id="ver-err-msg"></span></div>
+        <div id="ver-body"></div>
+      </div>
     </section>
 
-    <!-- TOURNÉE -->
+    <!-- ── TOURNÉE ── -->
     <section class="view" id="view-tournee">
       <div class="page-title">Optimisation <em>de tournée</em></div>
       <div class="page-sub">Ordre optimal · Revenus NGAP · Temps estimé</div>
       <div class="card">
         <div class="section-label">Liste des patients (anonymisée)</div>
-        <div class="field" style="margin-bottom:16px"><textarea id="t-texte" placeholder="Patient 1 : Injection insuline, zone Nord&#10;Patient 2 : Toilette grabataire, zone Sud, 8km&#10;Patient 3 : Prise de sang, centre-ville..." style="min-height:140px"></textarea></div>
-        <button class="btn btn-primary" id="btn-tournee" onclick="submitMode('tournee')"><span>🗺️</span> Optimiser la tournée</button>
+        <div class="field" style="margin-bottom:16px"><textarea id="t-texte" placeholder="Patient 1 : Injection insuline, zone Nord&#10;Patient 2 : Toilette grabataire, 8km&#10;Patient 3 : Prise de sang, centre-ville..." style="min-height:140px"></textarea></div>
+        <button class="btn btn-primary" id="btn-tournee" onclick="submitMode('tournee')"><span>🗺️</span> Optimiser</button>
       </div>
-      <div id="result-tournee" class="result-panel"><div id="tournee-error" class="error-state" style="display:none">⚠️ <span id="tournee-error-msg"></span></div><div id="tournee-result-body"></div></div>
+      <div id="result-tournee" class="result-panel">
+        <div id="tour-err" class="error-state" style="display:none">⚠️ <span id="tour-err-msg"></span></div>
+        <div id="tour-body"></div>
+      </div>
     </section>
 
-    <!-- PLANNING -->
+    <!-- ── PLANNING ── -->
     <section class="view" id="view-planning">
       <div class="page-title">Planning <em>hebdomadaire</em></div>
       <div class="page-sub">Organisation optimale · 8–15 patients/jour</div>
       <div class="card">
         <div class="section-label">Patients de la semaine</div>
         <div class="field" style="margin-bottom:16px"><textarea id="pl-texte" placeholder="Patient A : Injection 2x/jour&#10;Patient B : Toilette lundi/mercredi/vendredi&#10;Patient C : Pansement quotidien..." style="min-height:140px"></textarea></div>
-        <button class="btn btn-primary" id="btn-planning" onclick="submitMode('planning')"><span>📅</span> Générer le planning</button>
+        <button class="btn btn-primary" id="btn-planning" onclick="submitMode('planning')"><span>📅</span> Générer</button>
       </div>
-      <div id="result-planning" class="result-panel"><div id="planning-error" class="error-state" style="display:none">⚠️ <span id="planning-error-msg"></span></div><div id="planning-result-body"></div></div>
+      <div id="result-planning" class="result-panel">
+        <div id="plan-err" class="error-state" style="display:none">⚠️ <span id="plan-err-msg"></span></div>
+        <div id="plan-body"></div>
+      </div>
     </section>
 
-    <!-- HISTORIQUE -->
+    <!-- ── HISTORIQUE ── -->
     <section class="view" id="view-historique">
       <div class="page-title">Historique <em>des soins</em></div>
       <div class="page-sub">Données anonymisées · Accès infirmier uniquement</div>
       <div class="card">
-        <div class="privacy-notice"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Accès restreint :</strong> Seule l'infirmière connectée voit ses propres données. Les admins n'ont aucun accès patient.</p></div>
+        <div class="privacy-notice">
+          <span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span>
+          <p><strong>Accès restreint :</strong> Seule l'infirmière connectée voit ses données. Les admins n'ont aucun accès patient.</p>
+        </div>
         <div class="hist-toolbar">
-          <input type="text" id="hist-search" placeholder="🔍 Rechercher..." style="width:200px" oninput="loadHistorique()">
-          <select id="hist-period" onchange="loadHistorique()" style="width:160px"><option value="">Toute période</option><option value="today">Aujourd'hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select>
-          <button class="btn btn-secondary btn-sm" onclick="loadHistorique()">↻ Actualiser</button>
+          <input type="text" id="hist-q" placeholder="🔍 Rechercher..." style="width:200px" oninput="loadHist()">
+          <select id="hist-p" onchange="loadHist()" style="width:160px">
+            <option value="">Toute période</option><option value="today">Aujourd'hui</option>
+            <option value="week">Cette semaine</option><option value="month">Ce mois</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadHist()">↻ Actualiser</button>
         </div>
         <div id="hist-stats" class="stats-grid"></div>
         <div class="hist-table-wrap">
-          <table><thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th></tr></thead>
-          <tbody id="hist-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Cliquez sur Actualiser</td></tr></tbody></table>
+          <table>
+            <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th></tr></thead>
+            <tbody id="hist-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Cliquez sur Actualiser</td></tr></tbody>
+          </table>
         </div>
       </div>
     </section>
 
-    <!-- SECURITE -->
+    <!-- ── SECURITE ── -->
     <section class="view" id="view-securite">
       <div class="page-title">Sécurité <em>& RGPD</em></div>
-      <div class="page-sub">Architecture de protection · JWT · Chiffrement</div>
+      <div class="page-sub">Architecture Cloudflare Worker · Supabase · SHA-256</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div class="card">
           <div class="card-title">🛡️ État de la protection</div>
-          <div class="security-row"><div class="security-status ok"></div><div class="security-info"><strong>Authentification JWT</strong><span>Tokens HMAC-SHA256 · Expiration 8h</span></div></div>
-          <div class="security-row"><div class="security-status ok"></div><div class="security-info"><strong>Mots de passe hachés SHA-256</strong><span>Jamais stockés en clair</span></div></div>
-          <div class="security-row"><div class="security-status ok"></div><div class="security-info"><strong>Données patient chiffrées</strong><span>AES-256 côté serveur</span></div></div>
-          <div class="security-row"><div class="security-status ok"></div><div class="security-info"><strong>Zéro visibilité admin</strong><span>Bloquer / supprimer comptes uniquement</span></div></div>
-          <div class="security-row"><div class="security-status ok"></div><div class="security-info"><strong>RBAC actif</strong><span>nurse · admin · support — permissions séparées</span></div></div>
-          <div class="security-row"><div class="security-status active"></div><div class="security-info"><strong>Session active</strong><span id="session-info">—</span></div></div>
+          <div class="sec-row"><div class="sec-dot ok"></div><div class="sec-info"><strong>Authentification Cloudflare Worker</strong><span>SHA-256 + token session Supabase</span></div></div>
+          <div class="sec-row"><div class="sec-dot ok"></div><div class="sec-info"><strong>Mots de passe salés SHA-256</strong><span>Jamais stockés en clair · sel fixe + BDD Supabase</span></div></div>
+          <div class="sec-row"><div class="sec-dot ok"></div><div class="sec-info"><strong>Données patient chiffrées</strong><span>AES-256 côté serveur · zéro accès admin</span></div></div>
+          <div class="sec-row"><div class="sec-dot ok"></div><div class="sec-info"><strong>CORS sécurisé</strong><span>Headers Access-Control sur chaque réponse</span></div></div>
+          <div class="sec-row"><div class="sec-dot ok"></div><div class="sec-info"><strong>RBAC</strong><span>nurse · admin · support — permissions séparées</span></div></div>
+          <div class="sec-row"><div class="sec-dot live"></div><div class="sec-info"><strong>Session active</strong><span id="sess-info">—</span></div></div>
         </div>
         <div class="card">
-          <div class="card-title">📡 Flux de données</div>
-          <div style="font-size:13px">
-            <div class="section-label" style="margin-bottom:8px">Envoyé à l'IA</div>
-            <div class="alerts-container">
-              <div class="alert-item success">✅ Texte de soin (description médicale)</div>
-              <div class="alert-item success">✅ Heure, date, contexte exonération</div>
-              <div class="alert-item success">✅ Règles NGAP RAG (anonymes)</div>
-            </div>
-            <div class="section-label" style="margin-top:14px;margin-bottom:8px">JAMAIS transmis à l'IA</div>
-            <div class="alerts-container">
-              <div class="alert-item error">❌ Nom / Prénom du patient</div>
-              <div class="alert-item error">❌ Numéro de sécurité sociale</div>
-              <div class="alert-item error">❌ Données bancaires AMO/AMC</div>
+          <div class="card-title">🏗️ Architecture</div>
+          <div style="font-size:13px;line-height:1.8;color:var(--muted)">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="acte-row"><div class="acte-code">UI</div><div class="acte-nom">GitHub Pages / Netlify</div><div style="font-size:11px;color:var(--muted)">HTML statique</div></div>
+              <div class="acte-row"><div class="acte-code dep">CF</div><div class="acte-nom">Cloudflare Worker</div><div style="font-size:11px;color:var(--muted)">Auth + proxy</div></div>
+              <div class="acte-row"><div class="acte-code dep">DB</div><div class="acte-nom">Supabase PostgreSQL</div><div style="font-size:11px;color:var(--muted)">Sessions + users</div></div>
+              <div class="acte-row"><div class="acte-code maj">AI</div><div class="acte-nom">n8n + xAI Grok</div><div style="font-size:11px;color:var(--muted)">Cotation NGAP</div></div>
             </div>
           </div>
         </div>
         <div class="card">
-          <div class="card-title">🔗 Endpoints n8n actifs</div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <div class="acte-row"><div class="acte-code">POST</div><div class="acte-nom" style="font-family:var(--font-mono);font-size:11px">/webhook/ami-login</div><div style="font-size:11px;color:var(--muted)">Auth login</div></div>
-            <div class="acte-row"><div class="acte-code">POST</div><div class="acte-nom" style="font-family:var(--font-mono);font-size:11px">/webhook/ami-register</div><div style="font-size:11px;color:var(--muted)">Créer compte</div></div>
-            <div class="acte-row"><div class="acte-code dep">POST</div><div class="acte-nom" style="font-family:var(--font-mono);font-size:11px">/webhook/ami-calcul</div><div style="font-size:11px;color:var(--muted)">Cotation NGAP</div></div>
-            <div class="acte-row"><div class="acte-code dep">GET</div><div class="acte-nom" style="font-family:var(--font-mono);font-size:11px">/webhook/ami-historique</div><div style="font-size:11px;color:var(--muted)">Historique</div></div>
-            <div class="acte-row"><div class="acte-code maj">POST</div><div class="acte-nom" style="font-family:var(--font-mono);font-size:11px">/webhook/ami-supprimer</div><div style="font-size:11px;color:var(--muted)">Suppression RGPD</div></div>
+          <div class="card-title">📡 Flux de données</div>
+          <div class="section-label" style="margin-bottom:8px">Envoyé à l'IA</div>
+          <div class="alerts-container">
+            <div class="alert-item ok">✅ Texte de soin (description médicale)</div>
+            <div class="alert-item ok">✅ Heure, date, exonération</div>
+            <div class="alert-item ok">✅ Règles NGAP RAG anonymes</div>
+          </div>
+          <div class="section-label" style="margin-top:14px;margin-bottom:8px">JAMAIS transmis à l'IA</div>
+          <div class="alerts-container">
+            <div class="alert-item error">❌ Nom / Prénom du patient</div>
+            <div class="alert-item error">❌ Numéro de sécurité sociale</div>
+            <div class="alert-item error">❌ Données bancaires AMO/AMC</div>
           </div>
         </div>
         <div class="card">
           <div class="card-title">🗑️ Droits RGPD — Effacement</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Suppression irréversible des données.</p>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Suppression irréversible de vos données de facturation.</p>
           <div style="display:flex;flex-direction:column;gap:10px">
-            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:160px"><button class="btn btn-danger btn-sm" onclick="deleteById()">🗑️ Supprimer cet ID</button></div>
-            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-patient" placeholder="Nom patient (purge totale)" style="width:220px"><button class="btn btn-danger btn-sm" onclick="deleteByPatient()">🗑️ Purger ce patient</button></div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <input type="number" id="del-id" placeholder="ID de l'entrée" style="width:160px">
+              <button class="btn btn-danger btn-sm" onclick="deleteById()">🗑️ Supprimer cet ID</button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <input type="text" id="del-pat" placeholder="Nom patient (purge totale)" style="width:220px">
+              <button class="btn btn-danger btn-sm" onclick="deleteByPat()">🗑️ Purger ce patient</button>
+            </div>
           </div>
-          <div id="del-result" style="margin-top:12px"></div>
+          <div id="del-res" style="margin-top:12px"></div>
         </div>
       </div>
     </section>
@@ -384,215 +539,503 @@ tbody tr{transition:background .1s}tbody tr:hover{background:var(--card)}tbody t
 </div>
 
 <script>
-/* CONFIG */
-const N8N={calcul:'https://n8n-l678.onrender.com/webhook/ami-calcul',hist:'https://n8n-l678.onrender.com/webhook/ami-historique',suppr:'https://n8n-l678.onrender.com/webhook/ami-supprimer',login:'https://n8n-l678.onrender.com/webhook/ami-login',register:'https://n8n-l678.onrender.com/webhook/ami-register'};
+/* ═══════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════ */
+const WORKER = 'https://raspy-tooth-1a2f.vdskillers.workers.dev';
+const N8N    = 'https://n8n-l678.onrender.com/webhook';
 
-/* AUTH */
-let USER=null,TOKEN=null;
-function saveSession(t,u){TOKEN=t;USER=u;sessionStorage.setItem('ami_t',t);sessionStorage.setItem('ami_u',JSON.stringify(u))}
-function clearSession(){TOKEN=null;USER=null;sessionStorage.removeItem('ami_t');sessionStorage.removeItem('ami_u')}
-function loadSession(){const t=sessionStorage.getItem('ami_t'),u=sessionStorage.getItem('ami_u');if(t&&u){TOKEN=t;USER=JSON.parse(u);return true}return false}
+/* ═══════════════════════════════════════
+   STATE
+═══════════════════════════════════════ */
+let SESSION = null; // { token, user }
 
-async function checkAuth(){
-  if(!loadSession()){showAuth();return}
-  try{const[,p]=TOKEN.split('.');const pl=JSON.parse(atob(p.replace(/-/g,'+').replace(/_/g,'/')));if(pl.exp<Date.now()){clearSession();showAuth();return}USER=pl;showApp()}catch{clearSession();showAuth()}
+function saveSession(token, user) {
+  SESSION = { token, user };
+  sessionStorage.setItem('ami_session', JSON.stringify(SESSION));
 }
-function showAuth(){document.getElementById('auth-overlay').classList.remove('hidden')}
-function showApp(){
-  document.getElementById('auth-overlay').classList.add('hidden');
-  const n=USER?.infirmiere_nom||USER?.email?.split('@')[0]||'Utilisateur';
-  document.getElementById('user-badge').textContent='👤 '+n;
-  const exp=USER?.exp?new Date(USER.exp).toLocaleTimeString('fr-FR'):'—';
-  document.getElementById('session-info').textContent=(USER?.email||'')+' · expire '+exp;
+function clearSession() {
+  SESSION = null;
+  sessionStorage.removeItem('ami_session');
 }
-function switchTab(t){['login','register'].forEach(x=>{document.getElementById('tab-'+x).classList.toggle('active',x===t);document.getElementById('panel-'+x).style.display=x===t?'block':'none'})}
-
-async function doLogin(){
-  const email=document.getElementById('l-email').value.trim(),pass=document.getElementById('l-pass').value;
-  const err=document.getElementById('login-err'),btn=document.getElementById('btn-login');
-  err.style.display='none';
-  if(!email||!pass){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
-  btn.disabled=true;btn.innerHTML='<div class="spinner"></div> Connexion...';
-  try{
-    const r=await fetch(N8N.login,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
-    saveSession(d.token,d.user);showApp();
-  }catch(e){err.textContent=e.message;err.style.display='block'}
-  finally{btn.disabled=false;btn.innerHTML='<span>🔐</span> Se connecter'}
+function loadSession() {
+  try {
+    const s = sessionStorage.getItem('ami_session');
+    if (s) { SESSION = JSON.parse(s); return true; }
+  } catch(e) {}
+  return false;
 }
 
-async function doRegister(){
-  const email=document.getElementById('r-email').value.trim(),pass=document.getElementById('r-pass').value,pass2=document.getElementById('r-pass2').value;
-  const err=document.getElementById('reg-err'),ok=document.getElementById('reg-ok'),btn=document.getElementById('btn-register');
-  err.style.display='none';ok.style.display='none';
-  if(!email||!pass){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
-  if(pass.length<8){err.textContent='Mot de passe minimum 8 caractères.';err.style.display='block';return}
-  if(pass!==pass2){err.textContent='Les mots de passe ne correspondent pas.';err.style.display='block';return}
-  btn.disabled=true;btn.innerHTML='<div class="spinner"></div> Création...';
-  try{
-    const r=await fetch(N8N.register,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,infirmiere_nom:document.getElementById('r-nom').value,adeli:document.getElementById('r-adeli').value,rpps:document.getElementById('r-rpps').value,structure:document.getElementById('r-struct').value})});
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.message||'Erreur lors de la création');
-    ok.textContent='✅ '+(d.message||'Compte créé !')+' Vous pouvez maintenant vous connecter.';ok.style.display='block';
-    setTimeout(()=>switchTab('login'),2000);
-  }catch(e){err.textContent=e.message;err.style.display='block'}
-  finally{btn.disabled=false;btn.innerHTML='<span>✨</span> Créer mon compte'}
+/* ═══════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════ */
+const $  = id => document.getElementById(id);
+const gv = id => ($( id)?.value || '').trim();
+const fmt = n  => (parseFloat(n) || 0).toFixed(2) + ' €';
+function cc(c) { c = (c||'').toUpperCase(); if(['IFD','IK','MCI','MIE'].includes(c)) return 'dep'; if(c.includes('MAJ')) return 'maj'; return ''; }
+
+function showMsg(id, txt, type='error') {
+  const el = $(id); if (!el) return;
+  el.className = 'auth-msg ' + type;
+  el.textContent = txt;
+  el.style.display = 'block';
+}
+function hideMsg(id) { const el=$(id); if(el) el.style.display='none'; }
+
+function setLoading(id, on) {
+  const b = $(id); if (!b) return;
+  b.disabled = on;
+  if (on) { b._orig = b.innerHTML; b.innerHTML = '<div class="spinner"></div> En cours...'; }
+  else b.innerHTML = b._orig || b.innerHTML;
 }
 
-function doLogout(){clearSession();showAuth();switchTab('login')}
+async function workerPost(path, body) {
+  const r = await fetch(WORKER + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
 
-/* NAV */
-document.querySelectorAll('.nav-item[data-view]').forEach(i=>i.addEventListener('click',()=>{
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  i.classList.add('active');document.getElementById('view-'+i.dataset.view)?.classList.add('active');
-}));
+/* ═══════════════════════════════════════
+   AUTH — INIT
+═══════════════════════════════════════ */
+function checkAuth() {
+  if (loadSession() && SESSION?.token && SESSION?.user) {
+    showApp();
+  } else {
+    showAuthOverlay();
+  }
+}
 
-/* HELPERS */
-const $=id=>document.getElementById(id);const v=id=>($[id]||document.getElementById(id))?.value?.trim()||'';
-function gv(id){return(document.getElementById(id)?.value||'').trim()}
-function fmt(n){return(parseFloat(n)||0).toFixed(2)+' €'}
-function cc(c){c=(c||'').toUpperCase();if(['IFD','IK','MCI','MIE'].includes(c))return'dep';if(c.includes('MAJ'))return'maj';return''}
-function setLoading(id,on){const b=document.getElementById(id);if(!b)return;b.disabled=on;if(on){b._o=b.innerHTML;b.innerHTML='<div class="spinner"></div> En cours...'}else b.innerHTML=b._o||b.innerHTML}
+function showAuthOverlay() { $('auth-overlay').classList.remove('hidden'); }
+function showApp() {
+  $('auth-overlay').classList.add('hidden');
+  const u = SESSION?.user;
+  const name = u ? ((u.prenom || '') + ' ' + (u.nom || '')).trim() || u.email || '—' : '—';
+  $('user-badge-name').textContent = name;
+  const email = u?.email || '—';
+  $('sess-info').textContent = email + ' · session active';
+}
 
-/* COTATION */
-async function submitCotation(){
-  const texte=gv('f-texte');if(!texte){alert('Veuillez saisir une description.');return}
-  setLoading('btn-coter',true);
+function switchTab(t) {
+  ['login','register'].forEach(x => {
+    $(  'tab-' + x).classList.toggle('active', x === t);
+    $('panel-' + x).style.display = x === t ? 'block' : 'none';
+  });
+  ['login-err','login-info','reg-err','reg-ok'].forEach(hideMsg);
+}
+
+/* ── LOGIN ── */
+async function doLogin() {
+  hideMsg('login-err'); hideMsg('login-info');
+  const email = gv('l-email'), pass = gv('l-pass');
+  if (!email || !pass) { showMsg('login-err', 'Email et mot de passe requis.'); return; }
+
+  setLoading('btn-login', true);
+  try {
+    const d = await workerPost('/webhook/auth-login', { email, password: pass });
+    if (!d.ok) throw new Error(d.error || 'Identifiants incorrects');
+    saveSession(d.token, d.user);
+    showApp();
+  } catch(e) {
+    showMsg('login-err', e.message);
+  } finally {
+    setLoading('btn-login', false);
+  }
+}
+
+/* ── REGISTER ── */
+async function doRegister() {
+  hideMsg('reg-err'); hideMsg('reg-ok');
+  const prenom = gv('r-prenom'), nom = gv('r-nom');
+  const email  = gv('r-email'),  pass = gv('r-pass'), pass2 = gv('r-pass2');
+
+  if (!prenom || !nom)    { showMsg('reg-err', 'Prénom et Nom obligatoires.'); return; }
+  if (!email)             { showMsg('reg-err', 'Email obligatoire.'); return; }
+  if (!pass)              { showMsg('reg-err', 'Mot de passe obligatoire.'); return; }
+  if (pass.length < 8)    { showMsg('reg-err', 'Mot de passe minimum 8 caractères.'); return; }
+  if (pass !== pass2)     { showMsg('reg-err', 'Les mots de passe ne correspondent pas.'); return; }
+
+  setLoading('btn-register', true);
+  try {
+    const d = await workerPost('/webhook/infirmiere-register', {
+      prenom, nom, email, password: pass,
+      adeli:     gv('r-adeli'),
+      rpps:      gv('r-rpps'),
+      structure: gv('r-struct')
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur lors de la création');
+    showMsg('reg-ok', '✅ Compte créé ! Vous pouvez maintenant vous connecter.', 'success');
+    setTimeout(() => switchTab('login'), 2000);
+  } catch(e) {
+    showMsg('reg-err', e.message);
+  } finally {
+    setLoading('btn-register', false);
+  }
+}
+
+/* ── LOGOUT ── */
+function doLogout() {
+  clearSession();
+  showAuthOverlay();
+  switchTab('login');
+  ['l-email','l-pass'].forEach(id => { const e=$(id); if(e) e.value=''; });
+}
+
+/* ═══════════════════════════════════════
+   PROFILE MODAL
+═══════════════════════════════════════ */
+async function openProfile() {
+  $('profile-modal').classList.add('open');
+  ['profile-err','profile-ok','pwd-err','pwd-ok'].forEach(hideMsg);
+
+  const u = SESSION?.user;
+  if (!u) return;
+
+  // Pré-remplir depuis le user stocké en session
+  $('p-prenom').value  = u.prenom    || '';
+  $('p-nom').value     = u.nom       || '';
+  $('p-adeli').value   = u.adeli     || '';
+  $('p-rpps').value    = u.rpps      || '';
+  $('p-struct').value  = u.structure || '';
+  $('p-adresse').value = u.adresse   || '';
+  $('p-tel').value     = u.tel       || '';
+
+  // Rafraîchir depuis la DB
+  try {
+    const d = await workerPost('/webhook/profil-get', { id: u.id });
+    if (d.ok && d.profil) {
+      const p = d.profil;
+      $('p-prenom').value  = p.prenom    || '';
+      $('p-nom').value     = p.nom       || '';
+      $('p-adeli').value   = p.adeli     || '';
+      $('p-rpps').value    = p.rpps      || '';
+      $('p-struct').value  = p.structure || '';
+      $('p-adresse').value = p.adresse   || '';
+      $('p-tel').value     = p.tel       || '';
+    }
+  } catch(e) { /* silencieux */ }
+}
+
+function closeProfile() { $('profile-modal').classList.remove('open'); }
+
+async function saveProfile() {
+  hideMsg('profile-err'); hideMsg('profile-ok');
+  const u = SESSION?.user;
+  if (!u) return;
+  try {
+    const d = await workerPost('/webhook/profil-save', {
+      id: u.id,
+      prenom:    gv('p-prenom'),
+      nom:       gv('p-nom'),
+      adeli:     gv('p-adeli'),
+      rpps:      gv('p-rpps'),
+      structure: gv('p-struct'),
+      adresse:   gv('p-adresse'),
+      tel:       gv('p-tel')
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur lors de la sauvegarde');
+    // Mettre à jour la session
+    SESSION.user = { ...SESSION.user, ...d.profil };
+    saveSession(SESSION.token, SESSION.user);
+    const name = (SESSION.user.prenom + ' ' + SESSION.user.nom).trim();
+    $('user-badge-name').textContent = name || SESSION.user.email;
+    showMsg('profile-ok', '✅ Profil enregistré avec succès.', 'success');
+  } catch(e) {
+    showMsg('profile-err', e.message);
+  }
+}
+
+async function changePassword() {
+  hideMsg('pwd-err'); hideMsg('pwd-ok');
+  const u = SESSION?.user;
+  if (!u) return;
+  const ancien  = gv('p-ancien');
+  const nouveau = gv('p-nouveau');
+  if (!ancien || !nouveau) { showMsg('pwd-err', 'Remplissez les deux champs.'); return; }
+  if (nouveau.length < 8)  { showMsg('pwd-err', 'Nouveau mot de passe minimum 8 caractères.'); return; }
+  try {
+    const d = await workerPost('/webhook/change-password', { id: u.id, ancien, nouveau });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    $('p-ancien').value = ''; $('p-nouveau').value = '';
+    showMsg('pwd-ok', '✅ Mot de passe changé avec succès.', 'success');
+  } catch(e) {
+    showMsg('pwd-err', e.message);
+  }
+}
+
+async function deleteAccount() {
+  if (!confirm('⚠️ Supprimer votre compte définitivement ? Cette action est irréversible.')) return;
+  const u = SESSION?.user;
+  if (!u) return;
+  try {
+    const d = await workerPost('/webhook/delete-account', { id: u.id });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    clearSession();
+    closeProfile();
+    showAuthOverlay();
+    switchTab('login');
+  } catch(e) {
+    showMsg('profile-err', e.message);
+  }
+}
+
+/* ═══════════════════════════════════════
+   NAV
+═══════════════════════════════════════ */
+document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    item.classList.add('active');
+    $('view-' + item.dataset.view)?.classList.add('active');
+  });
+});
+
+/* ═══════════════════════════════════════
+   COTATION
+═══════════════════════════════════════ */
+async function submitCotation() {
+  const texte = gv('f-texte');
+  if (!texte) { alert('Veuillez saisir une description du soin.'); return; }
+  setLoading('btn-coter', true);
   $('result-cotation').classList.remove('visible');
-  $('cotation-error').style.display='none';
-  try{
-    const r=await fetch(N8N.calcul,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'ngap',texte,infirmiere:USER?.infirmiere_nom||'',adeli:USER?.adeli||'',rpps:USER?.rpps||'',structure:USER?.structure||'',ddn:gv('f-ddn'),amo:gv('f-amo'),amc:gv('f-amc'),exo:gv('f-exo'),regl:gv('f-regl'),date_soin:gv('f-date-soin'),heure_soin:gv('f-heure-soin')})});
-    const d=await r.json();if(d.error)throw new Error(d.error);
-    $('cotation-result-body').innerHTML=renderCot(d);
+  $('cot-err').style.display = 'none';
+
+  const u = SESSION?.user || {};
+  const payload = {
+    mode: 'ngap', texte,
+    infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
+    adeli:      u.adeli     || '',
+    rpps:       u.rpps      || '',
+    structure:  u.structure || '',
+    ddn:        gv('f-ddn'),
+    amo:        gv('f-amo'),
+    amc:        gv('f-amc'),
+    exo:        gv('f-exo'),
+    regl:       gv('f-regl'),
+    date_soin:  gv('f-date-soin'),
+    heure_soin: gv('f-heure-soin')
+  };
+
+  try {
+    const r = await fetch(N8N + '/ami-calcul', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    $('cot-body').innerHTML = renderCot(d);
     $('result-cotation').classList.add('visible');
-  }catch(e){$('cotation-error').style.display='flex';$('cotation-error-msg').textContent=e.message;$('result-cotation').classList.add('visible')}
-  setLoading('btn-coter',false);
+  } catch(e) {
+    $('cot-err').style.display = 'flex';
+    $('cot-err-msg').textContent = e.message;
+    $('result-cotation').classList.add('visible');
+  }
+  setLoading('btn-coter', false);
 }
 
-function renderCot(d){
-  const a=d.actes||[],al=d.alerts||[],op=d.optimisations||[];
-  return`<div class="card">
+function renderCot(d) {
+  const a=d.actes||[], al=d.alerts||[], op=d.optimisations||[];
+  return `<div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
-    <div><div class="section-label">Total cotation</div>
-    <div class="total-display"><div class="total-amount">${(d.total||0).toFixed(2)}</div><div class="total-unit">€</div></div>
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${d.dre_requise?'<div class="dre-badge">📋 DRE requise</div>':''}<div class="ngap-version"><div class="dot"></div> NGAP 2026</div></div>
+    <div>
+      <div class="section-label">Total cotation</div>
+      <div class="total-display"><div class="total-amount">${(d.total||0).toFixed(2)}</div><div class="total-unit">€</div></div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        ${d.dre_requise ? '<div class="dre-badge">📋 DRE requise</div>' : ''}
+        <div class="ngap-ver"><div class="dot"></div> NGAP 2026</div>
+      </div>
     </div>
     <button class="btn btn-secondary btn-sm" onclick='printInv(${JSON.stringify(d).replace(/'/g,"&#39;")})'>🖨️ Imprimer</button>
   </div>
   <div class="repartition-grid">
-    <div class="rep-card amo"><div class="rep-label">Part AMO (SS)</div><div class="rep-amount">${fmt(d.part_amo)}</div><div class="rep-percent">${d.taux_amo?Math.round(d.taux_amo*100)+'%':'60%'}</div></div>
-    <div class="rep-card amc"><div class="rep-label">Part AMC</div><div class="rep-amount">${fmt(d.part_amc)}</div><div class="rep-percent">Complémentaire</div></div>
-    <div class="rep-card patient"><div class="rep-label">Part Patient</div><div class="rep-amount">${fmt(d.part_patient)}</div><div class="rep-percent">Ticket modérateur</div></div>
+    <div class="rep-card amo"><div class="rep-label">Part AMO (SS)</div><div class="rep-amount">${fmt(d.part_amo)}</div><div class="rep-pct">${d.taux_amo ? Math.round(d.taux_amo*100)+'%' : '60%'}</div></div>
+    <div class="rep-card amc"><div class="rep-label">Part AMC</div><div class="rep-amount">${fmt(d.part_amc)}</div><div class="rep-pct">Complémentaire</div></div>
+    <div class="rep-card pat"><div class="rep-label">Part Patient</div><div class="rep-amount">${fmt(d.part_patient)}</div><div class="rep-pct">Ticket modérateur</div></div>
   </div>
   <div class="section-label" style="margin-bottom:10px">Détail des actes</div>
-  <div class="actes-list">${a.length?a.map(x=>`<div class="acte-row"><div class="acte-code ${cc(x.code)}">${x.code||'?'}</div><div class="acte-nom">${x.nom||''}</div><div class="acte-coef">×${(x.coefficient||1).toFixed(1)}</div><div class="acte-total">${fmt(x.total)}</div></div>`).join(''):'<div class="alert-item warning">⚠️ Aucun acte retourné</div>'}</div>
-  ${al.length?`<div class="section-label" style="margin-bottom:10px">⚠️ Alertes NGAP</div><div class="alerts-container">${al.map(x=>`<div class="alert-item error">❌ ${x}</div>`).join('')}</div>`:'<div class="alert-item success">✅ Aucune alerte NGAP</div>'}
-  ${op.length?`<div style="margin-top:16px"><div class="section-label" style="margin-bottom:10px">💡 Optimisations légales</div><div class="alerts-container">${op.map(x=>`<div class="alert-item info">💡 ${x}</div>`).join('')}</div></div>`:''}
-  ${d.rag_chunks?.length?`<div style="margin-top:12px"><div class="section-label">RAG NGAP utilisé</div><div class="rag-chips">${d.rag_chunks.map(x=>`<div class="rag-chip">${x.id}</div>`).join('')}</div></div>`:''}
+  <div class="actes-list">
+    ${a.length ? a.map(x => `<div class="acte-row">
+      <div class="acte-code ${cc(x.code)}">${x.code||'?'}</div>
+      <div class="acte-nom">${x.nom||''}</div>
+      <div class="acte-coef">×${(x.coefficient||1).toFixed(1)}</div>
+      <div class="acte-total">${fmt(x.total)}</div>
+    </div>`).join('') : '<div class="alert-item warn">⚠️ Aucun acte retourné</div>'}
+  </div>
+  ${al.length ? `<div class="section-label" style="margin-bottom:10px">⚠️ Alertes NGAP</div><div class="alerts-container">${al.map(x=>`<div class="alert-item error">❌ ${x}</div>`).join('')}</div>` : '<div class="alert-item ok">✅ Aucune alerte NGAP</div>'}
+  ${op.length ? `<div style="margin-top:16px"><div class="section-label" style="margin-bottom:10px">💡 Optimisations</div><div class="alerts-container">${op.map(x=>`<div class="alert-item info">💡 ${x}</div>`).join('')}</div></div>` : ''}
+  ${d.rag_chunks?.length ? `<div style="margin-top:12px"><div class="section-label">RAG NGAP utilisé</div><div class="rag-chips">${d.rag_chunks.map(x=>`<div class="rag-chip">${x.id}</div>`).join('')}</div></div>` : ''}
   </div>`;
 }
 
-function printInv(d){
-  if(typeof d==='string')d=JSON.parse(d);
-  const ac=d.actes||[],num='F'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6),today=new Date().toLocaleDateString('fr-FR');
-  const w=window.open('','_blank');
+function printInv(d) {
+  const u  = SESSION?.user || {};
+  const ac = d.actes || [];
+  const num = 'F' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6);
+  const inf = ((u.prenom||'') + ' ' + (u.nom||'')).trim() || 'Infirmier(ère) libéral(e)';
+  const w = window.open('', '_blank');
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Facture ${num}</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Instrument+Sans:wght@400;600&family=DM+Mono&display=swap" rel="stylesheet">
-  <style>body{font-family:'Instrument Sans',sans-serif;color:#1a1a2e;margin:0;padding:40px;font-size:14px}h1{font-family:'DM Serif Display',serif;font-size:26px;color:#0b3954}table{width:100%;border-collapse:collapse;margin:20px 0}th{background:#f0f4fa;padding:8px 12px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#6b7a99}td{padding:10px 12px;border-bottom:1px solid #e8edf5}tfoot td{border-top:2px solid #ccd5e0;font-weight:700}.hdr{display:flex;justify-content:space-between;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #e0e7ef}.rep{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}.rc{background:#f7f9fc;padding:14px;border-radius:8px;text-align:center;border:1px solid #e0e7ef}.rl{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#6b7a99;margin-bottom:4px}.rv{font-family:'DM Serif Display',serif;font-size:22px}.ftr{display:flex;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid #e0e7ef;font-size:11px;color:#9aa8bd}.mono{font-family:'DM Mono',monospace}@media print{button{display:none}}</style></head><body>
-  <div class="hdr"><div><h1>Facture de soins infirmiers</h1><div class="mono" style="font-size:12px;color:#6b7a99">N° ${num} · ${today}</div></div><div style="text-align:right"><strong>${USER?.infirmiere_nom||'Infirmier(ère) libéral(e)'}</strong><br>NGAP 2026</div></div>
+  <style>body{font-family:'Instrument Sans',sans-serif;color:#1a1a2e;margin:0;padding:40px;font-size:14px}h1{font-family:'DM Serif Display',serif;font-size:26px;color:#0b3954}table{width:100%;border-collapse:collapse;margin:20px 0}th{background:#f0f4fa;padding:8px 12px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#6b7a99}td{padding:10px 12px;border-bottom:1px solid #e8edf5}tfoot td{border-top:2px solid #ccd5e0;font-weight:700}.hdr{display:flex;justify-content:space-between;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #e0e7ef}.rep{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}.rc{background:#f7f9fc;padding:14px;border-radius:8px;text-align:center;border:1px solid #e0e7ef}.rl{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#6b7a99;margin-bottom:4px}.rv{font-family:'DM Serif Display',serif;font-size:22px}.ftr{display:flex;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid #e0e7ef;font-size:11px;color:#9aa8bd}@media print{button{display:none}}</style></head><body>
+  <div class="hdr"><div><h1>Facture de soins infirmiers</h1><div style="font-family:'DM Mono',monospace;font-size:12px;color:#6b7a99">N° ${num} · ${new Date().toLocaleDateString('fr-FR')}</div></div><div style="text-align:right"><strong>${inf}</strong>${u.adeli?'<br>ADELI '+u.adeli:''}${u.rpps?'<br>RPPS '+u.rpps:''}</div></div>
   <div style="margin-bottom:16px"><span style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7a99">Patient</span><div><strong>Données protégées (stockage local)</strong></div></div>
   <table><thead><tr><th>Code</th><th>Acte</th><th style="text-align:right">Coef.</th><th style="text-align:right">Montant</th></tr></thead>
   <tbody>${ac.map(x=>`<tr><td>${x.code||''}</td><td>${x.nom||''}</td><td style="text-align:right">×${(x.coefficient||1).toFixed(1)}</td><td style="text-align:right">${fmt(x.total)}</td></tr>`).join('')}</tbody>
   <tfoot><tr><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${fmt(d.total)}</td></tr></tfoot></table>
   <div class="rep"><div class="rc"><div class="rl">Part SS (AMO)</div><div class="rv">${fmt(d.part_amo)}</div></div><div class="rc"><div class="rl">Mutuelle (AMC)</div><div class="rv">${fmt(d.part_amc)}</div></div><div class="rc"><div class="rl">Patient</div><div class="rv">${fmt(d.part_patient)}</div></div></div>
-  ${d.dre_requise?'<p style="margin-top:16px;padding:10px 14px;background:#e8f4ff;border-radius:6px;font-size:13px;color:#2563eb">📋 <strong>DRE requise</strong> — Demande de Remboursement Électronique à adresser à l\'organisme complémentaire.</p>':''}
-  <div class="ftr"><span>AMI · NGAP 2026</span><span class="mono">${num}</span></div>
-  <script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close();
+  ${d.dre_requise ? '<p style="margin-top:16px;padding:10px 14px;background:#e8f4ff;border-radius:6px;font-size:13px;color:#2563eb">📋 <strong>DRE requise</strong> — à adresser à l\'organisme complémentaire.</p>' : ''}
+  <div class="ftr"><span>AMI · NGAP 2026</span><span style="font-family:\'DM Mono\',monospace">${num}</span></div>
+  <script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
 }
 
-function clearForm(){['f-prescripteur','f-prescripteur-rpps','f-date-prescription','f-patient','f-ddn','f-secu','f-amo','f-amc','f-texte','f-date-soin','f-heure-soin'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=''});['f-exo','f-regl'].forEach(id=>{const e=document.getElementById(id);if(e)e.selectedIndex=0});$('result-cotation').classList.remove('visible')}
-
-/* VERIFY */
-async function submitVerify(){
-  const texte=gv('v-texte');if(!texte){alert('Saisissez une description.');return}
-  setLoading('btn-verify',true);$('result-verify').classList.remove('visible');
-  try{
-    const r=await fetch(N8N.calcul,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'verify',texte,ddn:gv('v-ddn'),date_soin:gv('v-date-soin'),heure_soin:gv('v-heure-soin'),exo:gv('v-exo'),regl:gv('v-regl')})});
-    const d=await r.json();
-    $('verify-result-body').innerHTML=`<div class="card"><div class="card-title">🔍 Résultat de la vérification</div>
-    ${d.texte_corrige?`<div class="verify-corrected"><div class="verify-corrected-label">Texte corrigé</div><div class="verify-corrected-text">${d.texte_corrige}</div></div>`:''}
-    ${(d.corrections||[]).length?`<div style="margin-top:14px"><div class="section-label">Corrections</div><div class="alerts-container">${d.corrections.map(c=>`<div class="alert-item success">✏️ ${c}</div>`).join('')}</div></div>`:''}
-    ${(d.optimisations||[]).length?`<div style="margin-top:14px"><div class="section-label">Optimisations</div><div class="alerts-container">${d.optimisations.map(o=>`<div class="alert-item info">💡 ${o}</div>`).join('')}</div></div>`:''}
-    ${(d.alertes_urssaf||[]).length?`<div style="margin-top:14px"><div class="section-label">Alertes URSSAF</div><div class="alerts-container">${d.alertes_urssaf.map(a=>`<div class="alert-item error">❌ ${a}</div>`).join('')}</div></div>`:'<div class="alert-item success" style="margin-top:14px">✅ Aucune alerte URSSAF</div>'}
-    ${d.dre_requise?'<div class="dre-badge" style="margin-top:14px">📋 DRE requise</div>':''}
-    <div class="action-row"><button class="btn btn-primary" onclick="useCorrected()">📋 Utiliser ce texte corrigé</button></div></div>`;
-    $('verify-error').style.display='none';
-  }catch(e){$('verify-error').style.display='flex';$('verify-error-msg').textContent=e.message}
-  $('result-verify').classList.add('visible');setLoading('btn-verify',false);
+function clearCotation() {
+  ['f-presc','f-presc-rpps','f-date-presc','f-patient','f-ddn','f-secu','f-amo','f-amc','f-texte','f-date-soin','f-heure-soin'].forEach(id => { const e=$(id); if(e) e.value=''; });
+  ['f-exo','f-regl'].forEach(id => { const e=$(id); if(e) e.selectedIndex=0; });
+  $('result-cotation').classList.remove('visible');
 }
-function useCorrected(){const t=document.querySelector('.verify-corrected-text')?.textContent;if(t){$('f-texte').value=t;document.querySelector('[data-view="cotation"]').click()}}
 
-/* TOURNÉE / PLANNING */
-async function submitMode(mode){
-  const tid=mode==='tournee'?'t-texte':'pl-texte',bid='btn-'+mode,rid='result-'+mode,eid=mode+'-error',rbid=mode+'-result-body';
-  const texte=gv(tid);if(!texte){alert('Saisissez la liste.');return}
-  setLoading(bid,true);$(rid).classList.remove('visible');
-  try{
-    const r=await fetch(N8N.calcul,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,texte})});
-    const d=await r.json();
-    if(mode==='tournee'){
-      $(rbid).innerHTML=`<div class="card"><div class="card-title">🗺️ Tournée optimisée</div>
-      ${d.revenu_total?`<div class="total-display" style="margin-bottom:16px"><div class="total-amount">${d.revenu_total.toFixed(2)}</div><div class="total-unit">€ estimés</div></div>`:''}
-      ${(d.ordre||[]).length?`<div class="section-label">Ordre optimal</div><div class="actes-list">${d.ordre.map((p,i)=>`<div class="acte-row"><div class="acte-code dep">${i+1}</div><div class="acte-nom">${p}</div></div>`).join('')}</div>`:''}
-      ${(d.optimisation||[]).length?`<div class="alerts-container">${d.optimisation.map(o=>`<div class="alert-item info">💡 ${o}</div>`).join('')}</div>`:''}
+/* ═══════════════════════════════════════
+   VERIFY
+═══════════════════════════════════════ */
+async function submitVerify() {
+  const texte = gv('v-texte');
+  if (!texte) { alert('Saisissez une description.'); return; }
+  setLoading('btn-verify', true);
+  $('result-verify').classList.remove('visible');
+  try {
+    const r = await fetch(N8N + '/ami-calcul', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode:'verify', texte, ddn:gv('v-ddn'), date_soin:gv('v-date'), heure_soin:gv('v-heure'), exo:gv('v-exo'), regl:gv('v-regl') })
+    });
+    const d = await r.json();
+    $('ver-body').innerHTML = `<div class="card"><div class="card-title">🔍 Résultat</div>
+    ${d.texte_corrige ? `<div class="verify-box"><div class="verify-box-label">Texte corrigé</div><div style="font-size:15px;line-height:1.6;font-style:italic">${d.texte_corrige}</div></div>` : ''}
+    ${(d.corrections||[]).length ? `<div style="margin-top:14px"><div class="section-label">Corrections</div><div class="alerts-container">${d.corrections.map(c=>`<div class="alert-item ok">✏️ ${c}</div>`).join('')}</div></div>` : ''}
+    ${(d.optimisations||[]).length ? `<div style="margin-top:14px"><div class="section-label">Optimisations</div><div class="alerts-container">${d.optimisations.map(o=>`<div class="alert-item info">💡 ${o}</div>`).join('')}</div></div>` : ''}
+    ${(d.alertes_urssaf||[]).length ? `<div style="margin-top:14px"><div class="section-label">Alertes URSSAF</div><div class="alerts-container">${d.alertes_urssaf.map(a=>`<div class="alert-item error">❌ ${a}</div>`).join('')}</div></div>` : '<div class="alert-item ok" style="margin-top:14px">✅ Aucune alerte URSSAF</div>'}
+    ${d.dre_requise ? '<div class="dre-badge" style="margin-top:14px">📋 DRE requise</div>' : ''}
+    <div class="action-row"><button class="btn btn-primary" onclick="useCorrected()">📋 Utiliser ce texte corrigé</button></div>
+    </div>`;
+    $('ver-err').style.display = 'none';
+  } catch(e) {
+    $('ver-err').style.display = 'flex';
+    $('ver-err-msg').textContent = e.message;
+  }
+  $('result-verify').classList.add('visible');
+  setLoading('btn-verify', false);
+}
+function useCorrected() {
+  const t = document.querySelector('.verify-box div:last-child')?.textContent;
+  if (t) { $('f-texte').value = t; document.querySelector('[data-view="cotation"]').click(); }
+}
+
+/* ═══════════════════════════════════════
+   TOURNÉE / PLANNING
+═══════════════════════════════════════ */
+async function submitMode(mode) {
+  const textareaId = mode === 'tournee' ? 't-texte' : 'pl-texte';
+  const texte = gv(textareaId);
+  if (!texte) { alert('Saisissez la liste.'); return; }
+  const btnId = 'btn-' + mode, resId = 'result-' + mode, errId = mode.slice(0,4) + '-err', bodyId = mode.slice(0,4) + '-body';
+  setLoading(btnId, true);
+  $(resId).classList.remove('visible');
+  try {
+    const r = await fetch(N8N + '/ami-calcul', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode, texte}) });
+    const d = await r.json();
+    if (mode === 'tournee') {
+      $(bodyId).innerHTML = `<div class="card"><div class="card-title">🗺️ Tournée optimisée</div>
+      ${d.revenu_total ? `<div class="total-display" style="margin-bottom:16px"><div class="total-amount">${d.revenu_total.toFixed(2)}</div><div class="total-unit">€ estimés</div></div>` : ''}
+      ${(d.ordre||[]).length ? `<div class="section-label">Ordre optimal</div><div class="actes-list">${d.ordre.map((p,i)=>`<div class="acte-row"><div class="acte-code dep">${i+1}</div><div class="acte-nom">${p}</div></div>`).join('')}</div>` : ''}
+      ${(d.optimisation||[]).length ? `<div class="alerts-container">${d.optimisation.map(o=>`<div class="alert-item info">💡 ${o}</div>`).join('')}</div>` : ''}
       </div>`;
-    }else{
-      const jours=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'],pl=d.planning||{};
-      $(rbid).innerHTML=`<div class="card"><div class="card-title">📅 Planning hebdomadaire</div>
+    } else {
+      const jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+      const pl = d.planning || {};
+      $(bodyId).innerHTML = `<div class="card"><div class="card-title">📅 Planning hebdomadaire</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
       ${jours.map(j=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px"><div style="font-weight:600;text-transform:capitalize;margin-bottom:8px">${j}</div>${(pl[j]||[]).map(p=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">${p}</div>`).join('')||'<div style="font-size:12px;color:var(--muted)">—</div>'}</div>`).join('')}
       </div></div>`;
     }
-    $(eid).style.display='none';
-  }catch(e){$(eid).style.display='flex';document.getElementById(mode+'-error-msg').textContent=e.message}
-  $(rid).classList.add('visible');setLoading(bid,false);
+    $(errId).style.display = 'none';
+  } catch(e) {
+    $(errId).style.display = 'flex';
+    document.getElementById(mode.slice(0,4) + '-err-msg') && (document.getElementById(mode.slice(0,4) + '-err-msg').textContent = e.message);
+  }
+  $(resId).classList.add('visible');
+  setLoading(btnId, false);
 }
 
-/* HISTORIQUE */
-async function loadHistorique(){
-  const params=new URLSearchParams({patient:gv('hist-search'),period:gv('hist-period')});
-  const tb=$('hist-tbody');
-  tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px"><div class="spinner spinner-light" style="margin:0 auto"></div></td></tr>';
-  try{
-    const r=await fetch(`${N8N.hist}?${params}`);
-    const rows=await r.json(),arr=Array.isArray(rows)?rows:[];
-    const total=arr.reduce((s,x)=>s+(parseFloat(x.total)||0),0);
-    $('hist-stats').innerHTML=`
-      <div class="stat-card green"><div class="stat-icon">🧾</div><div class="stat-value">${arr.length}</div><div class="stat-label">Soins cotés</div></div>
-      <div class="stat-card blue"><div class="stat-icon">💶</div><div class="stat-value">${total.toFixed(0)}</div><div class="stat-label">Total € facturé</div></div>
-      <div class="stat-card orange"><div class="stat-icon">📋</div><div class="stat-value">${arr.filter(x=>x.dre_requise).length}</div><div class="stat-label">DRE requises</div></div>
-      <div class="stat-card red"><div class="stat-icon">⚠️</div><div class="stat-value">${arr.filter(x=>{try{return JSON.parse(x.alerts||'[]').length>0}catch{return false}}).length}</div><div class="stat-label">Alertes NGAP</div></div>`;
-    if(!arr.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Aucune donnée</td></tr>';return}
-    tb.innerHTML=arr.map(row=>{
-      const ac=typeof row.actes==='string'?JSON.parse(row.actes||'[]'):(row.actes||[]);
-      const al=typeof row.alerts==='string'?JSON.parse(row.alerts||'[]'):(row.alerts||[]);
-      return`<tr><td class="td-id">#${row.id}</td><td>${row.date_soin?new Date(row.date_soin).toLocaleDateString('fr-FR'):'—'}</td><td><div class="tag-list">${ac.map(x=>x.code?`<span class="tag">${x.code}</span>`:'').join('')||'<span style="color:var(--muted);font-size:12px">—</span>'}</div></td><td class="td-total">${fmt(row.total)}</td><td class="td-dre ${row.dre_requise?'yes':'no'}">${row.dre_requise?'OUI':'non'}</td><td>${al.length?`<span style="font-size:11px;color:var(--warn)">⚠️ ${al.length}</span>`:'<span style="font-size:11px;color:var(--success)">✅</span>'}</td><td><button class="btn btn-danger btn-sm" onclick="quickDel(${row.id})">🗑️</button></td></tr>`;
+/* ═══════════════════════════════════════
+   HISTORIQUE
+═══════════════════════════════════════ */
+async function loadHist() {
+  const params = new URLSearchParams({ patient: gv('hist-q'), period: gv('hist-p') });
+  const tb = $('hist-tbody');
+  tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px"><div class="spinner spinner-w" style="margin:0 auto"></div></td></tr>';
+  try {
+    const r = await fetch(`${N8N}/ami-historique?${params}`);
+    const rows = await r.json();
+    const arr = Array.isArray(rows) ? rows : [];
+    const total = arr.reduce((s,x) => s + (parseFloat(x.total)||0), 0);
+    $('hist-stats').innerHTML = `
+      <div class="stat-card g"><div class="stat-icon">🧾</div><div class="stat-value">${arr.length}</div><div class="stat-label">Soins cotés</div></div>
+      <div class="stat-card b"><div class="stat-icon">💶</div><div class="stat-value">${total.toFixed(0)}</div><div class="stat-label">Total € facturé</div></div>
+      <div class="stat-card o"><div class="stat-icon">📋</div><div class="stat-value">${arr.filter(x=>x.dre_requise).length}</div><div class="stat-label">DRE requises</div></div>
+      <div class="stat-card r"><div class="stat-icon">⚠️</div><div class="stat-value">${arr.filter(x=>{try{return JSON.parse(x.alerts||'[]').length>0}catch{return false}}).length}</div><div class="stat-label">Alertes NGAP</div></div>`;
+    if (!arr.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Aucune donnée</td></tr>'; return; }
+    tb.innerHTML = arr.map(row => {
+      const ac = typeof row.actes === 'string' ? JSON.parse(row.actes||'[]') : (row.actes||[]);
+      const al = typeof row.alerts === 'string' ? JSON.parse(row.alerts||'[]') : (row.alerts||[]);
+      return `<tr>
+        <td class="td-id">#${row.id}</td>
+        <td>${row.date_soin ? new Date(row.date_soin).toLocaleDateString('fr-FR') : '—'}</td>
+        <td><div class="tag-list">${ac.map(x=>x.code?`<span class="tag">${x.code}</span>`:'').join('')||'<span style="color:var(--muted);font-size:12px">—</span>'}</div></td>
+        <td class="td-total">${fmt(row.total)}</td>
+        <td class="td-dre ${row.dre_requise?'yes':'no'}">${row.dre_requise?'OUI':'non'}</td>
+        <td>${al.length ? `<span style="font-size:11px;color:var(--warn)">⚠️ ${al.length}</span>` : '<span style="font-size:11px;color:var(--success)">✅</span>'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="quickDel(${row.id})">🗑️</button></td>
+      </tr>`;
     }).join('');
-  }catch(e){tb.innerHTML=`<tr><td colspan="7"><div class="error-state">⚠️ ${e.message}</div></td></tr>`}
-}
-async function quickDel(id){if(!confirm(`Supprimer #${id} (RGPD) ?`))return;const r=await fetch(N8N.suppr,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete_one',id})});const d=await r.json();if(d.ok)loadHistorique()}
-async function deleteById(){const id=gv('del-id');if(!id||!confirm(`Supprimer #${id} ?`))return;await doDelete({action:'delete_one',id})}
-async function deleteByPatient(){const p=gv('del-patient');if(!p||!confirm(`Purger "${p}" ?`))return;await doDelete({action:'delete_patient',patient:p})}
-async function doDelete(payload){
-  try{const r=await fetch(N8N.suppr,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();$('del-result').innerHTML=d.ok?`<div class="alert-item success">✅ ${d.deleted||0} supprimée(s).</div>`:`<div class="alert-item error">❌ ${d.error}</div>`}
-  catch(e){$('del-result').innerHTML=`<div class="alert-item error">❌ ${e.message}</div>`}
+  } catch(e) {
+    tb.innerHTML = `<tr><td colspan="7"><div class="error-state">⚠️ ${e.message}</div></td></tr>`;
+  }
 }
 
-/* INIT */
-const today=new Date().toISOString().split('T')[0];
-['f-date-soin','f-date-prescription','v-date-soin'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=today});
+async function quickDel(id) {
+  if (!confirm(`Supprimer #${id} (RGPD) ?`)) return;
+  const r = await fetch(N8N + '/ami-supprimer', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'delete_one',id}) });
+  const d = await r.json();
+  if (d.ok) loadHist();
+}
+
+async function deleteById() {
+  const id = gv('del-id'); if (!id || !confirm(`Supprimer #${id} ?`)) return;
+  await doDelete({ action:'delete_one', id });
+}
+async function deleteByPat() {
+  const p = gv('del-pat'); if (!p || !confirm(`Purger "${p}" ?`)) return;
+  await doDelete({ action:'delete_patient', patient:p });
+}
+async function doDelete(payload) {
+  try {
+    const r = await fetch(N8N + '/ami-supprimer', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    const d = await r.json();
+    $('del-res').innerHTML = d.ok
+      ? `<div class="alert-item ok">✅ ${d.deleted||0} entrée(s) supprimée(s).</div>`
+      : `<div class="alert-item error">❌ ${d.error}</div>`;
+  } catch(e) { $('del-res').innerHTML = `<div class="alert-item error">❌ ${e.message}</div>`; }
+}
+
+/* ═══════════════════════════════════════
+   INIT
+═══════════════════════════════════════ */
+const today = new Date().toISOString().split('T')[0];
+['f-date-soin','f-date-presc','v-date'].forEach(id => { const e=$(id); if(e) e.value = today; });
 checkAuth();
 </script>
 </body>
