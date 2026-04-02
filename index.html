@@ -9,8 +9,11 @@
 <meta name="apple-mobile-web-app-title" content="AMI NGAP">
 <meta name="mobile-web-app-capable" content="yes">
 <title>AMI — Cotation NGAP</title>
+<meta name="description" content="Cotation NGAP intelligente pour infirmiers — IA · RAG BM25 · Tarifs 2026">
+<link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -490,6 +493,13 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .main{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
 }
 
+/* Performance mobile : suppression effets GPU-heavy */
+@media(max-width:768px){
+  *{backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+  .card,.acard,.mc,.vmc,.live-card{box-shadow:none !important}
+  body{overscroll-behavior:none;touch-action:manipulation}
+}
+
 </style>
 </head>
 <body>
@@ -499,25 +509,25 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   <div class="aw"><div class="acard">
     <div class="alogo"><div class="amark">A</div><div><div class="aname">AMI</div><div class="asub">Cotation NGAP IA</div></div></div>
     <div class="atabs">
-      <button class="atab on" id="tab-l" onclick="switchTab('l')">Connexion</button>
-      <button class="atab" id="tab-r" onclick="switchTab('r')">Créer un compte</button>
+      <button class="atab on" id="tab-l">Connexion</button>
+      <button class="atab" id="tab-r">Créer un compte</button>
     </div>
     <div id="pan-l">
       <div class="msg e" id="le"></div>
-      <div class="af"><label>Email</label><input type="email" id="l-em" placeholder="infirmiere@cabinet.fr" autocomplete="email"></div>
-      <div class="af"><label>Mot de passe</label><input type="password" id="l-pw" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
-      <button class="abtn" id="btn-l" onclick="login()"><span>🔐</span> Se connecter</button>
+      <div class="af"><label for="l-em">Email</label><input type="email" id="l-em" name="email" placeholder="infirmiere@cabinet.fr" autocomplete="email"></div>
+      <div class="af"><label for="l-pw">Mot de passe</label><input type="password" id="l-pw" name="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
+      <button class="abtn" id="btn-l"><span>🔐</span> Se connecter</button>
     </div>
     <div id="pan-r" style="display:none">
       <div class="msg e" id="re"></div><div class="msg o" id="ro"></div>
-      <div class="g2"><div class="af"><label>Prénom *</label><input type="text" id="r-fn" placeholder="Marie"></div><div class="af"><label>Nom *</label><input type="text" id="r-ln" placeholder="DUPONT"></div></div>
-      <div class="af"><label>Email *</label><input type="email" id="r-em" placeholder="infirmiere@cabinet.fr"></div>
-      <div class="af"><label>Mot de passe (min. 8 car.) *</label><input type="password" id="r-pw" placeholder="••••••••"></div>
-      <div class="af"><label>Confirmer</label><input type="password" id="r-pw2" placeholder="••••••••"></div>
+      <div class="g2"><div class="af"><label for="r-fn">Prénom *</label><input type="text" id="r-fn" name="firstname" placeholder="Marie"></div><div class="af"><label for="r-ln">Nom *</label><input type="text" id="r-ln" name="lastname" placeholder="DUPONT"></div></div>
+      <div class="af"><label for="r-em">Email *</label><input type="email" id="r-em" name="email" placeholder="infirmiere@cabinet.fr"></div>
+      <div class="af"><label for="r-pw">Mot de passe (min. 8 car.) *</label><input type="password" id="r-pw" name="password" placeholder="••••••••"></div>
+      <div class="af"><label for="r-pw2">Confirmer</label><input type="password" id="r-pw2" name="password_confirm" placeholder="••••••••"></div>
       <div class="sep"><span class="sepl">Informations professionnelles (optionnel)</span></div>
-      <div class="g2"><div class="af"><label>N° ADELI</label><input type="text" id="r-ad" placeholder="123456789"></div><div class="af"><label>RPPS</label><input type="text" id="r-rp" placeholder="10001234567"></div></div>
-      <div class="af"><label>Cabinet / Structure</label><input type="text" id="r-st" placeholder="Cabinet libéral de..."></div>
-      <button class="abtn" id="btn-r" onclick="register()"><span>✨</span> Créer mon compte</button>
+      <div class="g2"><div class="af"><label for="r-ad">N° ADELI</label><input type="text" id="r-ad" name="adeli" placeholder="123456789"></div><div class="af"><label for="r-rp">RPPS</label><input type="text" id="r-rp" name="rpps" placeholder="10001234567"></div></div>
+      <div class="af"><label for="r-st">Cabinet / Structure</label><input type="text" id="r-st" name="structure" placeholder="Cabinet libéral de..."></div>
+      <button class="abtn" id="btn-r"><span>✨</span> Créer mon compte</button>
     </div>
     <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--m);font-family:var(--fm)">🔒 Cloudflare · Supabase · SHA-256 · RGPD</div>
   </div></div>
@@ -549,7 +559,7 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
     <!-- Gestion comptes -->
     <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
     <div class="adm-search">
-      <input type="text" id="adm-q" placeholder="🔍 Filtrer par nom ou prénom..." oninput="filterAccs()">
+      <input type="text" id="adm-q" placeholder="🔍 Filtrer par nom ou prénom...">
       <button class="bs bsm" onclick="loadAdm()" style="padding:10px 18px;font-size:13px">↻ Actualiser</button>
     </div>
     <div id="accs" class="accs"><div class="empty"><div class="ei"><div class="spin spinw" style="width:32px;height:32px"></div></div><p style="margin-top:12px">Chargement...</p></div></div>
@@ -562,20 +572,20 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
     <div class="mh"><div class="mt">👤 Mon profil</div><button class="mx" onclick="closePM()">✕</button></div>
     <div class="msg e" id="pe"></div><div class="msg o" id="po"></div>
     <div style="margin-bottom:20px">
-      <div class="g2"><div class="af"><label>Prénom</label><input type="text" id="p-fn"></div><div class="af"><label>Nom</label><input type="text" id="p-ln"></div></div>
-      <div class="g2"><div class="af"><label>N° ADELI</label><input type="text" id="p-ad"></div><div class="af"><label>RPPS</label><input type="text" id="p-rp"></div></div>
-      <div class="af"><label>Cabinet / Structure</label><input type="text" id="p-st"></div>
-      <div class="af"><label>Adresse</label><input type="text" id="p-adr"></div>
-      <div class="af"><label>Téléphone</label><input type="tel" id="p-tel"></div>
+      <div class="g2"><div class="af"><label for="p-fn">Prénom</label><input type="text" id="p-fn" name="firstname"></div><div class="af"><label for="p-ln">Nom</label><input type="text" id="p-ln" name="lastname"></div></div>
+      <div class="g2"><div class="af"><label for="p-ad">N° ADELI</label><input type="text" id="p-ad" name="adeli"></div><div class="af"><label for="p-rp">RPPS</label><input type="text" id="p-rp" name="rpps"></div></div>
+      <div class="af"><label for="p-st">Cabinet / Structure</label><input type="text" id="p-st" name="structure"></div>
+      <div class="af"><label for="p-adr">Adresse</label><input type="text" id="p-adr" name="address"></div>
+      <div class="af"><label for="p-tel">Téléphone</label><input type="tel" id="p-tel" name="tel"></div>
     </div>
-    <button class="btn bp" style="width:100%;justify-content:center" onclick="savePM()">💾 Enregistrer</button>
+    <button class="btn bp" id="btn-save-pm" style="width:100%;justify-content:center">💾 Enregistrer</button>
     <div class="sep" style="margin-top:24px"><span class="sepl">Changer le mot de passe</span></div>
     <div class="msg e" id="ppe"></div><div class="msg o" id="ppo"></div>
-    <div class="af"><label>Mot de passe actuel</label><input type="password" id="p-old" placeholder="••••••••"></div>
-    <div class="af"><label>Nouveau mot de passe</label><input type="password" id="p-new" placeholder="••••••••"></div>
-    <button class="btn bs" style="width:100%;justify-content:center;margin-top:6px" onclick="changePwd()">🔑 Changer</button>
+    <div class="af"><label for="p-old">Mot de passe actuel</label><input type="password" id="p-old" name="old_password" placeholder="••••••••"></div>
+    <div class="af"><label for="p-new">Nouveau mot de passe</label><input type="password" id="p-new" name="new_password" placeholder="••••••••"></div>
+    <button class="btn bs" id="btn-change-pwd" style="width:100%;justify-content:center;margin-top:6px">🔑 Changer</button>
     <div class="sep" style="margin-top:24px"><span class="sepl" style="color:var(--d)">Zone dangereuse</span></div>
-    <button class="btn bd" style="width:100%;justify-content:center" onclick="delAccount()">🗑️ Supprimer mon compte</button>
+    <button class="btn bd" id="btn-del-account" style="width:100%;justify-content:center">🗑️ Supprimer mon compte</button>
   </div>
 </div>
 
@@ -683,26 +693,26 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
         <div class="lbl">Prescripteur (médecin)</div>
         <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label>Médecin prescripteur</label><input type="text" id="f-pr" placeholder="Dr. Martin Pierre"></div>
-          <div class="f"><label>RPPS Prescripteur</label><input type="text" id="f-pr-rp" placeholder="10009876543"></div>
-          <div class="f"><label>Date de prescription</label><input type="date" id="f-pr-dt"></div>
+          <div class="f"><label for="f-pr">Médecin prescripteur</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
+          <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543"></div>
+          <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
         </div>
         <div id="patient-fields">
           <div class="lbl">Patient — données locales uniquement</div>
           <div class="fg" style="margin-bottom:20px">
-            <div class="f"><label>Nom patient <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="f-pt" placeholder="NOM Prénom" autocomplete="off"></div>
-            <div class="f"><label>Date de naissance</label><input type="date" id="f-ddn"></div>
-            <div class="f"><label>N° Sécu <span style="font-size:9px;opacity:.5">(non transmis)</span></label><input type="text" id="f-sec" placeholder="1 85 06 ..." autocomplete="off"></div>
-            <div class="f"><label>Caisse AMO</label><input type="text" id="f-amo" placeholder="CPAM Paris"></div>
-            <div class="f"><label>Mutuelle AMC</label><input type="text" id="f-amc" placeholder="MGEN, Harmonie..."></div>
+            <div class="f"><label for="f-pt">Nom patient <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="f-pt" name="patient_nom" placeholder="NOM Prénom" autocomplete="off"></div>
+            <div class="f"><label for="f-ddn">Date de naissance</label><input type="date" id="f-ddn" name="date_naissance"></div>
+            <div class="f"><label for="f-sec">N° Sécu <span style="font-size:9px;opacity:.5">(non transmis)</span></label><input type="text" id="f-sec" name="secu" placeholder="1 85 06 ..." autocomplete="off"></div>
+            <div class="f"><label for="f-amo">Caisse AMO</label><input type="text" id="f-amo" name="amo" placeholder="CPAM Paris"></div>
+            <div class="f"><label for="f-amc">Mutuelle AMC</label><input type="text" id="f-amc" name="amc" placeholder="MGEN, Harmonie..."></div>
           </div>
         </div>
         <div class="lbl">Facturation</div>
         <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label>Exonération</label><select id="f-exo"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
-          <div class="f"><label>Mode règlement</label><select id="f-regl"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
-          <div class="f"><label>Date du soin</label><input type="date" id="f-ds"></div>
-          <div class="f"><label>Heure du soin</label><input type="time" id="f-hs"></div>
+          <div class="f"><label for="f-exo">Exonération</label><select id="f-exo" name="exoneration"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
+          <div class="f"><label for="f-regl">Mode règlement</label><select id="f-regl" name="reglement"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
+          <div class="f"><label for="f-ds">Date du soin</label><input type="date" id="f-ds" name="date_soin"></div>
+          <div class="f"><label for="f-hs">Heure du soin</label><input type="time" id="f-hs" name="heure_soin"></div>
         </div>
         <div class="lbl">Description des soins <span style="color:var(--d)">*</span></div>
         <div class="f" style="margin-bottom:16px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."></textarea></div>
@@ -725,9 +735,9 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
           <div class="ai su">💡 <strong>Suggère</strong> les majorations oubliées : IFD si domicile, IK si km présents</div>
         </div>
         <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label>Date du soin</label><input type="date" id="v-ds"></div>
-          <div class="f"><label>Heure</label><input type="time" id="v-hs"></div>
-          <div class="f"><label>Exonération</label><select id="v-exo"><option value="">Aucune</option><option value="ALD">ALD</option></select></div>
+          <div class="f"><label for="v-ds">Date du soin</label><input type="date" id="v-ds" name="date_soin"></div>
+          <div class="f"><label for="v-hs">Heure</label><input type="time" id="v-hs" name="heure_soin"></div>
+          <div class="f"><label for="v-exo">Exonération</label><select id="v-exo" name="exoneration"><option value="">Aucune</option><option value="ALD">ALD</option></select></div>
         </div>
         <div class="f" style="margin-bottom:16px"><textarea id="v-txt" placeholder="Ex : injection SC insuline + panse dimanche domisil..." style="min-height:100px"></textarea></div>
         <button class="btn bv" id="btn-ver" onclick="verifyStandalone()"><span>🔍</span> Analyser & Corriger</button>
@@ -776,8 +786,8 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
         <!-- Carte Leaflet -->
         <div id="dep-map"></div>
         <!-- Champs lat/lng cachés (mis à jour par la carte) -->
-        <input type="hidden" id="t-lat" value="48.8566">
-        <input type="hidden" id="t-lng" value="2.3522">
+        <input type="hidden" id="t-lat" value="">
+        <input type="hidden" id="t-lng" value="">
         <!-- CA estimé depuis import -->
         <div id="tur-ca-wrap" style="display:none">
           <div class="ca-pill">💶 <span id="tur-ca-val">—</span> estimés depuis l'import</div>
@@ -821,6 +831,26 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
         <div class="card" style="margin-top:16px" id="live-ca-card" style="display:none">
           <div class="ct">💶 CA de la journée</div>
           <div id="live-ca-detail"></div>
+        </div>
+      </div>
+
+      <!-- 🚗 MODE UBER MÉDICAL — Tournée temps réel -->
+      <div class="card" style="margin-top:20px">
+        <div class="ct">🚗 Mode Uber Médical <span style="font-family:var(--fm);font-size:10px;background:var(--a2d);color:var(--a2);border:1px solid var(--a2);padding:2px 8px;border-radius:20px;letter-spacing:1px;vertical-align:middle">TEMPS RÉEL</span></div>
+        <p style="font-size:13px;color:var(--m);margin-bottom:16px">GPS continu · Dispatch intelligent · ETA live · Score priorité médicale</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+          <button class="btn bp bsm" onclick="startLiveTracking();loadUberPatients()"><span>▶️</span> Démarrer suivi GPS</button>
+          <button class="btn bs bsm" onclick="stopLiveTracking()"><span>⏹️</span> Arrêter GPS</button>
+          <button class="btn bv bsm" onclick="recalcRouteUber()"><span>🔄</span> Recalculer route</button>
+          <button class="btn bs bsm" onclick="selectBestPatient()"><span>🧠</span> Meilleur suivant</button>
+        </div>
+        <div id="uber-tracking-status" style="font-family:var(--fm);font-size:11px;color:var(--m);margin-bottom:10px">⏸️ GPS non démarré — cliquez sur "Démarrer suivi GPS"</div>
+        <div id="uber-progress" style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:14px"></div>
+        <div id="uber-route-info" style="font-size:13px;color:var(--t);margin-bottom:14px"></div>
+        <!-- Prochain patient recommandé -->
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:16px">
+          <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">🎯 Prochain patient recommandé</div>
+          <div id="uber-next-patient" style="color:var(--m);font-size:13px">Démarrez le suivi GPS et chargez vos patients importés.</div>
         </div>
       </div>
     </section>
@@ -1202,6 +1232,9 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
 <!-- ═══ SCRIPT UNIQUE ═══ -->
 <script>
 'use strict';
+/* ── Utilitaires sécurité & performance ── */
+function sanitize(str){return(str||'').replace(/[<>'"]/g,'');}
+function debounce(fn,ms){let t;return(...args)=>{clearTimeout(t);t=setTimeout(()=>fn(...args),ms);};}
 const W = 'https://raspy-tooth-1a2f.vdskillers.workers.dev';
 let S = null, LIVE_PATIENT_ID = null;
 const ss = {
@@ -1271,26 +1304,26 @@ function showApp(){
 }
 function switchTab(t){['l','r'].forEach(x=>{$('tab-'+x).classList.toggle('on',x===t);$('pan-'+x).style.display=x===t?'block':'none';});hideM('le','re','ro');}
 async function login(){
-  hideM('le');const em=gv('l-em'),pw=gv('l-pw');
+  hideM('le');const em=sanitize(gv('l-em')),pw=gv('l-pw');
   if(!em||!pw){showM('le','Email et mot de passe requis.');return;}
   ld('btn-l',true);
   try{
     const d=await wpost('/webhook/auth-login',{email:em,password:pw});
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
     ss.save(d.token,d.role,d.user);
-    showApp(); // admin et nurse → même app, admin a un bandeau + accès panel
+    showApp();
   }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
 }
 async function register(){
   hideM('re','ro');
-  const fn=gv('r-fn'),ln=gv('r-ln'),em=gv('r-em'),pw=gv('r-pw'),pw2=gv('r-pw2');
+  const fn=sanitize(gv('r-fn')),ln=sanitize(gv('r-ln')),em=sanitize(gv('r-em')),pw=gv('r-pw'),pw2=gv('r-pw2');
   if(!fn||!ln){showM('re','Prénom et Nom obligatoires.');return;}
   if(!em){showM('re','Email obligatoire.');return;}
   if(!pw||pw.length<8){showM('re','Mot de passe minimum 8 caractères.');return;}
   if(pw!==pw2){showM('re','Les mots de passe ne correspondent pas.');return;}
   ld('btn-r',true);
   try{
-    const d=await wpost('/webhook/infirmiere-register',{prenom:fn,nom:ln,email:em,password:pw,adeli:gv('r-ad'),rpps:gv('r-rp'),structure:gv('r-st')});
+    const d=await wpost('/webhook/infirmiere-register',{prenom:fn,nom:ln,email:em,password:pw,adeli:sanitize(gv('r-ad')),rpps:sanitize(gv('r-rp')),structure:sanitize(gv('r-st'))});
     if(!d.ok)throw new Error(d.error||'Erreur');
     showM('ro','✅ Compte créé ! Vous pouvez vous connecter.','o');
     setTimeout(()=>switchTab('l'),2000);
@@ -2073,32 +2106,45 @@ checkAuth();
 <script>
 /* ============================================================
    MODULE CARTE LEAFLET — POINT DE DÉPART TOURNÉE
+   ✅ AUCUNE COORDONNÉE PAR DÉFAUT — position 100% dynamique
    ============================================================ */
 let depMap=null, depMarker=null;
 
 function initDepMap(){
   if(depMap)return;
-  const lat=parseFloat($('t-lat').value)||48.8566;
-  const lng=parseFloat($('t-lng').value)||2.3522;
-  depMap=L.map('dep-map').setView([lat,lng],13);
+  // ✅ Carte monde neutre — aucune localisation fake
+  depMap=L.map('dep-map').setView([20,10],2);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'© OpenStreetMap',maxZoom:19
   }).addTo(depMap);
-  // Marker initial
-  depMarker=L.marker([lat,lng],{draggable:true,title:'Point de départ'}).addTo(depMap);
-  depMarker.on('dragend',e=>{setDepCoords(e.target.getLatLng().lat,e.target.getLatLng().lng);reverseGeocode(e.target.getLatLng().lat,e.target.getLatLng().lng);});
-  // Clic sur carte
+  // Clic sur carte → définit le départ
   depMap.on('click',e=>{
-    setDepCoords(e.latlng.lat,e.latlng.lng);
-    depMarker.setLatLng(e.latlng);
-    reverseGeocode(e.latlng.lat,e.latlng.lng);
+    const {lat,lng}=e.latlng;
+    _setDepMarker(lat,lng);
+    setDepCoords(lat,lng);
+    reverseGeocode(lat,lng);
   });
+}
+
+/* Place ou déplace le marker de départ */
+function _setDepMarker(lat,lng){
+  if(depMarker){
+    depMarker.setLatLng([lat,lng]);
+  }else{
+    depMarker=L.marker([lat,lng],{draggable:true,title:'📍 Point de départ'}).addTo(depMap);
+    depMarker.on('dragend',e=>{
+      const ll=e.target.getLatLng();
+      setDepCoords(ll.lat,ll.lng);
+      reverseGeocode(ll.lat,ll.lng);
+    });
+  }
 }
 
 function setDepCoords(lat,lng){
   $('t-lat').value=lat.toFixed(6);
   $('t-lng').value=lng.toFixed(6);
-  $('dep-coords').textContent=`📌 Départ : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  window.START_POINT={lat,lng};
+  $('dep-coords').textContent=`📌 Départ défini : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
 async function reverseGeocode(lat,lng){
@@ -2106,8 +2152,9 @@ async function reverseGeocode(lat,lng){
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'fr'}});
     const d=await r.json();
     if(d.display_name){
-      $('dep-coords').textContent=`📌 ${d.display_name.split(',').slice(0,3).join(', ')}`;
-      $('dep-addr').value=d.display_name.split(',').slice(0,3).join(', ');
+      const label=d.display_name.split(',').slice(0,3).join(', ');
+      $('dep-coords').textContent=`📌 Départ : ${label}`;
+      $('dep-addr').value=label;
     }
   }catch{}
 }
@@ -2121,24 +2168,247 @@ async function geocodeAddress(){
     const d=await r.json();
     if(!d.length){$('dep-coords').textContent='❌ Adresse non trouvée';return;}
     const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon);
+    _setDepMarker(lat,lng);
     setDepCoords(lat,lng);
-    if(depMap){depMap.setView([lat,lng],15);depMarker.setLatLng([lat,lng]);}
-  }catch(e){$('dep-coords').textContent='❌ Erreur geocodage: '+e.message;}
+    if(depMap)depMap.setView([lat,lng],15);
+  }catch(e){$('dep-coords').textContent='❌ Erreur : '+e.message;}
 }
 
+/* ✅ GPS PROPRE — position réelle au clic, aucun fallback Paris */
 function getGPS(){
   $('dep-coords').textContent='📡 Localisation GPS en cours...';
-  if(!navigator.geolocation){$('dep-coords').textContent='❌ GPS non disponible';return;}
-  navigator.geolocation.getCurrentPosition(pos=>{
-    const lat=pos.coords.latitude,lng=pos.coords.longitude;
-    setDepCoords(lat,lng);
-    if(depMap){depMap.setView([lat,lng],15);depMarker.setLatLng([lat,lng]);}
-    reverseGeocode(lat,lng);
-  },err=>{$('dep-coords').textContent='❌ GPS refusé ou erreur: '+err.message;});
+  if(!navigator.geolocation){
+    $('dep-coords').textContent='❌ GPS non supporté par ce navigateur';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      console.log('📍 GPS réel :', lat, lng);
+      _setDepMarker(lat,lng);
+      setDepCoords(lat,lng);
+      if(depMap)depMap.setView([lat,lng],15);
+      reverseGeocode(lat,lng);
+      // Feedback bouton GPS
+      const btn=document.querySelector('.map-btn.gps');
+      if(btn){btn.textContent='📍 Position mise à jour';setTimeout(()=>btn.textContent='📍 GPS',3000);}
+    },
+    err=>{
+      console.error('GPS ERROR',err);
+      // ❌ AUCUN FALLBACK — message clair
+      $('dep-coords').textContent='❌ GPS refusé — autorise la localisation dans ton navigateur';
+    },
+    {enableHighAccuracy:true, timeout:10000, maximumAge:0}
+  );
 }
 
-// Initialiser la carte quand on va sur l'onglet tournée
-document.querySelectorAll('.ni[data-v="tur"]').forEach(n=>n.addEventListener('click',()=>setTimeout(()=>{initDepMap();showCaFromImport();},100)));
+// ─── Initialisation carte à l'ouverture de l'onglet tournée ───
+document.querySelectorAll('.ni[data-v="tur"]').forEach(n=>
+  n.addEventListener('click',()=>setTimeout(()=>{initDepMap();showCaFromImport();},100))
+);
+
+/* ============================================================
+   🚗 MODE UBER MÉDICAL — TOURNÉE TEMPS RÉEL
+   GPS continu · Dispatch intelligent · ETA live · Score priorité
+   ============================================================ */
+let _watchId=null;
+window.UBER_PATIENTS=[];   // liste patients avec done/absent
+window.USER_POS=null;       // position live
+window.NEXT_PATIENT=null;   // prochain recommandé
+let _uberInterval=null;
+
+/* Distance euclidienne rapide (pour tri temps réel) */
+function _dist(a,b){
+  return Math.sqrt(Math.pow(a.lat-b.lat,2)+Math.pow(a.lng-b.lng,2));
+}
+
+/* ETA réel via OSRM */
+async function getETA(from,to){
+  if(!to.lat||!to.lng)return 999;
+  try{
+    const url=`https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
+    const r=await fetch(url);
+    const d=await r.json();
+    return d.routes?.[0]?.duration/60||999; // minutes
+  }catch{return _dist(from,to)*1000;} // fallback euclidien
+}
+
+/* Score Uber : plus petit = meilleur prochain */
+async function _computeScore(p){
+  if(!window.USER_POS)return 999;
+  const eta=await getETA(window.USER_POS,p);
+  let score=eta*2;
+  if(p.urgence)score-=50;                         // urgence → priorité max
+  if(p.time&&Date.now()>p.time)score-=20;         // en retard → priorité
+  if(p.amount)score-=parseFloat(p.amount)*0.5;    // rentabilité
+  return score;
+}
+
+/* Sélectionne le meilleur prochain patient */
+async function selectBestPatient(){
+  const remaining=window.UBER_PATIENTS.filter(p=>!p.done&&!p.absent);
+  if(!remaining.length){window.NEXT_PATIENT=null;_renderNextPatient();return;}
+  // Tri rapide par distance d'abord
+  if(window.USER_POS) remaining.sort((a,b)=>_dist(window.USER_POS,a)-_dist(window.USER_POS,b));
+  // Score complet sur les 5 premiers (ETA OSRM)
+  const top5=remaining.slice(0,5);
+  let best=null,bestScore=Infinity;
+  for(const p of top5){
+    const s=await _computeScore(p);
+    if(s<bestScore){bestScore=s;best=p;}
+  }
+  window.NEXT_PATIENT=best||remaining[0];
+  _renderNextPatient();
+}
+
+/* Affiche le prochain patient dans la live card */
+function _renderNextPatient(){
+  const el=$('uber-next-patient');
+  if(!el)return;
+  const p=window.NEXT_PATIENT;
+  if(!p){
+    el.innerHTML='<div class="ai su">✅ Tous les patients ont été vus !</div>';
+    return;
+  }
+  const dist=window.USER_POS&&p.lat?(_dist(window.USER_POS,p)*111).toFixed(1)+'km':'—';
+  el.innerHTML=`
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px">${p.description||p.label||'Patient'}</div>
+    <div style="font-size:12px;color:var(--m);margin-bottom:10px">
+      ${p.heure_soin?'⏰ '+p.heure_soin:''} ${p.urgence?'🚨 URGENT':''} · 📍 ~${dist}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp bsm" onclick="markUberDone()"><span>✅</span> Terminé</button>
+      <button class="btn bs bsm" onclick="markUberAbsent()"><span>❌</span> Absent</button>
+      ${p.lat?`<button class="btn bv bsm" onclick="openNavigation(window.NEXT_PATIENT)"><span>🗺️</span> Naviguer</button>`:''}
+    </div>`;
+}
+
+/* Met à jour la position sur la carte live */
+function _updateMapLive(lat,lng){
+  if(!depMap)return;
+  if(window._liveMarker){
+    window._liveMarker.setLatLng([lat,lng]);
+  }else{
+    window._liveMarker=L.circleMarker([lat,lng],{
+      radius:10,fillColor:'#00d4aa',color:'#00b891',weight:2,fillOpacity:0.9
+    }).addTo(depMap).bindPopup('📍 Vous êtes ici');
+  }
+}
+
+/* Détecte les retards (15min de dépassement) */
+function detectDelaysUber(){
+  const now=Date.now();
+  window.UBER_PATIENTS.forEach(p=>{
+    if(p.time&&!p.done&&now>p.time+15*60*1000)p.late=true;
+  });
+}
+
+/* GPS CONTINU — watchPosition */
+function startLiveTracking(){
+  if(!navigator.geolocation){alert('GPS non supporté');return;}
+  if(_watchId!==null){console.log('GPS déjà actif');return;}
+  const el=$('uber-tracking-status');
+  if(el)el.textContent='📡 GPS actif — suivi continu';
+  _watchId=navigator.geolocation.watchPosition(
+    pos=>{
+      const lat=pos.coords.latitude,lng=pos.coords.longitude;
+      window.USER_POS={lat,lng};
+      window.START_POINT={lat,lng};
+      _updateMapLive(lat,lng);
+    },
+    err=>{
+      console.error('GPS LIVE ERROR',err);
+      if(el)el.textContent='❌ GPS perdu — '+err.message;
+    },
+    {enableHighAccuracy:true,maximumAge:2000,timeout:8000}
+  );
+  // Recalcul auto toutes les 15s
+  _uberInterval=setInterval(()=>{
+    detectDelaysUber();
+    selectBestPatient();
+  },15000);
+}
+
+function stopLiveTracking(){
+  if(_watchId!==null){navigator.geolocation.clearWatch(_watchId);_watchId=null;}
+  if(_uberInterval){clearInterval(_uberInterval);_uberInterval=null;}
+  const el=$('uber-tracking-status');
+  if(el)el.textContent='⏹️ Suivi GPS arrêté';
+}
+
+/* Actions patient */
+function markUberDone(){
+  const p=window.NEXT_PATIENT;if(!p)return;
+  p.done=true;
+  selectBestPatient();
+  _updateUberProgress();
+}
+function markUberAbsent(){
+  const p=window.NEXT_PATIENT;if(!p)return;
+  p.absent=true;
+  selectBestPatient();
+  _updateUberProgress();
+}
+
+/* Barre de progression */
+function _updateUberProgress(){
+  const total=window.UBER_PATIENTS.length;
+  const done=window.UBER_PATIENTS.filter(p=>p.done||p.absent).length;
+  const el=$('uber-progress');
+  if(el)el.textContent=`${done} / ${total} patients · ${total-done} restant(s)`;
+}
+
+/* Navigation Google Maps directe */
+function openNavigation(p){
+  if(!p?.lat||!p?.lng){alert('Adresse GPS du patient non disponible.');return;}
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`,'_blank');
+}
+
+/* Recalcul OSRM complet de la tournée */
+async function recalcRouteUber(){
+  const pos=window.USER_POS||window.START_POINT;
+  if(!pos){alert('Active le GPS d\'abord.');return;}
+  const remaining=window.UBER_PATIENTS.filter(p=>!p.done&&!p.absent&&p.lat&&p.lng);
+  if(!remaining.length){alert('Aucun patient restant avec coordonnées GPS.');return;}
+  const coords=[[pos.lng,pos.lat],...remaining.map(p=>[p.lng,p.lat])];
+  try{
+    const url=`https://router.project-osrm.org/trip/v1/driving/${coords.map(c=>c.join(',')).join(';')}?source=first&roundtrip=false`;
+    const r=await fetch(url);
+    const d=await r.json();
+    if(d.code==='Ok'){
+      const totalMin=Math.round(d.trips[0].duration/60);
+      const totalKm=(d.trips[0].distance/1000).toFixed(1);
+      const el=$('uber-route-info');
+      if(el)el.innerHTML=`🗺️ Route optimisée : <strong>${totalKm} km</strong> · <strong>${totalMin} min</strong>`;
+    }
+  }catch(e){console.warn('OSRM recalc:',e.message);}
+}
+
+/* Charge les patients importés dans le moteur Uber */
+function loadUberPatients(){
+  const raw=window.IMPORTED_DATA?.patients||window.IMPORTED_DATA?.entries||[];
+  window.UBER_PATIENTS=raw.map((p,i)=>({
+    ...p,
+    id:p.patient_id||p.id||i,
+    label:p.description||p.texte||p.summary||'Patient '+(i+1),
+    done:false,
+    absent:false,
+    late:false,
+    urgence:!!(p.urgence||p.priorite==='urgent'),
+    time:p.heure_soin?_parseTime(p.heure_soin):null,
+    amount:parseFloat(p.total||p.montant||0)||0,
+    lat:parseFloat(p.lat||p.latitude)||null,
+    lng:parseFloat(p.lng||p.longitude||p.lon)||null
+  }));
+  _updateUberProgress();
+  selectBestPatient();
+}
+function _parseTime(h){
+  if(!h)return null;
+  const [hh,mm]=(h||'').split(':').map(Number);
+  const t=new Date();t.setHours(hh||0,mm||0,0,0);
+  return t.getTime();
+}
 
 /* ============================================================
    IMPORTED DATA — stockage centralisé
@@ -2257,8 +2527,14 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   ld('btn-tur',true);$('res-tur').classList.remove('show');
   try{
-    const startLat=parseFloat($('t-lat').value)||48.8566;
-    const startLng=parseFloat($('t-lng').value)||2.3522;
+    // ✅ Utilise START_POINT dynamique — JAMAIS de fallback Paris
+    const startLat=parseFloat($('t-lat').value)||window.START_POINT?.lat||null;
+    const startLng=parseFloat($('t-lng').value)||window.START_POINT?.lng||null;
+    if(!startLat||!startLng){
+      $('terr').style.display='flex';
+      $('terr-m').textContent='📍 Définis ton point de départ d\'abord (bouton GPS ou clic sur la carte)';
+      $('res-tur').classList.add('show');ld('btn-tur',false);return;
+    }
     const d=await apiCall('/webhook/ami-tournee-ia',{start_lat:startLat,start_lng:startLng});
     if(!d.ok)throw new Error(d.error||'Erreur');
     if(!d.route?.length){
@@ -2427,5 +2703,24 @@ window.liveAction=async function(action){
 
 /* Patch liveStatus global */
 window.liveStatus=liveStatusCore;
+
+/* ══════════════════════════════════════════════
+   REMPLACEMENT DES onclick INLINE — Bonne pratique
+   ══════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  /* Auth */
+  const btnL=$('btn-l');if(btnL)btnL.addEventListener('click',login);
+  const btnR=$('btn-r');if(btnR)btnR.addEventListener('click',register);
+  const tabL=$('tab-l');if(tabL)tabL.addEventListener('click',()=>switchTab('l'));
+  const tabR=$('tab-r');if(tabR)tabR.addEventListener('click',()=>switchTab('r'));
+
+  /* Profil modal */
+  const btnSavePm=$('btn-save-pm');if(btnSavePm)btnSavePm.addEventListener('click',savePM);
+  const btnChangePwd=$('btn-change-pwd');if(btnChangePwd)btnChangePwd.addEventListener('click',changePwd);
+  const btnDelAccount=$('btn-del-account');if(btnDelAccount)btnDelAccount.addEventListener('click',delAccount);
+
+  /* Admin search avec debounce 300ms */
+  const admQ=$('adm-q');if(admQ)admQ.addEventListener('input',debounce(filterAccs,300));
+});
 </script>
 </html>
