@@ -197,6 +197,14 @@ async function optimiserTournee(){
           </div>`;}).join('')}
         ${d.alerts?.length?`<div class="aic" style="margin-top:16px">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
       </div>`;
+
+      // ── MAP PREMIUM : markers + route OSRM + timeline ──────────────
+      // Appel asynchrone non bloquant — n'affecte pas l'affichage de la liste
+      if (typeof renderPatientsOnMap === 'function') {
+        renderPatientsOnMap(d.route, { lat: startLat, lng: startLng }).catch(e => {
+          console.warn('renderPatientsOnMap:', e.message);
+        });
+      }
     }
     $('terr').style.display='none';
   }catch(e){$('terr').style.display='flex';$('terr-m').textContent=e.message;}
