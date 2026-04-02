@@ -2,7 +2,12 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AMI NGAP">
+<meta name="mobile-web-app-capable" content="yes">
 <title>AMI — Cotation NGAP</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -288,16 +293,203 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
 .kpi-v{font-family:var(--fs);font-size:28px;line-height:1;margin-bottom:4px}
 .kpi-v.g{color:var(--a)}.kpi-v.b{color:var(--a2)}.kpi-v.o{color:var(--w)}.kpi-v.r{color:var(--d)}
 .kpi-l{font-size:11px;color:var(--m)}
+/* ============================================================
+   MOBILE — Navigation bottom bar + layout adaptatif
+   ============================================================ */
 @media(max-width:768px){
-  #app{grid-template-columns:1fr;grid-template-rows:64px auto 1fr}
-  .side{grid-row:2;display:flex;flex-direction:row;flex-wrap:wrap;padding:8px;border-right:none;border-bottom:1px solid var(--b);overflow-x:auto}
-  .slbl{display:none}.ni{padding:8px 10px;font-size:12px}
-  .main{grid-row:3}.view{padding:16px}
-  .rg{grid-template-columns:1fr}.ta{font-size:38px}
-  .acard{padding:32px 20px}.g2{grid-template-columns:1fr}
-  .adm-stats{grid-template-columns:1fr 1fr}
-  #voicebtn{bottom:16px;right:16px}
+
+  /* APP SHELL — colonne unique */
+  #app{
+    grid-template-columns:1fr;
+    grid-template-rows:56px 1fr 68px; /* header | main | bottom nav */
+    min-height:100vh;
+    min-height:100dvh; /* dynamic viewport height pour iOS */
+  }
+
+  /* HEADER mobile — compact */
+  .top{
+    height:56px;
+    padding:0 16px;
+    gap:8px;
+  }
+  .ltext{font-size:17px}
+  .lsub{display:none}
+  .badge{display:none}
+  .bvoice{display:none} /* bouton vocal dans fab à la place */
+  .buser span:first-child{display:none} /* cache icône user */
+  .tr{gap:6px}
+  .bout{font-size:10px;padding:4px 10px}
+  .buser{font-size:10px;padding:4px 10px}
+
+  /* SIDEBAR — masquée, remplacée par bottom nav */
+  .side{display:none}
+
+  /* BOTTOM NAV */
+  #bottom-nav{
+    display:flex;
+    grid-row:3;
+    background:rgba(11,15,20,.97);
+    border-top:1px solid var(--b);
+    backdrop-filter:blur(20px);
+    -webkit-backdrop-filter:blur(20px);
+    position:fixed;
+    bottom:0;left:0;right:0;
+    height:68px;
+    z-index:200;
+    padding:0 4px;
+    padding-bottom:env(safe-area-inset-bottom); /* iPhone notch */
+    align-items:stretch;
+    justify-content:space-around;
+  }
+  .bn-item{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:3px;flex:1;cursor:pointer;padding:8px 4px;
+    color:var(--m);font-size:9.5px;font-family:var(--fm);letter-spacing:.3px;
+    text-align:center;border:none;background:none;
+    transition:color .15s;-webkit-tap-highlight-color:transparent;
+    text-transform:uppercase;
+  }
+  .bn-item .bn-ic{font-size:20px;line-height:1;transition:transform .15s}
+  .bn-item.on{color:var(--a)}
+  .bn-item.on .bn-ic{transform:translateY(-2px)}
+
+  /* MAIN — scroll vertical, padding bottom pour bottom nav */
+  .main{
+    grid-row:2;
+    overflow-y:auto;
+    overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:80px; /* espace pour bottom nav */
+  }
+
+  /* VIEWS — padding réduit */
+  .view{padding:16px 14px;animation:fi .2s ease}
+  h1.pt{font-size:24px;margin-bottom:4px}
+  .ps{font-size:13px;margin-bottom:18px}
+
+  /* CARDS */
+  .card{padding:16px;border-radius:14px}
+  .card+.card{margin-top:14px}
+  .ct{font-size:14px;margin-bottom:12px}
+
+  /* GRILLES → 1 colonne */
+  .rg{grid-template-columns:1fr}
+  .g2{grid-template-columns:1fr}
+  .fg{grid-template-columns:1fr;gap:10px}
+  .sg{grid-template-columns:repeat(2,1fr);gap:10px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .adm-stats{grid-template-columns:repeat(2,1fr)}
+
+  /* TOTAL COTATION */
+  .ta{font-size:36px}
+
+  /* BOUTONS — pleine largeur sur mobile */
+  .ar-row{flex-direction:column;gap:8px}
+  .ar-row .btn{width:100%;justify-content:center}
+  .btn{padding:12px 18px;font-size:14px;border-radius:11px}
+
+  /* INPUTS */
+  input,select,textarea{font-size:16px!important} /* évite zoom auto iOS */
+  textarea{min-height:80px}
+
+  /* AUTH */
+  .acard{padding:28px 18px;border-radius:20px}
+  #auth-ov{padding:14px}
+
+  /* MODALS */
+  #pm,#vm{padding:10px;align-items:flex-end}
+  .mc,.vmc{
+    border-radius:20px 20px 0 0;
+    max-height:92dvh;
+    padding:24px 18px;
+    width:100%;
+    max-width:100%;
+  }
+  .vm-actions{flex-direction:column}
+  .vm-actions .btn{width:100%;justify-content:center}
+
+  /* ROUTE ITEMS */
+  .route-item{flex-wrap:wrap;gap:6px;padding:10px 0}
+  .route-item .btn{width:100%;justify-content:center;margin-top:4px}
+  .route-km,.route-time{font-size:10px}
+
+  /* MAP */
+  #dep-map{height:220px}
+  .map-search{flex-wrap:wrap}
+  .map-search input{width:100%}
+  .map-btn{flex:1;padding:9px 8px;font-size:12px}
+
+  /* HISTORIQUE TABLE — scroll horizontal */
+  .ht{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px}
+  .ht table{min-width:520px}
+
+  /* TOP BAR admin */
+  .adm-top{padding:0 14px;height:56px;gap:10px}
+  .adm-body{padding:16px 14px}
+
+  /* ADMIN notice compact */
+  .adm-notice{padding:12px}
+  .adm-notice p{font-size:12px}
+  .acc{flex-wrap:wrap;gap:8px;padding:12px}
+  .acc-acts{width:100%;justify-content:flex-end}
+
+  /* DASH chart */
+  #dash-chart{height:120px}
+
+  /* VOICE FAB */
+  #voicebtn{bottom:80px;right:14px;width:48px;height:48px;font-size:18px}
+  #voice-toast{bottom:138px;right:14px;max-width:240px}
+
+  /* LIVE CARD */
+  .live-card{padding:20px 16px}
+  .live-patient{font-size:20px}
+
+  /* PREVISION + KPI mini */
+  .sc{padding:14px 10px}
+  .sv{font-size:20px}
+  .sn{font-size:11px}
+
+  /* FAQ accordion */
+  .accord-hdr{padding:12px 14px}
+  .accord-body{padding:0 14px 14px;font-size:12px}
+
+  /* Texte aide compact */
+  .faq-section{margin-top:14px!important}
+
+  /* PRIV banner */
+  .priv{padding:10px 12px}
+  .priv p{font-size:11px}
+
+  /* Drop zone */
+  .drop-zone{padding:24px 16px}
+
+  /* Guard: sidebar items masqués */
+  .sl,.slbl,.ni{display:none}
 }
+
+/* Très petits écrans (375px iPhone SE) */
+@media(max-width:390px){
+  .sg{grid-template-columns:1fr}
+  .kpi-grid{grid-template-columns:1fr}
+  h1.pt{font-size:21px}
+  .view{padding:12px 10px}
+}
+
+/* Tablette portrait — sidebar réduite */
+@media(min-width:769px) and (max-width:1024px){
+  #app{grid-template-columns:200px 1fr}
+  .side{padding:14px 0}
+  .ni{font-size:12.5px;padding:8px 10px}
+  .view{padding:24px}
+  .sg{grid-template-columns:repeat(3,1fr)}
+}
+
+/* Safe area iPhone (notch/home indicator) */
+@supports(padding:env(safe-area-inset-bottom)){
+  #bottom-nav{padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+  .main{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+}
+
 </style>
 </head>
 <body>
@@ -446,6 +638,40 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
       <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
     </div>
   </nav>
+
+  <!-- BOTTOM NAV MOBILE (caché sur desktop via CSS) -->
+  <nav id="bottom-nav" style="display:none">
+    <button class="bn-item on" data-v="cot" onclick="navTo('cot',this)">
+      <span class="bn-ic">🩺</span>Coter
+    </button>
+    <button class="bn-item nurse-only" data-v="tur" onclick="navTo('tur',this)">
+      <span class="bn-ic">🗺️</span>Tournée
+    </button>
+    <button class="bn-item nurse-only" data-v="live" onclick="navTo('live',this)">
+      <span class="bn-ic">▶️</span>Live
+    </button>
+    <button class="bn-item" data-v="dash" onclick="navTo('dash',this)">
+      <span class="bn-ic">📈</span>Stats
+    </button>
+    <button class="bn-item" data-v="more" onclick="toggleMobileMenu()">
+      <span class="bn-ic">☰</span>Plus
+    </button>
+  </nav>
+
+  <!-- MENU "PLUS" MOBILE -->
+  <div id="mobile-menu" style="display:none;position:fixed;bottom:68px;left:0;right:0;z-index:300;background:rgba(11,15,20,.98);border-top:1px solid var(--b);backdrop-filter:blur(20px);padding:12px 8px;padding-bottom:env(safe-area-inset-bottom)">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ver" onclick="navTo('ver',this);toggleMobileMenu()"><span class="bn-ic">✅</span>Vérifier</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
+      <button class="bn-item" style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)" onclick="logout()"><span class="bn-ic">⏻</span>Quitter</button>
+    </div>
+  </div>
+
   <main class="main">
 
     <!-- COTATION -->
@@ -1010,13 +1236,14 @@ function checkAuth(){
 }
 function showAuthOv(){$('auth-ov').classList.remove('hide');$('adm').classList.remove('show');$('app').style.display='none';}
 function showAdm(){$('auth-ov').classList.add('hide');$('adm').classList.add('show');$('app').style.display='none';loadAdm();loadAdmStats();}
-function goToApp(){$('adm').classList.remove('show');$('app').style.display='grid';}
+function goToApp(){$('adm').classList.remove('show');$('app').style.display='grid';updateNavMode();}
 function showApp(){
   $('auth-ov').classList.add('hide');$('adm').classList.remove('show');$('app').style.display='grid';
   const u=S?.user||{};
   $('uname').textContent=((u.prenom||'')+' '+(u.nom||'')).trim()||u.email||'—';
   if($('sess-inf'))$('sess-inf').textContent=(u.email||'')+' · session active';
   $('voicebtn').classList.add('show');
+  updateNavMode();
   // Mode admin : toutes les pages visibles, données patients masquées
   if(S?.role==='admin'){
     $('admin-mode-badge').style.display='flex';
@@ -1122,17 +1349,7 @@ async function admAct(action,id,name){
   }catch(e){admAlert(e.message,'e');}
 }
 
-/* NAV */
-document.querySelectorAll('.ni[data-v]').forEach(item=>{
-  item.addEventListener('click',()=>{
-    document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'));
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
-    item.classList.add('on');
-    $('view-'+item.dataset.v)?.classList.add('on');
-    // Charger le dashboard au clic
-    if(item.dataset.v==='dash') loadDash();
-  });
-});
+/* NAV — handled by navTo() and mobile bottom nav */
 
 /* PROFIL */
 async function openPM(){
@@ -1778,6 +1995,74 @@ function filterFaq() {
   const noRes = $('faq-no-result');
   if (noRes) noRes.style.display = anyVisible ? 'none' : 'block';
 }
+
+/* ============================================================
+   MOBILE — Bottom nav + responsive logic
+   ============================================================ */
+function isMobile(){ return window.innerWidth<=768; }
+
+/* Affiche/masque la bottom nav selon la taille d'écran */
+function updateNavMode(){
+  const bn=$('bottom-nav');
+  if(!bn) return;
+  if(isMobile()) bn.style.display='flex';
+  else bn.style.display='none';
+}
+window.addEventListener('resize', updateNavMode);
+
+/* Navigation unifiée sidebar + bottom nav */
+function navTo(v, triggerEl){
+  // Vues
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  const target=$('view-'+v);
+  if(target) target.classList.add('on');
+
+  // Sidebar desktop
+  document.querySelectorAll('.ni[data-v]').forEach(n=>n.classList.remove('on'));
+  const sideItem=document.querySelector(`.ni[data-v="${v}"]`);
+  if(sideItem) sideItem.classList.add('on');
+
+  // Bottom nav mobile
+  document.querySelectorAll('#bottom-nav .bn-item').forEach(n=>n.classList.remove('on'));
+  if(triggerEl) triggerEl.classList.add('on');
+  else {
+    const bn=document.querySelector(`#bottom-nav .bn-item[data-v="${v}"]`);
+    if(bn) bn.classList.add('on');
+  }
+
+  // Actions spéciales
+  if(v==='dash') loadDash();
+  if(v==='tur') setTimeout(()=>{initDepMap();showCaFromImport();},100);
+
+  // Scroll to top
+  const main=document.querySelector('.main');
+  if(main) main.scrollTop=0;
+}
+
+/* Menu "Plus" mobile */
+let mobileMenuOpen=false;
+function toggleMobileMenu(){
+  mobileMenuOpen=!mobileMenuOpen;
+  const m=$('mobile-menu');
+  if(!m) return;
+  m.style.display=mobileMenuOpen?'block':'none';
+  // Toggle icône
+  const moreBtn=document.querySelector('#bottom-nav .bn-item[data-v="more"]');
+  if(moreBtn) moreBtn.classList.toggle('on', mobileMenuOpen);
+}
+// Ferme le menu si clic ailleurs
+document.addEventListener('click', e=>{
+  if(mobileMenuOpen && !e.target.closest('#mobile-menu') && !e.target.closest('[onclick*="toggleMobileMenu"]')){
+    mobileMenuOpen=false;
+    const m=$('mobile-menu');if(m)m.style.display='none';
+    const btn=document.querySelector('#bottom-nav .bn-item[data-v="more"]');if(btn)btn.classList.remove('on');
+  }
+});
+
+/* Patch sidebar .ni clicks pour aussi mettre à jour bottom nav */
+document.querySelectorAll('.ni[data-v]').forEach(item=>{
+  item.addEventListener('click',()=>navTo(item.dataset.v, null));
+});
 
 /* INIT */
 const today=new Date().toISOString().split('T')[0];
