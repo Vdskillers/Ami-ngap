@@ -1,1115 +1,689 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AMI — Cotation NGAP</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<style>
-:root{
-  --bg:#0b0f14;--s:#111720;--c:#151d28;--b:#1e2d3d;--bl:#2a4060;
-  --t:#e8f0f8;--m:#6a8099;
-  --a:#00d4aa;--ad:#00d4aa22;--ab:rgba(0,212,170,.18);
-  --a2:#4fa8ff;--a2d:#4fa8ff18;
-  --w:#ffb547;--wd:#ffb54720;
-  --d:#ff5f6d;--dd:#ff5f6d18;--ok:#3dd68c;
-  --r:12px;--rl:18px;
-  --ff:'Instrument Sans',sans-serif;--fs:'DM Serif Display',Georgia,serif;--fm:'DM Mono',monospace;
-  --sh:0 4px 32px rgba(0,0,0,.45)
+analyse la partie Tournée optimisée par IA et fais en sorte que l'infirmière puisse choisir un point ou une adresse sur une carte pour démarré sa tournée , fais aussi que le Planning hebdomadaire sois géré par l'importation des données 
+
+Parfait, là on va faire une vraie upgrade produit (pas juste corriger 👇)
+
+Je t’explique :
+
+🔍 analyse de ta version actuelle
+❌ limites
+🚀 ce qu’on va ajouter (UX + logique)
+🧠 + le code prêt à coller
+🔍 1. ANALYSE ACTUELLE (TOURNÉE IA)
+
+Dans ton fichier :
+
+👉 La tournée fonctionne comme ça :
+
+coordonnées manuelles (lat/lng)
+bouton → optimiserTournee()
+❌ problèmes UX majeurs
+❌ une infirmière ne connaît jamais ses coordonnées GPS
+❌ aucun choix sur carte
+❌ aucune adresse
+❌ pas de point de départ visuel
+
+👉 Conclusion :
+👉 fonction techniquement OK mais inutilisable terrain
+
+🚀 2. OBJECTIF UPGRADE
+🎯 Tournée IA PRO
+
+👉 L’infirmière doit pouvoir :
+
+📍 cliquer sur une carte
+🔍 chercher une adresse
+📱 utiliser sa position GPS
+🏠 définir cabinet ou domicile
+🗺️ 3. AJOUT CARTE INTERACTIVE (Leaflet)
+
+👉 On va intégrer une vraie carte
+
+🔧 AJOUT dans <head>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+🔧 REMPLACE la zone lat/lng par ça :
+<div class="f">
+  <label>Adresse de départ</label>
+  <input type="text" id="t-address" placeholder="Cabinet ou domicile">
+</div>
+
+<div id="map" style="height:300px;border-radius:12px;margin-top:12px"></div>
+
+<button class="btn bs" onclick="useMyLocation()">📍 Utiliser ma position</button>
+🔧 JS À AJOUTER
+let map, marker;
+
+function initMap(){
+  map = L.map('map').setView([48.8566, 2.3522], 12);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap'
+  }).addTo(map);
+
+  map.on('click', function(e){
+    const {lat,lng} = e.latlng;
+
+    if(marker) map.removeLayer(marker);
+
+    marker = L.marker([lat,lng]).addTo(map);
+
+    document.getElementById('t-lat').value = lat;
+    document.getElementById('t-lng').value = lng;
+  });
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--t);font-family:var(--ff);min-height:100vh;line-height:1.6;overflow-x:hidden}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,170,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,170,.025) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
-/* AUTH */
-#auth-ov{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(11,15,20,.97);backdrop-filter:blur(12px);overflow-y:auto;padding:20px}
-#auth-ov.hide{display:none}
-.aw{width:100%;max-width:460px;margin:auto}
-.acard{background:var(--c);border:1px solid var(--b);border-radius:24px;padding:44px 40px;box-shadow:0 0 80px rgba(0,212,170,.08),0 24px 64px rgba(0,0,0,.6)}
-.alogo{display:flex;align-items:center;gap:14px;margin-bottom:32px;justify-content:center}
-.amark{width:52px;height:52px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:15px;display:grid;place-items:center;font-family:var(--fs);font-size:26px;color:#000;box-shadow:0 0 32px rgba(0,212,170,.4);flex-shrink:0}
-.aname{font-family:var(--fs);font-size:26px}.asub{font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:2px}
-.atabs{display:flex;gap:4px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:3px;margin-bottom:24px}
-.atab{flex:1;padding:9px;border-radius:9px;border:none;background:none;font-family:var(--ff);font-size:13px;font-weight:500;color:var(--m);cursor:pointer;transition:all .15s}
-.atab.on{background:var(--ad);color:var(--a);border:1px solid var(--ab)}
-.af{display:flex;flex-direction:column;gap:5px;margin-bottom:13px}
-.af label{font-family:var(--fm);font-size:11px;letter-spacing:1px;color:var(--m);text-transform:uppercase}
-.af input{background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:11px 14px;font-size:14px;font-family:var(--ff);width:100%;transition:border-color .15s,box-shadow .15s}
-.af input:focus{outline:none;border-color:var(--a);box-shadow:0 0 0 3px var(--ad)}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.sep{height:1px;background:var(--b);margin:18px 0;position:relative}
-.sepl{position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--c);padding:0 12px;font-family:var(--fm);font-size:10px;color:var(--m);white-space:nowrap}
-.abtn{width:100%;padding:13px;background:linear-gradient(135deg,var(--a),#00b891);color:#000;border:none;border-radius:var(--r);font-family:var(--ff);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px}
-.abtn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,170,.4)}
-.abtn:disabled{opacity:.5;cursor:not-allowed}
-.msg{border-radius:var(--r);padding:11px 15px;font-size:13px;margin-bottom:13px;display:none;line-height:1.5}
-.msg.e{background:var(--dd);border:1px solid rgba(255,95,109,.3);color:#ff9aa2}
-.msg.o{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.3);color:#7eedb3}
-/* ADMIN */
-#adm{position:relative;z-index:1;display:none;min-height:100vh;flex-direction:column}
-#adm.show{display:flex}
-.adm-top{background:rgba(11,15,20,.95);border-bottom:1px solid var(--b);backdrop-filter:blur(20px);display:flex;align-items:center;padding:0 28px;height:64px;gap:16px;position:sticky;top:0;z-index:100;flex-shrink:0;flex-wrap:wrap}
-.adm-mark{width:34px;height:34px;background:linear-gradient(135deg,var(--d),#c0392b);border-radius:10px;display:grid;place-items:center;font-family:var(--fs);font-size:16px;color:#fff;flex-shrink:0}
-.adm-name{font-family:var(--fs);font-size:18px}.adm-sub{font-family:var(--fm);font-size:10px;color:var(--d);letter-spacing:2px;text-transform:uppercase}
-.adm-body{flex:1;padding:32px;max-width:1100px;margin:0 auto;width:100%}
-.adm-notice{background:linear-gradient(135deg,rgba(255,95,109,.08),rgba(255,95,109,.02));border:1px solid rgba(255,95,109,.25);border-radius:var(--r);padding:14px 18px;margin-bottom:24px;display:flex;gap:12px;align-items:flex-start}
-.adm-notice p{font-size:13px;color:#ff9aa2;line-height:1.6}
-.adm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
-.astat{background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:18px;text-align:center}
-.astat-v{font-family:var(--fs);font-size:34px;margin-bottom:4px}
-.astat-v.g{color:var(--a)}.astat-v.o{color:var(--w)}.astat-v.r{color:var(--d)}.astat-v.b{color:var(--a2)}
-.astat-l{font-size:12px;color:var(--m)}
-.adm-search{display:flex;gap:10px;margin-bottom:20px}
-.adm-search input{background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:10px 14px;font-size:14px;font-family:var(--ff);flex:1}
-.adm-search input:focus{outline:none;border-color:var(--a)}
-.adm-alert{border-radius:var(--r);padding:12px 16px;font-size:13px;margin-bottom:16px;display:none}
-.adm-alert.e{background:var(--dd);border:1px solid rgba(255,95,109,.3);color:#ff9aa2}
-.adm-alert.o{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.3);color:#7eedb3}
-.accs{display:flex;flex-direction:column;gap:10px}
-.acc{display:flex;align-items:center;background:var(--c);border:1px solid var(--b);border-radius:var(--r);padding:14px 18px;gap:14px;transition:border-color .15s}
-.acc:hover{border-color:var(--bl)}.acc.blk{border-color:rgba(255,181,71,.3);background:linear-gradient(135deg,rgba(255,181,71,.04),var(--c))}
-.avat{width:42px;height:42px;border-radius:50%;background:var(--ad);border:1px solid rgba(0,212,170,.2);display:grid;place-items:center;font-family:var(--fs);font-size:16px;color:var(--a);flex-shrink:0;text-transform:uppercase;font-weight:600}
-.avat.blk{background:var(--wd);border-color:rgba(255,181,71,.3);color:var(--w)}
-.acc-name{flex:1;font-size:15px;font-weight:500}
-.acc-st{font-family:var(--fm);font-size:10px;letter-spacing:1px;padding:3px 9px;border-radius:20px;text-transform:uppercase;flex-shrink:0}
-.acc-st.on{background:var(--ad);color:var(--a);border:1px solid var(--ab)}.acc-st.blk{background:var(--wd);color:var(--w);border:1px solid rgba(255,181,71,.2)}
-.acc-acts{display:flex;gap:8px;flex-shrink:0}
-.bxs{padding:6px 13px;border-radius:8px;border:none;font-family:var(--ff);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
-.bxs:hover{transform:translateY(-1px)}
-.b-blk{background:var(--wd);color:var(--w);border:1px solid rgba(255,181,71,.3)}.b-blk:hover{background:rgba(255,181,71,.2)}
-.b-unblk{background:var(--ad);color:var(--a);border:1px solid var(--ab)}.b-unblk:hover{background:rgba(0,212,170,.2)}
-.b-del{background:var(--dd);color:var(--d);border:1px solid rgba(255,95,109,.3)}.b-del:hover{background:rgba(255,95,109,.2)}
-.empty{text-align:center;padding:60px 20px;color:var(--m)}
-.empty .ei{font-size:40px;margin-bottom:12px}
-.priv-badge{display:flex;align-items:center;gap:8px;background:rgba(61,214,140,.06);border:1px solid rgba(61,214,140,.2);border-radius:20px;padding:6px 14px;font-family:var(--fm);font-size:10px;color:var(--ok);letter-spacing:1px;text-transform:uppercase;white-space:nowrap;margin-left:auto}
-.admin-mode-badge{background:rgba(255,95,109,.12);border:1px solid rgba(255,95,109,.3);color:var(--d);font-family:var(--fm);font-size:10px;padding:5px 12px;border-radius:20px;letter-spacing:1px;text-transform:uppercase;white-space:nowrap}
-/* SPINNERS */
-.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:sp .6s linear infinite;flex-shrink:0;vertical-align:middle}
-.spinw{border-color:rgba(255,255,255,.2);border-top-color:var(--t)}
-@keyframes sp{to{transform:rotate(360deg)}}
-/* MODALS */
-#pm{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.85);backdrop-filter:blur(8px);padding:20px}
-#pm.open{display:flex}
-.mc{background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:32px;width:100%;max-width:500px;box-shadow:var(--sh);max-height:90vh;overflow-y:auto}
-.mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
-.mt{font-family:var(--fs);font-size:22px}
-.mx{background:var(--s);border:1px solid var(--b);color:var(--m);width:32px;height:32px;border-radius:50%;cursor:pointer;display:grid;place-items:center;font-size:16px;transition:all .15s}
-.mx:hover{border-color:var(--d);color:var(--d)}
-#vm{position:fixed;inset:0;z-index:600;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.9);backdrop-filter:blur(10px);padding:20px}
-#vm.open{display:flex}
-.vmc{background:var(--c);border:1px solid rgba(0,212,170,.3);border-radius:var(--rl);padding:32px;width:100%;max-width:620px;box-shadow:0 0 60px rgba(0,212,170,.1),var(--sh);max-height:90vh;overflow-y:auto;animation:pop .2s ease}
-@keyframes pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
-.vm-title{font-family:var(--fs);font-size:22px;margin-bottom:6px}
-.vm-sub{font-size:13px;color:var(--m);margin-bottom:20px}
-.vm-section{margin-bottom:16px}
-.vm-section-title{font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--m);margin-bottom:8px}
-.vm-item{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:var(--r);font-size:13px;line-height:1.5;margin-bottom:6px}
-.vm-item.fix{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.25);color:#7eedb3}
-.vm-item.warn{background:var(--wd);border:1px solid rgba(255,181,71,.25);color:#ffc96b}
-.vm-item.sugg{background:var(--a2d);border:1px solid rgba(79,168,255,.25);color:#80c4ff}
-.vm-item.ok{background:rgba(61,214,140,.04);border:1px solid rgba(61,214,140,.15);color:var(--ok)}
-.vm-corrected{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-bottom:20px;font-size:14px;line-height:1.7;font-style:italic;color:var(--t)}
-.vm-corrected-label{font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
-.vm-actions{display:flex;gap:10px;margin-top:24px;padding-top:20px;border-top:1px solid var(--b)}
-/* VOCAL */
-#voicebtn{position:fixed;bottom:28px;right:28px;z-index:400;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--a2),#2563eb);border:none;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:22px;box-shadow:0 4px 20px rgba(79,168,255,.4);transition:all .2s}
-#voicebtn.show{display:flex}
-#voicebtn.listening{background:linear-gradient(135deg,var(--d),#c0392b);animation:vpulse 1.2s infinite}
-@keyframes vpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-#voice-toast{position:fixed;bottom:96px;right:28px;z-index:400;background:rgba(17,23,32,.95);border:1px solid var(--b);border-radius:var(--r);padding:10px 16px;font-family:var(--fm);font-size:12px;color:var(--t);display:none;max-width:280px;backdrop-filter:blur(10px);box-shadow:var(--sh)}
-#voice-toast.show{display:block}
-#voice-interim{color:var(--a);font-style:italic;margin-top:4px;font-size:11px;min-height:16px}
-/* ACCORDION */
-.accord{border:1px solid var(--b);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
-.accord-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;cursor:pointer;user-select:none;transition:background .15s;gap:10px}
-.accord-hdr:hover{background:var(--s)}
-.accord-hdr-txt{font-size:14px;font-weight:500;flex:1}
-.accord-arrow{font-family:var(--fm);font-size:12px;color:var(--m);transition:transform .2s;flex-shrink:0}
-.accord.open .accord-arrow{transform:rotate(180deg)}
-.accord-body{display:none;padding:0 18px 18px;font-size:13px;color:var(--m);line-height:1.8}
-.accord.open .accord-body{display:block}
-.accord-body strong{color:var(--t)}
-.accord-body code{font-family:var(--fm);font-size:11px;background:var(--s);border:1px solid var(--b);padding:1px 6px;border-radius:4px;color:var(--a)}
-.accord-body ul{padding-left:18px;margin:6px 0}
-.accord-body li{margin:3px 0}
-.accord-body .ex{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-top:8px;font-family:var(--fm);font-size:11px;color:var(--a)}
-/* APP SHELL */
-#app{position:relative;z-index:1;display:grid;grid-template-columns:256px 1fr;grid-template-rows:64px 1fr;min-height:100vh}
-.top{grid-column:1/-1;background:rgba(11,15,20,.92);border-bottom:1px solid var(--b);backdrop-filter:blur(20px);display:flex;align-items:center;padding:0 28px;gap:16px;position:sticky;top:0;z-index:100;flex-wrap:wrap}
-.logo{display:flex;align-items:center;gap:12px;cursor:pointer}
-.lmark{width:36px;height:36px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-family:var(--fs);font-size:18px;color:#000;box-shadow:0 0 20px rgba(0,212,170,.3);flex-shrink:0}
-.ltext{font-family:var(--fs);font-size:20px}.lsub{font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:2px;text-transform:uppercase}
-.tr{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.badge{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;padding:3px 10px;border-radius:20px;text-transform:uppercase;background:var(--ad);border:1px solid var(--a);color:var(--a)}
-.buser{background:var(--a2d);border:1px solid var(--a2);color:var(--a2);font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
-.buser:hover{background:rgba(79,168,255,.2)}
-.bout{background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.25);color:#ff9aa2;font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s}
-.bout:hover{background:rgba(255,95,109,.18)}
-.bvoice{background:var(--a2d);border:1px solid var(--a2);color:var(--a2);font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
-.bvoice.active{background:rgba(255,95,109,.15);border-color:var(--d);color:var(--d)}
-.side{background:var(--s);border-right:1px solid var(--b);padding:20px 0;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
-.sl{padding:0 14px;margin-bottom:6px}
-.slbl{font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:2px;text-transform:uppercase;padding:8px 8px 4px}
-.ni{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);cursor:pointer;transition:all .15s;color:var(--m);font-size:13.5px;font-weight:500;position:relative;user-select:none}
-.ni:hover{background:var(--c);color:var(--t)}
-.ni.on{background:var(--ad);color:var(--a);border:1px solid var(--ab)}
-.ni.on::before{content:'';position:absolute;left:-1px;top:22%;bottom:22%;width:2px;background:var(--a);border-radius:2px}
-.nic{font-size:15px;width:20px;text-align:center;flex-shrink:0}
-.main{overflow-y:auto;background:var(--bg)}
-.view{display:none;padding:32px;animation:fi .25s ease}
-.view.on{display:block}
-@keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-h1.pt{font-family:var(--fs);font-size:32px;line-height:1.15;margin-bottom:6px}
-h1.pt em{font-style:italic;color:var(--a)}
-.ps{color:var(--m);font-size:14px;margin-bottom:28px}
-.lbl{font-family:var(--fm);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--m);margin-bottom:10px}
-.card{background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:24px;box-shadow:var(--sh)}
-.card+.card{margin-top:20px}
-.ct{font-size:16px;font-weight:600;margin-bottom:18px;display:flex;align-items:center;gap:8px}
-.fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:14px}
-.f{display:flex;flex-direction:column;gap:5px}
-label{font-family:var(--fm);font-size:11px;letter-spacing:1px;color:var(--m);text-transform:uppercase}
-input,select,textarea{background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:10px 14px;font-size:14px;font-family:var(--ff);transition:border-color .15s,box-shadow .15s;width:100%}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--a);box-shadow:0 0 0 3px var(--ad)}
-textarea{resize:vertical;min-height:90px}
-select option{background:var(--s)}
-.priv{background:linear-gradient(135deg,rgba(255,95,109,.06),rgba(255,95,109,.02));border:1px solid rgba(255,95,109,.25);border-radius:var(--r);padding:12px 16px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start}
-.priv p{font-size:12px;color:#ff9aa2;line-height:1.5}
-.admin-notice{background:linear-gradient(135deg,rgba(255,95,109,.08),rgba(255,95,109,.02));border:1px solid rgba(255,95,109,.3);border-radius:var(--r);padding:12px 16px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#ffb3b3}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:var(--r);font-family:var(--ff);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s;white-space:nowrap}
-.bp{background:linear-gradient(135deg,var(--a),#00b891);color:#000;box-shadow:0 4px 20px rgba(0,212,170,.25)}
-.bp:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,170,.4)}
-.bs{background:var(--s);color:var(--t);border:1px solid var(--b)}
-.bs:hover{border-color:var(--bl);background:var(--c)}
-.bv{background:rgba(79,168,255,.12);color:var(--a2);border:1px solid rgba(79,168,255,.3)}
-.bv:hover{background:rgba(79,168,255,.2)}
-.bd{background:var(--dd);color:var(--d);border:1px solid rgba(255,95,109,.3)}
-.bd:hover{background:rgba(255,95,109,.2)}
-.bsm{padding:6px 14px;font-size:12px}
-.btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important}
-.res{display:none;margin-top:24px;animation:fi .3s ease}
-.res.show{display:block}
-.ta{font-family:var(--fs);font-size:52px;line-height:1;background:linear-gradient(135deg,var(--a),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.tu{font-family:var(--fm);font-size:20px;color:var(--m)}
-.rg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
-.rc{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;text-align:center}
-.rc.am{border-color:rgba(0,212,170,.3)}.rc.mc{border-color:rgba(79,168,255,.3)}.rc.pa{border-color:rgba(255,181,71,.3)}
-.rl{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
-.rc.am .rl{color:var(--a)}.rc.mc .rl{color:var(--a2)}.rc.pa .rl{color:var(--w)}
-.ra{font-family:var(--fs);font-size:24px}.rp{font-size:11px;color:var(--m)}
-.al{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
-.ar{display:flex;align-items:center;background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;gap:12px}
-.ar:hover{border-color:var(--bl)}
-.ac{font-family:var(--fm);font-size:12px;background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:2px 8px;border-radius:6px;flex-shrink:0}
-.ac.mj{background:var(--wd);color:var(--w);border-color:rgba(255,181,71,.2)}
-.ac.dp{background:var(--a2d);color:var(--a2);border-color:rgba(79,168,255,.2)}
-.an{flex:1;font-size:13px}.ao{font-family:var(--fm);font-size:11px;color:var(--m);flex-shrink:0}
-.at{font-family:var(--fm);font-size:14px;font-weight:500;flex-shrink:0;min-width:60px;text-align:right}
-.aic{display:flex;flex-direction:column;gap:8px}
-.ai{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:var(--r);font-size:13px;line-height:1.5}
-.ai.er{background:var(--dd);border:1px solid rgba(255,95,109,.25);color:#ff9aa2}
-.ai.wa{background:var(--wd);border:1px solid rgba(255,181,71,.25);color:#ffc96b}
-.ai.in{background:var(--a2d);border:1px solid rgba(79,168,255,.25);color:#80c4ff}
-.ai.su{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.25);color:#7eedb3}
-.dreb{display:inline-flex;align-items:center;gap:6px;background:rgba(79,168,255,.12);border:1px solid rgba(79,168,255,.3);color:var(--a2);font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px}
-.rag-c{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.rag-ch{font-family:var(--fm);font-size:10px;color:var(--m);background:var(--s);border:1px solid var(--b);padding:2px 8px;border-radius:20px}
-.ar-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;padding-top:20px;border-top:1px solid var(--b)}
-.errb{background:var(--dd);border:1px solid rgba(255,95,109,.3);border-radius:var(--r);padding:16px 20px;color:#ff9aa2;font-size:13px;display:flex;gap:10px;align-items:center}
-.ht{overflow-x:auto;border-radius:var(--rl);border:1px solid var(--b)}
-table{width:100%;border-collapse:collapse;font-size:13px}
-thead{background:var(--s);position:sticky;top:0}
-th{text-align:left;padding:12px 16px;font-family:var(--fm);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);border-bottom:1px solid var(--b);white-space:nowrap}
-td{padding:12px 16px;border-bottom:1px solid var(--b);vertical-align:middle}
-tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
-.tg{display:flex;flex-wrap:wrap;gap:4px}
-.tgt{font-family:var(--fm);font-size:10px;background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:1px 6px;border-radius:4px}
-.sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px;margin-bottom:28px}
-.sc{background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:20px;position:relative;overflow:hidden}
-.sc::after{content:'';position:absolute;bottom:-20px;right:-20px;width:80px;height:80px;border-radius:50%;opacity:.07}
-.sc.g::after{background:var(--a)}.sc.b::after{background:var(--a2)}.sc.o::after{background:var(--w)}.sc.r::after{background:var(--d)}
-.si{font-size:22px;margin-bottom:10px}
-.sv{font-family:var(--fs);font-size:32px;line-height:1;margin-bottom:4px}
-.sc.g .sv{color:var(--a)}.sc.b .sv{color:var(--a2)}.sc.o .sv{color:var(--w)}.sc.r .sv{color:var(--d)}
-.sn{font-size:12px;color:var(--m)}
-.secrow{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--b)}
-.secrow:last-child{border-bottom:none}
-.secdot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-.secdot.ok{background:var(--ok);box-shadow:0 0 7px var(--ok)}
-.secdot.live{background:var(--a2);box-shadow:0 0 7px var(--a2);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-/* IMPORT ZONE */
-.drop-zone{border:2px dashed var(--b);border-radius:var(--rl);padding:40px;text-align:center;transition:all .2s;cursor:pointer;position:relative}
-.drop-zone:hover,.drop-zone.drag{border-color:var(--a);background:var(--ad)}
-.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-.drop-icon{font-size:48px;margin-bottom:12px}
-.drop-text{font-size:14px;color:var(--m)}.drop-text strong{color:var(--t)}
-.drop-formats{font-family:var(--fm);font-size:10px;color:var(--m);margin-top:8px;letter-spacing:1px}
-/* TOURNÉE */
-.route-item{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);margin-bottom:8px;transition:border-color .15s}
-.route-item:hover{border-color:var(--bl)}
-.route-num{width:30px;height:30px;border-radius:50%;background:var(--ad);border:1px solid rgba(0,212,170,.2);display:grid;place-items:center;font-family:var(--fm);font-size:12px;color:var(--a);flex-shrink:0;font-weight:600}
-.route-info{flex:1}
-.route-time{font-family:var(--fm);font-size:11px;color:var(--m);flex-shrink:0}
-.route-km{font-family:var(--fm);font-size:11px;color:var(--a2);flex-shrink:0}
-/* PILOTAGE LIVE */
-.live-card{background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(79,168,255,.04));border:1px solid rgba(0,212,170,.3);border-radius:var(--rl);padding:24px;margin-bottom:20px}
-.live-patient{font-family:var(--fs);font-size:24px;margin-bottom:8px}
-.live-badge{display:inline-flex;align-items:center;gap:6px;background:var(--ad);border:1px solid rgba(0,212,170,.3);color:var(--a);font-family:var(--fm);font-size:11px;padding:4px 12px;border-radius:20px;margin-bottom:12px}
-.live-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--a);animation:pulse 1.5s infinite}
-.live-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
-/* ADMIN KPI */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
-.kpi{background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:18px;text-align:center}
-.kpi-v{font-family:var(--fs);font-size:28px;line-height:1;margin-bottom:4px}
-.kpi-v.g{color:var(--a)}.kpi-v.b{color:var(--a2)}.kpi-v.o{color:var(--w)}.kpi-v.r{color:var(--d)}
-.kpi-l{font-size:11px;color:var(--m)}
-@media(max-width:768px){
-  #app{grid-template-columns:1fr;grid-template-rows:64px auto 1fr}
-  .side{grid-row:2;display:flex;flex-direction:row;flex-wrap:wrap;padding:8px;border-right:none;border-bottom:1px solid var(--b);overflow-x:auto}
-  .slbl{display:none}.ni{padding:8px 10px;font-size:12px}
-  .main{grid-row:3}.view{padding:16px}
-  .rg{grid-template-columns:1fr}.ta{font-size:38px}
-  .acard{padding:32px 20px}.g2{grid-template-columns:1fr}
-  .adm-stats{grid-template-columns:1fr 1fr}
-  #voicebtn{bottom:16px;right:16px}
+
+function useMyLocation(){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    map.setView([lat,lng],14);
+
+    if(marker) map.removeLayer(marker);
+    marker = L.marker([lat,lng]).addTo(map);
+
+    t_lat.value = lat;
+    t_lng.value = lng;
+  });
 }
-</style>
-</head>
-<body>
 
-<!-- AUTH -->
-<div id="auth-ov">
-  <div class="aw"><div class="acard">
-    <div class="alogo"><div class="amark">A</div><div><div class="aname">AMI</div><div class="asub">Cotation NGAP IA</div></div></div>
-    <div class="atabs">
-      <button class="atab on" id="tab-l" onclick="switchTab('l')">Connexion</button>
-      <button class="atab" id="tab-r" onclick="switchTab('r')">Créer un compte</button>
-    </div>
-    <div id="pan-l">
-      <div class="msg e" id="le"></div>
-      <div class="af"><label>Email</label><input type="email" id="l-em" placeholder="infirmiere@cabinet.fr" autocomplete="email"></div>
-      <div class="af"><label>Mot de passe</label><input type="password" id="l-pw" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
-      <button class="abtn" id="btn-l" onclick="login()"><span>🔐</span> Se connecter</button>
-    </div>
-    <div id="pan-r" style="display:none">
-      <div class="msg e" id="re"></div><div class="msg o" id="ro"></div>
-      <div class="g2"><div class="af"><label>Prénom *</label><input type="text" id="r-fn" placeholder="Marie"></div><div class="af"><label>Nom *</label><input type="text" id="r-ln" placeholder="DUPONT"></div></div>
-      <div class="af"><label>Email *</label><input type="email" id="r-em" placeholder="infirmiere@cabinet.fr"></div>
-      <div class="af"><label>Mot de passe (min. 8 car.) *</label><input type="password" id="r-pw" placeholder="••••••••"></div>
-      <div class="af"><label>Confirmer</label><input type="password" id="r-pw2" placeholder="••••••••"></div>
-      <div class="sep"><span class="sepl">Informations professionnelles (optionnel)</span></div>
-      <div class="g2"><div class="af"><label>N° ADELI</label><input type="text" id="r-ad" placeholder="123456789"></div><div class="af"><label>RPPS</label><input type="text" id="r-rp" placeholder="10001234567"></div></div>
-      <div class="af"><label>Cabinet / Structure</label><input type="text" id="r-st" placeholder="Cabinet libéral de..."></div>
-      <button class="abtn" id="btn-r" onclick="register()"><span>✨</span> Créer mon compte</button>
-    </div>
-    <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--m);font-family:var(--fm)">🔒 Cloudflare · Supabase · SHA-256 · RGPD</div>
-  </div></div>
+window.addEventListener('load', initMap);
+🔥 BONUS (ULTRA PRO)
+
+👉 Ajoute géocodage adresse :
+
+async function searchAddress(){
+  const q = document.getElementById('t-address').value;
+
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+  const data = await r.json();
+
+  if(data.length){
+    const lat = parseFloat(data[0].lat);
+    const lng = parseFloat(data[0].lon);
+
+    map.setView([lat,lng],14);
+
+    if(marker) map.removeLayer(marker);
+    marker = L.marker([lat,lng]).addTo(map);
+
+    t_lat.value = lat;
+    t_lng.value = lng;
+  }
+}
+
+👉 bouton :
+
+<button class="btn bs" onclick="searchAddress()">🔍 Rechercher</button>
+📅 4. PROBLÈME PLANNING ACTUEL
+
+Dans ton fichier :
+
+👉 le planning :
+
+<textarea id="pl-txt">
+
+👉 + bouton IA
+
+❌ PROBLÈME
+❌ manuel → perte de temps
+❌ pas connecté à l’import
+❌ incohérence avec tournée
+🚀 5. NOUVEAU SYSTÈME : PLANNING AUTO (IMPORT)
+🎯 OBJECTIF
+
+👉 Le planning doit être :
+
+généré automatiquement après import
+basé sur les données réelles patients
+🔧 MODIF UI
+
+Remplace :
+
+<textarea id="pl-txt">
+
+👉 par :
+
+<div class="card">
+  <div class="lbl">Planning généré automatiquement</div>
+
+  <button class="btn bp" onclick="generatePlanningFromImport()">
+    📅 Générer depuis mes données importées
+  </button>
 </div>
+🔧 JS À AJOUTER
+function generatePlanningFromImport(){
 
-<!-- ADMIN PANEL -->
-<div id="adm">
-  <div class="adm-top">
-    <div style="display:flex;align-items:center;gap:10px"><div class="adm-mark">⚙</div><div><div class="adm-name">Administration AMI</div><div class="adm-sub">Accès restreint</div></div></div>
-    <div class="priv-badge">🔒 Vue limitée : nom + prénom uniquement</div>
-    <button class="bs bsm" style="margin-left:auto;padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer" onclick="goToApp()">← Retour à l'app</button>
-    <button class="bout" onclick="logout()">⏻ Déconnexion</button>
-  </div>
-  <div class="adm-body">
-    <h1 style="font-family:var(--fs);font-size:28px;margin-bottom:6px">Tableau de bord <em style="font-style:italic;color:var(--a)">Admin</em></h1>
-    <p style="color:var(--m);font-size:13px;margin-bottom:24px">Données agrégées anonymisées · aucune donnée patient identifiable</p>
-    <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici.</p></div>
-    <div class="adm-alert e" id="adm-alert"></div>
-    <!-- KPI -->
-    <div class="lbl" style="margin-bottom:12px">Analytics globaux</div>
-    <div id="adm-kpi" class="kpi-grid">
-      <div class="kpi"><div class="kpi-v g" id="kpi-ca">—</div><div class="kpi-l">CA total (€)</div></div>
-      <div class="kpi"><div class="kpi-v b" id="kpi-actes">—</div><div class="kpi-l">Soins cotés</div></div>
-      <div class="kpi"><div class="kpi-v o" id="kpi-panier">—</div><div class="kpi-l">Panier moyen</div></div>
-      <div class="kpi"><div class="kpi-v r" id="kpi-alertes">—</div><div class="kpi-l">Alertes NGAP</div></div>
-      <div class="kpi"><div class="kpi-v b" id="kpi-dre">—</div><div class="kpi-l">DRE requises</div></div>
-    </div>
-    <div id="adm-top-actes" style="margin-bottom:24px"></div>
-    <!-- Gestion comptes -->
-    <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
-    <div class="adm-search">
-      <input type="text" id="adm-q" placeholder="🔍 Filtrer par nom ou prénom..." oninput="filterAccs()">
-      <button class="bs bsm" onclick="loadAdm()" style="padding:10px 18px;font-size:13px">↻ Actualiser</button>
-    </div>
-    <div id="accs" class="accs"><div class="empty"><div class="ei"><div class="spin spinw" style="width:32px;height:32px"></div></div><p style="margin-top:12px">Chargement...</p></div></div>
-  </div>
-</div>
+  if(!window.IMPORTED_DATA || !IMPORTED_DATA.length){
+    alert("Aucune donnée importée");
+    return;
+  }
 
-<!-- PROFILE MODAL -->
-<div id="pm">
-  <div class="mc">
-    <div class="mh"><div class="mt">👤 Mon profil</div><button class="mx" onclick="closePM()">✕</button></div>
-    <div class="msg e" id="pe"></div><div class="msg o" id="po"></div>
-    <div style="margin-bottom:20px">
-      <div class="g2"><div class="af"><label>Prénom</label><input type="text" id="p-fn"></div><div class="af"><label>Nom</label><input type="text" id="p-ln"></div></div>
-      <div class="g2"><div class="af"><label>N° ADELI</label><input type="text" id="p-ad"></div><div class="af"><label>RPPS</label><input type="text" id="p-rp"></div></div>
-      <div class="af"><label>Cabinet / Structure</label><input type="text" id="p-st"></div>
-      <div class="af"><label>Adresse</label><input type="text" id="p-adr"></div>
-      <div class="af"><label>Téléphone</label><input type="tel" id="p-tel"></div>
-    </div>
-    <button class="btn bp" style="width:100%;justify-content:center" onclick="savePM()">💾 Enregistrer</button>
-    <div class="sep" style="margin-top:24px"><span class="sepl">Changer le mot de passe</span></div>
-    <div class="msg e" id="ppe"></div><div class="msg o" id="ppo"></div>
-    <div class="af"><label>Mot de passe actuel</label><input type="password" id="p-old" placeholder="••••••••"></div>
-    <div class="af"><label>Nouveau mot de passe</label><input type="password" id="p-new" placeholder="••••••••"></div>
-    <button class="btn bs" style="width:100%;justify-content:center;margin-top:6px" onclick="changePwd()">🔑 Changer</button>
-    <div class="sep" style="margin-top:24px"><span class="sepl" style="color:var(--d)">Zone dangereuse</span></div>
-    <button class="btn bd" style="width:100%;justify-content:center" onclick="delAccount()">🗑️ Supprimer mon compte</button>
-  </div>
-</div>
+  const days = {};
 
-<!-- VERIFY MODAL -->
-<div id="vm">
-  <div class="vmc">
-    <div class="vm-title">🔍 Vérification & Correction IA</div>
-    <div class="vm-sub">Analyse avant cotation — aucune donnée sauvegardée</div>
-    <div id="vm-loading" style="text-align:center;padding:40px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="font-size:13px;color:var(--m)">Analyse en cours...</p></div>
-    <div id="vm-result" style="display:none">
-      <div id="vm-corr-wrap" style="display:none"><div class="vm-section"><div class="vm-corrected-label">Texte corrigé</div><div class="vm-corrected" id="vm-corrected-text"></div></div></div>
-      <div id="vm-fixes-wrap" class="vm-section" style="display:none"><div class="vm-section-title">✏️ Corrections appliquées</div><div id="vm-fixes"></div></div>
-      <div id="vm-alerts-wrap" class="vm-section" style="display:none"><div class="vm-section-title">⚠️ Incohérences NGAP détectées</div><div id="vm-alerts"></div></div>
-      <div id="vm-sugg-wrap" class="vm-section" style="display:none"><div class="vm-section-title">💡 Majorations / éléments suggérés</div><div id="vm-sugg"></div></div>
-      <div id="vm-ok-wrap" style="display:none"><div class="vm-item ok">✅ Description correcte — aucune correction nécessaire</div></div>
-    </div>
-    <div class="vm-actions">
-      <button class="btn bp" id="vm-apply" onclick="applyVerify()" style="display:none"><span>✅</span> Appliquer les corrections</button>
-      <button class="btn bs" onclick="closeVM()">✕ Fermer</button>
-      <button class="btn bv" id="vm-cotate" onclick="closeVM();setTimeout(cotation,100)" style="display:none"><span>⚡</span> Coter maintenant</button>
-    </div>
-  </div>
-</div>
+  IMPORTED_DATA.forEach(ev=>{
+    const day = ev.date;
 
-<!-- ASSISTANT VOCAL -->
-<button id="voicebtn" title="Assistant vocal" onclick="toggleVoice()">🎤</button>
-<div id="voice-toast">
-  <div style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:4px">🎤 ASSISTANT VOCAL ACTIF</div>
-  <div id="voice-interim"></div>
-  <div style="font-size:10px;color:var(--m);margin-top:6px">Dites "stop assistant" pour désactiver</div>
-</div>
+    if(!days[day]) days[day] = [];
 
-<!-- APP SHELL -->
-<div id="app" style="display:none">
-  <header class="top">
-    <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
-    <div class="tr">
-      <div class="badge">NGAP 2026</div>
-      <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
-      <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
-      <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
-      <button class="bout" onclick="logout()">⏻ Déconnexion</button>
-    </div>
-  </header>
-  <nav class="side">
-    <div class="sl">
-      <div class="slbl">Navigation</div>
-      <div class="ni on" data-v="cot"><span class="nic">🩺</span> Cotation NGAP</div>
-      <div class="ni" data-v="ver"><span class="nic">✅</span> Vérifier soin</div>
-      <div class="ni nurse-only" data-v="imp"><span class="nic">📂</span> Import calendrier</div>
-      <div class="ni nurse-only" data-v="tur"><span class="nic">🗺️</span> Tournée IA</div>
-      <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
-      <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
-      <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique</div>
-    </div>
-    <div class="sl" style="margin-top:auto">
-      <div class="slbl">Système</div>
-      <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
-      <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
-    </div>
-  </nav>
-  <main class="main">
+    days[day].push(ev);
+  });
 
-    <!-- COTATION -->
-    <section class="view on" id="view-cot">
-      <h1 class="pt">Cotation <em>intelligente</em></h1>
-      <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
-      <div class="card">
-        <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
-        <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
-        <div class="lbl">Prescripteur (médecin)</div>
-        <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label>Médecin prescripteur</label><input type="text" id="f-pr" placeholder="Dr. Martin Pierre"></div>
-          <div class="f"><label>RPPS Prescripteur</label><input type="text" id="f-pr-rp" placeholder="10009876543"></div>
-          <div class="f"><label>Date de prescription</label><input type="date" id="f-pr-dt"></div>
-        </div>
-        <div id="patient-fields">
-          <div class="lbl">Patient — données locales uniquement</div>
-          <div class="fg" style="margin-bottom:20px">
-            <div class="f"><label>Nom patient <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="f-pt" placeholder="NOM Prénom" autocomplete="off"></div>
-            <div class="f"><label>Date de naissance</label><input type="date" id="f-ddn"></div>
-            <div class="f"><label>N° Sécu <span style="font-size:9px;opacity:.5">(non transmis)</span></label><input type="text" id="f-sec" placeholder="1 85 06 ..." autocomplete="off"></div>
-            <div class="f"><label>Caisse AMO</label><input type="text" id="f-amo" placeholder="CPAM Paris"></div>
-            <div class="f"><label>Mutuelle AMC</label><input type="text" id="f-amc" placeholder="MGEN, Harmonie..."></div>
+  let html = "";
+
+  Object.keys(days).sort().forEach(day=>{
+    html += `<div class="card"><h3>${day}</h3>`;
+
+    days[day].forEach(p=>{
+      html += `
+        <div class="route-item">
+          <div class="route-info">
+            ${p.patient || "Patient"} — ${p.acte}
           </div>
+          <div class="route-time">${p.time || ""}</div>
         </div>
-        <div class="lbl">Facturation</div>
-        <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label>Exonération</label><select id="f-exo"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
-          <div class="f"><label>Mode règlement</label><select id="f-regl"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
-          <div class="f"><label>Date du soin</label><input type="date" id="f-ds"></div>
-          <div class="f"><label>Heure du soin</label><input type="time" id="f-hs"></div>
-        </div>
-        <div class="lbl">Description des soins <span style="color:var(--d)">*</span></div>
-        <div class="f" style="margin-bottom:16px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."></textarea></div>
-        <div class="ar-row">
-          <button class="btn bp" id="btn-cot" onclick="cotation()"><span>⚡</span> Coter avec l'IA</button>
-          <button class="btn bv" id="btn-verify" onclick="openVerify()"><span>🔍</span> Vérifier & corriger</button>
-          <button class="btn bs" onclick="clrCot()">↺ Réinitialiser</button>
-        </div>
-      </div>
-      <div id="res-cot" class="res"><div id="cerr" class="errb" style="display:none">⚠️ <span id="cerr-m"></span></div><div id="cbody"></div></div>
-    </section>
-
-    <!-- VERIFY -->
-    <section class="view" id="view-ver">
-      <h1 class="pt">Vérifier <em>un soin</em></h1><p class="ps">Correction auto · Normalisation médicale · Alertes NGAP</p>
-      <div class="card">
-        <div class="aic" style="margin-bottom:20px">
-          <div class="ai in">✏️ <strong>Corrige</strong> les fautes de frappe et erreurs de reconnaissance vocale</div>
-          <div class="ai wa">⚠️ <strong>Détecte</strong> les incohérences NGAP : heure de nuit sans heure précise</div>
-          <div class="ai su">💡 <strong>Suggère</strong> les majorations oubliées : IFD si domicile, IK si km présents</div>
-        </div>
-        <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label>Date du soin</label><input type="date" id="v-ds"></div>
-          <div class="f"><label>Heure</label><input type="time" id="v-hs"></div>
-          <div class="f"><label>Exonération</label><select id="v-exo"><option value="">Aucune</option><option value="ALD">ALD</option></select></div>
-        </div>
-        <div class="f" style="margin-bottom:16px"><textarea id="v-txt" placeholder="Ex : injection SC insuline + panse dimanche domisil..." style="min-height:100px"></textarea></div>
-        <button class="btn bv" id="btn-ver" onclick="verifyStandalone()"><span>🔍</span> Analyser & Corriger</button>
-      </div>
-      <div id="res-ver" class="res"><div id="verr" class="errb" style="display:none">⚠️ <span id="verr-m"></span></div><div id="vbody"></div></div>
-    </section>
-
-    <!-- IMPORT CALENDRIER -->
-    <section class="view" id="view-imp">
-      <h1 class="pt">Import <em>calendrier</em></h1>
-      <p class="ps">Google Calendar · Excel · CSV · JSON · texte libre · anonymisation automatique</p>
-      <div class="card">
-        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Anonymisation RGPD automatique :</strong> les noms de patients sont convertis en identifiants anonymes. Vous seul(e) pouvez voir vos données importées.</p></div>
-        <div class="lbl" style="margin-bottom:16px">Glissez votre fichier ou cliquez pour sélectionner</div>
-        <div class="drop-zone" id="drop-zone">
-          <input type="file" id="imp-file" accept=".ics,.csv,.xlsx,.json,.txt" onchange="handleFileSelect(this)">
-          <div class="drop-icon">📂</div>
-          <div class="drop-text"><strong>Sélectionner un fichier</strong> ou glisser-déposer ici</div>
-          <div class="drop-formats">Formats : .ics · .csv · .json · .txt · copier-coller</div>
-        </div>
-        <div style="margin-top:16px">
-          <div class="lbl">Ou coller du texte directement</div>
-          <div class="f" style="margin-bottom:12px"><textarea id="imp-text" placeholder="Collez votre planning ici (format libre, JSON, CSV...)..." style="min-height:120px"></textarea></div>
-        </div>
-        <div class="ar-row">
-          <button class="btn bp" id="btn-imp" onclick="importCalendar()"><span>📥</span> Importer</button>
-          <button class="btn bs" onclick="$('imp-text').value='';$('imp-file').value='';$('imp-result').classList.remove('show')">↺ Effacer</button>
-        </div>
-      </div>
-      <div id="imp-result" class="res"></div>
-    </section>
-
-    <!-- TOURNÉE IA -->
-    <section class="view" id="view-tur">
-      <h1 class="pt">Tournée <em>optimisée par IA</em></h1>
-      <p class="ps">Basée sur vos patients importés · algorithme greedy + priorité</p>
-      <div class="card">
-        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>La tournée est calculée à partir de vos patients importés. Importez d'abord votre planning via "Import calendrier".</p></div>
-        <div class="fg" style="margin-bottom:16px">
-          <div class="f"><label>Latitude départ (optionnel)</label><input type="number" id="t-lat" placeholder="48.8566" step="0.0001"></div>
-          <div class="f"><label>Longitude départ (optionnel)</label><input type="number" id="t-lng" placeholder="2.3522" step="0.0001"></div>
-        </div>
-        <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
-      </div>
-      <div id="res-tur" class="res"><div id="terr" class="errb" style="display:none">⚠️ <span id="terr-m"></span></div><div id="tbody"></div></div>
-    </section>
-
-    <!-- PILOTAGE LIVE -->
-    <section class="view" id="view-live">
-      <h1 class="pt">Pilotage <em>de journée</em></h1>
-      <p class="ps">Assistant temps réel · imprévus · recalcul automatique</p>
-      <div id="live-status" class="live-card">
-        <div class="live-badge">EN ATTENTE</div>
-        <div class="live-patient" id="live-patient-name">Démarrez votre journée</div>
-        <p style="font-size:13px;color:var(--m)" id="live-info">Cliquez sur "Démarrer" pour activer le pilotage automatique</p>
-        <div class="live-actions">
-          <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
-          <button class="btn bs" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
-        </div>
-      </div>
-      <div id="live-controls" style="display:none">
-        <div class="card">
-          <div class="ct">Actions</div>
-          <div class="ar-row">
-            <button class="btn bp" id="btn-done" onclick="liveAction('patient_done')"><span>✅</span> Patient terminé</button>
-            <button class="btn bs" id="btn-absent" onclick="liveAction('patient_absent')"><span>❌</span> Patient absent</button>
-            <button class="btn bv" onclick="liveStatus()"><span>📊</span> Actualiser</button>
-          </div>
-        </div>
-        <div id="live-next" class="res show" style="margin-top:16px"></div>
-      </div>
-    </section>
-
-    <!-- PLANNING -->
-    <section class="view" id="view-pla">
-      <h1 class="pt">Planning <em>hebdomadaire</em></h1><p class="ps">8–15 patients/jour · Organisation optimale</p>
-      <div class="card">
-        <div class="f" style="margin-bottom:16px"><textarea id="pl-txt" placeholder="Patient A : Injection 2x/jour&#10;Patient B : Toilette lundi/mercredi/vendredi&#10;Patient C : Pansement quotidien..." style="min-height:140px"></textarea></div>
-        <button class="btn bp" id="btn-pla" onclick="modeAI('planning')"><span>📅</span> Générer</button>
-      </div>
-      <div id="res-pla" class="res"><div id="perr" class="errb" style="display:none">⚠️ <span id="perr-m"></span></div><div id="pbody"></div></div>
-    </section>
-
-    <!-- HISTORIQUE -->
-    <section class="view" id="view-his">
-      <h1 class="pt">Historique <em>des soins</em></h1><p class="ps">Accès infirmier uniquement</p>
-      <div class="card">
-        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p>Seule l'infirmière connectée voit ses données. Admins : aucun accès patient.</p></div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-          <input type="text" id="hq" placeholder="🔍 Rechercher..." style="width:200px" oninput="hist()">
-          <select id="hp" onchange="hist()" style="width:160px"><option value="">Toute période</option><option value="today">Aujourd'hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select>
-          <button class="btn bs bsm" onclick="hist()">↻ Actualiser</button>
-        </div>
-        <div id="hstats" class="sg"></div>
-        <div class="ht"><table>
-          <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th></tr></thead>
-          <tbody id="htb"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Cliquez sur Actualiser</td></tr></tbody>
-        </table></div>
-      </div>
-    </section>
-
-    <!-- AIDE -->
-    <section class="view" id="view-aide">
-      <h1 class="pt">Aide <em>& Documentation</em></h1><p class="ps">Guides fonctionnels · Import · Tournée · Assistant vocal</p>
-      <div class="card">
-        <div class="ct">📖 Fonctionnalités</div>
-        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">📂 Import calendrier — formats acceptés</div><div class="accord-arrow">▼</div></div>
-          <div class="accord-body">L'import accepte tous les formats courants :<ul><li><code>.ics</code> — Google Calendar, Apple Calendar, Outlook</li><li><code>.csv</code> — Excel, LibreOffice (séparateurs , ou ;)</li><li><code>.json</code> — format structuré</li><li><code>.txt</code> — texte libre, un soin par ligne</li><li>Copier-coller direct dans la zone texte</li></ul><strong>Anonymisation automatique :</strong> les noms patients sont remplacés par un identifiant anonyme. Seule vous pouvez voir vos données importées.<div class="ex">Exemple CSV : date,heure,soin,patient<br>2026-04-02,08:30,injection insuline SC,M. Dupont</div></div>
-        </div>
-        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">🗺️ Tournée IA — comment ça marche ?</div><div class="accord-arrow">▼</div></div>
-          <div class="accord-body">L'algorithme optimise votre tournée selon :<ul><li><strong>Priorité médicale</strong> : insuline, urgences et passages matinaux en premier</li><li><strong>Distance</strong> : algorithme greedy (plus proche voisin) si coordonnées disponibles</li><li><strong>Horaires</strong> : respect des créneaux fixés</li></ul>Importez d'abord vos patients via "Import calendrier", puis cliquez sur "Optimiser".</div>
-        </div>
-        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">▶️ Pilotage journée — actions disponibles</div><div class="accord-arrow">▼</div></div>
-          <div class="accord-body"><ul><li><strong>Démarrer</strong> : active le pilotage, affiche le prochain patient</li><li><strong>Patient terminé</strong> : marque le soin comme fait, passe au suivant</li><li><strong>Patient absent</strong> : retire le patient de la tournée du jour</li><li><strong>Actualiser</strong> : recharge l'état de la journée</li></ul>Les données restent anonymisées en tout temps.</div>
-        </div>
-        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">🔍 Vérifier & corriger — comment ça fonctionne ?</div><div class="accord-arrow">▼</div></div>
-          <div class="accord-body">Le bouton <strong>🔍 Vérifier & corriger</strong> envoie votre description à l'IA en mode <code>verify</code>. L'IA corrige les fautes, normalise les termes médicaux, détecte les incohérences NGAP et suggère les majorations oubliées. <strong>Aucune donnée sauvegardée.</strong></div>
-        </div>
-        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">💰 Répartition AMO / AMC et DRE</div><div class="accord-arrow">▼</div></div>
-          <div class="accord-body"><strong>AMO :</strong> 60 % standard, 100 % si ALD / Maternité / AT / CSS.<br><strong>AMC :</strong> ticket modérateur si tiers payant AMO+AMC avec mutuelle renseignée.<br><strong>DRE :</strong> requise si tiers payant, ALD, maternité ou accident du travail.<div class="ex">ALD + Tiers AMO+AMC → AMO=100% · AMC=0€ · Patient=0€ · DRE=true</div></div>
-        </div>
-        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">🎤 Assistant vocal — commandes disponibles</div><div class="accord-arrow">▼</div></div>
-          <div class="accord-body"><ul><li><code>"nouveau patient"</code> / <code>"réinitialiser"</code></li><li><code>"générer la facture"</code> / <code>"calculer"</code></li><li><code>"vérifier"</code> / <code>"corriger"</code></li><li><code>"patient terminé"</code> (pilotage live)</li><li><code>"stop assistant"</code></li><li><code>"nom du patient [nom]"</code> · <code>"ALD"</code> · <code>"tiers payant"</code></li></ul></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECURITE -->
-    <section class="view" id="view-sec">
-      <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">Cloudflare Worker · Supabase · SHA-256</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-        <div class="card">
-          <div class="ct">🛡️ Protection active</div>
-          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Auth Cloudflare Worker</strong><span style="font-size:12px;color:var(--m)">SHA-256 salé · Sessions Supabase</span></div></div>
-          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Zéro visibilité admin</strong><span style="font-size:12px;color:var(--m)">Admins : nom+prénom uniquement</span></div></div>
-          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Patients anonymisés</strong><span style="font-size:12px;color:var(--m)">SHA-256 + sel · ID temporaire uniquement</span></div></div>
-          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Import sécurisé</strong><span style="font-size:12px;color:var(--m)">Traitement local · aucune donnée brute stockée</span></div></div>
-          <div class="secrow"><div class="secdot live"></div><div><strong style="font-size:14px;display:block">Session active</strong><span style="font-size:12px;color:var(--m)" id="sess-inf">—</span></div></div>
-        </div>
-        <div class="card">
-          <div class="ct">🗑️ Droits RGPD — Effacement</div>
-          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:160px"><button class="btn bd bsm" onclick="delById()">🗑️ Supprimer</button></div>
-            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-pt" placeholder="Nom patient (purge totale)" style="width:220px"><button class="btn bd bsm" onclick="delByPt()">🗑️ Purger</button></div>
-          </div>
-          <div id="del-r"></div>
-        </div>
-      </div>
-    </section>
-  </main>
-</div>
-
-<!-- ═══ SCRIPT UNIQUE ═══ -->
-<script>
-'use strict';
-const W = 'https://raspy-tooth-1a2f.vdskillers.workers.dev';
-let S = null, LIVE_PATIENT_ID = null;
-const ss = {
-  save(t,r,u){S={token:t,role:r,user:u};sessionStorage.setItem('ami',JSON.stringify(S));},
-  clear(){S=null;sessionStorage.removeItem('ami');},
-  load(){try{const x=sessionStorage.getItem('ami');if(x){S=JSON.parse(x);return true;}}catch{}return false;},
-  tok(){return S?.token||'';}
-};
-const $ = id => document.getElementById(id);
-const gv = id => ($( id)?.value||'').trim();
-const fmt = n => (parseFloat(n)||0).toFixed(2)+' €';
-function cc(c){c=(c||'').toUpperCase();if(['IFD','IK','MCI','MIE'].includes(c))return 'dp';if(c.includes('MAJ'))return 'mj';return '';}
-function showM(id,txt,type='e'){const el=$(id);if(!el)return;el.className='msg '+type;el.textContent=txt;el.style.display='block';}
-function hideM(...ids){ids.forEach(id=>{const el=$(id);if(el)el.style.display='none';});}
-function ld(id,on){const b=$(id);if(!b)return;b.disabled=on;if(on){b._o=b.innerHTML;b.innerHTML='<span class="spin"></span> En cours...';}else b.innerHTML=b._o||b.innerHTML;}
-async function wpost(path,body){
-  const r=await fetch(W+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ss.tok()},body:JSON.stringify(body)});
-  return r.json();
-}
-async function apiCall(path,body){
-  const r=await fetch(W+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ss.tok()},body:JSON.stringify(body)});
-  return r.json();
-}
-
-/* AUTH */
-function checkAuth(){
-  if(ss.load()&&S?.token){
-    // Admin et infirmière vont tous dans showApp()
-    // L'admin a un bandeau + bouton vers le panel admin
-    showApp();
-  }else showAuthOv();
-}
-function showAuthOv(){$('auth-ov').classList.remove('hide');$('adm').classList.remove('show');$('app').style.display='none';}
-function showAdm(){$('auth-ov').classList.add('hide');$('adm').classList.add('show');$('app').style.display='none';loadAdm();loadAdmStats();}
-function goToApp(){$('adm').classList.remove('show');$('app').style.display='grid';}
-function showApp(){
-  $('auth-ov').classList.add('hide');$('adm').classList.remove('show');$('app').style.display='grid';
-  const u=S?.user||{};
-  $('uname').textContent=((u.prenom||'')+' '+(u.nom||'')).trim()||u.email||'—';
-  if($('sess-inf'))$('sess-inf').textContent=(u.email||'')+' · session active';
-  $('voicebtn').classList.add('show');
-  // Mode admin : toutes les pages visibles, données patients masquées
-  if(S?.role==='admin'){
-    $('admin-mode-badge').style.display='flex';
-    $('admin-cot-notice').style.display='flex';
-    $('priv-cot').style.display='none';
-    $('btn-profil').style.display='none';
-    // Afficher toutes les pages (nurse-only visible pour vérification fonctionnelle)
-    document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
-    // Masquer les champs patient individuels (RGPD)
-    ['f-pt','f-ddn','f-sec','f-amo','f-amc'].forEach(id=>{
-      const el=$(id); if(el){ el.value=''; el.placeholder='— masqué (admin) —'; el.readOnly=true; }
+      `;
     });
-    // Pré-remplir champs neutres pour test
-    const fds=$(  'f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
-    // Ajouter bouton "Panneau admin" dans la sidebar
-    if(!$('btn-goto-admin')){
-      const li=document.createElement('div');
-      li.className='ni';li.id='btn-goto-admin';
-      li.innerHTML='<span class="nic">⚙️</span> Panneau admin';
-      li.style.cssText='color:var(--d);background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);margin:8px 14px;border-radius:var(--r);';
-      li.onclick=()=>{$('app').style.display='none';$('adm').classList.add('show');loadAdm();loadAdmStats();};
-      document.querySelector('.side .sl:last-child')?.prepend(li);
-    }
-  }
-}
-function switchTab(t){['l','r'].forEach(x=>{$('tab-'+x).classList.toggle('on',x===t);$('pan-'+x).style.display=x===t?'block':'none';});hideM('le','re','ro');}
-async function login(){
-  hideM('le');const em=gv('l-em'),pw=gv('l-pw');
-  if(!em||!pw){showM('le','Email et mot de passe requis.');return;}
-  ld('btn-l',true);
-  try{
-    const d=await wpost('/webhook/auth-login',{email:em,password:pw});
-    if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
-    ss.save(d.token,d.role,d.user);
-    showApp(); // admin et nurse → même app, admin a un bandeau + accès panel
-  }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
-}
-async function register(){
-  hideM('re','ro');
-  const fn=gv('r-fn'),ln=gv('r-ln'),em=gv('r-em'),pw=gv('r-pw'),pw2=gv('r-pw2');
-  if(!fn||!ln){showM('re','Prénom et Nom obligatoires.');return;}
-  if(!em){showM('re','Email obligatoire.');return;}
-  if(!pw||pw.length<8){showM('re','Mot de passe minimum 8 caractères.');return;}
-  if(pw!==pw2){showM('re','Les mots de passe ne correspondent pas.');return;}
-  ld('btn-r',true);
-  try{
-    const d=await wpost('/webhook/infirmiere-register',{prenom:fn,nom:ln,email:em,password:pw,adeli:gv('r-ad'),rpps:gv('r-rp'),structure:gv('r-st')});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    showM('ro','✅ Compte créé ! Vous pouvez vous connecter.','o');
-    setTimeout(()=>switchTab('l'),2000);
-  }catch(e){showM('re',e.message);}finally{ld('btn-r',false);}
-}
-function logout(){ss.clear();stopVoice();showAuthOv();switchTab('l');const pw=$('l-pw');if(pw)pw.value='';$('voicebtn').classList.remove('show');}
 
-/* ADMIN */
-let ACCS=[];
-async function loadAdm(){
-  $('accs').innerHTML='<div class="empty"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:12px">Chargement...</p></div>';
-  try{
-    const d=await wpost('/webhook/admin-liste',{});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    ACCS=d.comptes||[];renderAccs(ACCS);
-  }catch(e){admAlert(e.message,'e');$('accs').innerHTML='<div class="empty"><div class="ei">⚠️</div><p>Impossible de charger les comptes</p></div>';}
-}
-async function loadAdmStats(){
-  try{
-    const d=await wpost('/webhook/admin-stats',{});
-    if(!d.ok)return;
-    const s=d.stats;
-    if($('kpi-ca'))$('kpi-ca').textContent=(s.ca_total||0).toFixed(0)+'€';
-    if($('kpi-actes'))$('kpi-actes').textContent=s.nb_actes||0;
-    if($('kpi-panier'))$('kpi-panier').textContent=(s.panier_moyen||0).toFixed(2)+'€';
-    if($('kpi-alertes'))$('kpi-alertes').textContent=s.nb_alertes||0;
-    if($('kpi-dre'))$('kpi-dre').textContent=s.nb_dre||0;
-    if($('adm-top-actes')&&s.top_actes?.length){
-      $('adm-top-actes').innerHTML=`<div class="lbl" style="margin-bottom:10px">Actes les plus fréquents</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.top_actes.map(a=>`<span style="background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:4px 12px;border-radius:20px;font-family:var(--fm);font-size:12px">${a.code} <span style="opacity:.6">(${a.count})</span></span>`).join('')}</div>`;
-    }
-  }catch{}
-}
-function filterAccs(){const q=gv('adm-q').toLowerCase();renderAccs(q?ACCS.filter(a=>(a.nom||'').toLowerCase().includes(q)||(a.prenom||'').toLowerCase().includes(q)):ACCS);}
-function renderAccs(list){
-  if(!list.length){$('accs').innerHTML='<div class="empty"><div class="ei">👥</div><p>Aucun compte trouvé</p></div>';return;}
-  $('accs').innerHTML=list.map(a=>{
-    const ini=((a.prenom||'?')[0]+(a.nom||'?')[0]).toUpperCase();
-    const name=((a.prenom||'')+' '+(a.nom||'')).trim()||'—';
-    const safe=name.replace(/'/g,"\\'");
-    return`<div class="acc ${a.is_blocked?'blk':''}"><div class="avat ${a.is_blocked?'blk':''}">${ini}</div><div class="acc-name">${name}</div><div class="acc-st ${a.is_blocked?'blk':'on'}">${a.is_blocked?'⏸ Suspendu':'● Actif'}</div><div class="acc-acts">${a.is_blocked?`<button class="bxs b-unblk" onclick="admAct('debloquer',${a.id},'${safe}')">▶ Réactiver</button>`:`<button class="bxs b-blk" onclick="admAct('bloquer',${a.id},'${safe}')">⏸ Suspendre</button>`}<button class="bxs b-del" onclick="admAct('supprimer',${a.id},'${safe}')">🗑️</button></div></div>`;
-  }).join('');
-}
-function admAlert(msg,type='o'){const el=$('adm-alert');el.className='adm-alert '+type;el.textContent=msg;el.style.display='block';setTimeout(()=>el.style.display='none',5000);}
-async function admAct(action,id,name){
-  const msgs={bloquer:`Suspendre ${name} ?`,debloquer:`Réactiver ${name} ?`,supprimer:`⚠️ SUPPRIMER DÉFINITIVEMENT ${name} ?`};
-  if(!confirm(msgs[action]))return;
-  if(action==='supprimer'&&!confirm(`Confirmer la suppression de ${name} ?`))return;
-  try{
-    const d=await wpost(`/webhook/admin-${action}`,{id});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    const labels={bloquer:'suspendu',debloquer:'réactivé',supprimer:'supprimé'};
-    admAlert(`✅ ${name} ${labels[action]}.`,'o');
-    if(action==='supprimer')ACCS=ACCS.filter(a=>a.id!==id);
-    else{const a=ACCS.find(a=>a.id===id);if(a)a.is_blocked=(action==='bloquer');}
-    renderAccs(ACCS);
-  }catch(e){admAlert(e.message,'e');}
-}
-
-/* NAV */
-document.querySelectorAll('.ni[data-v]').forEach(item=>{
-  item.addEventListener('click',()=>{
-    document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'));
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
-    item.classList.add('on');
-    $('view-'+item.dataset.v)?.classList.add('on');
+    html += "</div>";
   });
-});
 
-/* PROFIL */
-async function openPM(){
-  $('pm').classList.add('open');hideM('pe','po','ppe','ppo');
-  const u=S?.user||{};
-  $('p-fn').value=u.prenom||'';$('p-ln').value=u.nom||'';$('p-ad').value=u.adeli||'';$('p-rp').value=u.rpps||'';$('p-st').value=u.structure||'';$('p-adr').value=u.adresse||'';$('p-tel').value=u.tel||'';
-  try{const d=await wpost('/webhook/profil-get',{});if(d.ok&&d.profil){const p=d.profil;$('p-fn').value=p.prenom||'';$('p-ln').value=p.nom||'';$('p-ad').value=p.adeli||'';$('p-rp').value=p.rpps||'';$('p-st').value=p.structure||'';$('p-adr').value=p.adresse||'';$('p-tel').value=p.tel||'';}}catch{}
+  document.getElementById('pbody').innerHTML = html;
+  document.getElementById('res-pla').classList.add('show');
 }
-function closePM(){$('pm').classList.remove('open');}
-async function savePM(){
-  hideM('pe','po');
-  try{const d=await wpost('/webhook/profil-save',{nom:gv('p-ln'),prenom:gv('p-fn'),adeli:gv('p-ad'),rpps:gv('p-rp'),structure:gv('p-st'),adresse:gv('p-adr'),tel:gv('p-tel')});if(!d.ok)throw new Error(d.error||'Erreur');S.user={...S.user,...d.profil};ss.save(S.token,S.role,S.user);$('uname').textContent=((S.user.prenom||'')+' '+(S.user.nom||'')).trim();showM('po','✅ Profil enregistré.','o');}
-  catch(e){showM('pe',e.message);}
-}
-async function changePwd(){
-  hideM('ppe','ppo');const old=gv('p-old'),nw=gv('p-new');
-  if(!old||!nw){showM('ppe','Remplissez les deux champs.');return;}
-  if(nw.length<8){showM('ppe','Minimum 8 caractères.');return;}
-  try{const d=await wpost('/webhook/change-password',{ancien:old,nouveau:nw});if(!d.ok)throw new Error(d.error);$('p-old').value='';$('p-new').value='';showM('ppo','✅ Mot de passe changé.','o');}catch(e){showM('ppe',e.message);}
-}
-async function delAccount(){
-  if(!confirm('⚠️ Supprimer votre compte définitivement ?'))return;
-  try{const d=await wpost('/webhook/delete-account',{});if(!d.ok)throw new Error(d.error);ss.clear();closePM();showAuthOv();switchTab('l');}catch(e){showM('pe',e.message);}
-}
+🧠 6. LIEN CRUCIAL IMPORT → TOURNÉE
 
-/* VERIFY MODAL */
-let VM_DATA=null;
-async function openVerify(){
-  const txt=gv('f-txt');if(!txt){alert("Saisissez d'abord une description du soin.");return;}
-  $('vm').classList.add('open');$('vm-loading').style.display='block';$('vm-result').style.display='none';
-  $('vm-apply').style.display='none';$('vm-cotate').style.display='none';VM_DATA=null;
-  try{
-    const d=await apiCall('/webhook/ami-calcul',{mode:'verify',texte:txt,ddn:gv('f-ddn'),date_soin:gv('f-ds'),heure_soin:gv('f-hs'),exo:gv('f-exo'),regl:gv('f-regl')});
-    VM_DATA=d;renderVM(d);
-  }catch(e){$('vm-loading').style.display='none';$('vm-result').innerHTML=`<div class="vm-item warn">⚠️ Erreur : ${e.message}</div>`;$('vm-result').style.display='block';}
-}
-function renderVM(d){
-  $('vm-loading').style.display='none';$('vm-result').style.display='block';
-  const corrige=d.texte_corrige||'',fixes=d.corrections||[],alerts=d.alertes_urssaf||d.alertes||[],sugg=d.optimisations||d.suggestions||[];
-  const hasChanges=corrige||fixes.length||alerts.length||sugg.length;
-  if(corrige&&corrige!==gv('f-txt')){$('vm-corr-wrap').style.display='block';$('vm-corrected-text').textContent=corrige;$('vm-apply').style.display='flex';}else{$('vm-corr-wrap').style.display='none';}
-  if(fixes.length){$('vm-fixes-wrap').style.display='block';$('vm-fixes').innerHTML=fixes.map(f=>`<div class="vm-item fix">✏️ ${f}</div>`).join('');}else{$('vm-fixes-wrap').style.display='none';}
-  if(alerts.length){$('vm-alerts-wrap').style.display='block';$('vm-alerts').innerHTML=alerts.map(a=>`<div class="vm-item warn">⚠️ ${a}</div>`).join('');}else{$('vm-alerts-wrap').style.display='none';}
-  if(sugg.length){$('vm-sugg-wrap').style.display='block';$('vm-sugg').innerHTML=sugg.map(s=>`<div class="vm-item sugg">💡 ${s}</div>`).join('');}else{$('vm-sugg-wrap').style.display='none';}
-  $('vm-ok-wrap').style.display=hasChanges?'none':'block';
-  $('vm-cotate').style.display='flex';
-}
-function applyVerify(){if(VM_DATA?.texte_corrige)$('f-txt').value=VM_DATA.texte_corrige;closeVM();}
-function closeVM(){$('vm').classList.remove('open');}
-async function verifyStandalone(){
-  const txt=gv('v-txt');if(!txt){alert('Saisissez une description.');return;}
-  ld('btn-ver',true);$('res-ver').classList.remove('show');
-  try{
-    const d=await apiCall('/webhook/ami-calcul',{mode:'verify',texte:txt,date_soin:gv('v-ds'),heure_soin:gv('v-hs'),exo:gv('v-exo')});
-    const corrige=d.texte_corrige||'',fixes=d.corrections||[],alerts=d.alertes_urssaf||d.alertes||[],sugg=d.optimisations||d.suggestions||[];
-    $('vbody').innerHTML=`<div class="card"><div class="ct">🔍 Résultat</div>
-    ${corrige?`<div style="margin-bottom:16px"><div class="lbl" style="color:var(--ok)">Texte normalisé</div><div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;font-style:italic;font-size:14px;line-height:1.7">${corrige}</div></div>`:''}
-    ${fixes.length?`<div class="aic" style="margin-bottom:14px">${fixes.map(f=>`<div class="ai su">✏️ ${f}</div>`).join('')}</div>`:''}
-    ${alerts.length?`<div class="aic" style="margin-bottom:14px">${alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
-    ${sugg.length?`<div class="aic">${sugg.map(s=>`<div class="ai in">💡 ${s}</div>`).join('')}</div>`:''}
-    ${!corrige&&!fixes.length&&!alerts.length&&!sugg.length?'<div class="ai su">✅ Description correcte</div>':''}
-    </div>`;
-    $('verr').style.display='none';
-  }catch(e){$('verr').style.display='flex';$('verr-m').textContent=e.message;}
-  $('res-ver').classList.add('show');ld('btn-ver',false);
-}
+👉 Après importCalendar()
 
-/* COTATION */
-async function cotation(){
-  const txt=gv('f-txt');if(!txt){alert('Veuillez saisir une description.');return;}
-  ld('btn-cot',true);$('res-cot').classList.remove('show');$('cerr').style.display='none';
-  const u=S?.user||{};
-  try{
-    const d=await apiCall('/webhook/ami-calcul',{mode:'ngap',texte:txt,infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',ddn:gv('f-ddn'),amo:gv('f-amo'),amc:gv('f-amc'),exo:gv('f-exo'),regl:gv('f-regl'),date_soin:gv('f-ds'),heure_soin:gv('f-hs')});
-    if(d.error)throw new Error(d.error);
-    $('cbody').innerHTML=renderCot(d);$('res-cot').classList.add('show');
-  }catch(e){$('cerr').style.display='flex';$('cerr-m').textContent=e.message;$('res-cot').classList.add('show');}
-  ld('btn-cot',false);
-}
-function renderCot(d){
-  const a=d.actes||[],al=d.alerts||[],op=d.optimisations||[];
-  return`<div class="card">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
-    <div><div class="lbl">Total cotation</div>
-    <div style="display:flex;align-items:baseline;gap:6px"><div class="ta">${(d.total||0).toFixed(2)}</div><div class="tu">€</div></div>
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${d.dre_requise?'<div class="dreb">📋 DRE requise</div>':''}</div></div>
-    <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g,"&#39;")})'>🖨️ Imprimer</button>
-  </div>
-  <div class="rg">
-    <div class="rc am"><div class="rl">Part AMO (SS)</div><div class="ra">${fmt(d.part_amo)}</div><div class="rp">${d.taux_amo?Math.round(d.taux_amo*100)+'%':'60%'}</div></div>
-    <div class="rc mc"><div class="rl">Part AMC</div><div class="ra">${fmt(d.part_amc)}</div><div class="rp">Complémentaire</div></div>
-    <div class="rc pa"><div class="rl">Part Patient</div><div class="ra">${fmt(d.part_patient)}</div><div class="rp">Ticket modérateur</div></div>
-  </div>
-  <div class="lbl" style="margin-bottom:10px">Détail des actes</div>
-  <div class="al">${a.length?a.map(x=>`<div class="ar"><div class="ac ${cc(x.code)}">${x.code||'?'}</div><div class="an">${x.nom||''}</div><div class="ao">×${(x.coefficient||1).toFixed(1)}</div><div class="at">${fmt(x.total)}</div></div>`).join(''):'<div class="ai wa">⚠️ Aucun acte retourné</div>'}</div>
-  ${al.length?`<div class="aic">${al.map(x=>`<div class="ai er">❌ ${x}</div>`).join('')}</div>`:'<div class="ai su">✅ Aucune alerte NGAP</div>'}
-  ${op.length?`<div style="margin-top:16px"><div class="aic">${op.map(x=>`<div class="ai in">💡 ${x}</div>`).join('')}</div></div>`:''}
-  </div>`;
-}
-function printInv(d){
-  const u=S?.user||{},ac=d.actes||[];
-  const num='F'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6);
-  const inf=((u.prenom||'')+' '+(u.nom||'')).trim()||'Infirmier(ère) libéral(e)';
-  const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${num}</title><style>body{font-family:sans-serif;margin:0;padding:40px;font-size:14px;color:#1a1a2e}table{width:100%;border-collapse:collapse;margin:20px 0}th{background:#f0f4fa;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#6b7a99}td{padding:10px 12px;border-bottom:1px solid #e8edf5}tfoot td{font-weight:700;border-top:2px solid #ccd5e0}.hdr{display:flex;justify-content:space-between;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #e0e7ef}.rep{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}.rc{background:#f7f9fc;padding:14px;border-radius:8px;text-align:center}.rl{font-size:11px;text-transform:uppercase;color:#6b7a99;margin-bottom:4px}.rv{font-size:22px;font-weight:700}@media print{button{display:none}}</style></head><body>
-  <div class="hdr"><div><h1 style="margin:0 0 6px;font-size:26px;color:#0b3954">Facture de soins</h1><div style="font-size:12px;color:#6b7a99">N° ${num} · ${new Date().toLocaleDateString('fr-FR')}</div></div><div style="text-align:right"><strong>${inf}</strong>${u.adeli?'<br>ADELI '+u.adeli:''}${u.rpps?'<br>RPPS '+u.rpps:''}</div></div>
-  <table><thead><tr><th>Code</th><th>Acte</th><th style="text-align:right">Coef.</th><th style="text-align:right">Montant</th></tr></thead>
-  <tbody>${ac.map(x=>`<tr><td>${x.code||''}</td><td>${x.nom||''}</td><td style="text-align:right">×${(x.coefficient||1).toFixed(1)}</td><td style="text-align:right">${fmt(x.total)}</td></tr>`).join('')}</tbody>
-  <tfoot><tr><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">${fmt(d.total)}</td></tr></tfoot></table>
-  <div class="rep"><div class="rc"><div class="rl">AMO (SS)</div><div class="rv">${fmt(d.part_amo)}</div></div><div class="rc"><div class="rl">AMC</div><div class="rv">${fmt(d.part_amc)}</div></div><div class="rc"><div class="rl">Patient</div><div class="rv">${fmt(d.part_patient)}</div></div></div>
-  ${d.dre_requise?'<p style="margin-top:16px;padding:10px;background:#e8f4ff;border-radius:6px;font-size:13px;color:#2563eb">📋 <strong>DRE requise</strong></p>':''}
-  <script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close();
-}
-function clrCot(){['f-pr','f-pr-rp','f-pr-dt','f-pt','f-ddn','f-sec','f-amo','f-amc','f-txt','f-ds','f-hs'].forEach(id=>{const e=$(id);if(e)e.value='';});['f-exo','f-regl'].forEach(id=>{const e=$(id);if(e)e.selectedIndex=0;});$('res-cot').classList.remove('show');}
+Ajoute :
 
-/* IMPORT CALENDRIER */
-function handleFileSelect(input){
-  const f=input.files[0];if(!f)return;
-  $('drop-zone').style.borderColor='var(--a)';
-  const reader=new FileReader();
-  reader.onload=e=>{$('imp-text').value=e.target.result;};
-  reader.readAsText(f,'UTF-8');
-}
-// Drag & drop
-const dz=$('drop-zone');
-if(dz){
-  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
-  dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
-  dz.addEventListener('drop',e=>{
-    e.preventDefault();dz.classList.remove('drag');
-    const f=e.dataTransfer.files[0];if(!f)return;
-    const reader=new FileReader();
-    reader.onload=ev=>{$('imp-text').value=ev.target.result;};
-    reader.readAsText(f,'UTF-8');
-    $('drop-zone').style.borderColor='var(--a)';
-  });
-}
-async function importCalendar(){
-  const content=gv('imp-text');
-  if(!content){alert('Aucun contenu à importer. Sélectionnez un fichier ou collez du texte.');return;}
-  ld('btn-imp',true);
-  try{
-    const fileInput=$('imp-file');
-    const filename=fileInput.files[0]?.name||'';
-    const type=fileInput.files[0]?.type||'';
-    const d=await apiCall('/webhook/import-calendar',{content,type,filename});
-    if(!d.ok)throw new Error(d.error||'Erreur import');
-    $('imp-result').innerHTML=`<div class="card"><div class="ct">✅ Import réussi</div>
-    <div class="ai su" style="margin-bottom:12px">✅ ${d.total} entrée(s) importée(s) · ${d.stored||0} sauvegardée(s)</div>
-    ${d.alerts?.length?`<div class="lbl" style="margin-bottom:8px">⚠️ Avertissements</div><div class="aic">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
-    <div style="margin-top:16px;display:flex;gap:10px">
-      <button class="btn bv bsm" onclick="document.querySelector('[data-v=tur]').click()">🗺️ Optimiser la tournée</button>
-      <button class="btn bp bsm" onclick="document.querySelector('[data-v=live]').click()">▶️ Démarrer le pilotage</button>
-    </div></div>`;
-    $('imp-result').classList.add('show');
-  }catch(e){
-    $('imp-result').innerHTML=`<div class="errb">⚠️ ${e.message}</div>`;
-    $('imp-result').classList.add('show');
-  }
-  ld('btn-imp',false);
-}
+window.IMPORTED_DATA = parsedData;
 
-/* TOURNÉE IA */
+👉 comme ça :
+
+tournée = basée sur vrai planning
+planning = cohérent
+🏁 RÉSULTAT FINAL
+✅ après upgrade
+🗺️ tournée
+clic carte
+GPS
+adresse
+UX terrain réaliste
+📅 planning
+auto généré
+connecté à import
+zéro saisie
+💥 IMPACT PRODUIT
+
+👉 tu passes de :
+
+outil technique
+
+à :
+
+vrai assistant infirmière terrain
+💬 PROCHAINE ÉTAPE (si tu veux)
+
+Je peux te faire :
+
+👉 🔥 optimisation tournée niveau Uber :
+
+vrai calcul distance (OSRM)
+temps réel
+trafic
+ordre optimal réel (pas greedy)
+
+👉 🔥 pilotage live intelligent :
+
+retard auto
+recalcul dynamique
+
+Dis-moi juste :
+👉 "mode pro max"
+
+mode pro max
+
+Parfait. Là on passe clairement en niveau SaaS médical premium ⚡
+Tu vas avoir une tournée digne d’un Uber + un pilotage intelligent en temps réel.
+
+🚀 MODE PRO MAX — CE QUE JE T’ACTIVE
+🧠 1. Tournée IA niveau Uber (vrai routing)
+
+👉 Actuellement :
+
+algo greedy ❌ (approximation)
+
+👉 On passe à :
+
+✅ distances réelles (routes)
+✅ temps estimé
+✅ ordre optimisé réel
+🔥 API utilisée
+
+👉 moteur : OSRM (Open Source Routing Machine)
+➡️ ultra rapide + gratuit
+
+🔧 NOUVELLE FONCTION TOURNÉE
+
+Remplace ton optimiserTournee() par :
+
 async function optimiserTournee(){
-  ld('btn-tur',true);$('res-tur').classList.remove('show');
-  try{
-    const d=await apiCall('/webhook/ami-tournee-ia',{start_lat:parseFloat(gv('t-lat'))||48.8566,start_lng:parseFloat(gv('t-lng'))||2.3522});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    if(!d.route?.length){
-      $('tbody').innerHTML='<div class="card"><div class="ai wa">⚠️ Aucun patient importé. Utilisez l\'import calendrier d\'abord.</div></div>';
-    }else{
-      $('tbody').innerHTML=`<div class="card"><div class="ct">🗺️ Tournée optimisée — ${d.total_patients} patients</div>
-      <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">
-        <div class="dreb">📍 ${d.total_patients} patients</div>
-        ${d.total_km?`<div class="dreb">🚗 ~${d.total_km} km</div>`:''}
-      </div>
-      ${d.route.map((p,i)=>{const sd=encodeURIComponent(p.description||'');return`<div class="route-item">
+
+  if(!window.IMPORTED_DATA || IMPORTED_DATA.length === 0){
+    alert("Importe ton planning d'abord");
+    return;
+  }
+
+  if(!t_lat.value || !t_lng.value){
+    alert("Choisis un point de départ sur la carte");
+    return;
+  }
+
+  const start = [t_lng.value, t_lat.value];
+
+  const coords = IMPORTED_DATA
+    .filter(p => p.lat && p.lng)
+    .map(p => `${p.lng},${p.lat}`);
+
+  const url = `https://router.project-osrm.org/trip/v1/driving/${start.join(',')};${coords.join(';')}?source=first&roundtrip=false`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if(!data.trips){
+    alert("Erreur calcul tournée");
+    return;
+  }
+
+  renderTourneeOptimisee(data, IMPORTED_DATA);
+}
+🔧 AFFICHAGE PRO
+function renderTourneeOptimisee(data, patients){
+
+  const trip = data.trips[0];
+  const waypoints = data.waypoints;
+
+  let html = `<div class="card"><h3>🗺️ Tournée optimisée</h3>`;
+
+  waypoints.forEach((wp, i)=>{
+    const p = patients[wp.waypoint_index];
+
+    html += `
+      <div class="route-item">
         <div class="route-num">${i+1}</div>
-        <div class="route-info"><strong style="font-size:13px">${p.description||'Patient'}</strong><div style="font-size:11px;color:var(--m);margin-top:2px">ID: ${p.patient_id||'—'}</div></div>
-        ${p.heure?`<div class="route-time">⏱ ${p.heure}</div>`:''}
-        ${p.distance_km?`<div class="route-km">+${p.distance_km}km</div>`:''}
-        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
-      </div>`}).join('')}
-      ${d.alerts?.length?`<div class="aic" style="margin-top:16px">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
-      </div>`;
-    }
-    $('terr').style.display='none';
-  }catch(e){$('terr').style.display='flex';$('terr-m').textContent=e.message;}
-  $('res-tur').classList.add('show');ld('btn-tur',false);
+        <div class="route-info">
+          ${p.acte || "Soin"} 
+        </div>
+        <div class="route-km">${(wp.distance/1000).toFixed(1)} km</div>
+      </div>
+    `;
+  });
+
+  html += `
+    <div style="margin-top:16px;font-family:var(--fm);font-size:12px">
+      ⏱️ Durée estimée : ${(trip.duration/60).toFixed(0)} min<br>
+      📏 Distance totale : ${(trip.distance/1000).toFixed(1)} km
+    </div>
+  </div>`;
+
+  tbody.innerHTML = html;
+  res_tur.classList.add('show');
 }
-function coterDepuisRoute(desc){
-  $('f-txt').value=desc;
-  document.querySelector('[data-v=cot]')?.click();
+⚡ 2. PRIORITÉ MÉDICALE INTELLIGENTE
+
+👉 Avant d’envoyer à OSRM, on trie :
+
+function priorityScore(p){
+  let score = 0;
+
+  if(p.acte?.includes("insuline")) score += 10;
+  if(p.acte?.includes("pansement")) score += 6;
+  if(p.acte?.includes("toilette")) score += 4;
+  if(p.time && p.time < "10:00") score += 8;
+
+  return score;
 }
 
-/* PILOTAGE LIVE */
-async function startDay(){
-  $('live-badge').textContent='EN COURS';
-  $('live-badge').style.background='var(--ad)';$('live-badge').style.color='var(--a)';
-  $('btn-live-start').style.display='none';
-  $('live-controls').style.display='block';
-  await liveStatus();
+👉 puis :
+
+IMPORTED_DATA.sort((a,b)=>priorityScore(b)-priorityScore(a));
+🧠 3. PILOTAGE AUTO JOURNÉE (INTELLIGENCE)
+
+👉 Upgrade complet de ton module live
+
+🔥 NOUVELLE LOGIQUE
+
+👉 Ajoute :
+
+let currentIndex = 0;
+
+function startDay(){
+  currentIndex = 0;
+  showNextPatient();
 }
-async function liveStatus(){
-  try{
-    const d=await apiCall('/webhook/ami-live',{action:'get_status'});
-    if(!d.ok)return;
-    if(d.prochain){
-      let actes=[];try{actes=JSON.parse(d.prochain.actes||'[]');}catch{}
-      const desc=actes[0]?.nom||'Soin';
-      LIVE_PATIENT_ID=d.prochain.patient_id;
-      $('live-patient-name').textContent=desc;
-      $('live-info').textContent=`Prochain patient · ${d.prochain.heure_soin||'horaire non défini'}`;
-      $('live-next').innerHTML=`<div class="card"><div class="ct">📋 Patients restants</div><div class="ai in">📍 ${d.patients_restants} patient(s) restant(s) aujourd'hui</div></div>`;
+
+function showNextPatient(){
+
+  const p = IMPORTED_DATA[currentIndex];
+
+  if(!p){
+    live_patient_name.innerText = "Journée terminée ✅";
+    return;
+  }
+
+  live_patient_name.innerText = p.acte || "Patient";
+
+  live_info.innerText = `
+    Heure prévue : ${p.time || "--"} 
+    | Distance estimée : ${p.distance || "--"}
+  `;
+}
+🔥 ACTIONS INTELLIGENTES
+function liveAction(type){
+
+  const p = IMPORTED_DATA[currentIndex];
+
+  if(type === "patient_done"){
+    p.done = true;
+    currentIndex++;
+  }
+
+  if(type === "patient_absent"){
+    p.absent = true;
+    currentIndex++;
+  }
+
+  showNextPatient();
+}
+⚡ 4. AUTO-RECALCUL (ULTRA PRO)
+
+👉 si retard :
+
+function detectDelay(){
+  const now = new Date();
+  const p = IMPORTED_DATA[currentIndex];
+
+  if(!p.time) return;
+
+  const [h,m] = p.time.split(":");
+  const target = new Date();
+  target.setHours(h,m);
+
+  if(now > target){
+    console.log("RETARD → recalcul tournée");
+    optimiserTournee();
+  }
+}
+
+👉 lance toutes les 2 min :
+
+setInterval(detectDelay, 120000);
+🛡️ 5. ANONYMISATION AVANCÉE
+
+👉 à l’import :
+
+function anonymize(patient){
+  return "PT-" + Math.random().toString(36).substring(2,8);
+}
+
+👉 remplace :
+
+nom
+prénom
+📊 6. FRAUDE IA (niveau expert)
+
+👉 ajoute score automatique :
+
+function fraudeScore(p){
+
+  let score = 0;
+
+  if(p.acte?.includes("nuit") && !p.time) score += 30;
+  if(p.km > 50) score += 20;
+  if(p.acte?.includes("double facturation")) score += 50;
+
+  return score;
+}
+
+👉 affichage :
+
+if(score > 40){
+  html += `<div style="color:red">⚠️ Risque fraude élevé</div>`;
+}
+🏁 RÉSULTAT FINAL
+🔥 TON APP DEVIENT :
+🗺️ GPS médical intelligent
+🧠 assistant décisionnel
+📅 planning auto connecté
+⚡ pilotage temps réel
+🛡️ anti-fraude intégré
+💥 NIVEAU ATTEINT
+
+👉 clairement :
+
+Doctolib + Uber + IA médicale
+💬 PROCHAINE ÉTAPE (très lourde valeur)
+
+Je peux t’ajouter :
+
+🔥 1. carte temps réel tournée
+trajet en live
+position actuelle
+🔥 2. prédiction revenus journée
+CA estimé
+optimisation gains
+🔥 3. auto-facturation intelligente
+cotation automatique après passage
+
+👉 dis-moi :
+
+"niveau SaaS elite"
+(et on passe à un produit vendable 💰)
+
+niveau SaaS elite
+
+Parfait. Là on ne parle plus d’un outil — on construit un produit SaaS vendable niveau pro marché 💰
+
+🚀 NIVEAU SaaS ELITE — CE QU’ON VA AJOUTER
+
+👉 3 briques qui font la différence business :
+
+🗺️ Carte tournée en temps réel
+💰 Prédiction de revenus (CA intelligent)
+⚡ Auto-facturation après passage
+🗺️ 1. CARTE TEMPS RÉEL (TRACKING PRO)
+🎯 Objectif
+voir la tournée sur carte
+voir progression
+voir prochain patient
+🔧 AJOUT JS
+let routeLine;
+
+function drawRouteOSRM(data){
+
+  const coords = data.trips[0].geometry.coordinates.map(c => [c[1], c[0]]);
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  routeLine = L.polyline(coords).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+}
+
+👉 appelle ça dans optimiserTournee() après réponse OSRM :
+
+drawRouteOSRM(data);
+🔥 POSITION EN LIVE
+let liveMarker;
+
+function trackPosition(){
+
+  navigator.geolocation.watchPosition(pos=>{
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    if(!liveMarker){
+      liveMarker = L.marker([lat,lng]).addTo(map);
     }else{
-      $('live-patient-name').textContent='Tournée terminée ✅';
-      $('live-info').textContent='Tous les patients ont été vus';
-      $('live-next').innerHTML='<div class="card"><div class="ai su">✅ Journée terminée ! Tous les patients ont été pris en charge.</div></div>';
+      liveMarker.setLatLng([lat,lng]);
     }
-  }catch(e){console.error(e);}
-}
-async function liveAction(action){
-  if(!LIVE_PATIENT_ID&&action!=='get_status'){alert('Aucun patient actif.');return;}
-  try{
-    const d=await apiCall('/webhook/ami-live',{action,patient_id:LIVE_PATIENT_ID||''});
-    if(d.suggestion)alert('💡 '+d.suggestion);
-    await liveStatus();
-  }catch(e){alert('Erreur : '+e.message);}
+  });
 }
 
-/* PLANNING */
-async function modeAI(m){
-  const txt=gv('pl-txt');if(!txt){alert('Saisissez la liste.');return;}
-  ld('btn-pla',true);$('res-pla').classList.remove('show');
-  try{
-    const d=await apiCall('/webhook/ami-calcul',{mode:m,texte:txt});
-    const js=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'],pl=d.planning||{};
-    $('pbody').innerHTML=`<div class="card"><div class="ct">📅 Planning hebdomadaire</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">${js.map(j=>`<div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px"><div style="font-weight:600;text-transform:capitalize;margin-bottom:8px">${j}</div>${(pl[j]||[]).map(p=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--b)">${p}</div>`).join('')||'<div style="font-size:12px;color:var(--m)">—</div>'}</div>`).join('')}</div></div>`;
-    $('perr').style.display='none';
-  }catch(e){$('perr').style.display='flex';$('perr-m').textContent=e.message;}
-  $('res-pla').classList.add('show');ld('btn-pla',false);
+👉 lancer :
+
+trackPosition();
+💰 2. PRÉDICTION DE CA (ULTRA IMPORTANT BUSINESS)
+🎯 Objectif
+afficher CA journée AVANT tournée
+optimiser les gains
+🔧 LOGIQUE
+function estimateRevenue(){
+
+  let total = 0;
+
+  IMPORTED_DATA.forEach(p=>{
+
+    if(p.acte?.includes("insuline")) total += 26.35;
+    else if(p.acte?.includes("pansement")) total += 19;
+    else if(p.acte?.includes("toilette")) total += 23;
+    else total += 15;
+
+  });
+
+  return total;
+}
+🔥 UI
+function showRevenue(){
+
+  const ca = estimateRevenue();
+
+  document.getElementById("ca-box").innerHTML = `
+    💰 CA estimé : <b>${ca.toFixed(2)} €</b>
+  `;
 }
 
-/* HISTORIQUE */
-async function hist(){
-  const tb=$('htb');
-  tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px"><div class="spin spinw" style="margin:0 auto;width:24px;height:24px"></div></td></tr>';
-  try{
-    const params=new URLSearchParams({patient:gv('hq'),period:gv('hp')});
-    const r=await fetch(W+'/webhook/ami-historique?'+params,{headers:{'Authorization':'Bearer '+ss.tok()}});
-    const rows=await r.json(),arr=Array.isArray(rows)?rows:[];
-    const tot=arr.reduce((s,x)=>s+(parseFloat(x.total)||0),0);
-    $('hstats').innerHTML=`<div class="sc g"><div class="si">🧾</div><div class="sv">${arr.length}</div><div class="sn">Soins cotés</div></div><div class="sc b"><div class="si">💶</div><div class="sv">${tot.toFixed(0)}</div><div class="sn">Total € facturé</div></div><div class="sc o"><div class="si">📋</div><div class="sv">${arr.filter(x=>x.dre_requise).length}</div><div class="sn">DRE requises</div></div><div class="sc r"><div class="si">⚠️</div><div class="sv">${arr.filter(x=>{try{return JSON.parse(x.alerts||'[]').length>0}catch{return false}}).length}</div><div class="sn">Alertes NGAP</div></div>`;
-    if(!arr.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Aucune donnée</td></tr>';return;}
-    tb.innerHTML=arr.map(row=>{
-      const ac=typeof row.actes==='string'?JSON.parse(row.actes||'[]'):(row.actes||[]);
-      const al=typeof row.alerts==='string'?JSON.parse(row.alerts||'[]'):(row.alerts||[]);
-      return`<tr><td style="font-family:var(--fm);font-size:12px;color:var(--m)">#${row.id}</td><td>${row.date_soin?new Date(row.date_soin).toLocaleDateString('fr-FR'):'—'}</td><td><div class="tg">${ac.map(x=>x.code?`<span class="tgt">${x.code}</span>`:'').join('')||'—'}</div></td><td style="font-family:var(--fm);font-weight:600;color:var(--a)">${fmt(row.total)}</td><td style="font-family:var(--fm);font-size:11px;${row.dre_requise?'color:var(--a2)':'color:var(--m)'}">${row.dre_requise?'OUI':'non'}</td><td>${al.length?`<span style="font-size:11px;color:var(--w)">⚠️ ${al.length}</span>`:'<span style="font-size:11px;color:var(--ok)">✅</span>'}</td><td><button class="btn bd bsm" onclick="qDel(${row.id})">🗑️</button></td></tr>`;
-    }).join('');
-  }catch(e){tb.innerHTML=`<tr><td colspan="7"><div class="errb">⚠️ ${e.message}</div></td></tr>`;}
-}
-async function qDel(id){if(!confirm(`Supprimer #${id} (RGPD) ?`))return;const r=await fetch(W+'/webhook/ami-supprimer',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ss.tok()},body:JSON.stringify({action:'delete_one',id})});const d=await r.json();if(d.ok)hist();}
-async function delById(){const id=gv('del-id');if(!id||!confirm(`Supprimer #${id} ?`))return;await doD({action:'delete_one',id});}
-async function delByPt(){const p=gv('del-pt');if(!p||!confirm(`Purger "${p}" ?`))return;await doD({action:'delete_patient',patient:p});}
-async function doD(payload){
-  try{const r=await fetch(W+'/webhook/ami-supprimer',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ss.tok()},body:JSON.stringify(payload)});const d=await r.json();$('del-r').innerHTML=d.ok?`<div class="ai su">✅ ${d.deleted||0} supprimée(s).</div>`:`<div class="ai er">❌ ${d.error}</div>`;}
-  catch(e){$('del-r').innerHTML=`<div class="ai er">❌ ${e.message}</div>`;}
-}
+👉 appelle après import + tournée
 
-/* ASSISTANT VOCAL */
-let recognition=null,voiceActive=false;
-const VOICE_CONFIDENCE=0.55;
-function normalizeMedical(txt){
-  let t=txt.toLowerCase();
-  const nums={zéro:0,un:1,une:1,deux:2,trois:3,quatre:4,cinq:5,six:6,sept:7,huit:8,neuf:9,dix:10,onze:11,douze:12,treize:13,quatorze:14,quinze:15,seize:16,vingt:20,'vingt-deux':22,'vingt-trois':23,trente:30,quarante:40,cinquante:50,soixante:60,'soixante-dix':70,'quatre-vingt':80,'quatre-vingt-dix':90};
-  Object.entries(nums).sort((a,b)=>b[0].length-a[0].length).forEach(([w,n])=>{t=t.replace(new RegExp(w,'g'),n);});
-  t=t.replace(/(\d+)\s*heures?/g,'$1h').replace(/\bmidi\b/g,'12h').replace(/\bminuit\b/g,'0h');
-  t=t.replace(/(\d+)\s*kilomètres?/g,'$1 km');
-  const med=[[/\b(piquer|piqûre|injecter)\b/g,'injection SC'],[/\bprise de sang\b/g,'prélèvement sanguin'],[/\b(toilette totale|bain complet)\b/g,'toilette complète'],[/\b(grabataire|alité|immobilisé)\b/g,'patient grabataire'],[/\b(chez le patient|au domicile|à domicile)\b/g,'domicile']];
-  med.forEach(([rx,rep])=>{t=t.replace(rx,rep);});
-  return t.trim();
-}
-const NGAP_KEYWORDS=['injection','pansement','prélèvement','perfusion','toilette','domicile','grabataire','soin','km','nuit','dimanche'];
-function handleVoice(transcript,confidence){
-  if(confidence<VOICE_CONFIDENCE)return;
-  const t=transcript.toLowerCase().trim();
-  $('voice-interim').textContent=t;
-  if(/nouveau patient|réinitialiser/.test(t)){clrCot();return;}
-  if(/générer la facture|calculer|facturer|valider/.test(t)){document.querySelector('[data-v=cot]')?.click();setTimeout(cotation,300);return;}
-  if(/vérifier|corriger/.test(t)){document.querySelector('[data-v=cot]')?.click();setTimeout(openVerify,300);return;}
-  if(/patient terminé/.test(t)){liveAction('patient_done');return;}
-  if(/patient absent/.test(t)){liveAction('patient_absent');return;}
-  if(/stop assistant|arrêter|couper/.test(t)){stopVoice();return;}
-  const nomM=t.match(/nom du patient\s+(.+)/);if(nomM){const e=$('f-pt');if(e)e.value=nomM[1];return;}
-  if(/date du soin|aujourd'hui/.test(t)){const e=$('f-ds');if(e)e.value=new Date().toISOString().split('T')[0];return;}
-  const hM=t.match(/heure du soin\s+(?:à\s+)?(\d{1,2})/);if(hM){const e=$('f-hs');if(e)e.value=hM[1].padStart(2,'0')+':00';return;}
-  if(/tiers payant complet/.test(t)){const e=$('f-regl');if(e)e.value='tiers_amc';return;}
-  if(/tiers payant/.test(t)){const e=$('f-regl');if(e)e.value='tiers';return;}
-  if(/\bald\b|exonéré|cent pour cent/.test(t)){const e=$('f-exo');if(e)e.value='ALD';return;}
-  if(NGAP_KEYWORDS.some(kw=>t.includes(kw))){const el=$('f-txt');if(el)el.value=(el.value?el.value+', ':'')+normalizeMedical(transcript);}
-}
-function toggleVoice(){if(voiceActive)stopVoice();else startVoice();}
-function startVoice(){
-  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){alert('Reconnaissance vocale non supportée. Utilisez Chrome.');return;}
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  recognition=new SR();recognition.lang='fr-FR';recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;
-  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const res=e.results[i];if(res.isFinal)handleVoice(res[0].transcript,res[0].confidence);else $('voice-interim').textContent=res[0].transcript;}};
-  recognition.onerror=e=>{if(e.error!=='no-speech')stopVoice();};
-  recognition.onend=()=>{if(voiceActive)recognition.start();};
-  recognition.start();voiceActive=true;
-  $('voicebtn').classList.add('listening');$('voice-topbtn').classList.add('active');$('voice-topbtn').textContent='🔴 Stop';
-  $('voice-toast').classList.add('show');$('voice-interim').textContent='En écoute...';
-}
-function stopVoice(){
-  voiceActive=false;if(recognition){try{recognition.stop();}catch{}recognition=null;}
-  $('voicebtn').classList.remove('listening');$('voice-topbtn').classList.remove('active');$('voice-topbtn').textContent='🎤 Vocal';
-  $('voice-toast').classList.remove('show');
-}
+⚡ 3. AUTO-FACTURATION (GAME CHANGER)
+🎯 Objectif
 
-/* INIT */
-const today=new Date().toISOString().split('T')[0];
-['f-ds','f-pr-dt','v-ds'].forEach(id=>{const e=$(id);if(e)e.value=today;});
-checkAuth();
-</script>
-</body>
-</html>
+👉 zéro friction :
+
+patient terminé → facture auto
+🔧 MODIF liveAction
+async function liveAction(type){
+
+  const p = IMPORTED_DATA[currentIndex];
+
+  if(type === "patient_done"){
+
+    p.done = true;
+
+    // 🔥 AUTO FACTURATION
+    await fetch(W + '/webhook/ami-calcul',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer ' + sessionStorage.getItem('token')
+      },
+      body: JSON.stringify({
+        mode:"ngap",
+        texte: p.acte,
+        heure: p.time,
+        id: p.id
+      })
+    });
+
+    currentIndex++;
+  }
+
+  if(type === "patient_absent"){
+    p.absent = true;
+    currentIndex++;
+  }
+
+  showNextPatient();
+}
+🧠 4. OPTIMISATION REVENUS IA
+🎯 objectif
+
+👉 suggérer :
+
+meilleurs créneaux
+meilleurs actes
+function suggestOptimizations(){
+
+  let suggestions = [];
+
+  IMPORTED_DATA.forEach(p=>{
+    if(!p.time){
+      suggestions.push("Ajouter heure → majoration possible");
+    }
+
+    if(p.acte?.includes("domicile") && !p.km){
+      suggestions.push("Ajouter km → IK manquants");
+    }
+  });
+
+  return [...new Set(suggestions)];
+}
+📊 5. DASHBOARD ADMIN (VERSION ELITE)
+
+👉 côté admin (anonymisé) :
+
+CA total
+actes les plus rentables
+taux DRE
+alertes fraude
+🔧 Worker → nouvelle route
+case '/webhook/admin-kpi':
+  requireAdmin();
+
+  const stats = await db('planning_patients?select=*');
+
+  return json({
+    total: stats.length,
+    ca: stats.reduce((a,b)=>a+(b.amount||0),0)
+  });
+🔐 6. SÉCURITÉ ELITE
+
+👉 déjà bon, mais upgrade :
+
+token expirant
+refresh session
+logs admin
+🔧 token expirable
+const token = await sha256(user.id + Date.now());
+
+await db('sessions',{
+  method:'POST',
+  body: JSON.stringify({
+    token,
+    user_id:user.id,
+    expires_at: new Date(Date.now()+86400000)
+  })
+});
+🧬 7. EXPÉRIENCE UTILISATEUR (KILLER)
+
+👉 ton app devient :
+
+1 clic → import
+1 clic → tournée
+1 clic → démarrer journée
+auto → facturation
+🏁 RÉSULTAT FINAL
+💥 TU AS :
+🧠 IA MÉDICALE
+vérification NGAP
+fraude
+🗺️ ROUTING PRO
+réel
+dynamique
+💰 BUSINESS
+CA prédit
+optimisé
+⚡ AUTOMATISATION
+zéro saisie
+zéro friction
