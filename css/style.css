@@ -116,7 +116,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #voice-toast.show{display:block}
 #voice-interim{color:var(--a);font-style:italic;margin-top:4px;font-size:11px;min-height:16px}
 /* MAP */
-#dep-map{height:280px;border-radius:var(--r);border:1px solid var(--b);margin-bottom:14px;z-index:1}
+#dep-map{height:clamp(220px, 50vh, 520px);border-radius:var(--r);border:1px solid var(--b);margin-bottom:14px;z-index:1}
 #dep-map .leaflet-container{background:var(--s);border-radius:var(--r)}
 .map-search{display:flex;gap:8px;margin-bottom:10px}
 .map-search input{flex:1;background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:9px 13px;font-size:13px;font-family:var(--ff)}
@@ -486,3 +486,22 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .card,.acard,.mc,.vmc,.live-card{box-shadow:none !important}
   body{overscroll-behavior:none;touch-action:manipulation}
 }
+
+/* ── v4.0 — Journal d'audit admin ─────────────── */
+.audit-log-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--b);font-size:12px;font-family:var(--fm)}
+.log-icon{font-size:14px;flex-shrink:0;width:20px;text-align:center}
+.log-event{flex:1;color:var(--w);font-weight:500}
+.log-date{color:var(--m);font-size:11px;white-space:nowrap}
+.log-score{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;flex-shrink:0}
+.log-score.high{background:rgba(255,95,109,.15);color:#ff5f6d}
+.log-score.med{background:rgba(255,181,71,.15);color:#f59e0b}
+.log-score.low{background:rgba(0,212,170,.1);color:var(--a)}
+
+/* ── v4.0 — Section prescripteur cotation ─────── */
+#prescripteur-section{margin-bottom:20px}
+.prescr-add-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end}
+.prescr-add-row .af{flex:1;min-width:140px}
+
+/* ── v4.0 — Numéro de facture ─────────────────── */
+#invoice-number-section{background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);padding:10px 16px;margin-top:12px;display:flex;align-items:center;gap:10px}
+#invoice-number-display{font-family:var(--fm);font-size:15px;font-weight:700;color:var(--a);letter-spacing:.5px}
