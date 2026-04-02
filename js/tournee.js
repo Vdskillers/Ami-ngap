@@ -137,14 +137,30 @@ async function getOsrmRoute(waypoints){
    ============================================================ */
 async function optimiserTournee(){
   if(!requireAuth()) return;
+
+  /* ── Guards préventifs — évite les appels API inutiles ─────
+     Sans données importées → Supabase reçoit une requête vide
+     et renvoie 400/500. On bloque AVANT l'appel API.
+  ─────────────────────────────────────────────────────────── */
+  const patients=APP.importedData?.patients||APP.importedData?.entries||[];
+  if(!patients.length){
+    const tbody=$('tbody');
+    if(tbody) tbody.innerHTML=`<div class="card">
+      <div class="ct">⚠️ Aucune donnée importée</div>
+      <div class="ai wa" style="margin-bottom:12px">Importez d'abord votre planning via <strong>📂 Import calendrier</strong> avant d'optimiser la tournée.</div>
+      <button class="btn bp bsm" onclick="navTo('imp',null)"><span>📂</span> Aller à l'import</button>
+    </div>`;
+    $('res-tur').classList.add('show');
+    return;
+  }
+
   ld('btn-tur',true);$('res-tur').classList.remove('show');
   try{
-    // ✅ Utilise START_POINT dynamique — JAMAIS de fallback Paris
     const startLat=parseFloat($('t-lat').value)||APP.startPoint?.lat||null;
     const startLng=parseFloat($('t-lng').value)||APP.startPoint?.lng||null;
     if(!startLat||!startLng){
       $('terr').style.display='flex';
-      $('terr-m').textContent='📍 Définis ton point de départ d\'abord (bouton GPS ou clic sur la carte)';
+      $('terr-m').textContent='📍 Définis ton point de départ (bouton GPS ou clic sur la carte)';
       $('res-tur').classList.add('show');ld('btn-tur',false);return;
     }
     const d=await apiCall('/webhook/ami-tournee-ia',{start_lat:startLat,start_lng:startLng});

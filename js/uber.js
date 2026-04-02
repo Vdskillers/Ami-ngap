@@ -205,7 +205,7 @@ function loadUberPatients(){
   if(!requireAuth()) return;
   if(!APP.importedData){
     const el=$('uber-next-patient');
-    if(el) el.innerHTML='<div class="ai wa">⚠️ Aucune donnée importée. Utilisez d'abord "Import calendrier".</div>';
+    if(el) el.innerHTML=`<div class=\"ai wa\">⚠️ Aucune donnée importée. Utilisez d'abord \"Import calendrier\".</div>`;
     return;
   }
   const raw=APP.importedData?.patients||APP.importedData?.entries||[];
