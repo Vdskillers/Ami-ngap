@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AMI — Cotation NGAP</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -119,6 +120,29 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #voice-toast{position:fixed;bottom:96px;right:28px;z-index:400;background:rgba(17,23,32,.95);border:1px solid var(--b);border-radius:var(--r);padding:10px 16px;font-family:var(--fm);font-size:12px;color:var(--t);display:none;max-width:280px;backdrop-filter:blur(10px);box-shadow:var(--sh)}
 #voice-toast.show{display:block}
 #voice-interim{color:var(--a);font-style:italic;margin-top:4px;font-size:11px;min-height:16px}
+/* MAP */
+#dep-map{height:280px;border-radius:var(--r);border:1px solid var(--b);margin-bottom:14px;z-index:1}
+#dep-map .leaflet-container{background:var(--s);border-radius:var(--r)}
+.map-search{display:flex;gap:8px;margin-bottom:10px}
+.map-search input{flex:1;background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:9px 13px;font-size:13px;font-family:var(--ff)}
+.map-search input:focus{outline:none;border-color:var(--a);box-shadow:0 0 0 3px var(--ad)}
+.map-btn{padding:9px 14px;border-radius:var(--r);border:none;cursor:pointer;font-family:var(--ff);font-size:13px;font-weight:600;transition:all .15s;white-space:nowrap}
+.map-btn.gps{background:var(--a2d);color:var(--a2);border:1px solid rgba(79,168,255,.3)}.map-btn.gps:hover{background:rgba(79,168,255,.2)}
+.map-btn.search{background:var(--ad);color:var(--a);border:1px solid var(--ab)}.map-btn.search:hover{background:rgba(0,212,170,.2)}
+.dep-coords{font-family:var(--fm);font-size:11px;color:var(--m);margin-bottom:12px;min-height:16px}
+/* LIVE EXTENDED */
+.live-timer{font-family:var(--fm);font-size:13px;color:var(--w);margin-top:4px}
+.live-ca{font-family:var(--fm);font-size:13px;color:var(--a);margin-top:4px}
+.live-delay{background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.3);border-radius:var(--r);padding:10px 14px;margin-top:12px;font-size:13px;color:var(--w);display:none}
+/* ROUTE OSRM */
+.route-item{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--b)}
+.route-item:last-child{border-bottom:none}
+.route-num{width:28px;height:28px;border-radius:50%;background:var(--ad);border:1px solid var(--ab);display:grid;place-items:center;font-family:var(--fm);font-size:11px;color:var(--a);flex-shrink:0}
+.route-info{flex:1;min-width:0}
+.route-time{font-family:var(--fm);font-size:11px;color:var(--m);white-space:nowrap}
+.route-km{font-family:var(--fm);font-size:11px;color:var(--a2);white-space:nowrap}
+/* CA PREVIEW */
+.ca-pill{display:inline-flex;align-items:center;gap:6px;background:var(--ad);border:1px solid var(--ab);border-radius:20px;padding:5px 14px;font-family:var(--fm);font-size:12px;color:var(--a);margin-top:10px}
 /* ACCORDION */
 .accord{border:1px solid var(--b);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
 .accord-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;cursor:pointer;user-select:none;transition:background .15s;gap:10px}
@@ -513,14 +537,29 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
     <!-- TOURNÉE IA -->
     <section class="view" id="view-tur">
       <h1 class="pt">Tournée <em>optimisée par IA</em></h1>
-      <p class="ps">Basée sur vos patients importés · algorithme greedy + priorité</p>
+      <p class="ps">Carte interactive · GPS · Routage OSRM · Prévision CA</p>
       <div class="card">
-        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>La tournée est calculée à partir de vos patients importés. Importez d'abord votre planning via "Import calendrier".</p></div>
-        <div class="fg" style="margin-bottom:16px">
-          <div class="f"><label>Latitude départ (optionnel)</label><input type="number" id="t-lat" placeholder="48.8566" step="0.0001"></div>
-          <div class="f"><label>Longitude départ (optionnel)</label><input type="number" id="t-lng" placeholder="2.3522" step="0.0001"></div>
+        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez d'abord via "Import calendrier".</p></div>
+        <!-- Barre de recherche adresse -->
+        <div class="map-search">
+          <input type="text" id="dep-addr" placeholder="🔍 Adresse de départ (ex: 29 rue de Bretagne, Brest...)" onkeydown="if(event.key==='Enter')geocodeAddress()">
+          <button class="map-btn search" onclick="geocodeAddress()">Rechercher</button>
+          <button class="map-btn gps" onclick="getGPS()">📍 GPS</button>
         </div>
-        <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
+        <div class="dep-coords" id="dep-coords">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
+        <!-- Carte Leaflet -->
+        <div id="dep-map"></div>
+        <!-- Champs lat/lng cachés (mis à jour par la carte) -->
+        <input type="hidden" id="t-lat" value="48.8566">
+        <input type="hidden" id="t-lng" value="2.3522">
+        <!-- CA estimé depuis import -->
+        <div id="tur-ca-wrap" style="display:none">
+          <div class="ca-pill">💶 <span id="tur-ca-val">—</span> estimés depuis l'import</div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
+        </div>
       </div>
       <div id="res-tur" class="res"><div id="terr" class="errb" style="display:none">⚠️ <span id="terr-m"></span></div><div id="tbody"></div></div>
     </section>
@@ -528,11 +567,14 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
     <!-- PILOTAGE LIVE -->
     <section class="view" id="view-live">
       <h1 class="pt">Pilotage <em>de journée</em></h1>
-      <p class="ps">Assistant temps réel · imprévus · recalcul automatique</p>
+      <p class="ps">Assistant temps réel · auto-facturation · détection retard · recalcul automatique</p>
       <div id="live-status" class="live-card">
-        <div class="live-badge">EN ATTENTE</div>
+        <div class="live-badge" id="live-badge">EN ATTENTE</div>
         <div class="live-patient" id="live-patient-name">Démarrez votre journée</div>
         <p style="font-size:13px;color:var(--m)" id="live-info">Cliquez sur "Démarrer" pour activer le pilotage automatique</p>
+        <div class="live-timer" id="live-timer" style="display:none"></div>
+        <div class="live-ca" id="live-ca-total" style="display:none"></div>
+        <div class="live-delay" id="live-delay-alert">⏰ <span id="live-delay-msg"></span></div>
         <div class="live-actions">
           <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
           <button class="btn bs" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
@@ -540,21 +582,35 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
       </div>
       <div id="live-controls" style="display:none">
         <div class="card">
-          <div class="ct">Actions</div>
+          <div class="ct">Actions patient</div>
           <div class="ar-row">
             <button class="btn bp" id="btn-done" onclick="liveAction('patient_done')"><span>✅</span> Patient terminé</button>
             <button class="btn bs" id="btn-absent" onclick="liveAction('patient_absent')"><span>❌</span> Patient absent</button>
             <button class="btn bv" onclick="liveStatus()"><span>📊</span> Actualiser</button>
+            <button class="btn bs bsm" onclick="recalculTournee()"><span>🔄</span> Recalculer</button>
           </div>
         </div>
         <div id="live-next" class="res show" style="margin-top:16px"></div>
+        <!-- CA de la journée -->
+        <div class="card" style="margin-top:16px" id="live-ca-card" style="display:none">
+          <div class="ct">💶 CA de la journée</div>
+          <div id="live-ca-detail"></div>
+        </div>
       </div>
     </section>
 
     <!-- PLANNING -->
     <section class="view" id="view-pla">
-      <h1 class="pt">Planning <em>hebdomadaire</em></h1><p class="ps">8–15 patients/jour · Organisation optimale</p>
-      <div class="card">
+      <h1 class="pt">Planning <em>hebdomadaire</em></h1><p class="ps">8–15 patients/jour · Connecté à l'import · Organisation optimale</p>
+      <div id="pla-import-banner" style="display:none" class="card" style="margin-bottom:16px">
+        <div class="ct">📂 Données importées disponibles</div>
+        <div class="ai in" id="pla-import-info">—</div>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn bp bsm" onclick="generatePlanningFromImport()"><span>📅</span> Générer depuis l'import</button>
+          <button class="btn bs bsm" onclick="document.getElementById('pla-manual').style.display='block'">✏️ Saisie manuelle</button>
+        </div>
+      </div>
+      <div id="pla-manual" class="card">
         <div class="f" style="margin-bottom:16px"><textarea id="pl-txt" placeholder="Patient A : Injection 2x/jour&#10;Patient B : Toilette lundi/mercredi/vendredi&#10;Patient C : Pansement quotidien..." style="min-height:140px"></textarea></div>
         <button class="btn bp" id="btn-pla" onclick="modeAI('planning')"><span>📅</span> Générer</button>
       </div>
@@ -599,9 +655,24 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
           <div id="dash-top-actes" class="al"></div>
         </div>
         <!-- Prévision -->
-        <div class="card">
-          <div class="ct">🔮 Prévision fin de mois</div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">🔮 Prévision & Tendance</div>
           <div id="dash-prevision" class="ai in" style="font-size:14px">—</div>
+        </div>
+        <!-- Alerte perte -->
+        <div class="card" style="margin-bottom:20px" id="dash-loss-card">
+          <div class="ct">🔔 Alertes revenus manqués</div>
+          <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- Anomalies -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">💸 Détection d'anomalies</div>
+          <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- IA analyse -->
+        <div class="card">
+          <div class="ct">🧠 Analyse IA & Optimisations NGAP</div>
+          <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
         </div>
       </div>
       <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
@@ -1209,6 +1280,8 @@ async function importCalendar(){
     const type=fileInput.files[0]?.type||'';
     const d=await apiCall('/webhook/import-calendar',{content,type,filename});
     if(!d.ok)throw new Error(d.error||'Erreur import');
+    // Stocker les données importées globalement
+    storeImportedData(d);
     $('imp-result').innerHTML=`<div class="card"><div class="ct">✅ Import réussi</div>
     <div class="ai su" style="margin-bottom:12px">✅ ${d.total} entrée(s) importée(s) · ${d.stored||0} sauvegardée(s)</div>
     ${d.alerts?.length?`<div class="lbl" style="margin-bottom:8px">⚠️ Avertissements</div><div class="aic">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
@@ -1224,34 +1297,6 @@ async function importCalendar(){
   ld('btn-imp',false);
 }
 
-/* TOURNÉE IA */
-async function optimiserTournee(){
-  ld('btn-tur',true);$('res-tur').classList.remove('show');
-  try{
-    const d=await apiCall('/webhook/ami-tournee-ia',{start_lat:parseFloat(gv('t-lat'))||48.8566,start_lng:parseFloat(gv('t-lng'))||2.3522});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    if(!d.route?.length){
-      $('tbody').innerHTML='<div class="card"><div class="ai wa">⚠️ Aucun patient importé. Utilisez l\'import calendrier d\'abord.</div></div>';
-    }else{
-      $('tbody').innerHTML=`<div class="card"><div class="ct">🗺️ Tournée optimisée — ${d.total_patients} patients</div>
-      <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">
-        <div class="dreb">📍 ${d.total_patients} patients</div>
-        ${d.total_km?`<div class="dreb">🚗 ~${d.total_km} km</div>`:''}
-      </div>
-      ${d.route.map((p,i)=>{const sd=encodeURIComponent(p.description||'');return`<div class="route-item">
-        <div class="route-num">${i+1}</div>
-        <div class="route-info"><strong style="font-size:13px">${p.description||'Patient'}</strong><div style="font-size:11px;color:var(--m);margin-top:2px">ID: ${p.patient_id||'—'}</div></div>
-        ${p.heure?`<div class="route-time">⏱ ${p.heure}</div>`:''}
-        ${p.distance_km?`<div class="route-km">+${p.distance_km}km</div>`:''}
-        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
-      </div>`}).join('')}
-      ${d.alerts?.length?`<div class="aic" style="margin-top:16px">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
-      </div>`;
-    }
-    $('terr').style.display='none';
-  }catch(e){$('terr').style.display='flex';$('terr-m').textContent=e.message;}
-  $('res-tur').classList.add('show');ld('btn-tur',false);
-}
 function coterDepuisRoute(desc){
   $('f-txt').value=desc;
   document.querySelector('[data-v=cot]')?.click();
@@ -1298,8 +1343,7 @@ async function modeAI(m){
   ld('btn-pla',true);$('res-pla').classList.remove('show');
   try{
     const d=await apiCall('/webhook/ami-calcul',{mode:m,texte:txt});
-    const js=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'],pl=d.planning||{};
-    $('pbody').innerHTML=`<div class="card"><div class="ct">📅 Planning hebdomadaire</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">${js.map(j=>`<div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px"><div style="font-weight:600;text-transform:capitalize;margin-bottom:8px">${j}</div>${(pl[j]||[]).map(p=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--b)">${p}</div>`).join('')||'<div style="font-size:12px;color:var(--m)">—</div>'}</div>`).join('')}</div></div>`;
+    renderPlanning(d);
     $('perr').style.display='none';
   }catch(e){$('perr').style.display='flex';$('perr-m').textContent=e.message;}
   $('res-pla').classList.add('show');ld('btn-pla',false);
@@ -1381,74 +1425,340 @@ function stopVoice(){
   $('voice-toast').classList.remove('show');
 }
 
-/* DASHBOARD */
+/* ============================================================
+   DASHBOARD — FETCH SÉCURISÉ + CACHE + IA
+   ============================================================ */
+
+/* 1. fetchAPI sécurisé */
+async function fetchAPI(url, options={}) {
+  const token = ss.tok();
+  try {
+    const res = await fetch(W+url, {
+      ...options,
+      headers: {
+        'Content-Type':'application/json',
+        'Authorization': token ? 'Bearer '+token : '',
+        ...(options.headers||{})
+      }
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('API '+res.status+': '+text);
+    }
+    return await res.json();
+  } catch(err) {
+    console.error('API ERROR:', err);
+    throw err;
+  }
+}
+
+/* 2. Cache local 1 minute */
+const DASH_CACHE_KEY = 'ami_dash_cache';
+function saveDashCache(data) {
+  try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({t:Date.now(),data})); } catch{}
+}
+function loadDashCache() {
+  try {
+    const raw = localStorage.getItem(DASH_CACHE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (Date.now()-p.t > 60000) return null;
+    return p.data;
+  } catch { return null; }
+}
+
+/* 3. loadDash robuste */
 async function loadDash() {
   $('dash-loading').style.display='block';
   $('dash-body').style.display='none';
   $('dash-empty').style.display='none';
+
+  // Affichage cache instantané
+  const cached = loadDashCache();
+  if (cached) { renderDashboard(cached); $('dash-loading').style.display='none'; $('dash-body').style.display='block'; }
+
   try {
-    const r = await fetch(W+'/webhook/ami-historique?period=month', {headers:{'Authorization':'Bearer '+ss.tok()}});
-    const rows = await r.json();
-    const arr = Array.isArray(rows) ? rows : [];
-    if (!arr.length) { $('dash-loading').style.display='none'; $('dash-empty').style.display='block'; return; }
-
-    // KPIs
-    const tot = arr.reduce((s,x) => s+(parseFloat(x.total)||0), 0);
-    const today = new Date().toISOString().split('T')[0];
-    const todayArr = arr.filter(x => (x.date_soin||'').startsWith(today));
-    const todayRev = todayArr.reduce((s,x) => s+(parseFloat(x.total)||0), 0);
-    const best = Math.max(...arr.map(x => parseFloat(x.total)||0));
-    const avg = arr.length ? tot/arr.length : 0;
-    // Mois courant
-    const monthStr = today.slice(0,7);
-    const monthArr = arr.filter(x => (x.date_soin||'').startsWith(monthStr));
-    const monthRev = monthArr.reduce((s,x) => s+(parseFloat(x.total)||0), 0);
-    // Prévision fin de mois
-    const dayOfMonth = new Date().getDate();
-    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
-    const prevision = dayOfMonth > 0 ? (monthRev / dayOfMonth) * daysInMonth : 0;
-
-    $('dash-kpis').innerHTML = [
-      {icon:'💶',val:tot.toFixed(2)+'€',label:'CA total',cls:'g'},
-      {icon:'🧾',val:arr.length,label:'Factures total',cls:'b'},
-      {icon:'📊',val:avg.toFixed(2)+'€',label:'Moy. par passage',cls:'b'},
-      {icon:'☀️',val:todayRev.toFixed(2)+'€',label:'Revenus du jour',cls:'o'},
-      {icon:'🏆',val:best.toFixed(2)+'€',label:'Meilleure facture',cls:'o'},
-      {icon:'📅',val:monthRev.toFixed(2)+'€',label:'Revenus du mois',cls:'g'},
-    ].map(k=>`<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
-
-    // Graphique 30 jours
-    const days30 = [];
-    for (let i=29; i>=0; i--) {
-      const d = new Date(); d.setDate(d.getDate()-i);
-      days30.push(d.toISOString().split('T')[0]);
+    const data = await fetchAPI('/webhook/ami-historique?period=month');
+    const arr = Array.isArray(data) ? data : [];
+    if (!arr.length) {
+      $('dash-loading').style.display='none';
+      $('dash-empty').style.display='block';
+      return;
     }
-    const byDay = {};
-    arr.forEach(x => { const d=(x.date_soin||'').split('T')[0]; if(d) byDay[d]=(byDay[d]||0)+(parseFloat(x.total)||0); });
-    const vals = days30.map(d => byDay[d]||0);
-    const maxVal = Math.max(...vals, 1);
-    $('dash-chart').innerHTML = vals.map((v,i)=>`<div style="flex:1;background:${v>0?'var(--a)':'var(--b)'};border-radius:3px 3px 0 0;height:${Math.max(4,Math.round(v/maxVal*140))}px;opacity:${v>0?1:0.3};transition:height .3s" title="${days30[i]}: ${v.toFixed(2)}€"></div>`).join('');
-    $('dash-chart-labels').innerHTML = days30.map((d,i)=>`<div style="flex:1;font-family:var(--fm);font-size:9px;color:var(--m);text-align:center;overflow:hidden">${i%7===0?d.slice(5):''}</div>`).join('');
-
-    // Top actes
-    const actesFreq = {};
-    arr.forEach(r => { try { JSON.parse(r.actes||'[]').forEach(a => { if(a.code&&a.code!=='IMPORT') actesFreq[a.code]=(actesFreq[a.code]||0)+1; }); } catch {} });
-    const topActes = Object.entries(actesFreq).sort((a,b)=>b[1]-a[1]).slice(0,6);
-    const maxCount = topActes[0]?.[1]||1;
-    $('dash-top-actes').innerHTML = topActes.length
-      ? topActes.map(([code,count])=>`<div class="ar"><div class="ac">${code}</div><div class="an"><div style="height:6px;background:var(--a);border-radius:3px;width:${Math.round(count/maxCount*100)}%;transition:width .4s"></div></div><div class="at" style="color:var(--a)">${count}×</div></div>`).join('')
-      : '<div class="ai wa">Aucune cotation enregistrée</div>';
-
-    // Prévision
-    $('dash-prevision').innerHTML = `📈 Sur la base de vos <strong>${monthArr.length} cotation(s)</strong> ce mois-ci, prévision fin de mois : <strong>${prevision.toFixed(2)} €</strong> (${daysInMonth - dayOfMonth} jours restants)`;
-
+    saveDashCache(arr);
+    renderDashboard(arr);
     $('dash-loading').style.display='none';
     $('dash-body').style.display='block';
   } catch(e) {
-    $('dash-loading').style.display='none';
-    $('dash-empty').style.display='block';
-    $('dash-empty').innerHTML='<div style="font-size:40px;margin-bottom:12px">⚠️</div><p>Impossible de charger les statistiques.<br><small style="color:var(--m)">'+e.message+'</small></p>';
+    if (!cached) {
+      $('dash-loading').style.display='none';
+      $('dash-empty').style.display='block';
+      $('dash-empty').innerHTML='<div style="font-size:40px;margin-bottom:12px">⚠️</div><p>Impossible de charger les statistiques.<br><small style="color:var(--m)">'+e.message+'</small></p>';
+    }
   }
+}
+
+/* 4. renderDashboard — version optimisée complète */
+function renderDashboard(arr) {
+  let total=0, amo=0, amc=0, partPat=0, dre=0;
+  const actesFreq={}, daily={};
+  const today=new Date().toISOString().split('T')[0];
+  const monthStr=today.slice(0,7);
+  let todayRev=0, monthRev=0, best=0;
+
+  arr.forEach(r => {
+    const t=parseFloat(r.total||0);
+    total+=t;
+    amo+=parseFloat(r.part_amo||0);
+    amc+=parseFloat(r.part_amc||0);
+    partPat+=parseFloat(r.part_patient||0);
+    if(r.dre_requise) dre++;
+    if(best<t) best=t;
+    if((r.date_soin||'').startsWith(today)) todayRev+=t;
+    if((r.date_soin||'').startsWith(monthStr)) monthRev+=t;
+
+    // Actes
+    try { JSON.parse(r.actes||'[]').forEach(a=>{ if(a.code&&a.code!=='IMPORT') actesFreq[a.code]=(actesFreq[a.code]||0)+1; }); } catch{}
+
+    // Chart journalier
+    const d=(r.date_soin||'').slice(0,10);
+    if(d) daily[d]=(daily[d]||0)+t;
+  });
+
+  const avg = arr.length ? total/arr.length : 0;
+  const dayOfMonth=new Date().getDate();
+  const daysInMonth=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
+
+  // KPIs enrichis
+  $('dash-kpis').innerHTML=[
+    {icon:'💶',val:total.toFixed(2)+'€',label:'CA total (mois)',cls:'g'},
+    {icon:'🏦',val:amo.toFixed(2)+'€',label:'Part AMO',cls:'b'},
+    {icon:'🏥',val:amc.toFixed(2)+'€',label:'Part AMC',cls:'b'},
+    {icon:'👤',val:partPat.toFixed(2)+'€',label:'Part Patient',cls:'o'},
+    {icon:'☀️',val:todayRev.toFixed(2)+'€',label:'Revenus du jour',cls:'o'},
+    {icon:'🏆',val:best.toFixed(2)+'€',label:'Meilleure facture',cls:'g'},
+    {icon:'📋',val:dre,label:'DRE requises',cls:'r'},
+    {icon:'📊',val:avg.toFixed(2)+'€',label:'Moy. par passage',cls:'b'},
+  ].map(k=>`<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
+
+  // Graphique 30 jours
+  const days30=[];
+  for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days30.push(d.toISOString().split('T')[0]);}
+  const vals=days30.map(d=>daily[d]||0);
+  const maxVal=Math.max(...vals,1);
+  $('dash-chart').innerHTML=vals.map((v,i)=>`<div style="flex:1;background:${v>0?'var(--a)':'var(--b)'};border-radius:3px 3px 0 0;height:${Math.max(4,Math.round(v/maxVal*140))}px;opacity:${v>0?1:0.3};transition:height .3s;cursor:help" title="${days30[i]}: ${v.toFixed(2)}€"></div>`).join('');
+  $('dash-chart-labels').innerHTML=days30.map((d,i)=>`<div style="flex:1;font-family:var(--fm);font-size:9px;color:var(--m);text-align:center;overflow:hidden">${i%7===0?d.slice(5):''}</div>`).join('');
+
+  // Top actes
+  const topActes=Object.entries(actesFreq).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxCount=topActes[0]?.[1]||1;
+  $('dash-top-actes').innerHTML=topActes.length
+    ? topActes.map(([code,count])=>`<div class="ar"><div class="ac">${code}</div><div class="an"><div style="height:6px;background:var(--a);border-radius:3px;width:${Math.round(count/maxCount*100)}%;transition:width .4s"></div></div><div class="at" style="color:var(--a)">${count}×</div></div>`).join('')
+    : '<div class="ai wa">Aucune cotation enregistrée</div>';
+
+  // Prévision intelligente
+  const forecast = forecastRevenue(daily);
+  if (forecast) {
+    const trendIcon = forecast.trend>0 ? '📈 hausse' : forecast.trend<0 ? '📉 baisse' : '➡️ stable';
+    $('dash-prevision').innerHTML=`📈 Projection fin de mois : <strong>${forecast.projection.toFixed(2)} €</strong> · Tendance : ${trendIcon} · Moy/jour : <strong>${forecast.avg.toFixed(2)} €</strong> (${daysInMonth-dayOfMonth} jours restants)`;
+  } else {
+    const prevision = dayOfMonth>0 ? (monthRev/dayOfMonth)*daysInMonth : 0;
+    $('dash-prevision').innerHTML=`📈 Sur la base de vos <strong>${arr.length} cotation(s)</strong> ce mois, prévision : <strong>${prevision.toFixed(2)} €</strong> (${daysInMonth-dayOfMonth} jours restants)`;
+  }
+
+  // Modules IA
+  const anomalyResult = detectAnomalies(arr, daily);
+  renderAnomalies(anomalyResult);
+  const explanations = explainAnomalies(arr, anomalyResult);
+  const suggestions = suggestOptimizations(arr);
+  renderAI(explanations, suggestions);
+  const loss = computeLoss(arr);
+  showLossAlert(loss);
+}
+
+/* ============================================================
+   5. DÉTECTION D'ANOMALIES (stats σ)
+   ============================================================ */
+function detectAnomalies(rows, daily) {
+  const values = Object.values(daily);
+  if (values.length < 5) return {avg:0, std:0, anomalies:[]};
+
+  const avg = values.reduce((a,b)=>a+b,0)/values.length;
+  const variance = values.reduce((a,v)=>a+Math.pow(v-avg,2),0)/values.length;
+  const std = Math.sqrt(variance);
+  const anomalies = [];
+
+  Object.entries(daily).forEach(([date,val])=>{
+    const score = std>0 ? Math.abs(val-avg)/std : 0;
+    if (val < avg-2*std) anomalies.push({type:'critical_low',date,value:val,score:score.toFixed(1)});
+    else if (val > avg+2*std) anomalies.push({type:'critical_high',date,value:val,score:score.toFixed(1)});
+    else if (val < avg-std) anomalies.push({type:'warning_low',date,value:val,score:score.toFixed(1)});
+  });
+
+  return {avg, std, anomalies};
+}
+
+function renderAnomalies(result) {
+  const el=$('dash-anomalies');
+  if (!el) return;
+  if (!result||!result.anomalies.length) {
+    el.innerHTML='<div class="ai su">✅ Aucun comportement anormal détecté sur la période</div>';
+    return;
+  }
+  const avg=result.avg.toFixed(2), std=result.std.toFixed(2);
+  el.innerHTML=`<div style="font-size:12px;color:var(--m);margin-bottom:10px;font-family:var(--fm)">Moy/jour : ${avg}€ · Écart-type : ${std}€</div>`
+    +result.anomalies.slice(0,8).map(a=>{
+      if(a.type==='critical_low') return`<div class="ai er">🔴 Chute anormale le <strong>${a.date}</strong> : ${a.value.toFixed(2)}€ <span style="font-size:10px;opacity:.7">(score: ${a.score}σ)</span></div>`;
+      if(a.type==='critical_high') return`<div class="ai wa">🟠 Pic inhabituel le <strong>${a.date}</strong> : ${a.value.toFixed(2)}€ <span style="font-size:10px;opacity:.7">(score: ${a.score}σ)</span></div>`;
+      return`<div class="ai in">🟡 Activité faible le <strong>${a.date}</strong> : ${a.value.toFixed(2)}€</div>`;
+    }).join('');
+}
+
+/* ============================================================
+   6. EXPLICATION IA DES ANOMALIES
+   ============================================================ */
+function explainAnomalies(rows, anomalyResult) {
+  return (anomalyResult.anomalies||[]).map(a=>{
+    const dayRows = rows.filter(r=>(r.date_soin||'').startsWith(a.date));
+    let actesCount=0, dre=0, nuit=0, domicile=0;
+    dayRows.forEach(r=>{
+      if(r.dre_requise) dre++;
+      const h=r.heure_soin||'';
+      if(h&&(h<'08:00'||h>'20:00')) nuit++;
+      try {
+        const acts=JSON.parse(r.actes||'[]');
+        actesCount+=acts.length;
+        acts.forEach(act=>{ if(act.code==='IFD') domicile++; });
+      } catch{}
+    });
+    let reason='', insights=[];
+    if(a.type==='critical_low') {
+      if(actesCount<3) reason='Très peu d\'actes ce jour';
+      else if(domicile===0){ reason='Absence d\'IFD (indemnité déplacement)'; insights.push('Aucun IFD → perte possible sur déplacements'); }
+      else reason='Volume ou valorisation anormalement faibles';
+    } else if(a.type==='critical_high') {
+      if(dre>0) reason='Soins complexes avec DRE (normal si ALD/maternité)';
+      else if(nuit>0) reason='Actes de nuit majorés détectés';
+      else reason='Montant inhabituel → vérifier conformité NGAP';
+    } else {
+      reason='Journée sous la moyenne habituelle';
+    }
+    return {...a, reason, insights, actesCount};
+  });
+}
+
+/* ============================================================
+   7. SUGGESTIONS OPTIMISATION NGAP
+   ============================================================ */
+function suggestOptimizations(rows) {
+  const suggestions=[];
+  const seen=new Set();
+  rows.forEach(r=>{
+    const actes=r.actes||'';
+    const txt=(r.texte_soin||r.description||'').toLowerCase();
+    const h=r.heure_soin||'';
+    // IFD manquant
+    if((txt.includes('domicile')||txt.includes('chez'))&&!actes.includes('IFD')) {
+      const k='ifd'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'lost_revenue',msg:'IFD (indemnité déplacement domicile) potentiellement oublié — +2,75 € par passage'});}
+    }
+    // IK manquant
+    if(/\d+\s*km/.test(txt)&&!actes.includes('IK')) {
+      const k='ik'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'lost_revenue',msg:'Kilométrage mentionné sans IK coté — +0,35 €/km'});}
+    }
+    // Nuit non majorée
+    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')) {
+      const k='nuit'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'optimization',msg:'Acte de nuit sans majoration nuit (9,15 € ou 18,30 €) — vérifier'});}
+    }
+    // ALD + reste patient > 0
+    if((r.exo==='ALD')&&parseFloat(r.part_patient||0)>0) {
+      const k='ald'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'error',msg:'ALD détecté avec reste patient > 0 — incohérence facturation CPAM'});}
+    }
+    // Montant très élevé
+    if(parseFloat(r.total||0)>150) {
+      suggestions.push({type:'check',msg:`Montant élevé (${parseFloat(r.total).toFixed(2)}€ le ${(r.date_soin||'').slice(0,10)}) — vérifier conformité NGAP`});
+    }
+    // AIS sans BS
+    if(actes.includes('AIS')&&!actes.includes('BSA')&&!actes.includes('BSB')&&!actes.includes('BSC')) {
+      const k='ais'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'optimization',msg:'AIS coté sans forfait BS — BSA (+13€) possible si dépendance légère'});}
+    }
+  });
+  return suggestions;
+}
+
+/* ============================================================
+   8. RENDU IA + SUGGESTIONS
+   ============================================================ */
+function renderAI(explanations, suggestions) {
+  const el=$('dash-ai');
+  if (!el) return;
+  let html='';
+
+  if (explanations.length) {
+    html+='<div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin-bottom:8px">Explications anomalies</div>';
+    explanations.forEach(e=>{
+      const icon=e.type==='critical_low'?'🔴':e.type==='critical_high'?'🟠':'🟡';
+      html+=`<div class="ai wa" style="margin-bottom:6px">${icon} <strong>${e.date}</strong> — ${e.reason}${e.actesCount?' ('+e.actesCount+' acte(s))':''}</div>`;
+      e.insights.forEach(ins=>{ html+=`<div class="ai in" style="margin-bottom:4px;margin-left:20px">💡 ${ins}</div>`; });
+    });
+  }
+
+  if (suggestions.length) {
+    html+='<div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin:14px 0 8px">Optimisations NGAP détectées</div>';
+    suggestions.slice(0,8).forEach(s=>{
+      const icon=s.type==='error'?'❌':s.type==='lost_revenue'?'💸':s.type==='check'?'🔍':'💡';
+      html+=`<div class="ai ${s.type==='error'?'er':s.type==='lost_revenue'?'wa':'in'}" style="margin-bottom:6px">${icon} ${s.msg}</div>`;
+    });
+  }
+
+  if (!html) html='<div class="ai su">✅ Aucun problème ou optimisation détecté</div>';
+  el.innerHTML=html;
+}
+
+/* ============================================================
+   9. CALCUL PERTE ESTIMÉE + ALERTE
+   ============================================================ */
+function computeLoss(rows) {
+  let loss=0;
+  rows.forEach(r=>{
+    const txt=(r.texte_soin||r.description||'').toLowerCase();
+    const actes=r.actes||'';
+    const h=r.heure_soin||'';
+    if((txt.includes('domicile')||txt.includes('chez'))&&!actes.includes('IFD')) loss+=2.75;
+    if(/\d+\s*km/.test(txt)&&!actes.includes('IK')) loss+=3.5;
+    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')) loss+=9.15;
+  });
+  return loss;
+}
+
+function showLossAlert(loss) {
+  const el=$('dash-loss');
+  if (!el) return;
+  if (loss<5) {
+    el.innerHTML='<div class="ai su">✅ Aucune perte de revenu manifeste détectée</div>';
+    return;
+  }
+  el.innerHTML=`<div class="ai er">🔔 Perte estimée : <strong>${loss.toFixed(2)} €</strong> sur la période analysée</div>
+    <div class="ai in" style="margin-top:6px;font-size:12px">💡 Sources possibles : IFD oubliés · IK non cotés · Majorations nuit manquantes. Utilisez "Vérifier soin" pour corriger.</div>`;
+}
+
+/* ============================================================
+   10. PRÉVISION INTELLIGENTE (tendance linéaire)
+   ============================================================ */
+function forecastRevenue(daily) {
+  const values=Object.values(daily);
+  if (values.length<5) return null;
+  const avg=values.reduce((a,b)=>a+b,0)/values.length;
+  // Tendance = diff entre seconde moitié et première moitié
+  const mid=Math.floor(values.length/2);
+  const firstHalf=values.slice(0,mid).reduce((a,b)=>a+b,0)/(mid||1);
+  const secondHalf=values.slice(mid).reduce((a,b)=>a+b,0)/(values.length-mid||1);
+  const trend=secondHalf-firstHalf;
+  const dayOfMonth=new Date().getDate();
+  const daysInMonth=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
+  const remaining=daysInMonth-dayOfMonth;
+  const adjustedAvg=avg+(trend>0?avg*0.1:trend<0?-avg*0.1:0);
+  const projection=Object.values(daily).reduce((a,b)=>a+b,0)+(adjustedAvg*remaining);
+  return {avg, trend, projection};
 }
 
 /* FAQ SEARCH */
@@ -1474,5 +1784,363 @@ const today=new Date().toISOString().split('T')[0];
 ['f-ds','f-pr-dt','v-ds'].forEach(id=>{const e=$(id);if(e)e.value=today;});
 checkAuth();
 </script>
-</body>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ============================================================
+   MODULE CARTE LEAFLET — POINT DE DÉPART TOURNÉE
+   ============================================================ */
+let depMap=null, depMarker=null;
+
+function initDepMap(){
+  if(depMap)return;
+  const lat=parseFloat($('t-lat').value)||48.8566;
+  const lng=parseFloat($('t-lng').value)||2.3522;
+  depMap=L.map('dep-map').setView([lat,lng],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap',maxZoom:19
+  }).addTo(depMap);
+  // Marker initial
+  depMarker=L.marker([lat,lng],{draggable:true,title:'Point de départ'}).addTo(depMap);
+  depMarker.on('dragend',e=>{setDepCoords(e.target.getLatLng().lat,e.target.getLatLng().lng);reverseGeocode(e.target.getLatLng().lat,e.target.getLatLng().lng);});
+  // Clic sur carte
+  depMap.on('click',e=>{
+    setDepCoords(e.latlng.lat,e.latlng.lng);
+    depMarker.setLatLng(e.latlng);
+    reverseGeocode(e.latlng.lat,e.latlng.lng);
+  });
+}
+
+function setDepCoords(lat,lng){
+  $('t-lat').value=lat.toFixed(6);
+  $('t-lng').value=lng.toFixed(6);
+  $('dep-coords').textContent=`📌 Départ : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
+
+async function reverseGeocode(lat,lng){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'fr'}});
+    const d=await r.json();
+    if(d.display_name){
+      $('dep-coords').textContent=`📌 ${d.display_name.split(',').slice(0,3).join(', ')}`;
+      $('dep-addr').value=d.display_name.split(',').slice(0,3).join(', ');
+    }
+  }catch{}
+}
+
+async function geocodeAddress(){
+  const addr=gv('dep-addr').trim();
+  if(!addr)return;
+  $('dep-coords').textContent='🔍 Recherche en cours...';
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`,{headers:{'Accept-Language':'fr'}});
+    const d=await r.json();
+    if(!d.length){$('dep-coords').textContent='❌ Adresse non trouvée';return;}
+    const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon);
+    setDepCoords(lat,lng);
+    if(depMap){depMap.setView([lat,lng],15);depMarker.setLatLng([lat,lng]);}
+  }catch(e){$('dep-coords').textContent='❌ Erreur geocodage: '+e.message;}
+}
+
+function getGPS(){
+  $('dep-coords').textContent='📡 Localisation GPS en cours...';
+  if(!navigator.geolocation){$('dep-coords').textContent='❌ GPS non disponible';return;}
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat=pos.coords.latitude,lng=pos.coords.longitude;
+    setDepCoords(lat,lng);
+    if(depMap){depMap.setView([lat,lng],15);depMarker.setLatLng([lat,lng]);}
+    reverseGeocode(lat,lng);
+  },err=>{$('dep-coords').textContent='❌ GPS refusé ou erreur: '+err.message;});
+}
+
+// Initialiser la carte quand on va sur l'onglet tournée
+document.querySelectorAll('.ni[data-v="tur"]').forEach(n=>n.addEventListener('click',()=>setTimeout(()=>{initDepMap();showCaFromImport();},100)));
+
+/* ============================================================
+   IMPORTED DATA — stockage centralisé
+   ============================================================ */
+window.IMPORTED_DATA=null;
+
+function storeImportedData(d){
+  window.IMPORTED_DATA=d;
+  // Mettre à jour le banner Planning
+  const banner=$('pla-import-banner');
+  const info=$('pla-import-info');
+  if(banner&&d){
+    const n=d.total||d.patients?.length||d.entries?.length||'?';
+    if(info)info.innerHTML=`✅ <strong>${n}</strong> entrée(s) importée(s) disponibles pour générer un planning automatique.`;
+    banner.style.display='block';
+    const manual=$('pla-manual');
+    if(manual)manual.style.display='none';
+  }
+  showCaFromImport();
+}
+
+function showCaFromImport(){
+  if(!window.IMPORTED_DATA)return;
+  const patients=window.IMPORTED_DATA.patients||window.IMPORTED_DATA.entries||[];
+  if(!patients.length)return;
+  const ca=estimateRevenue(patients);
+  const w=$('tur-ca-wrap'),v=$('tur-ca-val');
+  if(w&&v){v.textContent=ca.toFixed(2)+' €';w.style.display='block';}
+}
+
+function estimateRevenue(patients){
+  // Estimation CA par patient selon type de soin détecté dans description
+  const RATES={injection:3.15*2,pansement:3.15*3,toilette:3.15*4,bsa:13,bsb:18.20,bsc:28.70,prelevement:3.15*1.5,perfusion:3.15*5,defaut:3.15*2};
+  return patients.reduce((sum,p)=>{
+    const d=(p.description||p.texte||p.summary||'').toLowerCase();
+    let v=RATES.defaut;
+    if(/toilette|bain/.test(d))v=RATES.toilette;
+    else if(/perfusion/.test(d))v=RATES.perfusion;
+    else if(/prél[eè]vement|prise de sang/.test(d))v=RATES.prelevement;
+    else if(/pansement/.test(d))v=RATES.pansement;
+    else if(/injection|insuline|piquer/.test(d))v=RATES.injection;
+    // + IFD domicile
+    if(/domicile/.test(d))v+=2.75;
+    return sum+v;
+  },0);
+}
+
+function showImportedPatients(){
+  if(!window.IMPORTED_DATA){alert('Aucune donnée importée. Utilisez "Import calendrier" d\'abord.');return;}
+  const patients=window.IMPORTED_DATA.patients||window.IMPORTED_DATA.entries||[];
+  if(!patients.length){alert('Aucun patient dans les données importées.');return;}
+  $('tbody').innerHTML=`<div class="card"><div class="ct">👥 Patients importés (${patients.length})</div>
+    ${patients.map((p,i)=>`<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info"><strong>${p.description||p.texte||p.summary||'Patient '+(i+1)}</strong><div style="font-size:11px;color:var(--m);margin-top:2px">${p.heure_soin||p.heure||''} ${p.patient_id?'· ID:'+p.patient_id:''}</div></div></div>`).join('')}
+  </div>`;
+  $('res-tur').classList.add('show');
+}
+
+/* ============================================================
+   PLANNING DEPUIS IMPORT
+   ============================================================ */
+async function generatePlanningFromImport(){
+  if(!window.IMPORTED_DATA){alert('Aucune donnée importée.');return;}
+  const patients=window.IMPORTED_DATA.patients||window.IMPORTED_DATA.entries||[];
+  if(!patients.length){alert('Aucun patient dans les données importées.');return;}
+  // Construire un texte structuré depuis l'import
+  const txt=patients.map((p,i)=>{
+    const desc=p.description||p.texte||p.summary||'Soin infirmier';
+    const freq=p.frequence||p.recurrence||'quotidien';
+    return `Patient P${i+1} : ${desc} (${freq})`;
+  }).join('\n');
+  $('pl-txt').value=txt;
+  ld('btn-pla',true);
+  $('res-pla').classList.remove('show');
+  try{
+    const d=await apiCall('/webhook/ami-calcul',{mode:'planning',texte:txt});
+    renderPlanning(d);
+    $('perr').style.display='none';
+  }catch(e){$('perr').style.display='flex';$('perr-m').textContent=e.message;}
+  $('res-pla').classList.add('show');
+  ld('btn-pla',false);
+}
+
+function renderPlanning(d){
+  const js=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'],pl=d.planning||{};
+  const ca=window.IMPORTED_DATA?estimateRevenue(window.IMPORTED_DATA.patients||window.IMPORTED_DATA.entries||[]):null;
+  $('pbody').innerHTML=`<div class="card"><div class="ct">📅 Planning hebdomadaire</div>
+    ${ca?`<div class="ca-pill">💶 CA semaine estimé : ${ca.toFixed(2)} €</div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:14px">
+      ${js.map(j=>`<div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px"><div style="font-weight:600;text-transform:capitalize;margin-bottom:8px">${j}</div>${(pl[j]||[]).map(p=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--b)">${p}</div>`).join('')||'<div style="font-size:12px;color:var(--m)">—</div>'}</div>`).join('')}
+    </div></div>`;
+}
+
+/* ============================================================
+   ROUTING OSRM
+   ============================================================ */
+async function getOsrmRoute(waypoints){
+  // waypoints = [{lat,lng}, ...]
+  if(!waypoints||waypoints.length<2)return null;
+  try{
+    const coords=waypoints.map(w=>`${w.lng},${w.lat}`).join(';');
+    const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false`);
+    const d=await r.json();
+    if(d.code!=='Ok')return null;
+    const route=d.routes[0];
+    return{
+      total_km:Math.round(route.distance/100)/10,
+      total_min:Math.round(route.duration/60),
+      legs:route.legs.map(l=>({km:Math.round(l.distance/100)/10,min:Math.round(l.duration/60)}))
+    };
+  }catch{return null;}
+}
+
+/* ============================================================
+   TOURNÉE AVEC OSRM
+   ============================================================ */
+async function optimiserTournee(){
+  ld('btn-tur',true);$('res-tur').classList.remove('show');
+  try{
+    const startLat=parseFloat($('t-lat').value)||48.8566;
+    const startLng=parseFloat($('t-lng').value)||2.3522;
+    const d=await apiCall('/webhook/ami-tournee-ia',{start_lat:startLat,start_lng:startLng});
+    if(!d.ok)throw new Error(d.error||'Erreur');
+    if(!d.route?.length){
+      $('tbody').innerHTML='<div class="card"><div class="ai wa">⚠️ Aucun patient importé. Utilisez l\'import calendrier d\'abord.</div></div>';
+    }else{
+      // Tentative OSRM si on a des coords
+      let osrm=null;
+      const pts=d.route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
+      if(pts.length>=2){
+        const wps=[{lat:startLat,lng:startLng},...pts];
+        osrm=await getOsrmRoute(wps);
+      }
+      const ca=estimateRevenue(d.route);
+      $('tbody').innerHTML=`<div class="card">
+        <div class="ct">🗺️ Tournée optimisée — ${d.total_patients} patients</div>
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="dreb">📍 ${d.total_patients} patients</div>
+          ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km réels (OSRM)</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:(d.total_km?`<div class="dreb">🚗 ~${d.total_km} km estimés</div>`:'')}
+          <div class="ca-pill">💶 CA estimé : ${ca.toFixed(2)} €</div>
+        </div>
+        ${d.route.map((p,i)=>{
+          const sd=encodeURIComponent(p.description||'');
+          const leg=osrm?.legs?.[i];
+          return`<div class="route-item">
+            <div class="route-num">${i+1}</div>
+            <div class="route-info"><strong style="font-size:13px">${p.description||'Patient'}</strong>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">ID: ${p.patient_id||'—'}</div>
+            </div>
+            ${p.heure?`<div class="route-time">⏱ ${p.heure}</div>`:''}
+            ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.distance_km?`<div class="route-km">+${p.distance_km}km</div>`:'')}
+            <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
+          </div>`;}).join('')}
+        ${d.alerts?.length?`<div class="aic" style="margin-top:16px">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
+      </div>`;
+    }
+    $('terr').style.display='none';
+  }catch(e){$('terr').style.display='flex';$('terr-m').textContent=e.message;}
+  $('res-tur').classList.add('show');ld('btn-tur',false);
+}
+
+/* ============================================================
+   PILOTAGE LIVE — ÉTENDU
+   ============================================================ */
+let LIVE_CA_TOTAL=0;
+let LIVE_START_TIME=null;
+let LIVE_TIMER_ID=null;
+
+function startLiveTimer(){
+  LIVE_START_TIME=Date.now();
+  $('live-timer').style.display='block';
+  $('live-ca-total').style.display='block';
+  if(LIVE_TIMER_ID)clearInterval(LIVE_TIMER_ID);
+  LIVE_TIMER_ID=setInterval(()=>{
+    const elapsed=Math.floor((Date.now()-LIVE_START_TIME)/1000);
+    const h=Math.floor(elapsed/3600),m=Math.floor((elapsed%3600)/60),s=elapsed%60;
+    $('live-timer').textContent=`⏱ ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  },1000);
+}
+
+function detectDelay(currentPatient){
+  if(!currentPatient?.heure_soin)return;
+  const now=new Date();
+  const [hh,mm]=(currentPatient.heure_soin||'00:00').split(':').map(Number);
+  const planned=new Date(now);planned.setHours(hh,mm,0,0);
+  const diffMin=Math.round((now-planned)/60000);
+  const alertEl=$('live-delay-alert'),msgEl=$('live-delay-msg');
+  if(diffMin>15&&alertEl&&msgEl){
+    msgEl.textContent=`Retard de ${diffMin} min sur ${currentPatient.heure_soin||'l\'horaire prévu'}. Souhaitez-vous recalculer ?`;
+    alertEl.style.display='block';
+  }else if(alertEl){
+    alertEl.style.display='none';
+  }
+}
+
+async function autoFacturation(patient){
+  // Cotation automatique en arrière-plan quand patient terminé
+  if(!patient?.description)return;
+  try{
+    const u=S?.user||{};
+    const d=await apiCall('/webhook/ami-calcul',{
+      mode:'ngap',texte:patient.description,
+      infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
+      adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
+      date_soin:new Date().toISOString().split('T')[0],
+      heure_soin:patient.heure_soin||'',
+      _live_auto:true
+    });
+    if(d.total){
+      LIVE_CA_TOTAL+=parseFloat(d.total)||0;
+      $('live-ca-total').textContent=`💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`;
+      updateLiveCaCard(patient,d);
+    }
+    return d;
+  }catch(e){console.warn('Auto-facturation: ',e.message);}
+}
+
+function updateLiveCaCard(patient,cot){
+  const card=$('live-ca-card');
+  const detail=$('live-ca-detail');
+  if(!card||!detail)return;
+  card.style.display='block';
+  const existing=detail.innerHTML;
+  detail.innerHTML+=`<div class="route-item"><div class="route-num">✅</div><div class="route-info" style="font-size:12px">${patient.description?.slice(0,40)||'Soin'}</div><div class="route-km" style="color:var(--a)">${(cot.total||0).toFixed(2)} €</div></div>`;
+}
+
+async function recalculTournee(){
+  try{
+    const d=await apiCall('/webhook/ami-live',{action:'recalcul'});
+    if(d.ok)await liveStatus();
+  }catch(e){alert('Erreur recalcul: '+e.message);}
+}
+
+/* Patch startDay pour démarrer le timer */
+const _origStartDay=window.startDay||(()=>{});
+window.startDay=async function(){
+  startLiveTimer();
+  // appel direct du code original
+  const el=$('live-badge');
+  if(el){el.textContent='EN COURS';el.style.background='var(--ad)';el.style.color='var(--a)';}
+  $('btn-live-start').style.display='none';
+  $('live-controls').style.display='block';
+  await liveStatusCore();
+};
+
+/* liveStatusCore = contenu de liveStatus original */
+async function liveStatusCore(){
+  try{
+    const d=await apiCall('/webhook/ami-live',{action:'get_status'});
+    if(!d.ok)return;
+    if(d.prochain){
+      let actes=[];try{actes=JSON.parse(d.prochain.actes||'[]');}catch{}
+      const desc=actes[0]?.nom||'Soin';
+      LIVE_PATIENT_ID=d.prochain.patient_id;
+      $('live-patient-name').textContent=desc;
+      $('live-info').textContent=`Prochain patient · ${d.prochain.heure_soin||'horaire non défini'}`;
+      $('live-next').innerHTML=`<div class="card"><div class="ct">📋 Patients restants</div><div class="ai in">📍 ${d.patients_restants} patient(s) restant(s) aujourd'hui</div></div>`;
+      detectDelay(d.prochain);
+    }else{
+      $('live-patient-name').textContent='Tournée terminée ✅';
+      $('live-info').textContent='Tous les patients ont été vus';
+      $('live-next').innerHTML='<div class="card"><div class="ai su">✅ Journée terminée ! Tous les patients ont été pris en charge.</div></div>';
+    }
+    if(LIVE_START_TIME){
+      $('live-ca-total').textContent=`💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`;
+      $('live-ca-total').style.display='block';
+    }
+  }catch(e){console.error(e);}
+}
+
+/* Patch liveAction pour auto-facturation */
+const _origLiveActionFn=window.liveAction;
+window.liveAction=async function(action){
+  if(action==='patient_done'&&LIVE_PATIENT_ID){
+    const patients=window.IMPORTED_DATA?.patients||window.IMPORTED_DATA?.entries||[];
+    const p=patients.find(x=>x.patient_id===LIVE_PATIENT_ID||(String(x.id)===String(LIVE_PATIENT_ID)));
+    if(p)await autoFacturation(p);
+  }
+  // appel original
+  if(!LIVE_PATIENT_ID&&action!=='get_status'){alert('Aucun patient actif.');return;}
+  try{
+    const d=await apiCall('/webhook/ami-live',{action,patient_id:LIVE_PATIENT_ID||''});
+    if(d.suggestion)alert('💡 '+d.suggestion);
+    await liveStatusCore();
+  }catch(e){alert('Erreur : '+e.message);}
+};
+
+/* Patch liveStatus global */
+window.liveStatus=liveStatusCore;
+</script>
 </html>
