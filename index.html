@@ -62,7 +62,7 @@
     <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici.</p></div>
     <div class="adm-alert e" id="adm-alert"></div>
     <!-- KPI -->
-    <div class="lbl" style="margin-bottom:12px">Analytics globaux</div>
+    <div class="lbl" style="margin-bottom:12px">Analytics globaux <span style="font-size:11px;color:var(--m);font-weight:400">(anonymisés — aucune donnée patient)</span></div>
     <div id="adm-kpi" class="kpi-grid">
       <div class="kpi"><div class="kpi-v g" id="kpi-ca">—</div><div class="kpi-l">CA total (€)</div></div>
       <div class="kpi"><div class="kpi-v b" id="kpi-actes">—</div><div class="kpi-l">Soins cotés</div></div>
@@ -71,6 +71,27 @@
       <div class="kpi"><div class="kpi-v b" id="kpi-dre">—</div><div class="kpi-l">DRE requises</div></div>
     </div>
     <div id="adm-top-actes" style="margin-bottom:24px"></div>
+
+    <!-- Sécurité temps réel v4.0 -->
+    <div class="lbl" style="margin-bottom:12px">🔐 Sécurité temps réel</div>
+    <div class="kpi-grid" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-v r" id="kpi-login-fails">—</div><div class="kpi-l">Échecs connexion</div></div>
+      <div class="kpi"><div class="kpi-v r" id="kpi-fraud-alerts">—</div><div class="kpi-l">Alertes fraude</div></div>
+    </div>
+    <div style="margin-bottom:24px">
+      <div class="lbl" style="margin-bottom:8px">Alertes récentes</div>
+      <div id="adm-recent-alerts" style="min-height:40px"><div class="spin spinw" style="width:16px;height:16px;margin:8px auto"></div></div>
+    </div>
+
+    <!-- Journal d'audit v4.0 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="lbl">📋 Journal d'audit</div>
+      <button class="bs bsm" onclick="loadAdmLogs()" style="padding:6px 14px;font-size:12px">↻ Charger les logs</button>
+    </div>
+    <div id="adm-logs" style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-height:60px;max-height:320px;overflow-y:auto;margin-bottom:24px">
+      <div style="font-size:12px;color:var(--m);text-align:center;padding:16px">Cliquez sur "Charger les logs" pour afficher le journal</div>
+    </div>
+
     <!-- Gestion comptes -->
     <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
     <div class="adm-search">
@@ -237,11 +258,34 @@
       <div class="card">
         <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
-        <div class="lbl">Prescripteur (médecin)</div>
-        <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label for="f-pr">Médecin prescripteur</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
-          <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543"></div>
-          <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
+        <!-- ── PRESCRIPTEUR v4.0 ── masqué en mode admin ──────────────── -->
+        <div id="prescripteur-section">
+          <div class="lbl">Prescripteur (médecin)</div>
+          <div class="fg" style="margin-bottom:10px">
+            <!-- Select dynamique chargé par loadPrescripteurs() -->
+            <div class="f" style="grid-column:1/-1">
+              <label for="f-prescripteur-select">Sélectionner un médecin enregistré</label>
+              <select id="f-prescripteur-select" name="prescripteur_id">
+                <option value="">— Médecin prescripteur (sélectionner ou saisir ci-dessous) —</option>
+              </select>
+            </div>
+            <div class="f"><label for="f-pr">Nom libre (si non listé)</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
+            <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543" maxlength="11"></div>
+            <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
+          </div>
+          <!-- Ajout rapide d'un nouveau prescripteur -->
+          <details style="margin-bottom:16px">
+            <summary style="font-size:12px;color:var(--m);cursor:pointer;padding:6px 0">➕ Enregistrer un nouveau médecin prescripteur</summary>
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-top:8px">
+              <div class="msg e" id="prescr-msg" style="display:none"></div>
+              <div class="fg" style="margin-bottom:10px">
+                <div class="f"><label for="prescr-nom">Nom *</label><input type="text" id="prescr-nom" placeholder="Dr. Dupont Marie"></div>
+                <div class="f"><label for="prescr-rpps">RPPS (11 chiffres)</label><input type="text" id="prescr-rpps" placeholder="10001234567" maxlength="11"></div>
+                <div class="f"><label for="prescr-spe">Spécialité</label><input type="text" id="prescr-spe" placeholder="Médecin généraliste"></div>
+              </div>
+              <button class="btn bs bsm" id="btn-add-prescr" onclick="addPrescripteur()"><span>💾</span> Enregistrer</button>
+            </div>
+          </details>
         </div>
         <div id="patient-fields">
           <div class="lbl">Patient — données locales uniquement</div>
@@ -269,6 +313,12 @@
         </div>
       </div>
       <div id="res-cot" class="res"><div id="cerr" class="errb" style="display:none">⚠️ <span id="cerr-m"></span></div><div id="cbody"></div></div>
+      <!-- ── NUMÉRO DE FACTURE v4.0 ── généré côté serveur (séquentiel CPAM) ── -->
+      <div id="invoice-number-section" style="display:none">
+        <span style="font-size:12px;color:var(--m);font-family:var(--fm)">N° facture :</span>
+        <span id="invoice-number-display"></span>
+        <span style="font-size:11px;color:var(--m);margin-left:auto;opacity:.7">utilisé par la CPAM</span>
+      </div>
     </section>
 
     <!-- VERIFY -->
