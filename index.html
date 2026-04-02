@@ -312,7 +312,8 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   <div class="adm-top">
     <div style="display:flex;align-items:center;gap:10px"><div class="adm-mark">⚙</div><div><div class="adm-name">Administration AMI</div><div class="adm-sub">Accès restreint</div></div></div>
     <div class="priv-badge">🔒 Vue limitée : nom + prénom uniquement</div>
-    <button class="bout" style="margin-left:auto" onclick="logout()">⏻ Déconnexion</button>
+    <button class="bs bsm" style="margin-left:auto;padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer" onclick="goToApp()">← Retour à l'app</button>
+    <button class="bout" onclick="logout()">⏻ Déconnexion</button>
   </div>
   <div class="adm-body">
     <h1 style="font-family:var(--fs);font-size:28px;margin-bottom:6px">Tableau de bord <em style="font-style:italic;color:var(--a)">Admin</em></h1>
@@ -427,7 +428,7 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
       <h1 class="pt">Cotation <em>intelligente</em></h1>
       <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
       <div class="card">
-        <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin sécurisé</strong> — les données patient ne sont pas transmises · cotation anonymisée uniquement</div>
+        <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
         <div class="lbl">Prescripteur (médecin)</div>
         <div class="fg" style="margin-bottom:20px">
@@ -658,26 +659,43 @@ async function apiCall(path,body){
 /* AUTH */
 function checkAuth(){
   if(ss.load()&&S?.token){
-    if(S.role==='admin')showAdm();
-    else showApp();
+    // Admin et infirmière vont tous dans showApp()
+    // L'admin a un bandeau + bouton vers le panel admin
+    showApp();
   }else showAuthOv();
 }
 function showAuthOv(){$('auth-ov').classList.remove('hide');$('adm').classList.remove('show');$('app').style.display='none';}
 function showAdm(){$('auth-ov').classList.add('hide');$('adm').classList.add('show');$('app').style.display='none';loadAdm();loadAdmStats();}
+function goToApp(){$('adm').classList.remove('show');$('app').style.display='grid';}
 function showApp(){
   $('auth-ov').classList.add('hide');$('adm').classList.remove('show');$('app').style.display='grid';
   const u=S?.user||{};
   $('uname').textContent=((u.prenom||'')+' '+(u.nom||'')).trim()||u.email||'—';
   if($('sess-inf'))$('sess-inf').textContent=(u.email||'')+' · session active';
   $('voicebtn').classList.add('show');
-  // Mode admin dans l'app
+  // Mode admin : toutes les pages visibles, données patients masquées
   if(S?.role==='admin'){
     $('admin-mode-badge').style.display='flex';
     $('admin-cot-notice').style.display='flex';
     $('priv-cot').style.display='none';
-    $('patient-fields').style.display='none';
     $('btn-profil').style.display='none';
-    document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='none');
+    // Afficher toutes les pages (nurse-only visible pour vérification fonctionnelle)
+    document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
+    // Masquer les champs patient individuels (RGPD)
+    ['f-pt','f-ddn','f-sec','f-amo','f-amc'].forEach(id=>{
+      const el=$(id); if(el){ el.value=''; el.placeholder='— masqué (admin) —'; el.readOnly=true; }
+    });
+    // Pré-remplir champs neutres pour test
+    const fds=$(  'f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
+    // Ajouter bouton "Panneau admin" dans la sidebar
+    if(!$('btn-goto-admin')){
+      const li=document.createElement('div');
+      li.className='ni';li.id='btn-goto-admin';
+      li.innerHTML='<span class="nic">⚙️</span> Panneau admin';
+      li.style.cssText='color:var(--d);background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);margin:8px 14px;border-radius:var(--r);';
+      li.onclick=()=>{$('app').style.display='none';$('adm').classList.add('show');loadAdm();loadAdmStats();};
+      document.querySelector('.side .sl:last-child')?.prepend(li);
+    }
   }
 }
 function switchTab(t){['l','r'].forEach(x=>{$('tab-'+x).classList.toggle('on',x===t);$('pan-'+x).style.display=x===t?'block':'none';});hideM('le','re','ro');}
@@ -689,7 +707,7 @@ async function login(){
     const d=await wpost('/webhook/auth-login',{email:em,password:pw});
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
     ss.save(d.token,d.role,d.user);
-    if(d.role==='admin')showAdm();else showApp();
+    showApp(); // admin et nurse → même app, admin a un bandeau + accès panel
   }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
 }
 async function register(){
