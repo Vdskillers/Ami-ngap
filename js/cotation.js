@@ -26,15 +26,26 @@ async function cotation() {
   $('cerr').style.display = 'none';
   const u = S?.user || {};
   try {
+    // Récupérer le prescripteur sélectionné (select ou champ texte libre)
+    const prescSel = $('f-prescripteur-select');
+    const prescripteur_id = prescSel?.value || null;
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
       adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
       ddn: gv('f-ddn'), amo: gv('f-amo'), amc: gv('f-amc'),
       exo: gv('f-exo'), regl: gv('f-regl'),
-      date_soin: gv('f-ds'), heure_soin: gv('f-hs')
+      date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
+      prescripteur_nom: gv('f-pr') || '',
+      prescripteur_rpps: gv('f-pr-rp') || '',
+      date_prescription: gv('f-pr-dt') || '',
+      ...(prescripteur_id ? { prescripteur_id } : {})
     });
     if (d.error) throw new Error(d.error);
+    // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
+    if (d.invoice_number && typeof displayInvoiceNumber === 'function') {
+      displayInvoiceNumber(d.invoice_number);
+    }
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
   } catch (e) {
@@ -182,8 +193,26 @@ function closeProInfoModal() {
 function _doPrint(d, u) {
   if (!d) return;
   const ac  = d.actes || [];
-  const num = 'F' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6);
+  // Priorité au numéro généré par le serveur (séquentiel CPAM)
+  // Fallback local uniquement si le worker n'a pas encore renvoyé le numéro
+  const num = d.invoice_number || ('F' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6));
   const inf = ((u.prenom || '') + ' ' + (u.nom || '')).trim() || 'Infirmier(ère) libéral(e)';
+
+  /* Bloc infos prescripteur (si disponible) */
+  const prescBloc = d.prescripteur
+    ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid #e0e7ef">
+        <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:6px">Prescripteur</div>
+        <div style="font-weight:600">${d.prescripteur.nom || ''}</div>
+        ${d.prescripteur.rpps ? `<div style="font-size:12px;color:#6b7a99">RPPS : <strong style="color:#1a1a2e">${d.prescripteur.rpps}</strong></div>` : ''}
+        ${d.prescripteur.specialite ? `<div style="font-size:12px;color:#6b7a99">${d.prescripteur.specialite}</div>` : ''}
+        ${gv('f-pr-dt') ? `<div style="font-size:12px;color:#6b7a99">Prescription du : ${gv('f-pr-dt')}</div>` : ''}
+       </div>`
+    : (gv('f-pr') ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid #e0e7ef">
+        <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:6px">Prescripteur</div>
+        <div style="font-weight:600">${gv('f-pr')}</div>
+        ${gv('f-pr-rp') ? `<div style="font-size:12px;color:#6b7a99">RPPS : ${gv('f-pr-rp')}</div>` : ''}
+        ${gv('f-pr-dt') ? `<div style="font-size:12px;color:#6b7a99">Prescription du : ${gv('f-pr-dt')}</div>` : ''}
+       </div>` : '');
 
   /* Bloc infos professionnelles — affiche seulement les champs renseignés */
   const infoPro = [
@@ -195,7 +224,7 @@ function _doPrint(d, u) {
     u.tel    ? `<div style="color:#6b7a99;font-size:12px">Tél : ${u.tel}</div>` : '',
   ].filter(Boolean).join('\n');
 
-  /* Avertissement si infos manquantes (apparaît sur le PDF) */
+  /* Avertissement si infos manquantes */
   const missingWarning = (!u.adeli || !u.rpps || !u.structure)
     ? `<div style="background:#fff8e1;border:1px solid #f59e0b;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400e">
         ⚠️ Facture générée sans : ${[!u.adeli?'N° ADELI':'',!u.rpps?'N° RPPS':'',!u.structure?'Cabinet/Structure':''].filter(Boolean).join(', ')}
@@ -238,9 +267,11 @@ ${missingWarning}
     <h1>Feuille de soins</h1>
     <div class="meta">N° ${num} · ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
     ${d.date_soin ? `<div class="meta">Date du soin : ${d.date_soin}</div>` : ''}
+    ${d.ngap_version ? `<div class="meta" style="color:#9ca3af">NGAP v${d.ngap_version}</div>` : ''}
   </div>
   <div class="hdr-right">
     ${infoPro}
+    ${prescBloc}
   </div>
 </div>
 
@@ -271,7 +302,7 @@ ${missingWarning}
 ${d.dre_requise ? '<div class="dre">📋 <strong>DRE requise</strong> — Demande de Remboursement Exceptionnel</div>' : ''}
 
 <div class="footer">
-  AMI NGAP · Cotation NGAP métropole en vigueur · Généré le ${new Date().toLocaleDateString('fr-FR')}
+  AMI NGAP · N° facture : ${num} · Cotation NGAP métropole en vigueur · Généré le ${new Date().toLocaleDateString('fr-FR')}
 </div>
 
 <script>window.onload = () => window.print();<\/script>
@@ -359,6 +390,14 @@ function clrCot() {
   ['f-pr','f-pr-rp','f-pr-dt','f-pt','f-ddn','f-sec','f-amo','f-amc','f-txt','f-ds','f-hs']
     .forEach(id => { const e = $(id); if (e) e.value = ''; });
   ['f-exo','f-regl'].forEach(id => { const e = $(id); if (e) e.selectedIndex = 0; });
+  // Réinitialiser le select prescripteur
+  const prescSel = $('f-prescripteur-select');
+  if (prescSel) prescSel.value = '';
+  // Masquer le numéro de facture
+  const invSec = $('invoice-number-section');
+  if (invSec) invSec.style.display = 'none';
+  const invDisplay = $('invoice-number-display');
+  if (invDisplay) invDisplay.textContent = '';
   $('res-cot').classList.remove('show');
 }
 

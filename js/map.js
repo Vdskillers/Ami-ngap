@@ -32,6 +32,10 @@ function initDepMap() {
     setDepCoords(lat, lng);
     reverseGeocode(lat, lng);
   });
+
+  /* ✅ Correction hauteur responsive après init
+     Nécessaire quand la map est initialisée dans un onglet caché */
+  setTimeout(() => depMap.invalidateSize(), 300);
 }
 
 /* Place ou déplace le marker draggable de départ */

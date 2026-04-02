@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AMI NGAP">
+<meta name="mobile-web-app-capable" content="yes">
+<title>AMI — Cotation NGAP</title>
+<meta name="description" content="Cotation NGAP intelligente pour infirmiers — IA · RAG BM25 · Tarifs 2026">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="css/style.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-ov">
+  <div class="aw"><div class="acard">
+    <div class="alogo"><div class="amark">A</div><div><div class="aname">AMI</div><div class="asub">Cotation NGAP IA</div></div></div>
+    <div class="atabs">
+      <button class="atab on" id="tab-l">Connexion</button>
+      <button class="atab" id="tab-r">Créer un compte</button>
+    </div>
+    <div id="pan-l">
+      <div class="msg e" id="le"></div>
+      <div class="af"><label for="l-em">Email</label><input type="email" id="l-em" name="email" placeholder="infirmiere@cabinet.fr" autocomplete="email"></div>
+      <div class="af"><label for="l-pw">Mot de passe</label><input type="password" id="l-pw" name="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
+      <button class="abtn" id="btn-l"><span>🔐</span> Se connecter</button>
+    </div>
+    <div id="pan-r" style="display:none">
+      <div class="msg e" id="re"></div><div class="msg o" id="ro"></div>
+      <div class="g2"><div class="af"><label for="r-fn">Prénom *</label><input type="text" id="r-fn" name="firstname" placeholder="Marie"></div><div class="af"><label for="r-ln">Nom *</label><input type="text" id="r-ln" name="lastname" placeholder="DUPONT"></div></div>
+      <div class="af"><label for="r-em">Email *</label><input type="email" id="r-em" name="email" placeholder="infirmiere@cabinet.fr"></div>
+      <div class="af"><label for="r-pw">Mot de passe (min. 8 car.) *</label><input type="password" id="r-pw" name="password" placeholder="••••••••"></div>
+      <div class="af"><label for="r-pw2">Confirmer</label><input type="password" id="r-pw2" name="password_confirm" placeholder="••••••••"></div>
+      <div class="sep"><span class="sepl">Informations professionnelles (optionnel)</span></div>
+      <div class="g2"><div class="af"><label for="r-ad">N° ADELI</label><input type="text" id="r-ad" name="adeli" placeholder="123456789"></div><div class="af"><label for="r-rp">RPPS</label><input type="text" id="r-rp" name="rpps" placeholder="10001234567"></div></div>
+      <div class="af"><label for="r-st">Cabinet / Structure</label><input type="text" id="r-st" name="structure" placeholder="Cabinet libéral de..."></div>
+      <button class="abtn" id="btn-r"><span>✨</span> Créer mon compte</button>
+    </div>
+    <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--m);font-family:var(--fm)">🔒 Cloudflare · Supabase · SHA-256 · RGPD</div>
+  </div></div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="adm">
+  <div class="adm-top">
+    <div style="display:flex;align-items:center;gap:10px"><div class="adm-mark">⚙</div><div><div class="adm-name">Administration AMI</div><div class="adm-sub">Accès restreint</div></div></div>
+    <div class="priv-badge">🔒 Vue limitée : nom + prénom uniquement</div>
+    <button class="bs bsm" style="margin-left:auto;padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer" onclick="goToApp()">← Retour à l'app</button>
+    <button class="bout" onclick="logout()">⏻ Déconnexion</button>
+  </div>
+  <div class="adm-body">
+    <h1 style="font-family:var(--fs);font-size:28px;margin-bottom:6px">Tableau de bord <em style="font-style:italic;color:var(--a)">Admin</em></h1>
+    <p style="color:var(--m);font-size:13px;margin-bottom:24px">Données agrégées anonymisées · aucune donnée patient identifiable</p>
+    <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici.</p></div>
+    <div class="adm-alert e" id="adm-alert"></div>
+    <!-- KPI -->
+    <div class="lbl" style="margin-bottom:12px">Analytics globaux <span style="font-size:11px;color:var(--m);font-weight:400">(anonymisés — aucune donnée patient)</span></div>
+    <div id="adm-kpi" class="kpi-grid">
+      <div class="kpi"><div class="kpi-v g" id="kpi-ca">—</div><div class="kpi-l">CA total (€)</div></div>
+      <div class="kpi"><div class="kpi-v b" id="kpi-actes">—</div><div class="kpi-l">Soins cotés</div></div>
+      <div class="kpi"><div class="kpi-v o" id="kpi-panier">—</div><div class="kpi-l">Panier moyen</div></div>
+      <div class="kpi"><div class="kpi-v r" id="kpi-alertes">—</div><div class="kpi-l">Alertes NGAP</div></div>
+      <div class="kpi"><div class="kpi-v b" id="kpi-dre">—</div><div class="kpi-l">DRE requises</div></div>
+    </div>
+    <div id="adm-top-actes" style="margin-bottom:24px"></div>
+
+    <!-- Sécurité temps réel v4.0 -->
+    <div class="lbl" style="margin-bottom:12px">🔐 Sécurité temps réel</div>
+    <div class="kpi-grid" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-v r" id="kpi-login-fails">—</div><div class="kpi-l">Échecs connexion</div></div>
+      <div class="kpi"><div class="kpi-v r" id="kpi-fraud-alerts">—</div><div class="kpi-l">Alertes fraude</div></div>
+    </div>
+    <div style="margin-bottom:24px">
+      <div class="lbl" style="margin-bottom:8px">Alertes récentes</div>
+      <div id="adm-recent-alerts" style="min-height:40px"><div class="spin spinw" style="width:16px;height:16px;margin:8px auto"></div></div>
+    </div>
+
+    <!-- Journal d'audit v4.0 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="lbl">📋 Journal d'audit</div>
+      <button class="bs bsm" onclick="loadAdmLogs()" style="padding:6px 14px;font-size:12px">↻ Charger les logs</button>
+    </div>
+    <div id="adm-logs" style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-height:60px;max-height:320px;overflow-y:auto;margin-bottom:24px">
+      <div style="font-size:12px;color:var(--m);text-align:center;padding:16px">Cliquez sur "Charger les logs" pour afficher le journal</div>
+    </div>
+
+    <!-- Gestion comptes -->
+    <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
+    <div class="adm-search">
+      <input type="text" id="adm-q" placeholder="🔍 Filtrer par nom ou prénom...">
+      <button class="bs bsm" onclick="loadAdm()" style="padding:10px 18px;font-size:13px">↻ Actualiser</button>
+    </div>
+    <div id="accs" class="accs"><div class="empty"><div class="ei"><div class="spin spinw" style="width:32px;height:32px"></div></div><p style="margin-top:12px">Chargement...</p></div></div>
+  </div>
+</div>
+
+<!-- PROFILE MODAL -->
+<div id="pm">
+  <div class="mc">
+    <div class="mh"><div class="mt">👤 Mon profil</div><button class="mx" onclick="closePM()">✕</button></div>
+    <div class="msg e" id="pe"></div><div class="msg o" id="po"></div>
+    <div style="margin-bottom:20px">
+      <div class="g2"><div class="af"><label for="p-fn">Prénom</label><input type="text" id="p-fn" name="firstname"></div><div class="af"><label for="p-ln">Nom</label><input type="text" id="p-ln" name="lastname"></div></div>
+      <div class="g2"><div class="af"><label for="p-ad">N° ADELI</label><input type="text" id="p-ad" name="adeli"></div><div class="af"><label for="p-rp">RPPS</label><input type="text" id="p-rp" name="rpps"></div></div>
+      <div class="af"><label for="p-st">Cabinet / Structure</label><input type="text" id="p-st" name="structure"></div>
+      <div class="af"><label for="p-adr">Adresse</label><input type="text" id="p-adr" name="address"></div>
+      <div class="af"><label for="p-tel">Téléphone</label><input type="tel" id="p-tel" name="tel"></div>
+    </div>
+    <button class="btn bp" id="btn-save-pm" style="width:100%;justify-content:center">💾 Enregistrer</button>
+    <div class="sep" style="margin-top:24px"><span class="sepl">Changer le mot de passe</span></div>
+    <div class="msg e" id="ppe"></div><div class="msg o" id="ppo"></div>
+    <div class="af"><label for="p-old">Mot de passe actuel</label><input type="password" id="p-old" name="old_password" placeholder="••••••••"></div>
+    <div class="af"><label for="p-new">Nouveau mot de passe</label><input type="password" id="p-new" name="new_password" placeholder="••••••••"></div>
+    <button class="btn bs" id="btn-change-pwd" style="width:100%;justify-content:center;margin-top:6px">🔑 Changer</button>
+    <div class="sep" style="margin-top:24px"><span class="sepl" style="color:var(--d)">Zone dangereuse</span></div>
+    <button class="btn bd" id="btn-del-account" style="width:100%;justify-content:center">🗑️ Supprimer mon compte</button>
+  </div>
+</div>
+
+<!-- VERIFY MODAL -->
+<div id="vm">
+  <div class="vmc">
+    <div class="vm-title">🔍 Vérification & Correction IA</div>
+    <div class="vm-sub">Analyse avant cotation — aucune donnée sauvegardée</div>
+    <div id="vm-loading" style="text-align:center;padding:40px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="font-size:13px;color:var(--m)">Analyse en cours...</p></div>
+    <div id="vm-result" style="display:none">
+      <div id="vm-corr-wrap" style="display:none"><div class="vm-section"><div class="vm-corrected-label">Texte corrigé</div><div class="vm-corrected" id="vm-corrected-text"></div></div></div>
+      <div id="vm-fixes-wrap" class="vm-section" style="display:none"><div class="vm-section-title">✏️ Corrections appliquées</div><div id="vm-fixes"></div></div>
+      <div id="vm-alerts-wrap" class="vm-section" style="display:none"><div class="vm-section-title">⚠️ Incohérences NGAP détectées</div><div id="vm-alerts"></div></div>
+      <div id="vm-sugg-wrap" class="vm-section" style="display:none"><div class="vm-section-title">💡 Majorations / éléments suggérés</div><div id="vm-sugg"></div></div>
+      <div id="vm-ok-wrap" style="display:none"><div class="vm-item ok">✅ Description correcte — aucune correction nécessaire</div></div>
+    </div>
+    <div class="vm-actions">
+      <button class="btn bp" id="vm-apply" onclick="applyVerify()" style="display:none"><span>✅</span> Appliquer les corrections</button>
+      <button class="btn bs" onclick="closeVM()">✕ Fermer</button>
+      <button class="btn bv" id="vm-cotate" onclick="closeVM();setTimeout(cotation,100)" style="display:none"><span>⚡</span> Coter maintenant</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE INFOS PROFESSIONNELLES (avant impression) -->
+<div id="pro-info-modal" style="position:fixed;inset:0;z-index:700;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.88);backdrop-filter:blur(8px);padding:20px">
+  <div style="background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:32px;width:100%;max-width:480px;box-shadow:var(--sh)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <div style="width:40px;height:40px;background:var(--wd);border-radius:10px;display:grid;place-items:center;font-size:20px;flex-shrink:0">⚠️</div>
+      <div>
+        <div style="font-family:var(--fs);font-size:20px">Informations manquantes</div>
+        <div style="font-size:12px;color:var(--m)">Requises pour une facture conforme</div>
+      </div>
+    </div>
+    <div id="pro-info-missing-list" style="background:var(--s);border:1px solid rgba(255,181,71,.25);border-radius:var(--r);padding:12px 16px;margin:16px 0;font-size:13px;color:var(--w);line-height:1.8"></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+      <div class="af"><label for="pi-adeli">N° ADELI</label><input type="text" id="pi-adeli" name="adeli" placeholder="123456789" maxlength="9"></div>
+      <div class="af"><label for="pi-rpps">N° RPPS</label><input type="text" id="pi-rpps" name="rpps" placeholder="10001234567" maxlength="11"></div>
+      <div class="af"><label for="pi-structure">Cabinet / Structure</label><input type="text" id="pi-structure" name="structure" placeholder="Cabinet infirmier de..."></div>
+    </div>
+    <div id="pro-info-msg" class="msg e" style="display:none"></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="abtn" id="btn-pi-save-print" style="background:linear-gradient(135deg,var(--a),#00b891)">
+        <span>💾</span> Enregistrer et imprimer
+      </button>
+      <button class="abtn" id="btn-pi-print-anyway" style="background:var(--s);border:1px solid var(--b);color:var(--m);font-weight:500">
+        Imprimer sans ces informations
+      </button>
+      <button onclick="closeProInfoModal()" style="background:none;border:none;color:var(--m);cursor:pointer;font-size:13px;padding:4px">
+        ✕ Annuler
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ASSISTANT VOCAL -->
+<button id="voicebtn" title="Assistant vocal" onclick="toggleVoice()">🎤</button>
+<div id="voice-toast">
+  <div style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:4px">🎤 ASSISTANT VOCAL ACTIF</div>
+  <div id="voice-interim"></div>
+  <div style="font-size:10px;color:var(--m);margin-top:6px">Dites "stop assistant" pour désactiver</div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app" style="display:none">
+  <header class="top">
+    <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
+    <div class="tr">
+      <div class="badge">NGAP 2026</div>
+      <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
+      <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
+      <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
+      <button class="bout" onclick="logout()">⏻ Déconnexion</button>
+    </div>
+  </header>
+  <nav class="side">
+    <div class="sl">
+      <div class="slbl">Navigation</div>
+      <div class="ni on" data-v="cot"><span class="nic">🩺</span> Cotation NGAP</div>
+      <div class="ni" data-v="ver"><span class="nic">✅</span> Vérifier soin</div>
+      <div class="ni nurse-only" data-v="imp"><span class="nic">📂</span> Import calendrier</div>
+      <div class="ni nurse-only" data-v="tur"><span class="nic">🗺️</span> Tournée IA</div>
+      <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
+      <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
+      <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique</div>
+    </div>
+    <div class="sl" style="margin-top:auto">
+      <div class="slbl">Système</div>
+      <div class="ni" data-v="dash"><span class="nic">📈</span> Dashboard</div>
+      <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
+      <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
+    </div>
+  </nav>
+
+  <!-- BOTTOM NAV MOBILE (caché sur desktop via CSS) -->
+  <nav id="bottom-nav" style="display:none">
+    <button class="bn-item on" data-v="cot" onclick="navTo('cot',this)">
+      <span class="bn-ic">🩺</span>Coter
+    </button>
+    <button class="bn-item nurse-only" data-v="tur" onclick="navTo('tur',this)">
+      <span class="bn-ic">🗺️</span>Tournée
+    </button>
+    <button class="bn-item nurse-only" data-v="live" onclick="navTo('live',this)">
+      <span class="bn-ic">▶️</span>Live
+    </button>
+    <button class="bn-item" data-v="dash" onclick="navTo('dash',this)">
+      <span class="bn-ic">📈</span>Stats
+    </button>
+    <button class="bn-item" data-v="more" onclick="toggleMobileMenu()">
+      <span class="bn-ic">☰</span>Plus
+    </button>
+  </nav>
+
+  <!-- MENU "PLUS" MOBILE -->
+  <div id="mobile-menu" style="display:none;position:fixed;bottom:68px;left:0;right:0;z-index:300;background:rgba(11,15,20,.98);border-top:1px solid var(--b);backdrop-filter:blur(20px);padding:12px 8px;padding-bottom:env(safe-area-inset-bottom)">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ver" onclick="navTo('ver',this);toggleMobileMenu()"><span class="bn-ic">✅</span>Vérifier</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
+      <button class="bn-item" style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)" onclick="logout()"><span class="bn-ic">⏻</span>Quitter</button>
+    </div>
+  </div>
+
+  <main class="main">
+
+    <!-- COTATION -->
+    <section class="view on" id="view-cot">
+      <h1 class="pt">Cotation <em>intelligente</em></h1>
+      <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
+      <div class="card">
+        <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
+        <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
+        <!-- ── PRESCRIPTEUR v4.0 ── masqué en mode admin ──────────────── -->
+        <div id="prescripteur-section">
+          <div class="lbl">Prescripteur (médecin)</div>
+          <div class="fg" style="margin-bottom:10px">
+            <!-- Select dynamique chargé par loadPrescripteurs() -->
+            <div class="f" style="grid-column:1/-1">
+              <label for="f-prescripteur-select">Sélectionner un médecin enregistré</label>
+              <select id="f-prescripteur-select" name="prescripteur_id">
+                <option value="">— Médecin prescripteur (sélectionner ou saisir ci-dessous) —</option>
+              </select>
+            </div>
+            <div class="f"><label for="f-pr">Nom libre (si non listé)</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
+            <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543" maxlength="11"></div>
+            <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
+          </div>
+          <!-- Ajout rapide d'un nouveau prescripteur -->
+          <details style="margin-bottom:16px">
+            <summary style="font-size:12px;color:var(--m);cursor:pointer;padding:6px 0">➕ Enregistrer un nouveau médecin prescripteur</summary>
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-top:8px">
+              <div class="msg e" id="prescr-msg" style="display:none"></div>
+              <div class="fg" style="margin-bottom:10px">
+                <div class="f"><label for="prescr-nom">Nom *</label><input type="text" id="prescr-nom" placeholder="Dr. Dupont Marie"></div>
+                <div class="f"><label for="prescr-rpps">RPPS (11 chiffres)</label><input type="text" id="prescr-rpps" placeholder="10001234567" maxlength="11"></div>
+                <div class="f"><label for="prescr-spe">Spécialité</label><input type="text" id="prescr-spe" placeholder="Médecin généraliste"></div>
+              </div>
+              <button class="btn bs bsm" id="btn-add-prescr" onclick="addPrescripteur()"><span>💾</span> Enregistrer</button>
+            </div>
+          </details>
+        </div>
+        <div id="patient-fields">
+          <div class="lbl">Patient — données locales uniquement</div>
+          <div class="fg" style="margin-bottom:20px">
+            <div class="f"><label for="f-pt">Nom patient <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="f-pt" name="patient_nom" placeholder="NOM Prénom" autocomplete="off"></div>
+            <div class="f"><label for="f-ddn">Date de naissance</label><input type="date" id="f-ddn" name="date_naissance"></div>
+            <div class="f"><label for="f-sec">N° Sécu <span style="font-size:9px;opacity:.5">(non transmis)</span></label><input type="text" id="f-sec" name="secu" placeholder="1 85 06 ..." autocomplete="off"></div>
+            <div class="f"><label for="f-amo">Caisse AMO</label><input type="text" id="f-amo" name="amo" placeholder="CPAM Paris"></div>
+            <div class="f"><label for="f-amc">Mutuelle AMC</label><input type="text" id="f-amc" name="amc" placeholder="MGEN, Harmonie..."></div>
+          </div>
+        </div>
+        <div class="lbl">Facturation</div>
+        <div class="fg" style="margin-bottom:20px">
+          <div class="f"><label for="f-exo">Exonération</label><select id="f-exo" name="exoneration"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
+          <div class="f"><label for="f-regl">Mode règlement</label><select id="f-regl" name="reglement"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
+          <div class="f"><label for="f-ds">Date du soin</label><input type="date" id="f-ds" name="date_soin"></div>
+          <div class="f"><label for="f-hs">Heure du soin</label><input type="time" id="f-hs" name="heure_soin"></div>
+        </div>
+        <div class="lbl">Description des soins <span style="color:var(--d)">*</span></div>
+        <div class="f" style="margin-bottom:16px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."></textarea></div>
+        <div class="ar-row">
+          <button class="btn bp" id="btn-cot" onclick="cotation()"><span>⚡</span> Coter avec l'IA</button>
+          <button class="btn bv" id="btn-verify" onclick="openVerify()"><span>🔍</span> Vérifier & corriger</button>
+          <button class="btn bs" onclick="clrCot()">↺ Réinitialiser</button>
+        </div>
+      </div>
+      <div id="res-cot" class="res"><div id="cerr" class="errb" style="display:none">⚠️ <span id="cerr-m"></span></div><div id="cbody"></div></div>
+      <!-- ── NUMÉRO DE FACTURE v4.0 ── généré côté serveur (séquentiel CPAM) ── -->
+      <div id="invoice-number-section" style="display:none">
+        <span style="font-size:12px;color:var(--m);font-family:var(--fm)">N° facture :</span>
+        <span id="invoice-number-display"></span>
+        <span style="font-size:11px;color:var(--m);margin-left:auto;opacity:.7">utilisé par la CPAM</span>
+      </div>
+    </section>
+
+    <!-- VERIFY -->
+    <section class="view" id="view-ver">
+      <h1 class="pt">Vérifier <em>un soin</em></h1><p class="ps">Correction auto · Normalisation médicale · Alertes NGAP</p>
+      <div class="card">
+        <div class="aic" style="margin-bottom:20px">
+          <div class="ai in">✏️ <strong>Corrige</strong> les fautes de frappe et erreurs de reconnaissance vocale</div>
+          <div class="ai wa">⚠️ <strong>Détecte</strong> les incohérences NGAP : heure de nuit sans heure précise</div>
+          <div class="ai su">💡 <strong>Suggère</strong> les majorations oubliées : IFD si domicile, IK si km présents</div>
+        </div>
+        <div class="fg" style="margin-bottom:20px">
+          <div class="f"><label for="v-ds">Date du soin</label><input type="date" id="v-ds" name="date_soin"></div>
+          <div class="f"><label for="v-hs">Heure</label><input type="time" id="v-hs" name="heure_soin"></div>
+          <div class="f"><label for="v-exo">Exonération</label><select id="v-exo" name="exoneration"><option value="">Aucune</option><option value="ALD">ALD</option></select></div>
+        </div>
+        <div class="f" style="margin-bottom:16px"><textarea id="v-txt" placeholder="Ex : injection SC insuline + panse dimanche domisil..." style="min-height:100px"></textarea></div>
+        <button class="btn bv" id="btn-ver" onclick="verifyStandalone()"><span>🔍</span> Analyser & Corriger</button>
+      </div>
+      <div id="res-ver" class="res"><div id="verr" class="errb" style="display:none">⚠️ <span id="verr-m"></span></div><div id="vbody"></div></div>
+    </section>
+
+    <!-- IMPORT CALENDRIER -->
+    <section class="view" id="view-imp">
+      <h1 class="pt">Import <em>calendrier</em></h1>
+      <p class="ps">Google Calendar · Excel · CSV · JSON · texte libre · anonymisation automatique</p>
+      <div class="card">
+        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Anonymisation RGPD automatique :</strong> les noms de patients sont convertis en identifiants anonymes. Vous seul(e) pouvez voir vos données importées.</p></div>
+        <div class="lbl" style="margin-bottom:16px">Glissez votre fichier ou cliquez pour sélectionner</div>
+        <div class="drop-zone" id="drop-zone">
+          <input type="file" id="imp-file" accept=".ics,.csv,.xlsx,.json,.txt" onchange="handleFileSelect(this)">
+          <div class="drop-icon">📂</div>
+          <div class="drop-text"><strong>Sélectionner un fichier</strong> ou glisser-déposer ici</div>
+          <div class="drop-formats">Formats : .ics · .csv · .json · .txt · copier-coller</div>
+        </div>
+        <div style="margin-top:16px">
+          <div class="lbl">Ou coller du texte directement</div>
+          <div class="f" style="margin-bottom:12px"><textarea id="imp-text" placeholder="Collez votre planning ici (format libre, JSON, CSV...)..." style="min-height:120px"></textarea></div>
+        </div>
+        <div class="ar-row">
+          <button class="btn bp" id="btn-imp" onclick="importCalendar()"><span>📥</span> Importer</button>
+          <button class="btn bs" onclick="$('imp-text').value='';$('imp-file').value='';$('imp-result').classList.remove('show')">↺ Effacer</button>
+        </div>
+      </div>
+      <div id="imp-result" class="res"></div>
+    </section>
+
+    <!-- TOURNÉE IA -->
+    <section class="view" id="view-tur">
+      <h1 class="pt">Tournée <em>optimisée par IA</em></h1>
+      <p class="ps">Carte interactive · GPS · Routage OSRM · Prévision CA</p>
+      <div class="card">
+        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez d'abord via "Import calendrier".</p></div>
+        <!-- Barre de recherche adresse -->
+        <div class="map-search">
+          <input type="text" id="dep-addr" placeholder="🔍 Adresse de départ (ex: 29 rue de Bretagne, Brest...)" onkeydown="if(event.key==='Enter')geocodeAddress()">
+          <button class="map-btn search" onclick="geocodeAddress()">Rechercher</button>
+          <button class="map-btn gps" onclick="getGPS()">📍 GPS</button>
+        </div>
+        <div class="dep-coords" id="dep-coords">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
+        <!-- Carte Leaflet -->
+        <div id="dep-map"></div>
+        <!-- Champs lat/lng cachés (mis à jour par la carte) -->
+        <input type="hidden" id="t-lat" value="">
+        <input type="hidden" id="t-lng" value="">
+        <!-- CA estimé depuis import -->
+        <div id="tur-ca-wrap" style="display:none">
+          <div class="ca-pill">💶 <span id="tur-ca-val">—</span> estimés depuis l'import</div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
+        </div>
+      </div>
+      <div id="res-tur" class="res"><div id="terr" class="errb" style="display:none">⚠️ <span id="terr-m"></span></div><div id="tbody"></div></div>
+    </section>
+
+    <!-- PILOTAGE LIVE -->
+    <section class="view" id="view-live">
+      <h1 class="pt">Pilotage <em>de journée</em></h1>
+      <p class="ps">Assistant temps réel · auto-facturation · détection retard · recalcul automatique</p>
+      <div id="live-status" class="live-card">
+        <div class="live-badge" id="live-badge">EN ATTENTE</div>
+        <div class="live-patient" id="live-patient-name">Démarrez votre journée</div>
+        <p style="font-size:13px;color:var(--m)" id="live-info">Cliquez sur "Démarrer" pour activer le pilotage automatique</p>
+        <div class="live-timer" id="live-timer" style="display:none"></div>
+        <div class="live-ca" id="live-ca-total" style="display:none"></div>
+        <div class="live-delay" id="live-delay-alert">⏰ <span id="live-delay-msg"></span></div>
+        <div class="live-actions">
+          <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
+          <button class="btn bs" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
+        </div>
+      </div>
+      <div id="live-controls" style="display:none">
+        <div class="card">
+          <div class="ct">Actions patient</div>
+          <div class="ar-row">
+            <button class="btn bp" id="btn-done" onclick="liveAction('patient_done')"><span>✅</span> Patient terminé</button>
+            <button class="btn bs" id="btn-absent" onclick="liveAction('patient_absent')"><span>❌</span> Patient absent</button>
+            <button class="btn bv" onclick="liveStatus()"><span>📊</span> Actualiser</button>
+            <button class="btn bs bsm" onclick="recalculTournee()"><span>🔄</span> Recalculer</button>
+          </div>
+        </div>
+        <div id="live-next" class="res show" style="margin-top:16px"></div>
+        <!-- CA de la journée -->
+        <div class="card" id="live-ca-card" style="margin-top:16px;display:none">
+          <div class="ct">💶 CA de la journée</div>
+          <div id="live-ca-detail"></div>
+        </div>
+      </div>
+
+      <!-- 🚗 MODE UBER MÉDICAL — Tournée temps réel -->
+      <div class="card" style="margin-top:20px">
+        <div class="ct">🚗 Mode Uber Médical <span style="font-family:var(--fm);font-size:10px;background:var(--a2d);color:var(--a2);border:1px solid var(--a2);padding:2px 8px;border-radius:20px;letter-spacing:1px;vertical-align:middle">TEMPS RÉEL</span></div>
+        <p style="font-size:13px;color:var(--m);margin-bottom:16px">GPS continu · Dispatch intelligent · ETA live · Score priorité médicale</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+          <button class="btn bp bsm" onclick="startLiveTracking();loadUberPatients()"><span>▶️</span> Démarrer suivi GPS</button>
+          <button class="btn bs bsm" onclick="stopLiveTracking()"><span>⏹️</span> Arrêter GPS</button>
+          <button class="btn bv bsm" onclick="recalcRouteUber()"><span>🔄</span> Recalculer route</button>
+          <button class="btn bs bsm" onclick="selectBestPatient()"><span>🧠</span> Meilleur suivant</button>
+        </div>
+        <div id="uber-tracking-status" style="font-family:var(--fm);font-size:11px;color:var(--m);margin-bottom:10px">⏸️ GPS non démarré — cliquez sur "Démarrer suivi GPS"</div>
+        <div id="uber-progress" style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:14px"></div>
+        <div id="uber-route-info" style="font-size:13px;color:var(--t);margin-bottom:14px"></div>
+        <!-- Prochain patient recommandé -->
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:16px">
+          <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">🎯 Prochain patient recommandé</div>
+          <div id="uber-next-patient" style="color:var(--m);font-size:13px">Démarrez le suivi GPS et chargez vos patients importés.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLANNING -->
+    <section class="view" id="view-pla">
+      <h1 class="pt">Planning <em>hebdomadaire</em></h1><p class="ps">8–15 patients/jour · Connecté à l'import · Organisation optimale</p>
+      <div id="pla-import-banner" class="card" style="display:none;margin-bottom:16px">
+        <div class="ct">📂 Données importées disponibles</div>
+        <div class="ai in" id="pla-import-info">—</div>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn bp bsm" onclick="generatePlanningFromImport()"><span>📅</span> Générer depuis l'import</button>
+          <button class="btn bs bsm" onclick="document.getElementById('pla-manual').style.display='block'">✏️ Saisie manuelle</button>
+        </div>
+      </div>
+      <div id="pla-manual" class="card">
+        <div class="f" style="margin-bottom:16px"><textarea id="pl-txt" placeholder="Patient A : Injection 2x/jour&#10;Patient B : Toilette lundi/mercredi/vendredi&#10;Patient C : Pansement quotidien..." style="min-height:140px"></textarea></div>
+        <button class="btn bp" id="btn-pla" onclick="modeAI('planning')"><span>📅</span> Générer</button>
+      </div>
+      <div id="res-pla" class="res"><div id="perr" class="errb" style="display:none">⚠️ <span id="perr-m"></span></div><div id="pbody"></div></div>
+    </section>
+
+    <!-- HISTORIQUE -->
+    <section class="view" id="view-his">
+      <h1 class="pt">Historique <em>des soins</em></h1><p class="ps">Accès infirmier uniquement</p>
+      <div class="card">
+        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p>Seule l'infirmière connectée voit ses données. Admins : aucun accès patient.</p></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <input type="text" id="hq" placeholder="🔍 Rechercher..." style="width:200px" oninput="hist()">
+          <select id="hp" onchange="hist()" style="width:160px"><option value="">Toute période</option><option value="today">Aujourd'hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select>
+          <button class="btn bs bsm" onclick="hist()">↻ Actualiser</button>
+        </div>
+        <div id="hstats" class="sg"></div>
+        <div class="ht"><table>
+          <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th></tr></thead>
+          <tbody id="htb"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Cliquez sur Actualiser</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section class="view" id="view-dash">
+      <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
+      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances</p>
+      <div id="dash-loading" style="text-align:center;padding:60px 20px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="color:var(--m);font-size:13px">Chargement des statistiques...</p></div>
+      <div id="dash-body" style="display:none">
+        <!-- KPIs -->
+        <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:28px"></div>
+        <!-- Graphique 30j -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">📈 Revenus — 30 derniers jours</div>
+          <div id="dash-chart" style="height:160px;display:flex;align-items:flex-end;gap:4px;padding:8px 0"></div>
+          <div id="dash-chart-labels" style="display:flex;gap:4px;margin-top:6px;overflow:hidden"></div>
+        </div>
+        <!-- Top actes -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">🏆 Actes les plus fréquents</div>
+          <div id="dash-top-actes" class="al"></div>
+        </div>
+        <!-- Prévision -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">🔮 Prévision & Tendance</div>
+          <div id="dash-prevision" class="ai in" style="font-size:14px">—</div>
+        </div>
+        <!-- Alerte perte -->
+        <div class="card" style="margin-bottom:20px" id="dash-loss-card">
+          <div class="ct">🔔 Alertes revenus manqués</div>
+          <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- Anomalies -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">💸 Détection d'anomalies</div>
+          <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- IA analyse -->
+        <div class="card">
+          <div class="ct">🧠 Analyse IA & Optimisations NGAP</div>
+          <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+      </div>
+      <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
+        <div style="font-size:40px;margin-bottom:12px">📊</div>
+        <p>Aucune donnée. Générez des cotations pour voir vos statistiques.</p>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:10px">
+        <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
+      </div>
+    </section>
+
+    <!-- AIDE -->
+    <section class="view" id="view-aide">
+      <h1 class="pt">Documentation <em>& FAQ</em></h1>
+      <p class="ps">Tout ce que vous devez savoir sur AMI · NGAP 2026</p>
+
+      <!-- Recherche -->
+      <div style="position:relative;max-width:480px;margin-bottom:24px">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--m)">🔍</span>
+        <input type="text" id="faq-search" placeholder="Rechercher une question…" oninput="filterFaq()" style="padding-left:44px">
+      </div>
+
+      <div id="faq-no-result" style="display:none;text-align:center;padding:40px;color:var(--m)"><div style="font-size:32px;margin-bottom:10px">🔍</div><p>Aucune question ne correspond.</p></div>
+
+      <!-- Section Architecture -->
+      <div class="faq-section" data-faq-section>
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">🏗️ Architecture générale</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Quels sont les composants de l'infrastructure ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">InfirmierFacture / AMI repose sur <strong>4 composants</strong> :
+            <ul><li>🌐 <strong>Frontend</strong> — GitHub Pages · Interface statique</li>
+            <li>⚙️ <strong>API Backend</strong> — Cloudflare Worker · Auth, profil, proxy n8n · &lt; 50ms</li>
+            <li>🗄️ <strong>Base de données</strong> — Supabase (PostgreSQL) · Comptes, sessions, profils</li>
+            <li>🤖 <strong>Agent IA</strong> — n8n sur Render · Workflow Grok-3, cotation NGAP, RAG, historique</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Vue d'ensemble -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">🏠 Vue d'ensemble</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Comment fonctionne l'IA de cotation ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">L'IA analyse votre description et détecte automatiquement :
+            <ul><li>🩺 <strong>Les actes</strong> (injection SC/IM/IV, pansement, toilette, perfusion, prélèvement…)</li>
+            <li>🕒 <strong>L'heure</strong> — majorations nuit (9,15 €) ou nuit profonde 23h-5h (18,30 €)</li>
+            <li>📍 <strong>Le lieu</strong> (domicile → IFD automatique)</li>
+            <li>🚗 <strong>La distance</strong> (km → IK automatique)</li>
+            <li>👶 <strong>L'âge</strong> (enfant &lt; 7 ans → MIE obligatoire)</li>
+            <li>🧠 <strong>La dépendance</strong> (BSA / BSB / BSC selon niveau)</li>
+            <li>📅 <strong>Le jour</strong> (dimanche/férié → majoration 8,50 €)</li></ul>
+            <strong class="accord-body strong">✨ RAG NGAP</strong> — avant chaque cotation, toutes les règles NGAP pertinentes sont récupérées via BM25 adaptatif et injectées dans le prompt.
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Validation des champs — faut-il tout remplir ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Validation à <strong>3 niveaux non-bloquante</strong> :
+            <ul><li><strong>Bloquant strict</strong> : la <em>description des soins</em> est le seul champ vraiment obligatoire</li>
+            <li><strong>Confirmation</strong> : si nom infirmière, nom patient ou NIR manquent, une fenêtre demande confirmation</li>
+            <li><strong>Léger</strong> : si champs secondaires manquent (ADELI, RPPS, DDN…), confirmation légère</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Tarifs NGAP -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">💰 Tarifs NGAP 2026</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Quels sont les tarifs NGAP 2026 intégrés ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:8px 0">
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">AMI</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">3,15 €</div><div style="font-size:11px;color:var(--m)">Acte infirmier de soins</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">AIS</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">2,65 €</div><div style="font-size:11px;color:var(--m)">Acte infirmier de surveillance</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">BSA</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">13,00 €</div><div style="font-size:11px;color:var(--m)">Dépendance légère</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">BSB</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">18,20 €</div><div style="font-size:11px;color:var(--m)">Dépendance intermédiaire</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">BSC</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">28,70 €</div><div style="font-size:11px;color:var(--m)">Dépendance lourde</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">IFD</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">2,75 €</div><div style="font-size:11px;color:var(--m)">Forfait déplacement domicile</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">IK</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">0,35 €/km</div><div style="font-size:11px;color:var(--m)">Indemnité kilométrique</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">MCI</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">5,00 €</div><div style="font-size:11px;color:var(--m)">Majoration coordination</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">MIE</div><div style="color:var(--a);font-weight:700;font-size:16px;margin:2px 0">3,15 €</div><div style="font-size:11px;color:var(--m)">Majoration enfant &lt; 7 ans</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">Nuit</div><div style="color:var(--w);font-weight:700;font-size:16px;margin:2px 0">9,15 €</div><div style="font-size:11px;color:var(--m)">20h-23h / 5h-8h</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">Nuit prof.</div><div style="color:var(--w);font-weight:700;font-size:16px;margin:2px 0">18,30 €</div><div style="font-size:11px;color:var(--m)">23h-5h (nuit profonde)</div></div>
+              <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 12px"><div style="font-weight:700;font-size:13px">Dim./Férié</div><div style="color:var(--w);font-weight:700;font-size:16px;margin:2px 0">8,50 €</div><div style="font-size:11px;color:var(--m)">Dimanche et jours fériés</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Règles de coefficients et cumuls</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ul>
+            <li><strong>Acte principal</strong> : coefficient 1 (tarif plein)</li>
+            <li><strong>Actes secondaires</strong> : coefficient 0,5 (demi-tarif)</li>
+            <li><strong>Majorations</strong> (nuit, dimanche, IFD, IK, MIE, MCI) : toujours coefficient 1</li>
+            <li><strong>AIS + BSx</strong> : INTERDIT — alerte URSSAF déclenchée</li>
+            <li><strong>BSA + BSB + BSC</strong> : s'excluent mutuellement</li>
+            <li><strong>Un seul acte principal</strong> par passage</li>
+          </ul></div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Optimisations légales proposées par l'IA</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ul>
+            <li>AIS → BSA (+10,35 €) si dépendance légère détectée</li>
+            <li>BSA → BSB (+5,20 €) si dépendance intermédiaire</li>
+            <li>BSB → BSC (+10,50 €) si dépendance lourde</li>
+            <li>+ MCI (+5,00 €) si coordination pluridisciplinaire</li>
+            <li>+ MIE (+3,15 €) si enfant &lt; 7 ans non coté</li>
+            <li>+ IFD (+2,75 €) si domicile mentionné sans IFD</li>
+            <li>+ IK si distance mentionnée sans IK</li>
+          </ul></div>
+        </div>
+      </div>
+
+      <!-- Section Alertes URSSAF -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--d)">🚨 Alertes URSSAF</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Les 9 alertes de conformité détectées automatiquement</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ol style="padding-left:1.2rem">
+            <li>AIS + BSx cotés ensemble (cumul interdit)</li>
+            <li>Deux forfaits BSx cotés ensemble</li>
+            <li>Majoration nuit sans heure explicite</li>
+            <li>Majoration dimanche sans jour explicite</li>
+            <li>IFD cotée sans visite à domicile</li>
+            <li>IK cotée sans distance mentionnée</li>
+            <li>MIE appliquée à un patient ≥ 7 ans</li>
+            <li>Acte secondaire au coefficient 1 au lieu de 0,5</li>
+            <li>AMI coté pour un acte relevant de l'AIS</li>
+          </ol></div>
+        </div>
+      </div>
+
+      <!-- Section Feuille de soins PDF -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">📊 Feuille de soins PDF</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Que contient la feuille de soins PDF ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ul>
+            <li><strong>En-tête</strong> : NGAP 2026, N° facture, date et heure du soin</li>
+            <li><strong>Professionnel de santé</strong> : nom, N° ADELI, N° RPPS, structure</li>
+            <li><strong>Patient</strong> : nom, date de naissance, NIR, exonération</li>
+            <li><strong>Couverture maladie</strong> : caisse AMO, mutuelle AMC, mode règlement</li>
+            <li><strong>Tableau des actes</strong> : libellé, code NGAP, coefficient, tarif, montant</li>
+            <li><strong>Répartition</strong> : part AMO, part AMC, reste patient</li>
+            <li><strong>Zone signature</strong> avec ADELI et RPPS</li>
+          </ul></div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Répartition AMO / AMC et DRE — comment ça fonctionne ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">
+            <strong>AMO :</strong> 60 % standard · 100 % si ALD, Maternité, AT, CSS/C2S<br>
+            <strong>AMC :</strong> = ticket modérateur si tiers payant AMO+AMC avec mutuelle, sinon 0 €<br>
+            <strong>DRE requise</strong> si tiers payant, ALD, maternité ou accident du travail<br><br>
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;font-family:var(--fm);font-size:11px;color:var(--a)">
+              Exemple — Injection 26,35 € · ALD · Tiers AMO+AMC :<br>
+              part_amo = 26,35 € · part_amc = 0 € · part_patient = 0 € · dre_requise = true
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Dictée vocale -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">🎤 Dictée vocale & Assistant</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Dictée soins — fonctionnement</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ul>
+            <li><strong>3 alternatives</strong> : sélectionne la transcription la plus fiable</li>
+            <li><strong>Seuil de confiance 0,65</strong> : segments peu clairs ignorés</li>
+            <li><strong>Normalisation NGAP automatique</strong> via <code>normalizeMedical()</code></li>
+            <li><strong>Redémarrage automatique</strong> après pause</li>
+            <li>Compatible : <strong>Chrome, Edge uniquement</strong></li>
+          </ul></div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Assistant vocal — toutes les commandes</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">
+            <strong>Navigation :</strong>
+            <ul>
+              <li><code>"nouveau patient"</code> / <code>"réinitialiser"</code> — vide tous les champs</li>
+              <li><code>"générer la facture"</code> / <code>"calculer"</code> / <code>"valider"</code> — lance la cotation</li>
+              <li><code>"vérifier"</code> / <code>"corriger"</code> — ouvre la fenêtre de vérification</li>
+              <li><code>"patient terminé"</code> (pilotage live)</li>
+              <li><code>"stop assistant"</code> / <code>"arrêter"</code> — désactive</li>
+            </ul>
+            <strong>Saisie champs :</strong>
+            <ul>
+              <li><code>"nom du patient [nom]"</code> · <code>"prénom [prénom]"</code> · <code>"sécurité sociale [chiffres]"</code></li>
+              <li><code>"date du soin"</code> / <code>"aujourd'hui"</code> · <code>"heure du soin à 22h"</code></li>
+              <li><code>"tiers payant"</code> → AMO · <code>"tiers payant complet"</code> → AMO+AMC</li>
+              <li><code>"ALD"</code> / <code>"exonéré"</code> → exonération ALD 100 %</li>
+            </ul>
+            <strong>Normalisation médicale :</strong>
+            <ul>
+              <li><code>"piquer"</code> → <code>"injection SC"</code> · <code>"prise de sang"</code> → <code>"prélèvement sanguin"</code></li>
+              <li><code>"toilette totale"</code> → <code>"toilette complète"</code> · <code>"grabataire"</code> → <code>"patient grabataire"</code></li>
+              <li><code>"vingt-deux heures"</code> → <code>"22h"</code> · <code>"midi"</code> → <code>"12h"</code></li>
+              <li><code>"dix kilomètres"</code> → <code>"10 km"</code> · <code>"coordination"</code> → <code>"coordination soignante"</code></li>
+              <li>Chiffres écrits 0–90 → convertis en nombres</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Tournées -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">🚗 Tournées & Planning</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Simulation tournée — comment l'utiliser ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Décrivez plusieurs patients — l'IA calcule le revenu estimé de la tournée avec NGAP complet. Ce mode ne sauvegarde rien (<code>_skip_db: true</code>). Résultat : revenu total, nombre de patients, revenu moyen, revenu horaire estimé, optimisations légales.</div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Optimisation de tournée — comment ça fonctionne ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Analyse votre liste de patients et propose :
+            <ul>
+              <li>L'<strong>ordre optimal de passage</strong> (patients proches regroupés)</li>
+              <li>Le <strong>revenu estimé</strong> de la tournée optimisée</li>
+              <li>Des <strong>conseils</strong> (soins lourds en début, regrouper les nuits…)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Planning semaine — que génère-t-il ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Planning hebdomadaire optimisé : 8–15 patients/jour · Soins lourds le matin · Regroupement géographique · Équilibre des revenus. Résultat : planning jour par jour avec revenus et temps estimés.</div>
+        </div>
+      </div>
+
+      <!-- Section RAG NGAP -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">🧠 Intelligence RAG NGAP</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Qu'est-ce que le RAG NGAP ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Le <strong>RAG (Retrieval-Augmented Generation)</strong> enrichit l'IA avec une base de connaissances réglementaires avant chaque cotation :
+            <ol style="padding-left:1.2rem;margin:.5rem 0">
+              <li>Description analysée par <strong>BM25</strong></li>
+              <li>Tous les chunks pertinents récupérés (seuil adaptatif ≥ 30 % du meilleur score)</li>
+              <li>3 chunks toujours inclus : <code>ngap_001</code> (coefficients) · <code>ngap_002</code> (cumuls interdits) · <code>ngap_016</code> (alertes URSSAF)</li>
+              <li>Si aucun match : 20 chunks injectés en intégralité</li>
+            </ol>
+            <strong>20 chunks</strong> couvrant le Titre XVI NGAP métropole 2026 : AMI, AIS, BSA/B/C, IFD, IK, MCI, MIE, majorations horaires, optimisations légales.
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Workflow -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">⚙️ Workflow technique</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Comment fonctionne le workflow n8n de cotation ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Le workflow <strong>AI Agent AMI</strong> s'exécute en 9 étapes :
+            <ol style="padding-left:1.2rem;margin:.5rem 0">
+              <li><strong>Webhook</strong> <code>/ami-calcul</code> — reçoit les données du formulaire</li>
+              <li><strong>Init BDD</strong> — ping + migrations colonnes</li>
+              <li><strong>RAG NGAP Retriever</strong> — BM25 seuil adaptatif</li>
+              <li><strong>AI Agent (Grok-3)</strong> — prompt enrichi RAG, retourne JSON coté</li>
+              <li><strong>Parser résultat IA</strong> — calcule AMO/AMC/DRE</li>
+              <li><strong>Mode spécial ?</strong> — bypass BDD pour verify/tournée/planning</li>
+              <li><strong>Sauvegarder en BDD</strong> — INSERT complet</li>
+              <li><strong>Fusionner réponse</strong> — JSON final</li>
+              <li><strong>Respond to Webhook</strong> — retourne la réponse</li>
+            </ol>
+            Temps typique : <strong>15–35 secondes</strong> (temps de réponse Grok-3).
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Problèmes courants -->
+      <div class="faq-section" data-faq-section style="margin-top:20px;margin-bottom:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--w)">🔧 Problèmes courants</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">La facture ne se génère pas — que faire ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ol style="padding-left:1.2rem">
+            <li>Vérifiez que le champ <strong>description des soins</strong> est rempli (seul champ bloquant)</li>
+            <li>Vérifiez votre connexion internet</li>
+            <li>Le serveur n8n sur Render peut être en <strong>veille</strong> — attendez 30 secondes et réessayez</li>
+            <li>Utilisez <strong>🔍 Vérifier &amp; corriger</strong> pour valider la description avant génération</li>
+          </ol></div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">La dictée vocale ne fonctionne pas</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Prérequis : <strong>Google Chrome</strong> ou <strong>Microsoft Edge</strong> · Autorisation microphone · Connexion internet active.<br>
+          <span style="background:var(--dd);color:var(--d);padding:2px 8px;border-radius:12px;font-size:11px;font-family:var(--fm)">Non supporté</span> Firefox, Safari, navigateurs mobiles non-Chromium.</div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">La cotation semble incorrecte</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body"><ol style="padding-left:1.2rem">
+            <li><strong>Description trop vague</strong> : utilisez 🔍 Vérifier &amp; corriger avant de générer</li>
+            <li><strong>Heure ou date manquante</strong> : renseignez les champs pour les majorations</li>
+            <li><strong>Cas hors périmètre</strong> : le RAG couvre le Titre XVI métropole. Pour les DOM/TOM, les règles peuvent différer.</li>
+          </ol>En cas de doute, vérifiez sur <strong>ameli.fr</strong>.</div>
+        </div>
+      </div>
+
+      <div style="text-align:center;padding:16px;font-size:11px;color:var(--m);font-family:var(--fm)">AMI · Tarifs NGAP métropole en vigueur au 05/02/2026</div>
+    </section>
+
+    <!-- SECURITE -->
+    <section class="view" id="view-sec">
+      <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">Cloudflare Worker · Supabase · SHA-256</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div class="card">
+          <div class="ct">🛡️ Protection active</div>
+          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Auth Cloudflare Worker</strong><span style="font-size:12px;color:var(--m)">SHA-256 salé · Sessions Supabase</span></div></div>
+          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Zéro visibilité admin</strong><span style="font-size:12px;color:var(--m)">Admins : nom+prénom uniquement</span></div></div>
+          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Patients anonymisés</strong><span style="font-size:12px;color:var(--m)">SHA-256 + sel · ID temporaire uniquement</span></div></div>
+          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Import sécurisé</strong><span style="font-size:12px;color:var(--m)">Traitement local · aucune donnée brute stockée</span></div></div>
+          <div class="secrow"><div class="secdot live"></div><div><strong style="font-size:14px;display:block">Session active</strong><span style="font-size:12px;color:var(--m)" id="sess-inf">—</span></div></div>
+        </div>
+        <div class="card">
+          <div class="ct">🗑️ Droits RGPD — Effacement</div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:160px"><button class="btn bd bsm" onclick="delById()">🗑️ Supprimer</button></div>
+            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-pt" placeholder="Nom patient (purge totale)" style="width:220px"><button class="btn bd bsm" onclick="delByPt()">🗑️ Purger</button></div>
+          </div>
+          <div id="del-r"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ════════════════════════════════════
+     Scripts — chargés en fin de body
+     Ordre important : utils → auth → ...
+════════════════════════════════════ -->
+
+<!-- Utilitaires de base (doit être en premier) -->
+<script src="js/utils.js"></script>
+
+<!-- Modules fonctionnels -->
+<script src="js/auth.js"></script>
+<script src="js/admin.js"></script>
+<script src="js/profil.js"></script>
+<script src="js/cotation.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/dashboard.js"></script>
+
+<!-- Interface & Navigation -->
+<script src="js/ui.js"></script>
+
+<!-- Leaflet (doit être chargé AVANT map.js et uber.js) -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Modules dépendant de Leaflet -->
+<script src="js/map.js"></script>
+<script src="js/uber.js"></script>
+<script src="js/tournee.js"></script>
+
+</body>
+</html>
