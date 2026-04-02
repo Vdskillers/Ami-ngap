@@ -115,9 +115,12 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #voice-toast{position:fixed;bottom:96px;right:28px;z-index:400;background:rgba(17,23,32,.95);border:1px solid var(--b);border-radius:var(--r);padding:10px 16px;font-family:var(--fm);font-size:12px;color:var(--t);display:none;max-width:280px;backdrop-filter:blur(10px);box-shadow:var(--sh)}
 #voice-toast.show{display:block}
 #voice-interim{color:var(--a);font-style:italic;margin-top:4px;font-size:11px;min-height:16px}
-/* MAP */
-#dep-map{height:clamp(220px, 50vh, 520px);border-radius:var(--r);border:1px solid var(--b);margin-bottom:14px;z-index:1}
+/* MAP — hauteur doublée, responsive */
+#dep-map{height:clamp(220px,50vh,560px);border-radius:var(--r);border:1px solid var(--b);margin-bottom:14px;z-index:1;transition:height .3s}
 #dep-map .leaflet-container{background:var(--s);border-radius:var(--r)}
+/* Plein écran map */
+#dep-map.fullscreen{position:fixed;inset:0;height:100dvh !important;width:100vw !important;border-radius:0;border:none;z-index:9000;margin:0}
+/* Recherche adresse */
 .map-search{display:flex;gap:8px;margin-bottom:10px}
 .map-search input{flex:1;background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:9px 13px;font-size:13px;font-family:var(--ff)}
 .map-search input:focus{outline:none;border-color:var(--a);box-shadow:0 0 0 3px var(--ad)}
@@ -487,21 +490,43 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   body{overscroll-behavior:none;touch-action:manipulation}
 }
 
-/* ── v4.0 — Journal d'audit admin ─────────────── */
-.audit-log-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--b);font-size:12px;font-family:var(--fm)}
-.log-icon{font-size:14px;flex-shrink:0;width:20px;text-align:center}
-.log-event{flex:1;color:var(--w);font-weight:500}
-.log-date{color:var(--m);font-size:11px;white-space:nowrap}
-.log-score{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;flex-shrink:0}
-.log-score.high{background:rgba(255,95,109,.15);color:#ff5f6d}
-.log-score.med{background:rgba(255,181,71,.15);color:#f59e0b}
-.log-score.low{background:rgba(0,212,170,.1);color:var(--a)}
+/* ════════════════════════════════════════════════
+   MAP PREMIUM v4.1 — Markers, Timeline, Plein écran
+════════════════════════════════════════════════ */
 
-/* ── v4.0 — Section prescripteur cotation ─────── */
-#prescripteur-section{margin-bottom:20px}
-.prescr-add-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end}
-.prescr-add-row .af{flex:1;min-width:140px}
+/* ── Marker card style Uber ─────────────────── */
+.patient-marker{pointer-events:auto}
+.marker-card{background:#111827;color:#fff;padding:5px 10px;border-radius:10px;font-size:11px;font-family:var(--fm);box-shadow:0 6px 20px rgba(0,0,0,.5);border:1px solid rgba(0,212,170,.35);white-space:nowrap;line-height:1.4}
+.marker-time{color:#00d4aa;font-weight:700;font-size:12px}
+.marker-name{color:rgba(255,255,255,.85);font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis}
 
-/* ── v4.0 — Numéro de facture ─────────────────── */
-#invoice-number-section{background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);padding:10px 16px;margin-top:12px;display:flex;align-items:center;gap:10px}
-#invoice-number-display{font-family:var(--fm);font-size:15px;font-weight:700;color:var(--a);letter-spacing:.5px}
+/* ── Markers numérotés ───────────────────────── */
+.num-marker{background:var(--a);color:#000;font-weight:800;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;font-family:var(--fm);box-shadow:0 3px 12px rgba(0,212,170,.45);border:2px solid #000;cursor:pointer;transition:transform .15s}
+.num-marker:hover{transform:scale(1.18)}
+
+/* ── Barre outils map ────────────────────────── */
+.map-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+#btn-map-fullscreen{padding:7px 14px;border-radius:var(--r);background:var(--s);border:1px solid var(--b);color:var(--t);font-size:12px;font-family:var(--fm);cursor:pointer;transition:all .15s;white-space:nowrap}
+#btn-map-fullscreen:hover,#btn-map-fullscreen.active{background:var(--ad);border-color:var(--ab);color:var(--a)}
+.map-legend{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--m);font-family:var(--fm);margin-left:auto}
+.map-legend-dot{width:10px;height:10px;background:var(--a);border-radius:50%;flex-shrink:0}
+
+/* ── Timeline tournée ────────────────────────── */
+#map-timeline{background:var(--s);border:1px solid var(--b);border-radius:var(--r);overflow:hidden;margin-top:12px;display:none}
+.tl-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--b);cursor:pointer;transition:background .12s}
+.tl-item:last-child{border-bottom:none}
+.tl-item:hover{background:rgba(0,212,170,.06)}
+.tl-item.tl-done{opacity:.45}
+.tl-num{width:22px;height:22px;background:var(--a);color:#000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;font-family:var(--fm);flex-shrink:0}
+.tl-time{font-family:var(--fm);font-size:12px;color:var(--a);font-weight:700;min-width:40px;flex-shrink:0}
+.tl-body{flex:1;min-width:0}
+.tl-name{font-size:13px;font-weight:500;color:var(--t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-actes{font-size:11px;color:var(--m);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-check{font-size:14px;flex-shrink:0}
+
+/* ── Mobile : map compacte ───────────────────── */
+@media(max-width:768px){
+  #dep-map{height:220px}
+  .map-toolbar{gap:6px}
+  #btn-map-fullscreen{padding:6px 10px;font-size:11px}
+}
