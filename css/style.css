@@ -530,3 +530,47 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .map-toolbar{gap:6px}
   #btn-map-fullscreen{padding:6px 10px;font-size:11px}
 }
+
+/* ════════════════════════════════════════════════
+   SÉCURITÉ RGPD v1.0 — PIN + Consentement + Audit
+════════════════════════════════════════════════ */
+
+/* Écran verrouillage PIN */
+#pin-lock-overlay input{
+  background:var(--s);
+  border:1px solid rgba(0,212,170,.3);
+  color:var(--t);
+  border-radius:10px;
+  font-size:20px;
+  text-align:center;
+  letter-spacing:8px;
+  width:200px;
+  padding:14px;
+  outline:none;
+}
+#pin-lock-overlay input:focus{
+  border-color:var(--a);
+  box-shadow:0 0 0 3px var(--ad);
+}
+
+/* Modale consentement RGPD — animations */
+#rgpd-consent-modal{animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+#rgpd-consent-modal button:hover{opacity:.9;transform:translateY(-1px)}
+#rgpd-consent-modal button{transition:all .15s}
+
+/* Pastilles conformité */
+.sec-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:20px;
+  font-size:11px;font-family:var(--fm);
+}
+.sec-badge.ok{background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2)}
+.sec-badge.warn{background:rgba(255,181,71,.1);color:#f59e0b;border:1px solid rgba(255,181,71,.2)}
+
+/* Champ PIN setup */
+#pin-setup{
+  letter-spacing:6px;
+  text-align:center;
+  font-size:18px;
+}
