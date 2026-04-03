@@ -1,74 +1,128 @@
 /* ════════════════════════════════════════════════
-   utils.js — AMI NGAP
+   utils.js — AMI NGAP v5.0
    ────────────────────────────────────────────────
-   Utilitaires globaux partagés par tous les modules
-   - APP store centralisé (évite la pollution du scope global)
-   - Session store (ss)
-   - Communication API avec gestion d'erreur complète + timeout
-   - UI helpers (showM, hideM, ld, sanitize, debounce)
-   - requireAuth() — guard de session
+   v5.0 — Améliorations architecture :
+   ✅ APP.set() / APP.get() — store observable CustomEvent
+   ✅ APP.map — namespace Leaflet explicite
+   ✅ fetchWithRetry — retry x2 sur timeout/réseau
+   ✅ throttle() — pour GPS watchPosition
+   ✅ log() — debug global (APP.debug = true)
+   ✅ assertDep() — guards stricts inter-modules
+   ✅ APP.on() — écoute réactive par clé
+   ✅ Rétrocompatibilité totale window.X
 ════════════════════════════════════════════════ */
 'use strict';
 
-/* ── Store global centralisé ──────────────────────
-   Remplace les window.X dispersés — tout dans APP
-   pour éviter les collisions et faciliter le debug.
-─────────────────────────────────────────────────── */
+/* ── 1. STORE OBSERVABLE ──────────────────────── */
 window.APP = {
-  user:         null,   // objet utilisateur connecté
-  token:        null,   // JWT session
-  role:         null,   // 'nurse' | 'admin'
-  startPoint:   null,   // {lat, lng} point de départ tournée
-  userPos:      null,   // {lat, lng} position GPS live
-  importedData: null,   // données importées depuis calendrier
-  uberPatients: [],     // liste patients pour mode Uber Médical
-  nextPatient:  null,   // prochain patient recommandé
+  state: {
+    user: null, token: null, role: null,
+    startPoint: null, userPos: null,
+    importedData: null, uberPatients: [], nextPatient: null,
+  },
+
+  /* Namespace Leaflet — défini par map.js via APP.map.register() */
+  map: {
+    instance: null,
+    register(inst) { this.instance = inst; },
+    setUserMarker: null,
+    centerMap: null,
+  },
+
+  /* Écriture réactive */
+  set(key, value) {
+    const prev = this.state[key];
+    this.state[key] = value;
+    document.dispatchEvent(new CustomEvent('app:update', { detail: { key, value, prev } }));
+    if (this.debug) log('APP.set(' + key + ')', value);
+  },
+
+  get(key) { return this.state[key]; },
+
+  /* Raccourcis avec setters réactifs */
+  get startPoint()    { return this.state.startPoint; },
+  set startPoint(v)   { this.set('startPoint', v); },
+  get userPos()       { return this.state.userPos; },
+  set userPos(v)      { this.set('userPos', v); },
+  get importedData()  { return this.state.importedData; },
+  set importedData(v) { this.set('importedData', v); },
+  get uberPatients()  { return this.state.uberPatients; },
+  set uberPatients(v) { this.set('uberPatients', v); },
+  get nextPatient()   { return this.state.nextPatient; },
+  set nextPatient(v)  { this.set('nextPatient', v); },
+  /* token/role/user sans event (performances login) */
+  get token()  { return this.state.token; },
+  set token(v) { this.state.token = v; },
+  get role()   { return this.state.role; },
+  set role(v)  { this.state.role = v; },
+  get user()   { return this.state.user; },
+  set user(v)  { this.state.user = v; },
+
+  /* Écoute réactive d'une clé spécifique */
+  on(key, fn) {
+    document.addEventListener('app:update', e => {
+      if (e.detail.key === key) fn(e.detail.value, e.detail.prev);
+    });
+  },
+
+  debug: false,
 };
 
-/* Alias rétrocompatibles (anciens appels window.X toujours fonctionnels) */
-Object.defineProperty(window,'START_POINT',   {get:()=>APP.startPoint,   set:v=>{APP.startPoint=v;}});
-Object.defineProperty(window,'USER_POS',      {get:()=>APP.userPos,      set:v=>{APP.userPos=v;}});
-Object.defineProperty(window,'IMPORTED_DATA', {get:()=>APP.importedData, set:v=>{APP.importedData=v;}});
-Object.defineProperty(window,'UBER_PATIENTS', {get:()=>APP.uberPatients, set:v=>{APP.uberPatients=v;}});
-Object.defineProperty(window,'NEXT_PATIENT',  {get:()=>APP.nextPatient,  set:v=>{APP.nextPatient=v;}});
+/* ── 2. DEBUG LOGGER ─────────────────────────── */
+function log(...a)     { if (APP.debug) console.log('[AMI]', ...a); }
+function logWarn(...a) { if (APP.debug) console.warn('[AMI]', ...a); }
+function logErr(...a)  { console.error('[AMI]', ...a); }
 
-/* ── Sécurité ─────────────────────────────────── */
-function sanitize(str){return(str||'').replace(/[<>'"]/g,'');}
-function debounce(fn,ms){let t;return(...args)=>{clearTimeout(t);t=setTimeout(()=>fn(...args),ms);};}
+/* ── 3. GUARDS DÉPENDANCES ───────────────────── */
+function assertDep(condition, message) {
+  if (!condition) logErr('Dépendance manquante : ' + message);
+}
 
-/* ── Backend URL ─────────────────────────────── */
+/* ── 4. ALIAS RÉTROCOMPATIBLES ───────────────── */
+Object.defineProperty(window,'START_POINT',   {get:()=>APP.state.startPoint,   set:v=>APP.set('startPoint',v)});
+Object.defineProperty(window,'USER_POS',      {get:()=>APP.state.userPos,      set:v=>APP.set('userPos',v)});
+Object.defineProperty(window,'IMPORTED_DATA', {get:()=>APP.state.importedData, set:v=>APP.set('importedData',v)});
+Object.defineProperty(window,'UBER_PATIENTS', {get:()=>APP.state.uberPatients, set:v=>APP.set('uberPatients',v)});
+Object.defineProperty(window,'NEXT_PATIENT',  {get:()=>APP.state.nextPatient,  set:v=>APP.set('nextPatient',v)});
+
+/* ── 5. SÉCURITÉ ─────────────────────────────── */
+function sanitize(str) { return (str||'').replace(/[<>'"]/g,''); }
+function debounce(fn,ms) { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+/* throttle — fréquence max (GPS, resize…) */
+function throttle(fn,ms) {
+  let last=0;
+  return (...a)=>{ const now=Date.now(); if(now-last<ms) return; last=now; return fn(...a); };
+}
+
+/* ── 6. BACKEND + SESSION ────────────────────── */
 const W='https://raspy-tooth-1a2f.vdskillers.workers.dev';
-let S=null,LIVE_PATIENT_ID=null;
+let S=null, LIVE_PATIENT_ID=null;
 
-/* ── Session store ────────────────────────────── */
 const ss={
-  save(t,r,u){S={token:t,role:r,user:u};APP.token=t;APP.role=r;APP.user=u;sessionStorage.setItem('ami',JSON.stringify(S));},
-  clear(){S=null;APP.token=null;APP.role=null;APP.user=null;sessionStorage.removeItem('ami');},
-  load(){try{const x=sessionStorage.getItem('ami');if(x){S=JSON.parse(x);APP.token=S.token;APP.role=S.role;APP.user=S.user;return true;}}catch{}return false;},
-  tok(){return S?.token||'';}
+  save(t,r,u){ S={token:t,role:r,user:u}; APP.token=t; APP.role=r; APP.user=u; sessionStorage.setItem('ami',JSON.stringify(S)); },
+  clear(){ S=null; APP.token=null; APP.role=null; APP.user=null; sessionStorage.removeItem('ami'); },
+  load(){ try{ const x=sessionStorage.getItem('ami'); if(x){ S=JSON.parse(x); APP.token=S.token; APP.role=S.role; APP.user=S.user; return true; } }catch{} return false; },
+  tok(){ return S?.token||''; }
 };
 
-/* ── Helpers DOM ─────────────────────────────── */
+/* ── 7. DOM HELPERS ──────────────────────────── */
 const $=id=>document.getElementById(id);
 const gv=id=>($(id)?.value||'').trim();
 const fmt=n=>(parseFloat(n)||0).toFixed(2)+' €';
-function cc(c){c=(c||'').toUpperCase();if(['IFD','IK','MCI','MIE'].includes(c))return 'dp';if(c.includes('MAJ'))return 'mj';return '';}
+function cc(c){ c=(c||'').toUpperCase(); if(['IFD','IK','MCI','MIE'].includes(c))return 'dp'; if(c.includes('MAJ'))return 'mj'; return ''; }
+function showM(id,txt,type='e'){ const el=$(id); if(!el)return; el.className='msg '+type; el.textContent=txt; el.style.display='block'; }
+function hideM(...ids){ ids.forEach(id=>{ const el=$(id); if(el) el.style.display='none'; }); }
+function ld(id,on){ const b=$(id); if(!b)return; b.disabled=on; if(on){b._o=b.innerHTML;b.innerHTML='<span class="spin"></span> En cours...';}else b.innerHTML=b._o||b.innerHTML; }
 
-/* ── UI helpers ──────────────────────────────── */
-function showM(id,txt,type='e'){const el=$(id);if(!el)return;el.className='msg '+type;el.textContent=txt;el.style.display='block';}
-function hideM(...ids){ids.forEach(id=>{const el=$(id);if(el)el.style.display='none';});}
-function ld(id,on){const b=$(id);if(!b)return;b.disabled=on;if(on){b._o=b.innerHTML;b.innerHTML='<span class="spin"></span> En cours...';}else b.innerHTML=b._o||b.innerHTML;}
-
-/* ── Communication API ────────────────────────────
-   Toutes les requêtes passent par _apiFetch :
-   ✅ Timeout 35s (Grok-3 peut être lent)
-   ✅ Détection offline
-   ✅ Statut HTTP vérifié (throw si !res.ok)
-   ✅ AbortController propre
-─────────────────────────────────────────────────── */
+/* ── 8. API — FETCH AVEC RETRY ───────────────────
+   ✅ Timeout 35s
+   ✅ Retry x2 automatique (timeout + erreur réseau)
+   ✅ Pas de retry sur 4xx (erreurs métier)
+   ✅ Délai 800ms entre retries
+─────────────────────────────────────────────── */
 const API_TIMEOUT_MS=35000;
 
-async function _apiFetch(path,body){
+async function _apiFetch(path,body,retries=2){
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT_MS);
   try{
@@ -81,21 +135,29 @@ async function _apiFetch(path,body){
     clearTimeout(timer);
     if(!res.ok){
       const txt=await res.text().catch(()=>'');
-      throw new Error(`Erreur serveur ${res.status}${txt?' : '+txt.slice(0,120):''}`);
+      const is4xx=res.status>=400&&res.status<500;
+      throw Object.assign(
+        new Error('Erreur serveur '+res.status+(txt?' : '+txt.slice(0,120):'')),
+        {status:res.status,noRetry:is4xx}
+      );
     }
     return await res.json();
   }catch(e){
     clearTimeout(timer);
+    if(!navigator.onLine) throw new Error('Pas de connexion internet.');
+    if(!e.noRetry&&retries>0){
+      logWarn('API retry ('+retries+' restant) →',path);
+      await new Promise(r=>setTimeout(r,800));
+      return _apiFetch(path,body,retries-1);
+    }
     if(e.name==='AbortError') throw new Error('Délai dépassé — serveur trop lent (>35s). Réessayez.');
-    if(!navigator.onLine)     throw new Error('Pas de connexion internet.');
     throw e;
   }
 }
 
-async function wpost(path,body){return _apiFetch(path,body);}
-async function apiCall(path,body){return _apiFetch(path,body);}
+async function wpost(path,body)   { return _apiFetch(path,body); }
+async function apiCall(path,body) { return _apiFetch(path,body); }
 
-/* fetchAPI — GET avec auth (historique, dashboard) */
 async function fetchAPI(url,options={}){
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT_MS);
@@ -111,16 +173,31 @@ async function fetchAPI(url,options={}){
   }catch(err){
     clearTimeout(timer);
     if(err.name==='AbortError') throw new Error('Délai dépassé');
-    console.error('API ERROR:',err);
+    logErr('fetchAPI:',err);
     throw err;
   }
 }
 
-/* ── Guard de session ─────────────────────────────
-   Appeler en début de toute fonction qui nécessite
-   une session valide. Redirige vers login si expiré.
-─────────────────────────────────────────────────── */
+/* ── 9. GUARD SESSION ────────────────────────── */
 function requireAuth(){
-  if(!ss.tok()){ss.clear();if(typeof showAuthOv==='function')showAuthOv();return false;}
+  if(!ss.tok()){ ss.clear(); if(typeof showAuthOv==='function') showAuthOv(); return false; }
   return true;
 }
+
+/* ── 10. ÉCOUTES RÉACTIVES GLOBALES ─────────────
+   Effets de bord déclenchés par APP.set().
+   Chaque module peut ajouter les siens via APP.on().
+─────────────────────────────────────────────── */
+
+/* userPos → marker live Uber (si _updateMapLive définie dans uber.js) */
+APP.on('userPos', pos => {
+  if (!pos) return;
+  if (typeof _updateMapLive === 'function') _updateMapLive(pos.lat, pos.lng);
+  log('userPos →', pos.lat?.toFixed(4), pos.lng?.toFixed(4));
+});
+
+/* nextPatient → re-render card Uber (si _renderNextPatient définie) */
+APP.on('nextPatient', p => {
+  if (typeof _renderNextPatient === 'function') _renderNextPatient();
+  log('nextPatient →', p?.label || p?.description || '—');
+});

@@ -1,41 +1,46 @@
 /* ════════════════════════════════════════════════
-   map.js — AMI NGAP v4.1
+   map.js — AMI NGAP v5.0
    ────────────────────────────────────────────────
    Carte Leaflet & GPS — MAP PREMIUM
    ⚠️  Requiert Leaflet.js chargé AVANT ce fichier
-   - initDepMap() — init carte + invalidateSize auto
+   - initDepMap() — init + APP.map.register()
    - getGPS() — GPS réel avec contrôle précision
    - reverseGeocode() / geocodeAddress() — Nominatim
    - setDepCoords() — met à jour APP.startPoint
-   ── NOUVELLES FONCTIONS PREMIUM ──────────────────
+   ── FONCTIONS PREMIUM ────────────────────────────
    - createPatientMarker() — markers style Uber/Doctolib
-   - addNumberedMarkers() — numérotation patients sur carte
+   - addNumberedMarkers() — numérotation patients
    - drawRoute() — tracé OSRM couleur #00d4aa
    - renderTimeline() — timeline tournée sous la carte
    - focusPatient() — flyTo style Uber
    - toggleMapFullscreen() — mode plein écran
    - renderPatientsOnMap() — affichage complet tournée
+   ── v5.0 ─────────────────────────────────────────
+   ✅ assertDep() guard strict Leaflet
+   ✅ APP.map.register() — instance partagée
+   ✅ APP.map.setUserMarker / centerMap exposés
+   ✅ depMap = APP.map.instance (alias rétrocompat)
 ════════════════════════════════════════════════ */
 
-/* ── Vérification de dépendance au chargement ─── */
-if (typeof L === 'undefined') {
-  console.error('map.js : Leaflet (L) non chargé. Vérifiez que leaflet.js est inclus AVANT map.js.');
-}
+/* ── Guards stricts ──────────────────────────── */
+(function checkDeps() {
+  assertDep(typeof L !== 'undefined',   'map.js : Leaflet non chargé avant map.js.');
+  assertDep(typeof APP !== 'undefined', 'map.js : utils.js non chargé.');
+})();
 
+/* depMap reste accessible globalement pour rétrocompat (uber.js, tournee.js) */
 let depMap = null, depMarker = null;
-let _routeLayer = null;       // couche OSRM active (pour pouvoir la supprimer)
-let _patientMarkers = [];     // markers patients actifs
+let _routeLayer = null;
+let _patientMarkers = [];
 let _fullscreenActive = false;
 
 function initDepMap() {
   if (depMap) return;
-  /* ✅ Carte monde neutre — aucune localisation par défaut */
   depMap = L.map('dep-map').setView([20, 10], 2);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap', maxZoom: 19
   }).addTo(depMap);
 
-  /* Clic sur la carte → définit le point de départ */
   depMap.on('click', e => {
     const { lat, lng } = e.latlng;
     _setDepMarker(lat, lng);
@@ -43,8 +48,22 @@ function initDepMap() {
     reverseGeocode(lat, lng);
   });
 
-  /* ✅ invalidateSize après init — corrige les bugs de hauteur
-     quand la carte est initialisée dans un onglet caché */
+  /* ✅ Enregistrer dans APP.map — accessible par uber.js et ui.js */
+  APP.map.register(depMap);
+
+  /* Exposer les helpers dans APP.map */
+  APP.map.setUserMarker = (lat, lng) => {
+    if (window._liveMarker) {
+      window._liveMarker.setLatLng([lat, lng]);
+    } else {
+      window._liveMarker = L.circleMarker([lat, lng], {
+        radius: 10, fillColor: '#00d4aa', color: '#00b891', weight: 2, fillOpacity: 0.9
+      }).addTo(depMap).bindPopup('📍 Vous êtes ici');
+    }
+  };
+  APP.map.centerMap = (lat, lng, zoom=15) => depMap.setView([lat, lng], zoom);
+
+  /* ✅ invalidateSize après init */
   setTimeout(() => depMap.invalidateSize(), 300);
 }
 
@@ -67,8 +86,8 @@ function setDepCoords(lat, lng) {
   const tLat = $('t-lat'), tLng = $('t-lng');
   if (tLat) tLat.value = lat.toFixed(6);
   if (tLng) tLng.value = lng.toFixed(6);
-  APP.startPoint = { lat, lng };
-  window.START_POINT = { lat, lng };
+  /* ✅ APP.set() → déclenche l'event 'app:update' */
+  APP.set('startPoint', { lat, lng });
   const el = $('dep-coords');
   if (el) el.textContent = `📌 Départ défini : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
