@@ -1,30 +1,22 @@
 /* ════════════════════════════════════════════════
-   tournee.js — AMI NGAP
+   tournee.js — AMI NGAP v5.0
    ────────────────────────────────────────────────
    Tournée IA + Import + Planning + Pilotage Live
-   ⚠️  Requiert Leaflet.js, map.js, uber.js
-   - storeImportedData() / showCaFromImport()
-   - estimateRevenue() / showImportedPatients()
-   - importCalendar() / handleFileSelect()
-   - generatePlanningFromImport() / renderPlanning()
-   - getOsrmRoute() — routing réel OSRM
-   - optimiserTournee() — appel API + affichage route
-   - startLiveTimer() / detectDelay()
-   - autoFacturation() — cotation arrière-plan
-   - liveStatusCore() — état tournée live
-   - Patches: window.startDay, window.liveAction, window.liveStatus
+   ⚠️  Requiert Leaflet.js, map.js, uber.js, ai-tournee.js
+   v5.0 :
+   ✅ optimiserTournee() — moteur IA local (VRPTW + 2-opt)
+   ✅ Mode dégradé API si IA indisponible
+   ✅ Affichage horaires calculés (arrivée, début soin)
+   ✅ Score rentabilité €/h après optimisation
+   ✅ startLiveOptimization() au démarrage journée
+════════════════════════════════════════════════ */
 
-/* IMPORTED DATA — stockage centralisé
-   ============================================================ */
-
-
-/* ── Vérification de dépendances ─────────────── */
+/* ── Guards ──────────────────────────────────── */
 (function checkDeps() {
-  if (typeof APP === 'undefined') console.error('tournee.js : APP store (utils.js) non chargé.');
-  if (typeof L === 'undefined')   console.warn('tournee.js : Leaflet non chargé.');
+  assertDep(typeof APP !== 'undefined',            'tournee.js : utils.js non chargé.');
+  assertDep(typeof optimizeTour !== 'undefined',   'tournee.js : ai-tournee.js non chargé.');
+  assertDep(typeof L !== 'undefined',              'tournee.js : Leaflet non chargé.');
 })();
-
-APP.importedData=null;
 
 function storeImportedData(d){
   APP.importedData=d;
@@ -133,17 +125,13 @@ async function getOsrmRoute(waypoints){
 }
 
 /* ============================================================
-   TOURNÉE AVEC OSRM
+   TOURNÉE IA — Moteur local VRPTW + 2-opt + MAP PREMIUM
    ============================================================ */
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  /* ── Guards préventifs — évite les appels API inutiles ─────
-     Sans données importées → Supabase reçoit une requête vide
-     et renvoie 400/500. On bloque AVANT l'appel API.
-  ─────────────────────────────────────────────────────────── */
-  const patients=APP.importedData?.patients||APP.importedData?.entries||[];
-  if(!patients.length){
+  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+  if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
       <div class="ct">⚠️ Aucune donnée importée</div>
@@ -154,61 +142,127 @@ async function optimiserTournee(){
     return;
   }
 
-  ld('btn-tur',true);$('res-tur').classList.remove('show');
-  try{
-    const startLat=parseFloat($('t-lat').value)||APP.startPoint?.lat||null;
-    const startLng=parseFloat($('t-lng').value)||APP.startPoint?.lng||null;
-    if(!startLat||!startLng){
-      $('terr').style.display='flex';
-      $('terr-m').textContent='📍 Définis ton point de départ (bouton GPS ou clic sur la carte)';
-      $('res-tur').classList.add('show');ld('btn-tur',false);return;
-    }
-    const d=await apiCall('/webhook/ami-tournee-ia',{start_lat:startLat,start_lng:startLng});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    if(!d.route?.length){
-      $('tbody').innerHTML='<div class="card"><div class="ai wa">⚠️ Aucun patient importé. Utilisez l\'import calendrier d\'abord.</div></div>';
-    }else{
-      // Tentative OSRM si on a des coords
-      let osrm=null;
-      const pts=d.route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
-      if(pts.length>=2){
-        const wps=[{lat:startLat,lng:startLng},...pts];
-        osrm=await getOsrmRoute(wps);
-      }
-      const ca=estimateRevenue(d.route);
-      $('tbody').innerHTML=`<div class="card">
-        <div class="ct">🗺️ Tournée optimisée — ${d.total_patients} patients</div>
-        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-          <div class="dreb">📍 ${d.total_patients} patients</div>
-          ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km réels (OSRM)</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:(d.total_km?`<div class="dreb">🚗 ~${d.total_km} km estimés</div>`:'')}
-          <div class="ca-pill">💶 CA estimé : ${ca.toFixed(2)} €</div>
-        </div>
-        ${d.route.map((p,i)=>{
-          const sd=encodeURIComponent(p.description||'');
-          const leg=osrm?.legs?.[i];
-          return`<div class="route-item">
-            <div class="route-num">${i+1}</div>
-            <div class="route-info"><strong style="font-size:13px">${p.description||'Patient'}</strong>
-              <div style="font-size:11px;color:var(--m);margin-top:2px">ID: ${p.patient_id||'—'}</div>
-            </div>
-            ${p.heure?`<div class="route-time">⏱ ${p.heure}</div>`:''}
-            ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.distance_km?`<div class="route-km">+${p.distance_km}km</div>`:'')}
-            <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
-          </div>`;}).join('')}
-        ${d.alerts?.length?`<div class="aic" style="margin-top:16px">${d.alerts.map(a=>`<div class="ai wa">⚠️ ${a}</div>`).join('')}</div>`:''}
-      </div>`;
+  const startLat = parseFloat($('t-lat')?.value) || APP.get('startPoint')?.lat || null;
+  const startLng = parseFloat($('t-lng')?.value) || APP.get('startPoint')?.lng || null;
+  if(!startLat || !startLng){
+    $('terr').style.display='flex';
+    $('terr-m').textContent='📍 Définis ton point de départ (bouton GPS ou clic sur la carte)';
+    $('res-tur').classList.add('show'); return;
+  }
 
-      // ── MAP PREMIUM : markers + route OSRM + timeline ──────────────
-      // Appel asynchrone non bloquant — n'affecte pas l'affichage de la liste
-      if (typeof renderPatientsOnMap === 'function') {
-        renderPatientsOnMap(d.route, { lat: startLat, lng: startLng }).catch(e => {
-          console.warn('renderPatientsOnMap:', e.message);
-        });
-      }
+  ld('btn-tur',true); $('res-tur').classList.remove('show');
+  _showOptimProgress('🧠 Calcul des temps de trajet réels…');
+
+  try {
+    const startPoint = { lat: startLat, lng: startLng };
+
+    /* ── 1. Moteur IA local — VRPTW greedy + cache OSRM ── */
+    _showOptimProgress('⚡ Optimisation VRPTW en cours…');
+    let route = await optimizeTour(rawPatients, startPoint);
+
+    /* ── 2. 2-opt — amélioration du chemin ────────────── */
+    _showOptimProgress('🔁 Optimisation 2-opt…');
+    route = twoOpt(route);
+
+    /* ── 3. Scoring rentabilité ───────────────────────── */
+    const rentab = scoreTourneeRentabilite(route);
+    const ca     = estimateRevenue(route);
+
+    /* ── 4. OSRM route pour distances précises ────────── */
+    let osrm = null;
+    const pts = route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
+    if(pts.length >= 2) {
+      const wps = [startPoint, ...pts];
+      osrm = await getOsrmRoute(wps);
     }
-    $('terr').style.display='none';
-  }catch(e){$('terr').style.display='flex';$('terr-m').textContent=e.message;}
-  $('res-tur').classList.add('show');ld('btn-tur',false);
+
+    /* ── 5. Rendu liste ───────────────────────────────── */
+    $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, rentab);
+    $('terr').style.display = 'none';
+
+    /* ── 6. Map premium — markers + route + timeline ──── */
+    if(typeof renderPatientsOnMap === 'function') {
+      renderPatientsOnMap(route, startPoint).catch(e=>logWarn('renderPatientsOnMap:',e.message));
+    }
+
+    /* ── 7. Préparer patients Uber pour mode live ─────── */
+    APP.set('uberPatients', route.map((p,i) => ({
+      ...p,
+      id:      p.patient_id || p.id || i,
+      label:   p.description || p.label || 'Patient '+(i+1),
+      done:    false, absent: false, late: false,
+      urgence: !!(p.urgent || p.urgence),
+      time:    p.start_min ? p.start_min * 60000 : null,
+      amount:  parseFloat(p.total || p.montant || 0) || 0,
+    })));
+
+    /* ── 8. Démarrer optimisation live ───────────────── */
+    startLiveOptimization();
+
+  } catch(e) {
+    /* Fallback API backend si moteur local échoue */
+    logWarn('Moteur IA local échoué, fallback API:', e.message);
+    await _optimiserTourneeAPI(startLat, startLng);
+  }
+
+  $('res-tur').classList.add('show');
+  ld('btn-tur',false);
+}
+
+/* Indicateur de progression optimisation */
+function _showOptimProgress(msg) {
+  const el = $('terr');
+  if(!el) return;
+  el.style.display = 'flex';
+  const span = $('terr-m');
+  if(span) span.textContent = msg;
+}
+
+/* Rendu HTML de la route optimisée */
+function _renderRouteHTML(route, osrm, ca, rentab) {
+  const total = route.filter(p=>p.lat&&p.lng).length;
+  return `<div class="card">
+    <div class="ct">🧠 Tournée IA optimisée — ${total} patients</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <div class="dreb">📍 ${total} patients</div>
+      ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
+      <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
+      ${rentab?`<div class="ca-pill" style="background:rgba(79,168,255,.1);border-color:rgba(79,168,255,.3);color:var(--a2)">📊 ${rentab.euro_heure}€/h</div>`:''}
+    </div>
+    ${route.map((p,i)=>{
+      const sd  = encodeURIComponent(p.description||'');
+      const leg = osrm?.legs?.[i];
+      const hasTime = p.start_str && p.start_str !== '—';
+      return `<div class="route-item ${p.urgent?'route-urgent':''}">
+        <div class="route-num">${i+1}</div>
+        <div class="route-info">
+          <strong style="font-size:13px">${p.description||'Patient'}</strong>
+          <div style="font-size:11px;color:var(--m);margin-top:2px">
+            ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
+            ${p.urgent?'<span style="color:#ff5f6d;font-weight:700;margin-left:6px">🚨 URGENT</span>':''}
+          </div>
+        </div>
+        ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km">~${p.travel_min}min</div>`:'')}
+        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+/* Fallback API backend (ancien comportement) */
+async function _optimiserTourneeAPI(startLat, startLng) {
+  try {
+    const d = await apiCall('/webhook/ami-tournee-ia',{start_lat:startLat,start_lng:startLng});
+    if(!d.ok) throw new Error(d.error||'Erreur API');
+    const ca = estimateRevenue(d.route||[]);
+    $('tbody').innerHTML = _renderRouteHTML(d.route||[], null, ca, null);
+    if(typeof renderPatientsOnMap==='function' && d.route?.length) {
+      renderPatientsOnMap(d.route,{lat:startLat,lng:startLng}).catch(()=>{});
+    }
+  } catch(e) {
+    $('terr').style.display='flex';
+    $('terr-m').textContent=e.message;
+  }
 }
 
 /* ============================================================
@@ -283,15 +337,16 @@ async function recalculTournee(){
   }catch(e){alert('Erreur recalcul: '+e.message);}
 }
 
-/* Patch startDay pour démarrer le timer */
+/* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
   startLiveTimer();
-  // appel direct du code original
   const el=$('live-badge');
   if(el){el.textContent='EN COURS';el.style.background='var(--ad)';el.style.color='var(--a)';}
   $('btn-live-start').style.display='none';
   $('live-controls').style.display='block';
+  /* ── Démarrer le moteur IA temps réel ── */
+  if(typeof startLiveOptimization==='function') startLiveOptimization();
   await liveStatusCore();
 };
 
