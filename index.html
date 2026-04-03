@@ -16,6 +16,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="css/style.css">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b0f14">
+<!-- Barre progress LLM offline (masquée par défaut) -->
+<style>
+  #llm-progress{position:fixed;bottom:130px;right:16px;background:var(--s,#111827);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:6px 12px;font-size:11px;font-family:monospace;color:#00d4aa;z-index:810;display:none}
+  #network-banner{display:none}
+  #map-download-panel{background:var(--s,#111827);border:1px solid var(--b,#1e2d3d);border-radius:8px;padding:14px;margin-top:12px;display:none}
+  .dl-bar-wrap{height:6px;background:rgba(0,212,170,.15);border-radius:3px;margin-top:8px}
+  .dl-bar{height:6px;background:#00d4aa;border-radius:3px;width:0%;transition:width .3s}
+</style>
 </head>
 <body>
 
@@ -161,8 +171,13 @@
 <div id="voice-toast">
   <div style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:4px">🎤 ASSISTANT VOCAL ACTIF</div>
   <div id="voice-interim"></div>
-  <div style="font-size:10px;color:var(--m);margin-top:6px">Dites "stop assistant" pour désactiver</div>
+  <div style="font-size:10px;color:var(--m);margin-top:4px">Dites "stop assistant" pour désactiver</div>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+    <button class="btn bs bsm" onclick="typeof muteVoice==='function'?muteVoice():null" style="font-size:10px;padding:3px 8px">🔇 Mute</button>
+    <button class="btn bp bsm" onclick="typeof initLLM==='function'?initLLM():null" style="font-size:10px;padding:3px 8px">🤖 Activer IA locale</button>
+  </div>
 </div>
+<div id="llm-progress">🤖 IA locale prête</div>
 
 <!-- APP SHELL -->
 <div id="app" style="display:none">
@@ -343,6 +358,13 @@
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
         </div>
       </div>
+      <!-- Panneau téléchargement cartes offline -->
+      <div id="map-download-panel">
+        <div class="lbl" style="margin-bottom:8px">📥 Cartes hors ligne</div>
+        <div id="map-download-msg" style="font-size:12px;color:var(--m)">Télécharge la zone autour de ton point de départ pour utiliser la carte sans internet.</div>
+        <div class="dl-bar-wrap"><div class="dl-bar" id="map-download-progress"></div></div>
+        <button class="btn bp bsm" onclick="downloadCurrentArea()" style="margin-top:10px"><span>📥</span> Télécharger la zone</button>
+      </div>
       <div id="res-tur" class="res"><div id="terr" class="errb" style="display:none">⚠️ <span id="terr-m"></span></div><div id="tbody"></div></div>
     </section>
 
@@ -356,7 +378,6 @@
         <p style="font-size:13px;color:var(--m)" id="live-info">Cliquez sur "Démarrer" pour activer le pilotage automatique</p>
         <div class="live-timer" id="live-timer" style="display:none"></div>
         <div class="live-ca" id="live-ca-total" style="display:none"></div>
-        <div id="live-rentabilite" style="display:none;font-family:var(--fm);font-size:12px;color:var(--a2);margin-top:4px;padding:6px 12px;background:rgba(79,168,255,.07);border-radius:var(--r);border:1px solid rgba(79,168,255,.2)"></div>
         <div class="live-delay" id="live-delay-alert">⏰ <span id="live-delay-msg"></span></div>
         <div class="live-actions">
           <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
@@ -801,7 +822,8 @@
 <!-- Modules dépendant de Leaflet -->
 <script src="js/map.js"></script>
 <script src="js/uber.js"></script>
-<script src="js/ai-tournee.js"></script><!-- IA tournée VRPTW + 2-opt -->
+<script src="js/ai-assistant.js"></script>
+<script src="js/pwa.js"></script>
 <script src="js/tournee.js"></script>
 
 </body>
