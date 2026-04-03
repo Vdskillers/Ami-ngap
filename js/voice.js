@@ -26,6 +26,17 @@ function handleVoice(transcript,confidence){
   if(confidence<VOICE_CONFIDENCE)return;
   const t=transcript.toLowerCase().trim();
   $('voice-interim').textContent=t;
+
+  /* ── Pipeline IA avancé (ai-assistant.js) ──────
+     Si disponible, délègue au moteur NLP + ML.
+     Sinon, fallback règles NGAP natives.
+  ─────────────────────────────────────────────── */
+  if(typeof handleAICommand==='function'){
+    handleAICommand(transcript,confidence);
+    return;
+  }
+
+  /* ── Fallback règles NGAP natives ─────────────── */
   if(/nouveau patient|réinitialiser/.test(t)){clrCot();return;}
   if(/générer la facture|calculer|facturer|valider/.test(t)){document.querySelector('[data-v=cot]')?.click();setTimeout(cotation,300);return;}
   if(/vérifier|corriger/.test(t)){document.querySelector('[data-v=cot]')?.click();setTimeout(openVerify,300);return;}
@@ -49,11 +60,15 @@ function startVoice(){
   recognition.onerror=e=>{if(e.error!=='no-speech')stopVoice();};
   recognition.onend=()=>{if(voiceActive)recognition.start();};
   recognition.start();voiceActive=true;
+  /* ── Activer mains libres si IA disponible ── */
+  if(typeof startHandsFree==='function') startHandsFree();
   $('voicebtn').classList.add('listening');$('voice-topbtn').classList.add('active');$('voice-topbtn').textContent='🔴 Stop';
   $('voice-toast').classList.add('show');$('voice-interim').textContent='En écoute...';
 }
 function stopVoice(){
   voiceActive=false;if(recognition){try{recognition.stop();}catch{}recognition=null;}
+  if(typeof stopHandsFree==='function') stopHandsFree();
+  if(typeof stopVoiceNavigation==='function') stopVoiceNavigation();
   $('voicebtn').classList.remove('listening');$('voice-topbtn').classList.remove('active');$('voice-topbtn').textContent='🎤 Vocal';
   $('voice-toast').classList.remove('show');
 }
