@@ -329,15 +329,8 @@
           <button class="map-btn gps" onclick="getGPS()">📍 GPS</button>
         </div>
         <div class="dep-coords" id="dep-coords">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
-        <!-- Barre outils map — plein écran + légende -->
-        <div class="map-toolbar">
-          <button id="btn-map-fullscreen" onclick="toggleMapFullscreen()">⛶ Plein écran</button>
-          <div class="map-legend"><div class="map-legend-dot"></div>Route optimisée · Clic sur un numéro → détail</div>
-        </div>
         <!-- Carte Leaflet -->
         <div id="dep-map"></div>
-        <!-- Timeline tournée (affichée après optimisation) -->
-        <div id="map-timeline"></div>
         <!-- Champs lat/lng cachés (mis à jour par la carte) -->
         <input type="hidden" id="t-lat" value="">
         <input type="hidden" id="t-lng" value="">
@@ -363,6 +356,7 @@
         <p style="font-size:13px;color:var(--m)" id="live-info">Cliquez sur "Démarrer" pour activer le pilotage automatique</p>
         <div class="live-timer" id="live-timer" style="display:none"></div>
         <div class="live-ca" id="live-ca-total" style="display:none"></div>
+        <div id="live-rentabilite" style="display:none;font-family:var(--fm);font-size:12px;color:var(--a2);margin-top:4px;padding:6px 12px;background:rgba(79,168,255,.07);border-radius:var(--r);border:1px solid rgba(79,168,255,.2)"></div>
         <div class="live-delay" id="live-delay-alert">⏰ <span id="live-delay-msg"></span></div>
         <div class="live-actions">
           <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
@@ -807,6 +801,7 @@
 <!-- Modules dépendant de Leaflet -->
 <script src="js/map.js"></script>
 <script src="js/uber.js"></script>
+<script src="js/ai-tournee.js"></script><!-- IA tournée VRPTW + 2-opt -->
 <script src="js/tournee.js"></script>
 
 </body>
