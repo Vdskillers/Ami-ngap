@@ -774,23 +774,63 @@
 
     <!-- SECURITE -->
     <section class="view" id="view-sec">
-      <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">Cloudflare Worker · Supabase · SHA-256</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">AES-256 · Privacy by Design · HDS ready</p>
+
+      <!-- Statut protection -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
         <div class="card">
           <div class="ct">🛡️ Protection active</div>
+          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Chiffrement AES-256-GCM</strong><span style="font-size:12px;color:var(--m)">Données locales chiffrées en mémoire</span></div></div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Auth Cloudflare Worker</strong><span style="font-size:12px;color:var(--m)">SHA-256 salé · Sessions Supabase</span></div></div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Zéro visibilité admin</strong><span style="font-size:12px;color:var(--m)">Admins : nom+prénom uniquement</span></div></div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Patients anonymisés</strong><span style="font-size:12px;color:var(--m)">SHA-256 + sel · ID temporaire uniquement</span></div></div>
-          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Import sécurisé</strong><span style="font-size:12px;color:var(--m)">Traitement local · aucune donnée brute stockée</span></div></div>
           <div class="secrow"><div class="secdot live"></div><div><strong style="font-size:14px;display:block">Session active</strong><span style="font-size:12px;color:var(--m)" id="sess-inf">—</span></div></div>
         </div>
         <div class="card">
-          <div class="ct">🗑️ Droits RGPD — Effacement</div>
+          <div class="ct">🔐 Verrouillage PIN local</div>
+          <p style="font-size:12px;color:var(--m);margin-bottom:14px">Protège l'app après 10 min d'inactivité. Le PIN est haché (SHA-256) — jamais stocké en clair.</p>
+          <div class="msg e" id="sec-msg" style="display:none"></div>
+          <div class="af" style="margin-bottom:10px">
+            <label for="pin-setup">Définir un PIN (4 chiffres min.)</label>
+            <input type="password" id="pin-setup" inputmode="numeric" maxlength="8" placeholder="••••" style="letter-spacing:6px">
+          </div>
+          <button class="btn bp bsm" onclick="setupPIN(document.getElementById('pin-setup').value)"><span>🔐</span> Enregistrer le PIN</button>
+        </div>
+      </div>
+
+      <!-- Droits RGPD -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card">
+          <div class="ct">📤 Droits RGPD — Export & Effacement</div>
           <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:160px"><button class="btn bd bsm" onclick="delById()">🗑️ Supprimer</button></div>
-            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-pt" placeholder="Nom patient (purge totale)" style="width:220px"><button class="btn bd bsm" onclick="delByPt()">🗑️ Purger</button></div>
+            <button class="btn bs bsm" onclick="exportMyData()"><span>📥</span> Exporter mes données (JSON)</button>
+            <button class="btn bd bsm" onclick="purgeLocalData().then(()=>alert('✅ Données locales effacées.'))"><span>🗑️</span> Effacer données locales</button>
+            <button class="btn bd bsm" onclick="revokeConsent()"><span>⚠️</span> Révoquer mon consentement</button>
+          </div>
+          <div style="font-size:11px;color:var(--m)">Suppression compte serveur → onglet Profil → "Supprimer mon compte"</div>
+        </div>
+        <div class="card">
+          <div class="ct">🗑️ Suppression ciblée (API)</div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:140px"><button class="btn bd bsm" onclick="delById()">🗑️ Supprimer</button></div>
+            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-pt" placeholder="Nom patient (purge totale)" style="width:180px"><button class="btn bd bsm" onclick="delByPt()">🗑️ Purger</button></div>
           </div>
           <div id="del-r"></div>
+        </div>
+      </div>
+
+      <!-- Conformité -->
+      <div class="card">
+        <div class="ct">📋 Conformité & Architecture</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;font-size:12px">
+          <div class="ai su">✅ Chiffrement AES-256-GCM local</div>
+          <div class="ai su">✅ Consentement RGPD explicite</div>
+          <div class="ai su">✅ Minimisation données (no NIR en clair)</div>
+          <div class="ai su">✅ Droits export + effacement</div>
+          <div class="ai su">✅ Audit log chiffré 90 jours</div>
+          <div class="ai su">✅ Zéro cookie tracking</div>
+          <div class="ai in">⚙️ HDS : Cloudflare + Supabase EU</div>
+          <div class="ai in">⚙️ PIN verrouillage auto 10 min</div>
         </div>
       </div>
     </section>
@@ -807,6 +847,7 @@
 
 <!-- Modules fonctionnels -->
 <script src="js/auth.js"></script>
+<script src="js/security.js"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js"></script>
 <script src="js/profil.js"></script>
 <script src="js/cotation.js"></script>
