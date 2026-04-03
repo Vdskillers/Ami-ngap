@@ -33,9 +33,12 @@ function clientHasPermission(permission){
 
 /* ── AUTH ─────────────────────────────────────── */
 function checkAuth(){
+  /* Vérifier consentement RGPD avant tout */ 
+  if(typeof checkConsent==='function' && !checkConsent()) return;
   const session = ss.load();
   if(session && session.token){
     S = session; // hydratation obligatoire avant showApp()
+    if(typeof initSecurity==='function') initSecurity(S.token);
     showApp();
   }else{
     ss.clear();
@@ -110,6 +113,8 @@ async function login(){
     const d=await wpost('/webhook/auth-login',{email:em,password:pw});
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
     ss.save(d.token,d.role,d.user);
+    /* ── Sécurité RGPD : chiffrement + audit ── */
+    if(typeof initSecurity==='function') initSecurity(d.token);
     showApp();
   }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
 }

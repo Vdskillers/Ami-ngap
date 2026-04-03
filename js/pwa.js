@@ -103,21 +103,33 @@ function _openIDB() {
   });
 }
 
-/* Sauvegarder patients en local (offline) */
+/* Sauvegarder patients en local (offline)
+   ✅ Si security.js chargé → stockage chiffré AES-256
+   ✅ Sinon → IDB non chiffré (fallback) */
 async function saveOfflinePatients(patients) {
   try {
-    const db = await _openIDB();
-    const tx = db.transaction('patients', 'readwrite');
-    const store = tx.objectStore('patients');
-    store.clear();
-    patients.forEach(p => store.put({ ...p, id: p.patient_id || p.id || String(Math.random()) }));
-    log('Patients sauvegardés offline:', patients.length);
+    if (typeof saveSecure === 'function') {
+      /* Stocker chiffré via security.js */
+      await saveSecure('s_patients', 'all', patients);
+      log('Patients sauvegardés offline (chiffrés):', patients.length);
+    } else {
+      /* Fallback IDB non chiffré */
+      const db = await _openIDB();
+      const tx = db.transaction('patients', 'readwrite');
+      const store = tx.objectStore('patients');
+      store.clear();
+      patients.forEach(p => store.put({ ...p, id: p.patient_id || p.id || String(Math.random()) }));
+      log('Patients sauvegardés offline (non chiffrés):', patients.length);
+    }
   } catch (e) { logWarn('saveOfflinePatients:', e.message); }
 }
 
 /* Charger patients depuis IDB (mode offline) */
 async function loadOfflinePatients() {
   try {
+    if (typeof loadSecure === 'function') {
+      return (await loadSecure('s_patients', 'all')) || [];
+    }
     const db = await _openIDB();
     return await new Promise((res, rej) => {
       const tx  = db.transaction('patients', 'readonly');
