@@ -122,35 +122,55 @@ function ld(id,on){ const b=$(id); if(!b)return; b.disabled=on; if(on){b._o=b.in
 ─────────────────────────────────────────────── */
 const API_TIMEOUT_MS=35000;
 
-async function _apiFetch(path,body,retries=2){
-  const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT_MS);
-  try{
-    const res=await fetch(W+path,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+ss.tok()},
-      body:JSON.stringify(body),
-      signal:ctrl.signal
+async function _apiFetch(path, body, retry = true) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000); // 🔥 8s au lieu de 35s
+
+  try {
+    const res = await fetch(W + path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': ss.tok() ? 'Bearer ' + ss.tok() : ''
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
     });
-    clearTimeout(timer);
-    if(!res.ok){
-      const txt=await res.text().catch(()=>'');
-      const is4xx=res.status>=400&&res.status<500;
-      throw Object.assign(
-        new Error('Erreur serveur '+res.status+(txt?' : '+txt.slice(0,120):'')),
-        {status:res.status,noRetry:is4xx}
-      );
+
+    clearTimeout(timeout);
+
+    // 🔐 SESSION INVALIDE → logout direct
+    if (res.status === 401) {
+      ss.clear();
+      if (typeof showAuthOv === 'function') showAuthOv();
+      throw new Error('Session expirée — reconnectez-vous');
     }
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(txt || ('Erreur serveur ' + res.status));
+    }
+
     return await res.json();
-  }catch(e){
-    clearTimeout(timer);
-    if(!navigator.onLine) throw new Error('Pas de connexion internet.');
-    if(!e.noRetry&&retries>0){
-      logWarn('API retry ('+retries+' restant) →',path);
-      await new Promise(r=>setTimeout(r,800));
-      return _apiFetch(path,body,retries-1);
+
+  } catch (e) {
+    clearTimeout(timeout);
+
+    // 🔁 retry UNE SEULE FOIS (pas 2)
+    if (retry && e.name !== 'AbortError') {
+      logWarn('Retry API →', path);
+      await new Promise(r => setTimeout(r, 500));
+      return _apiFetch(path, body, false);
     }
-    if(e.name==='AbortError') throw new Error('Délai dépassé — serveur trop lent (>35s). Réessayez.');
+
+    if (!navigator.onLine) {
+      throw new Error('Pas de connexion internet.');
+    }
+
+    if (e.name === 'AbortError') {
+      throw new Error('Serveur trop lent (>8s)');
+    }
+
     throw e;
   }
 }
