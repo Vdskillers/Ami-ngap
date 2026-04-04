@@ -158,24 +158,26 @@ async function _apiFetch(path,body,retries=2){
 async function wpost(path,body)   { return _apiFetch(path,body); }
 async function apiCall(path,body) { return _apiFetch(path,body); }
 
-async function fetchAPI(url,options={}){
-  const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT_MS);
-  try{
-    const res=await fetch(W+url,{
-      ...options,
-      headers:{'Content-Type':'application/json','Authorization':ss.tok()?'Bearer '+ss.tok():'',...(options.headers||{})},
-      signal:ctrl.signal
-    });
-    clearTimeout(timer);
-    if(!res.ok){const text=await res.text();throw new Error('API '+res.status+': '+text);}
-    return await res.json();
-  }catch(err){
-    clearTimeout(timer);
-    if(err.name==='AbortError') throw new Error('Délai dépassé');
-    logErr('fetchAPI:',err);
-    throw err;
+async function _apiFetch(url, options = {}) {
+  const token = APP?.token || '';
+
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+
+  // 🔥 AJOUT CRITIQUE
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token;
   }
+
+  const res = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  return res;
+}
 }
 
 /* ── 9. GUARD SESSION ────────────────────────── */
