@@ -16,16 +16,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="css/style.css">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#0b0f14">
-<!-- Barre progress LLM offline (masquée par défaut) -->
-<style>
-  #llm-progress{position:fixed;bottom:130px;right:16px;background:var(--s,#111827);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:6px 12px;font-size:11px;font-family:monospace;color:#00d4aa;z-index:810;display:none}
-  #network-banner{display:none}
-  #map-download-panel{background:var(--s,#111827);border:1px solid var(--b,#1e2d3d);border-radius:8px;padding:14px;margin-top:12px;display:none}
-  .dl-bar-wrap{height:6px;background:rgba(0,212,170,.15);border-radius:3px;margin-top:8px}
-  .dl-bar{height:6px;background:#00d4aa;border-radius:3px;width:0%;transition:width .3s}
-</style>
 </head>
 <body>
 
@@ -72,7 +62,7 @@
     <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici.</p></div>
     <div class="adm-alert e" id="adm-alert"></div>
     <!-- KPI -->
-    <div class="lbl" style="margin-bottom:12px">Analytics globaux</div>
+    <div class="lbl" style="margin-bottom:12px">Analytics globaux <span style="font-size:11px;color:var(--m);font-weight:400">(anonymisés — aucune donnée patient)</span></div>
     <div id="adm-kpi" class="kpi-grid">
       <div class="kpi"><div class="kpi-v g" id="kpi-ca">—</div><div class="kpi-l">CA total (€)</div></div>
       <div class="kpi"><div class="kpi-v b" id="kpi-actes">—</div><div class="kpi-l">Soins cotés</div></div>
@@ -81,6 +71,27 @@
       <div class="kpi"><div class="kpi-v b" id="kpi-dre">—</div><div class="kpi-l">DRE requises</div></div>
     </div>
     <div id="adm-top-actes" style="margin-bottom:24px"></div>
+
+    <!-- Sécurité temps réel v4.0 -->
+    <div class="lbl" style="margin-bottom:12px">🔐 Sécurité temps réel</div>
+    <div class="kpi-grid" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-v r" id="kpi-login-fails">—</div><div class="kpi-l">Échecs connexion</div></div>
+      <div class="kpi"><div class="kpi-v r" id="kpi-fraud-alerts">—</div><div class="kpi-l">Alertes fraude</div></div>
+    </div>
+    <div style="margin-bottom:24px">
+      <div class="lbl" style="margin-bottom:8px">Alertes récentes</div>
+      <div id="adm-recent-alerts" style="min-height:40px"><div class="spin spinw" style="width:16px;height:16px;margin:8px auto"></div></div>
+    </div>
+
+    <!-- Journal d'audit v4.0 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="lbl">📋 Journal d'audit</div>
+      <button class="bs bsm" onclick="loadAdmLogs()" style="padding:6px 14px;font-size:12px">↻ Charger les logs</button>
+    </div>
+    <div id="adm-logs" style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-height:60px;max-height:320px;overflow-y:auto;margin-bottom:24px">
+      <div style="font-size:12px;color:var(--m);text-align:center;padding:16px">Cliquez sur "Charger les logs" pour afficher le journal</div>
+    </div>
+
     <!-- Gestion comptes -->
     <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
     <div class="adm-search">
@@ -171,13 +182,8 @@
 <div id="voice-toast">
   <div style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:4px">🎤 ASSISTANT VOCAL ACTIF</div>
   <div id="voice-interim"></div>
-  <div style="font-size:10px;color:var(--m);margin-top:4px">Dites "stop assistant" pour désactiver</div>
-  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-    <button class="btn bs bsm" onclick="typeof muteVoice==='function'?muteVoice():null" style="font-size:10px;padding:3px 8px">🔇 Mute</button>
-    <button class="btn bp bsm" onclick="typeof initLLM==='function'?initLLM():null" style="font-size:10px;padding:3px 8px">🤖 Activer IA locale</button>
-  </div>
+  <div style="font-size:10px;color:var(--m);margin-top:6px">Dites "stop assistant" pour désactiver</div>
 </div>
-<div id="llm-progress">🤖 IA locale prête</div>
 
 <!-- APP SHELL -->
 <div id="app" style="display:none">
@@ -252,11 +258,34 @@
       <div class="card">
         <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
-        <div class="lbl">Prescripteur (médecin)</div>
-        <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label for="f-pr">Médecin prescripteur</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
-          <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543"></div>
-          <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
+        <!-- ── PRESCRIPTEUR v4.0 ── masqué en mode admin ──────────────── -->
+        <div id="prescripteur-section">
+          <div class="lbl">Prescripteur (médecin)</div>
+          <div class="fg" style="margin-bottom:10px">
+            <!-- Select dynamique chargé par loadPrescripteurs() -->
+            <div class="f" style="grid-column:1/-1">
+              <label for="f-prescripteur-select">Sélectionner un médecin enregistré</label>
+              <select id="f-prescripteur-select" name="prescripteur_id">
+                <option value="">— Médecin prescripteur (sélectionner ou saisir ci-dessous) —</option>
+              </select>
+            </div>
+            <div class="f"><label for="f-pr">Nom libre (si non listé)</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
+            <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543" maxlength="11"></div>
+            <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
+          </div>
+          <!-- Ajout rapide d'un nouveau prescripteur -->
+          <details style="margin-bottom:16px">
+            <summary style="font-size:12px;color:var(--m);cursor:pointer;padding:6px 0">➕ Enregistrer un nouveau médecin prescripteur</summary>
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-top:8px">
+              <div class="msg e" id="prescr-msg" style="display:none"></div>
+              <div class="fg" style="margin-bottom:10px">
+                <div class="f"><label for="prescr-nom">Nom *</label><input type="text" id="prescr-nom" placeholder="Dr. Dupont Marie"></div>
+                <div class="f"><label for="prescr-rpps">RPPS (11 chiffres)</label><input type="text" id="prescr-rpps" placeholder="10001234567" maxlength="11"></div>
+                <div class="f"><label for="prescr-spe">Spécialité</label><input type="text" id="prescr-spe" placeholder="Médecin généraliste"></div>
+              </div>
+              <button class="btn bs bsm" id="btn-add-prescr" onclick="addPrescripteur()"><span>💾</span> Enregistrer</button>
+            </div>
+          </details>
         </div>
         <div id="patient-fields">
           <div class="lbl">Patient — données locales uniquement</div>
@@ -284,6 +313,12 @@
         </div>
       </div>
       <div id="res-cot" class="res"><div id="cerr" class="errb" style="display:none">⚠️ <span id="cerr-m"></span></div><div id="cbody"></div></div>
+      <!-- ── NUMÉRO DE FACTURE v4.0 ── généré côté serveur (séquentiel CPAM) ── -->
+      <div id="invoice-number-section" style="display:none">
+        <span style="font-size:12px;color:var(--m);font-family:var(--fm)">N° facture :</span>
+        <span id="invoice-number-display"></span>
+        <span style="font-size:11px;color:var(--m);margin-left:auto;opacity:.7">utilisé par la CPAM</span>
+      </div>
     </section>
 
     <!-- VERIFY -->
@@ -357,13 +392,6 @@
           <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
         </div>
-      </div>
-      <!-- Panneau téléchargement cartes offline -->
-      <div id="map-download-panel">
-        <div class="lbl" style="margin-bottom:8px">📥 Cartes hors ligne</div>
-        <div id="map-download-msg" style="font-size:12px;color:var(--m)">Télécharge la zone autour de ton point de départ pour utiliser la carte sans internet.</div>
-        <div class="dl-bar-wrap"><div class="dl-bar" id="map-download-progress"></div></div>
-        <button class="btn bp bsm" onclick="downloadCurrentArea()" style="margin-top:10px"><span>📥</span> Télécharger la zone</button>
       </div>
       <div id="res-tur" class="res"><div id="terr" class="errb" style="display:none">⚠️ <span id="terr-m"></span></div><div id="tbody"></div></div>
     </section>
@@ -774,63 +802,23 @@
 
     <!-- SECURITE -->
     <section class="view" id="view-sec">
-      <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">AES-256 · Privacy by Design · HDS ready</p>
-
-      <!-- Statut protection -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">Cloudflare Worker · Supabase · SHA-256</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div class="card">
           <div class="ct">🛡️ Protection active</div>
-          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Chiffrement AES-256-GCM</strong><span style="font-size:12px;color:var(--m)">Données locales chiffrées en mémoire</span></div></div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Auth Cloudflare Worker</strong><span style="font-size:12px;color:var(--m)">SHA-256 salé · Sessions Supabase</span></div></div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Zéro visibilité admin</strong><span style="font-size:12px;color:var(--m)">Admins : nom+prénom uniquement</span></div></div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Patients anonymisés</strong><span style="font-size:12px;color:var(--m)">SHA-256 + sel · ID temporaire uniquement</span></div></div>
+          <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:14px;display:block">Import sécurisé</strong><span style="font-size:12px;color:var(--m)">Traitement local · aucune donnée brute stockée</span></div></div>
           <div class="secrow"><div class="secdot live"></div><div><strong style="font-size:14px;display:block">Session active</strong><span style="font-size:12px;color:var(--m)" id="sess-inf">—</span></div></div>
         </div>
         <div class="card">
-          <div class="ct">🔐 Verrouillage PIN local</div>
-          <p style="font-size:12px;color:var(--m);margin-bottom:14px">Protège l'app après 10 min d'inactivité. Le PIN est haché (SHA-256) — jamais stocké en clair.</p>
-          <div class="msg e" id="sec-msg" style="display:none"></div>
-          <div class="af" style="margin-bottom:10px">
-            <label for="pin-setup">Définir un PIN (4 chiffres min.)</label>
-            <input type="password" id="pin-setup" inputmode="numeric" maxlength="8" placeholder="••••" style="letter-spacing:6px">
-          </div>
-          <button class="btn bp bsm" onclick="setupPIN(document.getElementById('pin-setup').value)"><span>🔐</span> Enregistrer le PIN</button>
-        </div>
-      </div>
-
-      <!-- Droits RGPD -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card">
-          <div class="ct">📤 Droits RGPD — Export & Effacement</div>
+          <div class="ct">🗑️ Droits RGPD — Effacement</div>
           <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-            <button class="btn bs bsm" onclick="exportMyData()"><span>📥</span> Exporter mes données (JSON)</button>
-            <button class="btn bd bsm" onclick="purgeLocalData().then(()=>alert('✅ Données locales effacées.'))"><span>🗑️</span> Effacer données locales</button>
-            <button class="btn bd bsm" onclick="revokeConsent()"><span>⚠️</span> Révoquer mon consentement</button>
-          </div>
-          <div style="font-size:11px;color:var(--m)">Suppression compte serveur → onglet Profil → "Supprimer mon compte"</div>
-        </div>
-        <div class="card">
-          <div class="ct">🗑️ Suppression ciblée (API)</div>
-          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
-            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:140px"><button class="btn bd bsm" onclick="delById()">🗑️ Supprimer</button></div>
-            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-pt" placeholder="Nom patient (purge totale)" style="width:180px"><button class="btn bd bsm" onclick="delByPt()">🗑️ Purger</button></div>
+            <div style="display:flex;gap:10px;align-items:center"><input type="number" id="del-id" placeholder="ID de l'entrée" style="width:160px"><button class="btn bd bsm" onclick="delById()">🗑️ Supprimer</button></div>
+            <div style="display:flex;gap:10px;align-items:center"><input type="text" id="del-pt" placeholder="Nom patient (purge totale)" style="width:220px"><button class="btn bd bsm" onclick="delByPt()">🗑️ Purger</button></div>
           </div>
           <div id="del-r"></div>
-        </div>
-      </div>
-
-      <!-- Conformité -->
-      <div class="card">
-        <div class="ct">📋 Conformité & Architecture</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;font-size:12px">
-          <div class="ai su">✅ Chiffrement AES-256-GCM local</div>
-          <div class="ai su">✅ Consentement RGPD explicite</div>
-          <div class="ai su">✅ Minimisation données (no NIR en clair)</div>
-          <div class="ai su">✅ Droits export + effacement</div>
-          <div class="ai su">✅ Audit log chiffré 90 jours</div>
-          <div class="ai su">✅ Zéro cookie tracking</div>
-          <div class="ai in">⚙️ HDS : Cloudflare + Supabase EU</div>
-          <div class="ai in">⚙️ PIN verrouillage auto 10 min</div>
         </div>
       </div>
     </section>
@@ -847,7 +835,6 @@
 
 <!-- Modules fonctionnels -->
 <script src="js/auth.js"></script>
-<script src="js/security.js"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js"></script>
 <script src="js/profil.js"></script>
 <script src="js/cotation.js"></script>
@@ -863,8 +850,6 @@
 <!-- Modules dépendant de Leaflet -->
 <script src="js/map.js"></script>
 <script src="js/uber.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/pwa.js"></script>
 <script src="js/tournee.js"></script>
 
 </body>
