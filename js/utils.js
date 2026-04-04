@@ -123,8 +123,13 @@ function ld(id,on){ const b=$(id); if(!b)return; b.disabled=on; if(on){b._o=b.in
 const API_TIMEOUT_MS=35000;
 
 async function _apiFetch(path, body, retry = true) {
+
+  // 🔥 Timeout intelligent selon endpoint
+  const isIA = path.includes('ami-calcul');
+  const TIMEOUT = isIA ? 25000 : 8000;
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000); // 🔥 8s au lieu de 35s
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT);
 
   try {
     const res = await fetch(W + path, {
@@ -139,7 +144,6 @@ async function _apiFetch(path, body, retry = true) {
 
     clearTimeout(timeout);
 
-    // 🔐 SESSION INVALIDE → logout direct
     if (res.status === 401) {
       ss.clear();
       if (typeof showAuthOv === 'function') showAuthOv();
@@ -156,9 +160,7 @@ async function _apiFetch(path, body, retry = true) {
   } catch (e) {
     clearTimeout(timeout);
 
-    // 🔁 retry UNE SEULE FOIS (pas 2)
     if (retry && e.name !== 'AbortError') {
-      logWarn('Retry API →', path);
       await new Promise(r => setTimeout(r, 500));
       return _apiFetch(path, body, false);
     }
@@ -168,7 +170,11 @@ async function _apiFetch(path, body, retry = true) {
     }
 
     if (e.name === 'AbortError') {
-      throw new Error('Serveur trop lent (>8s)');
+      throw new Error(
+        isIA
+          ? 'IA en cours… un peu plus long que prévu 🤖'
+          : 'Serveur trop lent (>8s)'
+      );
     }
 
     throw e;
