@@ -977,12 +977,22 @@
       </div>
       <div class="card">
         <div class="ct">📚 Table des actes principaux</div>
-        <div class="al" style="margin-top:8px">
-          ${Object.entries({
-            'AMI1':'Acte infirmier simple — 3,15 €','AMI4':'Pansement complexe — 12,60 €',
-            'BSA':'Bilan soins A (légère) — 13 €','BSB':'Bilan soins B (modérée) — 18,20 €','BSC':'Bilan soins C (lourde) — 28,70 €',
-            'IFD':'Déplacement domicile — 2,75 €','MN':'Majoration nuit — 9,15 €','MN2':'Nuit profonde — 18,30 €','MD':'Dimanche/férié — 8,50 €'
-          }).map(([code,desc]) => `<div class="ar"><div class="ac">${code}</div><div class="an">${desc}</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' ${code}';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>`).join('')}
+        <div class="al" style="margin-top:8px" id="ngap-quick-table">
+          <div class="ar"><div class="ac">AMI1</div><div class="an">Acte infirmier simple (injection SC/IM, prélèvement, pansement simple) — 3,15 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' AMI1';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac">AMI2</div><div class="an">Acte infirmier × 2 — 6,30 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' AMI2';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac">AMI4</div><div class="an">Pansement complexe (escarre, plaie chirurgicale) — 12,60 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' AMI4';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac">AMI5</div><div class="an">Perfusion, cathéter — 15,75 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' AMI5';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac" style="background:var(--a2d);color:var(--a2);border-color:rgba(79,168,255,.2)">BSA</div><div class="an">Bilan soins infirmiers A — dépendance légère — 13,00 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' BSA';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac" style="background:var(--a2d);color:var(--a2);border-color:rgba(79,168,255,.2)">BSB</div><div class="an">Bilan soins infirmiers B — dépendance modérée — 18,20 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' BSB';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac" style="background:var(--a2d);color:var(--a2);border-color:rgba(79,168,255,.2)">BSC</div><div class="an">Bilan soins infirmiers C — dépendance lourde (grabataire) — 28,70 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' BSC';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac dp">IFD</div><div class="an">Indemnité forfaitaire de déplacement (domicile) — 2,75 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' IFD';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac dp">IK</div><div class="an">Indemnités kilométriques — 0,35 €/km</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' IK';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac mj">MN</div><div class="an">Majoration nuit (20h–8h) — 9,15 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' majoration nuit';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac mj">MN2</div><div class="an">Majoration nuit profonde (23h–5h) — 18,30 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' nuit profonde';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac mj">MD</div><div class="an">Majoration dimanche et jours fériés — 8,50 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' dimanche';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac">MIE</div><div class="an">Majoration enfant de moins de 7 ans — 2,65 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' enfant moins 7 ans';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar"><div class="ac">MCI</div><div class="an">Majoration coordination infirmière — 5,00 €</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' MCI';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>
+          <div class="ar" style="background:rgba(0,212,170,.03);border-top:1px solid var(--b)"><div style="font-family:var(--fm);font-size:10px;color:var(--m);padding:6px 0">Lettre-clé AMI = 3,15 € · AIS = 2,65 € · Version NGAP 2026 métropole</div></div>
         </div>
       </div>
     </section>
