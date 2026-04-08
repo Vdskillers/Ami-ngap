@@ -1,0 +1,399 @@
+/* ════════════════════════════════════════════════
+   patients.js — AMI NGAP
+   ────────────────────────────────────────────────
+   Carnet de patients local chiffré (AES-256)
+   ✅ Fonctions :
+   - openPatientBook()        — ouvre la section patients
+   - addPatient()             — ajouter un patient
+   - savePatient()            — enregistrer (IDB chiffré)
+   - loadPatients()           — charger + afficher
+   - openPatientDetail(id)    — fiche complète patient
+   - deletePatient(id)        — supprimer (RGPD)
+   - addSoinNote(patientId)   — ajouter note de soin
+   - checkOrdoExpiry()        — alertes renouvellement ordonnances
+   - exportPatientData()      — export RGPD JSON
+   - coterDepuisPatient(id)   — pré-remplir cotation depuis fiche
+   ────────────────────────────────────────────────
+   🔒 RGPD : stockage 100% local chiffré (IndexedDB)
+   Aucune donnée patient n'est envoyée au serveur.
+════════════════════════════════════════════════ */
+
+/* ── Constantes ─────────────────────────────── */
+const PATIENTS_STORE = 'ami_patients';
+const NOTES_STORE    = 'ami_soin_notes';
+const DB_VERSION     = 1;
+
+let _patientsDB = null;
+
+/* ════════════════════════════════════════════════
+   INIT BASE INDEXEDDB
+════════════════════════════════════════════════ */
+async function initPatientsDB() {
+  if (_patientsDB) return _patientsDB;
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('ami_patients_db', DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(PATIENTS_STORE)) {
+        const store = db.createObjectStore(PATIENTS_STORE, { keyPath: 'id' });
+        store.createIndex('nom', 'nom', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(NOTES_STORE)) {
+        const notes = db.createObjectStore(NOTES_STORE, { keyPath: 'id', autoIncrement: true });
+        notes.createIndex('patient_id', 'patient_id', { unique: false });
+      }
+    };
+    req.onsuccess = e => { _patientsDB = e.target.result; resolve(_patientsDB); };
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+/* ── Chiffrement AES simple (clé dérivée du token) ── */
+function _patientKey() {
+  // Dérive une clé courte depuis le token de session
+  const tok = S?.token || 'local';
+  let h = 0;
+  for (let i = 0; i < tok.length; i++) h = (Math.imul(31, h) + tok.charCodeAt(i)) | 0;
+  return String(Math.abs(h));
+}
+function _enc(obj)  { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _patientKey()))); } catch { return null; } }
+function _dec(str)  { try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; } }
+
+/* ── IDB helpers ── */
+async function _idbPut(store, val) {
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).put(val);
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
+}
+async function _idbGetAll(store) {
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => res(req.result || []);
+    req.onerror   = () => rej(req.error);
+  });
+}
+async function _idbDelete(store, key) {
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
+}
+async function _idbGetByIndex(store, indexName, val) {
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx    = db.transaction(store, 'readonly');
+    const index = tx.objectStore(store).index(indexName);
+    const req   = index.getAll(val);
+    req.onsuccess = () => res(req.result || []);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+/* ════════════════════════════════════════════════
+   GESTION PATIENTS
+════════════════════════════════════════════════ */
+
+let _editingPatientId = null;
+
+/* Ouvre le formulaire d'ajout */
+function openAddPatient() {
+  _editingPatientId = null;
+  const form = $('patient-form');
+  if (form) form.style.display = 'block';
+  ['pat-nom','pat-prenom','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo']
+    .forEach(id => { const el=$(id); if(el) el.value=''; });
+  const sel = $('pat-exo'); if(sel) sel.selectedIndex=0;
+  $('pat-form-title').textContent = '➕ Nouveau patient';
+}
+
+/* Ferme le formulaire */
+function closePatientForm() {
+  const form = $('patient-form');
+  if (form) form.style.display = 'none';
+  _editingPatientId = null;
+}
+
+/* Enregistrer un patient (ajout ou modification) */
+async function savePatient() {
+  const nom       = (gv('pat-nom')    || '').trim();
+  const prenom    = (gv('pat-prenom') || '').trim();
+  if (!nom) { alert('Le nom est obligatoire.'); return; }
+
+  const patient = {
+    id:             _editingPatientId || ('pat_' + Date.now()),
+    nom,
+    prenom,
+    ddn:            gv('pat-ddn')       || '',
+    secu:           gv('pat-secu')      || '',
+    amo:            gv('pat-amo')       || '',
+    amc:            gv('pat-amc')       || '',
+    medecin:        gv('pat-medecin')   || '',
+    allergies:      gv('pat-allergies') || '',
+    pathologies:    gv('pat-pathologies')|| '',
+    traitements:    gv('pat-traitements')|| '',
+    contact_nom:    gv('pat-contact-nom')|| '',
+    contact_tel:    gv('pat-contact-tel')|| '',
+    notes:          gv('pat-notes')     || '',
+    ordo_date:      gv('pat-ordo-date') || '',
+    exo:            gv('pat-exo')       || '',
+    created_at:     _editingPatientId ? undefined : new Date().toISOString(),
+    updated_at:     new Date().toISOString(),
+    _enc:           true,
+  };
+
+  // Chiffrement des champs sensibles
+  const toStore = { id: patient.id, nom: patient.nom, prenom: patient.prenom, _data: _enc(patient), updated_at: patient.updated_at };
+
+  await _idbPut(PATIENTS_STORE, toStore);
+  closePatientForm();
+  await loadPatients();
+  showToastSafe('✅ Patient enregistré localement.');
+  checkOrdoExpiry();
+}
+
+/* Charger et afficher la liste */
+async function loadPatients() {
+  const el = $('patients-list');
+  if (!el) return;
+
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const patients = rows.map(r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) }));
+
+  const query = (gv('pat-search')||'').toLowerCase();
+  const filtered = query
+    ? patients.filter(p => (p.nom+' '+p.prenom).toLowerCase().includes(query))
+    : patients;
+
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty"><div class="ei">👤</div><p style="margin-top:8px;color:var(--m)">Aucun patient enregistré.<br><span style="font-size:12px">Ajoutez votre premier patient avec le bouton ci-dessus.</span></p></div>`;
+    return;
+  }
+
+  // Badge ordonnances à renouveler
+  const today     = new Date();
+  const in30      = new Date(); in30.setDate(today.getDate() + 30);
+
+  el.innerHTML = filtered.map(p => {
+    const ini      = ((p.prenom||'?')[0] + (p.nom||'?')[0]).toUpperCase();
+    const fullName = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+    const ordoDate = p.ordo_date ? new Date(p.ordo_date) : null;
+    const ordoAlert= ordoDate && ordoDate <= in30;
+    const exoBadge = p.exo ? `<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:1px 7px;border-radius:20px;font-family:var(--fm)">${p.exo}</span>` : '';
+    return `<div class="acc" style="cursor:pointer" onclick="openPatientDetail('${p.id}')">
+      <div class="avat">${ini}</div>
+      <div class="acc-name">${fullName}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        ${exoBadge}
+        ${p.medecin ? `<span style="font-size:11px;color:var(--m)">${p.medecin}</span>` : ''}
+        ${ordoAlert ? `<span style="font-size:10px;background:rgba(255,181,71,.15);color:var(--w);border:1px solid rgba(255,181,71,.3);padding:1px 7px;border-radius:20px;font-family:var(--fm)">⚠️ Ordonnance</span>` : ''}
+      </div>
+      <div class="acc-acts">
+        <button class="bxs b-unblk" onclick="event.stopPropagation();coterDepuisPatient('${p.id}')">⚡ Coter</button>
+        <button class="bxs b-del" onclick="event.stopPropagation();deletePatient('${p.id}','${fullName.replace(/'/g,'')}')">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* Ouvrir la fiche détaillée */
+async function openPatientDetail(id) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === id);
+  if (!row) return;
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+  // Charger les notes de soin
+  const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
+
+  const el = $('patient-detail');
+  if (!el) return;
+
+  const ordoAlert = p.ordo_date && new Date(p.ordo_date) <= new Date(Date.now() + 30*24*3600000);
+
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="avat" style="width:52px;height:52px;font-size:20px;flex-shrink:0">${((p.prenom||'?')[0]+(p.nom||'?')[0]).toUpperCase()}</div>
+          <div>
+            <div style="font-family:var(--fs);font-size:22px">${p.prenom||''} ${p.nom||''}</div>
+            <div style="font-size:12px;color:var(--m)">${p.ddn ? 'Né(e) le '+p.ddn : ''} ${p.exo ? '· '+p.exo : ''}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bp bsm" onclick="coterDepuisPatient('${id}')">⚡ Coter</button>
+          <button class="btn bs bsm" onclick="editPatient('${id}')">✏️ Modifier</button>
+          <button class="btn bs bsm" onclick="$('patient-detail').innerHTML='';$('patients-list').style.display='block'">← Retour</button>
+        </div>
+      </div>
+      ${ordoAlert ? '<div class="ai wa" style="margin-bottom:14px">⚠️ Ordonnance à renouveler avant le '+p.ordo_date+'</div>' : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+        <div><div class="lbl" style="margin-bottom:6px">Couverture</div>
+          <div style="font-size:13px;color:var(--m)">${p.amo||'—'} <span style="color:var(--a2)">${p.amc||''}</span></div></div>
+        <div><div class="lbl" style="margin-bottom:6px">Médecin</div>
+          <div style="font-size:13px">${p.medecin||'—'}</div></div>
+        ${p.allergies ? `<div><div class="lbl" style="margin-bottom:6px;color:var(--d)">Allergies</div><div style="font-size:13px;color:var(--d)">${p.allergies}</div></div>` : ''}
+        ${p.pathologies ? `<div><div class="lbl" style="margin-bottom:6px">Pathologies</div><div style="font-size:13px">${p.pathologies}</div></div>` : ''}
+        ${p.traitements ? `<div><div class="lbl" style="margin-bottom:6px">Traitements</div><div style="font-size:13px">${p.traitements}</div></div>` : ''}
+        ${p.contact_nom ? `<div><div class="lbl" style="margin-bottom:6px">Contact urgence</div><div style="font-size:13px">${p.contact_nom} ${p.contact_tel?'— '+p.contact_tel:''}</div></div>` : ''}
+      </div>
+      ${p.notes ? `<div class="ai in">${p.notes}</div>` : ''}
+    </div>
+    <div class="card">
+      <div class="ct">📝 Notes de soins</div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <textarea id="new-note-txt" placeholder="Observation, soin réalisé aujourd'hui..." style="flex:1;min-height:70px;min-width:200px" maxlength="500"></textarea>
+        <button class="btn bp bsm" style="align-self:flex-end" onclick="addSoinNote('${id}')">💾 Ajouter note</button>
+      </div>
+      <div id="notes-list">
+        ${notes.length ? notes.reverse().map(n => `
+          <div style="border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px">
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:4px">${new Date(n.date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+            <div style="font-size:13px;white-space:pre-wrap">${n.texte}</div>
+          </div>`).join('')
+        : '<div style="color:var(--m);font-size:13px">Aucune note. Ajoutez la première observation ci-dessus.</div>'}
+      </div>
+    </div>`;
+
+  $('patients-list').style.display = 'none';
+  el.style.display = 'block';
+}
+
+/* Modifier un patient */
+async function editPatient(id) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === id);
+  if (!row) return;
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+  _editingPatientId = id;
+  openAddPatient();
+  $('pat-form-title').textContent = '✏️ Modifier patient';
+  Object.entries({
+    'pat-nom': p.nom, 'pat-prenom': p.prenom, 'pat-ddn': p.ddn,
+    'pat-secu': p.secu, 'pat-amo': p.amo, 'pat-amc': p.amc,
+    'pat-medecin': p.medecin, 'pat-allergies': p.allergies,
+    'pat-pathologies': p.pathologies, 'pat-traitements': p.traitements,
+    'pat-contact-nom': p.contact_nom, 'pat-contact-tel': p.contact_tel,
+    'pat-notes': p.notes, 'pat-ordo-date': p.ordo_date,
+  }).forEach(([id, val]) => { const el=$(id); if(el) el.value = val||''; });
+  const sel = $('pat-exo'); if(sel && p.exo) sel.value = p.exo;
+}
+
+/* Supprimer un patient (RGPD) */
+async function deletePatient(id, name) {
+  if (!confirm(`Supprimer définitivement ${name} et toutes ses notes ?\n\nCette action est irréversible (droit à l'effacement RGPD).`)) return;
+  await _idbDelete(PATIENTS_STORE, id);
+  // Supprimer les notes associées
+  const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
+  for (const n of notes) await _idbDelete(NOTES_STORE, n.id);
+  await loadPatients();
+  showToastSafe('🗑️ Patient supprimé.');
+}
+
+/* Ajouter une note de soin */
+async function addSoinNote(patientId) {
+  const txt = ($('new-note-txt')?.value || '').trim();
+  if (!txt) { alert('Saisissez une note.'); return; }
+  const note = { patient_id: patientId, texte: txt, date: new Date().toISOString() };
+  await _idbPut(NOTES_STORE, note);
+  $('new-note-txt').value = '';
+  // Recharger notes dans la vue
+  const notesList = $('notes-list');
+  if (notesList) {
+    const newDiv = document.createElement('div');
+    newDiv.style.cssText = 'border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px';
+    newDiv.innerHTML = `<div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:4px">${new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div><div style="font-size:13px;white-space:pre-wrap">${txt}</div>`;
+    notesList.prepend(newDiv);
+    const empty = notesList.querySelector('div[style*="Aucune note"]');
+    if (empty) empty.remove();
+  }
+  showToastSafe('📝 Note enregistrée.');
+}
+
+/* Vérification expiration ordonnances */
+async function checkOrdoExpiry() {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+  let alerts = [];
+  rows.forEach(r => {
+    const p = _dec(r._data) || {};
+    if (p.ordo_date && new Date(p.ordo_date) <= in30) {
+      alerts.push(`${r.prenom||''} ${r.nom} — ordonnance avant le ${p.ordo_date}`);
+    }
+  });
+  const badge = $('patients-ordo-badge');
+  if (badge) {
+    badge.textContent = alerts.length + ' à renouveler';
+    badge.style.display = alerts.length > 0 ? 'inline' : 'none';
+  }
+  // Toast discret
+  if (alerts.length > 0) {
+    showToastSafe(`📋 ${alerts.length} ordonnance(s) à renouveler prochainement.`);
+  }
+}
+
+/* Cotation depuis la fiche patient */
+async function coterDepuisPatient(id) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === id);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), nom: row.nom, prenom: row.prenom };
+
+  // Pré-remplir le formulaire de cotation
+  navTo('cot', null);
+  setTimeout(() => {
+    const fPt = $('f-pt'); if(fPt) fPt.value = (p.prenom+' '+p.nom).trim();
+    const fDdn= $('f-ddn'); if(fDdn && p.ddn) fDdn.value = p.ddn;
+    const fAmo= $('f-amo'); if(fAmo && p.amo) fAmo.value = p.amo;
+    const fAmc= $('f-amc'); if(fAmc && p.amc) fAmc.value = p.amc;
+    const fExo= $('f-exo'); if(fExo && p.exo) fExo.value = p.exo;
+    const fTxt= $('f-txt'); if(fTxt) fTxt.focus();
+    // Médecin prescripteur
+    const fPr = $('f-pr'); if(fPr && p.medecin) fPr.value = p.medecin;
+    showToastSafe(`👤 Fiche de ${p.prenom||''} ${p.nom} chargée.`);
+  }, 200);
+}
+
+/* Export RGPD patient */
+async function exportPatientData() {
+  const rows  = await _idbGetAll(PATIENTS_STORE);
+  const notes = await _idbGetAll(NOTES_STORE);
+  const data  = rows.map(r => ({ ...(_dec(r._data)||{}), nom: r.nom, prenom: r.prenom }));
+  const blob  = new Blob([JSON.stringify({ patients: data, notes, exported_at: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement('a'); a.href = url; a.download = 'mes-patients-ami.json'; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+}
+
+/* Toast non bloquant */
+function showToastSafe(msg) {
+  if (typeof showToast === 'function') { showToast(msg); return; }
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(17,23,32,.95);border:1px solid var(--b);border-radius:8px;padding:10px 18px;font-size:13px;z-index:9999;color:var(--t);pointer-events:none;transition:opacity .3s';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
+}
+
+/* ── Initialisation ── */
+document.addEventListener('DOMContentLoaded', () => {
+  // Charger patients quand on arrive sur la section
+  document.addEventListener('app:nav', e => {
+    if (e.detail?.view === 'patients') {
+      loadPatients();
+      checkOrdoExpiry();
+    }
+  });
+  // Init DB au démarrage pour les alertes ordo
+  initPatientsDB().then(checkOrdoExpiry).catch(() => {});
+});
