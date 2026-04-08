@@ -2,7 +2,8 @@
   "name": "AMI NGAP — Cotation intelligente",
   "short_name": "AMI",
   "description": "Assistant infirmier IA · Cotation NGAP · Tournée optimisée · Offline",
-  "start_url": "/index.html",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0b0f14",
@@ -10,28 +11,28 @@
   "lang": "fr",
   "categories": ["medical", "productivity"],
   "icons": [
-    { "src": "/icons/icon-72.png",   "sizes": "72x72",   "type": "image/png" },
-    { "src": "/icons/icon-96.png",   "sizes": "96x96",   "type": "image/png" },
-    { "src": "/icons/icon-128.png",  "sizes": "128x128", "type": "image/png" },
-    { "src": "/icons/icon-144.png",  "sizes": "144x144", "type": "image/png" },
-    { "src": "/icons/icon-152.png",  "sizes": "152x152", "type": "image/png" },
-    { "src": "/icons/icon-192.png",  "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icons/icon-384.png",  "sizes": "384x384", "type": "image/png" },
-    { "src": "/icons/icon-512.png",  "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "./icons/icon-72.png",   "sizes": "72x72",   "type": "image/png" },
+    { "src": "./icons/icon-96.png",   "sizes": "96x96",   "type": "image/png" },
+    { "src": "./icons/icon-128.png",  "sizes": "128x128", "type": "image/png" },
+    { "src": "./icons/icon-144.png",  "sizes": "144x144", "type": "image/png" },
+    { "src": "./icons/icon-152.png",  "sizes": "152x152", "type": "image/png" },
+    { "src": "./icons/icon-192.png",  "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icons/icon-384.png",  "sizes": "384x384", "type": "image/png" },
+    { "src": "./icons/icon-512.png",  "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ],
   "screenshots": [],
   "shortcuts": [
     {
       "name": "Cotation rapide",
       "short_name": "Coter",
-      "url": "/index.html#cot",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+      "url": "./index.html#cot",
+      "icons": [{ "src": "./icons/icon-96.png", "sizes": "96x96" }]
     },
     {
       "name": "Tournée du jour",
       "short_name": "Tournée",
-      "url": "/index.html#tur",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+      "url": "./index.html#tur",
+      "icons": [{ "src": "./icons/icon-96.png", "sizes": "96x96" }]
     }
   ]
 }
