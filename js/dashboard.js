@@ -1,22 +1,17 @@
 /* ════════════════════════════════════════════════
-   dashboard.js — AMI NGAP
+   dashboard.js — AMI NGAP v5.1
    ────────────────────────────────────────────────
-   Dashboard & Statistiques
-   - loadDash() / renderDashboard()
-   - detectAnomalies() / renderAnomalies()
-   - explainAnomalies() / suggestOptimizations()
-   - renderAI() — analyse IA NGAP
-   - computeLoss() / showLossAlert()
-   - forecastRevenue() — prévision linéaire
-   - saveDashCache() / loadDashCache()
+   ✅ v5.1 : DASH_CACHE_KEY déclarée une seule fois
+   ✅ Cache fallback avec badge état
+   ✅ Parsing { ok, data: [...] } ET tableau direct
 ════════════════════════════════════════════════ */
 
-/* ── Vérification de dépendances ─────────────── */
 (function checkDeps(){
   if(typeof requireAuth==='undefined') console.error('dashboard.js : utils.js non chargé.');
 })();
 
-const DASH_CACHE_KEY = 'ami_dash_cache_v2';
+/* ── Constante cache (déclarée ici une seule fois) ── */
+const DASH_CACHE_KEY = 'ami_dash_v1';
 
 function saveDashCache(arr) {
   try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({ t: Date.now(), data: arr })); } catch {}
@@ -27,19 +22,17 @@ function loadDashCache(maxAge = 5 * 60 * 1000) {
     const raw = localStorage.getItem(DASH_CACHE_KEY);
     if (!raw) return null;
     const p = JSON.parse(raw);
-    const expired = Date.now() - p.t > maxAge;
-    return { data: p.data, expired, age: Math.floor((Date.now() - p.t) / 1000) };
+    return { data: p.data, expired: Date.now() - p.t > maxAge, age: Math.floor((Date.now() - p.t) / 1000) };
   } catch { return null; }
 }
 
-/* 3. loadDash robuste v5 — fallback cache + messages clairs */
+/* ── loadDash robuste v5 — fallback cache + messages ── */
 async function loadDash() {
   if (!requireAuth()) return;
   $('dash-loading').style.display = 'block';
-  $('dash-body').style.display   = 'none';
-  $('dash-empty').style.display  = 'none';
+  $('dash-body').style.display    = 'none';
+  $('dash-empty').style.display   = 'none';
 
-  // Affichage immédiat du cache si disponible
   const cache = loadDashCache();
   if (cache?.data?.length) {
     renderDashboard(cache.data);
@@ -50,12 +43,7 @@ async function loadDash() {
 
   try {
     const res = await fetchAPI('/webhook/ami-historique?period=month');
-
-    // ✅ Supporte { ok, data: [...] } ET tableau direct
-    const arr = Array.isArray(res?.data) ? res.data
-              : Array.isArray(res)        ? res
-              : [];
-
+    const arr = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
     if (!arr.length) {
       if (!cache?.data?.length) {
         $('dash-loading').style.display = 'none';
@@ -63,24 +51,19 @@ async function loadDash() {
       }
       return;
     }
-
     saveDashCache(arr);
     renderDashboard(arr);
     _hideDashCacheInfo();
     $('dash-loading').style.display = 'none';
     $('dash-body').style.display    = 'block';
-
   } catch (e) {
     logErr('loadDash:', e.message);
-
     if (cache?.data?.length) {
-      // Cache disponible → afficher avec message dégradé
       renderDashboard(cache.data);
       _showDashCacheInfo('offline', cache.age, e.message);
       $('dash-loading').style.display = 'none';
       $('dash-body').style.display    = 'block';
     } else {
-      // Aucun cache → message d'erreur
       $('dash-loading').style.display = 'none';
       $('dash-empty').style.display   = 'block';
       $('dash-empty').innerHTML = `<div style="font-size:40px;margin-bottom:12px">⚠️</div><p>Impossible de charger les statistiques.<br><small style="color:var(--m)">${e.message}</small></p>`;
@@ -88,16 +71,16 @@ async function loadDash() {
   }
 }
 
-function _showDashCacheInfo(type, ageSeconds, errorMsg) {
+function _showDashCacheInfo(type, ageSec, errorMsg) {
   const el = $('dash-cache-info');
   if (!el) return;
-  const min = Math.floor((ageSeconds || 0) / 60);
+  const min = Math.floor((ageSec || 0) / 60);
   if (type === 'offline') {
-    el.innerHTML = `🔴 Mode hors ligne — données en cache (${min} min) · <small>${errorMsg || ''}</small>`;
-    el.style.cssText = 'display:block;font-size:11px;color:var(--d);margin-bottom:10px;padding:6px 10px;background:rgba(255,95,109,.08);border-radius:8px';
+    el.innerHTML = `🔴 Mode hors ligne — données en cache (${min} min) · <small style="opacity:.7">${errorMsg || ''}</small>`;
+    el.style.cssText = 'display:block;font-size:11px;color:var(--d);margin-bottom:10px;padding:6px 12px;background:rgba(255,95,109,.08);border-radius:8px;border:1px solid rgba(255,95,109,.2)';
   } else if (type === 'expired') {
     el.innerHTML = `🟡 Données en cache (${min} min) — actualisation en cours…`;
-    el.style.cssText = 'display:block;font-size:11px;color:var(--m);margin-bottom:10px';
+    el.style.cssText = 'display:block;font-size:11px;color:var(--m);margin-bottom:8px;padding:4px 0';
   } else {
     el.style.display = 'none';
   }
@@ -108,7 +91,6 @@ function _hideDashCacheInfo() {
   if (el) el.style.display = 'none';
 }
 
-/* 4. renderDashboard — version optimisée complète */
 function renderDashboard(arr) {
   let total=0, amo=0, amc=0, partPat=0, dre=0;
   const actesFreq={}, daily={};
