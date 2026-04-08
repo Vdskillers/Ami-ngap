@@ -196,6 +196,8 @@
     <button class="btn bp bsm" onclick="typeof initLLM==='function'?initLLM():null" style="font-size:10px;padding:3px 8px">🤖 Activer IA locale</button>
   </div>
 </div>
+<!-- Bandeau hors-ligne -->
+<div id="offline-banner" style="display:none;position:fixed;top:64px;left:0;right:0;z-index:200;background:rgba(255,181,71,.12);border-bottom:1px solid rgba(255,181,71,.3);padding:6px 20px;font-size:12px;color:var(--w);font-family:var(--fm);align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"></div>
 <div id="llm-progress">🤖 IA locale prête</div>
 
 <!-- APP SHELL -->
@@ -215,15 +217,18 @@
       <div class="slbl">Navigation</div>
       <div class="ni on" data-v="cot"><span class="nic">🩺</span> Cotation NGAP</div>
       <div class="ni" data-v="ver"><span class="nic">✅</span> Vérifier soin</div>
+      <div class="ni nurse-only" data-v="patients"><span class="nic">👤</span> Carnet patients <span id="patients-ordo-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="imp"><span class="nic">📂</span> Import calendrier</div>
       <div class="ni nurse-only" data-v="tur"><span class="nic">🗺️</span> Tournée IA</div>
       <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
       <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique</div>
+      <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
     </div>
     <div class="sl" style="margin-top:auto">
       <div class="slbl">Système</div>
       <div class="ni" data-v="dash"><span class="nic">📈</span> Dashboard</div>
+      <div class="ni nurse-only" data-v="stats"><span class="nic">📊</span> Statistiques</div>
       <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
       <div class="ni nurse-only" data-v="contact"><span class="nic">💬</span> Contact Admin <span id="contact-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:9px;padding:1px 6px;margin-left:4px;font-family:var(--fm)">!</span></div>
       <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
@@ -252,10 +257,13 @@
   <!-- MENU "PLUS" MOBILE -->
   <div id="mobile-menu" style="display:none;position:fixed;bottom:68px;left:0;right:0;z-index:300;background:rgba(11,15,20,.98);border-top:1px solid var(--b);backdrop-filter:blur(20px);padding:12px 8px;padding-bottom:env(safe-area-inset-bottom)">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="patients" onclick="navTo('patients',this);toggleMobileMenu()"><span class="bn-ic">👤</span>Patients</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ver" onclick="navTo('ver',this);toggleMobileMenu()"><span class="bn-ic">✅</span>Vérifier</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="tresor" onclick="navTo('tresor',this);toggleMobileMenu()"><span class="bn-ic">💸</span>Tréso</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="stats" onclick="navTo('stats',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
@@ -360,22 +368,43 @@
       <p class="ps">Carte interactive · GPS · Routage OSRM · Prévision CA</p>
       <div class="card">
         <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez d'abord via "Import calendrier".</p></div>
-        <!-- Barre de recherche adresse -->
-        <div class="map-search">
-          <input type="text" id="dep-addr" placeholder="🔍 Adresse de départ (ex: 29 rue de Bretagne, Brest...)" onkeydown="if(event.key==='Enter')geocodeAddress()">
+
+        <!-- Recherche adresse avec géocodage Nominatim (tur-map) -->
+        <div class="map-search" style="margin-bottom:10px">
+          <input type="text" id="t-address" placeholder="🔍 Adresse de départ (ex: 12 rue de la Paix, Nice...)" onkeydown="if(event.key==='Enter')searchAddress()" style="flex:1">
+          <button class="map-btn search" onclick="searchAddress()">Rechercher</button>
+          <button class="map-btn gps" onclick="useMyLocation()">📍 GPS</button>
+        </div>
+
+        <!-- Coords actuelles -->
+        <div class="dep-coords" id="tur-coords-txt" style="margin-bottom:10px">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
+
+        <!-- Barre de recherche legacy (garde compatibilité avec map.js geocodeAddress) -->
+        <div class="map-search" style="display:none">
+          <input type="text" id="dep-addr" placeholder="Adresse (geocodeAddress)" onkeydown="if(event.key==='Enter')geocodeAddress()">
           <button class="map-btn search" onclick="geocodeAddress()">Rechercher</button>
           <button class="map-btn gps" onclick="getGPS()">📍 GPS</button>
         </div>
-        <div class="dep-coords" id="dep-coords">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
-        <!-- Carte Leaflet -->
-        <div id="dep-map"></div>
-        <!-- Champs lat/lng cachés (mis à jour par la carte) -->
+        <div class="dep-coords" id="dep-coords" style="display:none"></div>
+
+        <!-- Carte tur-map (tournée) — distincte de dep-map -->
+        <div id="tur-map" style="height:340px;border-radius:var(--r);overflow:hidden;margin-bottom:12px;border:1px solid var(--b)"></div>
+
+        <!-- Carte dep-map (legacy, masquée si tur-map présent) -->
+        <div id="dep-map" style="display:none"></div>
+
+        <!-- Champs lat/lng cachés -->
         <input type="hidden" id="t-lat" value="">
         <input type="hidden" id="t-lng" value="">
-        <!-- CA estimé depuis import -->
+
+        <!-- CA estimé (box utilisée par updateCAEstimate) -->
+        <div id="ca-box" style="display:none;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.25);border-radius:var(--r);padding:10px 14px;font-size:13px;margin-bottom:12px;color:var(--a)"></div>
+
+        <!-- CA estimé depuis import (version tur-ca-wrap) -->
         <div id="tur-ca-wrap" style="display:none">
           <div class="ca-pill">💶 <span id="tur-ca-val">—</span> estimés depuis l'import</div>
         </div>
+
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
@@ -798,6 +827,99 @@
       <div style="text-align:center;padding:16px;font-size:11px;color:var(--m);font-family:var(--fm)">AMI · Tarifs NGAP métropole en vigueur au 05/02/2026</div>
     </section>
 
+    <!-- CARNET PATIENTS (nurse-only, 100% local chiffré) -->
+    <section class="view" id="view-patients">
+      <h1 class="pt">Carnet <em>patients</em></h1>
+      <p class="ps">Stockage 100% local chiffré · RGPD · Aucune donnée transmise au serveur</p>
+
+      <!-- Bandeau RGPD -->
+      <div class="priv" style="margin-bottom:20px"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Données 100% locales :</strong> Le carnet patients est chiffré et stocké uniquement sur votre appareil (IndexedDB). Aucune information patient ne quitte votre navigateur.</p></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="btn bp" onclick="openAddPatient()"><span>➕</span> Nouveau patient</button>
+        <input type="text" id="pat-search" placeholder="🔍 Rechercher un patient..." oninput="loadPatients()" style="flex:1;min-width:180px;max-width:320px">
+        <button class="btn bs bsm" onclick="exportPatientData()">📥 Export RGPD</button>
+      </div>
+
+      <!-- Formulaire d'ajout/modification (masqué par défaut) -->
+      <div id="patient-form" style="display:none">
+        <div class="card" style="margin-bottom:16px">
+          <div class="ct" id="pat-form-title">➕ Nouveau patient</div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-prenom">Prénom *</label><input type="text" id="pat-prenom" placeholder="Marie"></div>
+            <div class="f"><label for="pat-nom">Nom *</label><input type="text" id="pat-nom" placeholder="DUPONT"></div>
+            <div class="f"><label for="pat-ddn">Date de naissance</label><input type="date" id="pat-ddn"></div>
+            <div class="f"><label for="pat-secu">N° Sécu <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="pat-secu" autocomplete="off" placeholder="1 85 06..."></div>
+          </div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-amo">Caisse AMO</label><input type="text" id="pat-amo" placeholder="CPAM Paris"></div>
+            <div class="f"><label for="pat-amc">Mutuelle AMC</label><input type="text" id="pat-amc" placeholder="MGEN, Harmonie..."></div>
+            <div class="f"><label for="pat-exo">Exonération</label><select id="pat-exo"><option value="">Aucune</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité</option><option value="accident">Accident travail</option><option value="cmu">CSS/C2S</option></select></div>
+            <div class="f"><label for="pat-medecin">Médecin référent</label><input type="text" id="pat-medecin" placeholder="Dr. Martin"></div>
+          </div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-allergies" style="color:var(--d)">Allergies ⚠️</label><input type="text" id="pat-allergies" placeholder="Pénicilline, Aspirine..."></div>
+            <div class="f"><label for="pat-pathologies">Pathologies</label><input type="text" id="pat-pathologies" placeholder="Diabète type 2, HTA..."></div>
+            <div class="f"><label for="pat-traitements">Traitements en cours</label><input type="text" id="pat-traitements" placeholder="Metformine, Bisoprolol..."></div>
+            <div class="f"><label for="pat-ordo-date">Ordonnance valide jusqu'au</label><input type="date" id="pat-ordo-date"></div>
+          </div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-contact-nom">Contact urgence</label><input type="text" id="pat-contact-nom" placeholder="Jean DUPONT (fils)"></div>
+            <div class="f"><label for="pat-contact-tel">Tél. urgence</label><input type="tel" id="pat-contact-tel" placeholder="06 12 34 56 78"></div>
+          </div>
+          <div class="f" style="margin-bottom:16px"><label for="pat-notes">Notes libres</label><textarea id="pat-notes" placeholder="Observations, habitudes, préférences..." style="min-height:80px"></textarea></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn bp" onclick="savePatient()"><span>💾</span> Enregistrer</button>
+            <button class="btn bs" onclick="closePatientForm()">Annuler</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Détail patient (masqué par défaut) -->
+      <div id="patient-detail" style="display:none"></div>
+
+      <!-- Liste patients -->
+      <div id="patients-list" class="accs"></div>
+    </section>
+
+    <!-- TRÉSORERIE & EXPORT COMPTABLE -->
+    <section class="view" id="view-tresor">
+      <h1 class="pt">Trésorerie <em>& Comptabilité</em></h1>
+      <p class="ps">Suivi remboursements AMO/AMC · Export CSV · Checklist CPAM</p>
+
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <select id="tresor-period" onchange="loadTresorerie()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+          <option value="month">Ce mois</option>
+          <option value="lastmonth">Mois précédent</option>
+          <option value="3month">3 derniers mois</option>
+          <option value="year">Cette année</option>
+        </select>
+        <button class="btn bp bsm" onclick="loadTresorerie()">↻ Actualiser</button>
+        <button class="btn bs bsm" onclick="exportComptable()">📊 Export CSV comptable</button>
+        <button class="btn bv bsm" onclick="checklistCPAM()">✅ Checklist CPAM</button>
+        <button class="btn bs bsm" onclick="requestNotifPermission()">🔔 Activer rappels</button>
+      </div>
+
+      <!-- Checklist CPAM (masquée par défaut) -->
+      <div id="checklist-body" style="margin-bottom:16px"></div>
+
+      <!-- Tableau principal -->
+      <div id="tresor-body"></div>
+    </section>
+
+    <!-- STATISTIQUES AVANCÉES -->
+    <section class="view" id="view-stats">
+      <h1 class="pt">Statistiques <em>avancées</em></h1>
+      <p class="ps">Comparatif mois/mois · Évolution actes · Analyse horaire · Tendances</p>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
+        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
+        <button class="btn bs bsm" onclick="resetOnboarding()" style="opacity:.5;font-size:11px">Revoir l'intro</button>
+      </div>
+      <div id="stats-avancees-body"></div>
+    </section>
+
     <!-- CONTACT ADMIN (nurse-only) -->
     <section class="view" id="view-contact">
       <h1 class="pt">Contact <em>Administrateur</em></h1>
@@ -921,6 +1043,9 @@
 <script src="js/profil.js"></script>
 <script src="js/cotation.js"></script>
 <script src="js/contact.js"></script>
+<script src="js/patients.js"></script>
+<script src="js/tresorerie.js"></script>
+<script src="js/offline-queue.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/dashboard.js"></script>
 
@@ -941,6 +1066,9 @@
 
 <!-- Tournée — dépend de tout ce qui précède -->
 <script src="js/tournee.js"></script>
+
+<!-- Extras — fonctions complémentaires de ami-ngap.html -->
+<script src="js/extras.js"></script>
 
 </body>
 </html>
