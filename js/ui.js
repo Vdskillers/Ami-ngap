@@ -47,15 +47,23 @@ document.addEventListener('ui:navigate', e => {
   /* Dashboard → charger données */
   if (v === 'dash' && typeof loadDash === 'function') loadDash();
 
-  /* Tournée → init carte + invalider taille */
+  /* Tournée → init carte tur-map + invalider taille */
   if (v === 'tur') {
     setTimeout(() => {
-      if (typeof initDepMap === 'function') initDepMap();
+      /* Essayer d'abord la nouvelle carte tur-map */
+      if (typeof initTurMap === 'function') {
+        initTurMap();
+      } else if (typeof initDepMap === 'function') {
+        initDepMap();
+      }
       if (typeof showCaFromImport === 'function') showCaFromImport();
-      /* Correction Leaflet rendu dans onglet caché */
+      if (typeof updateCAEstimate  === 'function') updateCAEstimate();
+      /* Invalider les deux instances possibles */
+      const turMapEl = document.getElementById('tur-map');
+      if (_turMap && turMapEl) _turMap.invalidateSize();
       const map = APP.map?.instance;
       if (map) map.invalidateSize();
-    }, 120);
+    }, 150);
   }
 
   /* Uber → charger patients si pas déjà fait */

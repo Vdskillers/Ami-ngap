@@ -44,21 +44,57 @@
 let _turMap=null, _turMarker=null, _turRouteLine=null, _turLiveMarker=null;
 
 function initTurMap(){
-  if(_turMap || !document.getElementById('tur-map')) return;
-  _turMap = L.map('tur-map').setView([46.603354, 1.888334], 6);
-  window._tourMap = _turMap; // rétrocompat ami-ngap.html
+  // Si dep-map existe et que map.js l'a déjà initialisé → l'utiliser comme _turMap
+  const depMapEl = document.getElementById('dep-map');
+  const turMapEl = document.getElementById('tur-map');
 
+  if(_turMap) {
+    // Déjà initialisé — juste invalider la taille
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch {} }, 100);
+    return;
+  }
+
+  // Utiliser dep-map si APP.map.instance existe déjà (géré par map.js)
+  if(APP.map?.instance && depMapEl) {
+    _turMap = APP.map.instance;
+    window._tourMap = _turMap;
+    // Brancher le clic pour setDepartPoint
+    _turMap.off('click'); // éviter les doublons
+    _turMap.on('click', function(e){
+      const {lat, lng} = e.latlng;
+      setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
+    });
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch {} }, 100);
+    return;
+  }
+
+  // Aucune carte disponible — fallback sur dep-map via initDepMap
+  if(depMapEl && typeof initDepMap === 'function') {
+    initDepMap();
+    if(APP.map?.instance) {
+      _turMap = APP.map.instance;
+      window._tourMap = _turMap;
+      _turMap.off('click');
+      _turMap.on('click', function(e){
+        const {lat, lng} = e.latlng;
+        setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
+      });
+    }
+    return;
+  }
+
+  // Tur-map dédié en dernier recours
+  if(!turMapEl) return;
+  _turMap = L.map('tur-map').setView([46.603354, 1.888334], 6);
+  window._tourMap = _turMap;
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'© <a href="https://www.openstreetmap.org">OpenStreetMap</a>',
     maxZoom:19
   }).addTo(_turMap);
-
-  /* Clic sur la carte → point de départ */
   _turMap.on('click', function(e){
     const {lat, lng} = e.latlng;
     setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
   });
-
   setTimeout(() => _turMap.invalidateSize(), 300);
 }
 
@@ -69,8 +105,11 @@ function setDepartPoint(lat, lng, label){
   if(tLng) tLng.value = lng.toFixed(6);
   APP.set('startPoint', {lat, lng});
 
-  /* Marker de départ sur tur-map */
-  if(_turMap){
+  /* Déléguer à setDepCoords de map.js si disponible — met aussi à jour dep-addr/dep-coords */
+  if(typeof setDepCoords === 'function') setDepCoords(lat, lng);
+
+  /* Marker de départ sur _turMap si distinct de APP.map.instance */
+  if(_turMap && _turMap !== APP.map?.instance){
     if(_turMarker) _turMap.removeLayer(_turMarker);
     const icon = L.divIcon({
       className:'',
@@ -80,20 +119,25 @@ function setDepartPoint(lat, lng, label){
     _turMarker = L.marker([lat,lng],{icon}).addTo(_turMap)
       .bindPopup(`<b>Départ</b><br>${label}`).openPopup();
     _turMap.setView([lat,lng],14);
+  } else if(_turMap) {
+    // map.js gère le marker via _setDepMarker — juste zoomer
+    _turMap.setView([lat,lng],14);
   }
 
-  const coordsTxt = $('tur-coords-txt');
-  if(coordsTxt) coordsTxt.textContent = `${label} — ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  const coordsEl = $('dep-coords') || $('tur-coords-txt');
+  if(coordsEl) coordsEl.textContent = `📌 ${label} — ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   updateCAEstimate();
 }
 
 /* Géocodage adresse via Nominatim pour tur-map */
 async function searchAddress(){
-  const input = $('t-address');
-  const q = (input?.value||'').trim();
+  // Lire depuis dep-addr (input visible) ou t-address
+  const depAddr = document.getElementById('dep-addr');
+  const tAddr   = document.getElementById('t-address');
+  const q = ((depAddr?.value || tAddr?.value) || '').trim();
   if(!q){ alert('Saisissez une adresse.'); return; }
 
-  const coordsTxt = $('tur-coords-txt');
+  const coordsTxt = $('dep-coords') || $('tur-coords-txt');
   if(coordsTxt) coordsTxt.textContent = '🔍 Recherche en cours…';
 
   try{
@@ -111,23 +155,27 @@ async function searchAddress(){
     const label = data[0].display_name.split(',').slice(0,2).join(', ');
     setDepartPoint(lat, lng, label);
   } catch(e){
+    const coordsTxt = $('dep-coords') || $('tur-coords-txt');
     if(coordsTxt) coordsTxt.textContent = '⚠️ Erreur géocodage : ' + e.message;
   }
 }
 
-/* GPS position actuelle → tur-map */
+/* GPS position actuelle → tur-map / dep-map */
 function useMyLocation(){
+  /* Déléguer à getGPS() de map.js si disponible — gère dep-map + précision */
+  if(typeof getGPS === 'function') { getGPS(); return; }
+
   if(!navigator.geolocation){
     alert('Géolocalisation non supportée par votre navigateur.');
     return;
   }
-  const coordsTxt = $('tur-coords-txt');
-  if(coordsTxt) coordsTxt.textContent = '📡 Localisation en cours…';
+  const coordsEl = $('dep-coords') || $('tur-coords-txt');
+  if(coordsEl) coordsEl.textContent = '📡 Localisation en cours…';
 
   navigator.geolocation.getCurrentPosition(
     pos => setDepartPoint(pos.coords.latitude, pos.coords.longitude, '📍 Ma position GPS'),
     err => {
-      if(coordsTxt) coordsTxt.textContent = '⚠️ GPS refusé ou indisponible. Saisissez une adresse.';
+      if(coordsEl) coordsEl.textContent = '⚠️ GPS refusé ou indisponible. Saisissez une adresse.';
       console.warn('GPS err:', err.code, err.message);
     },
     { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
@@ -517,23 +565,23 @@ function normalizeMedicalFull(txt){
 
 /* initTurMap au clic sur l'onglet tournée (en complément de initDepMap) */
 document.addEventListener('DOMContentLoaded', ()=>{
-  document.querySelectorAll('.ni[data-v="tur"], [data-v="tur"]').forEach(n=>{
-    n.addEventListener('click', ()=>{
-      setTimeout(()=>{
-        initTurMap();
-        updateCAEstimate();
-      }, 100);
-    });
-  });
-
-  /* Écoute navigation via APP events */
-  document.addEventListener('app:nav', e=>{
+  /* Écouter l'event réel émis par ui.js (ui:navigate) */
+  document.addEventListener('ui:navigate', e=>{
     if(e.detail?.view === 'tur'){
-      setTimeout(()=>{ initTurMap(); updateCAEstimate(); }, 100);
+      setTimeout(()=>{ initTurMap(); updateCAEstimate(); }, 150);
     }
     if(e.detail?.view === 'live'){
-      /* Tenter le mode local si données importées */
       startDayLocal();
+    }
+    if(e.detail?.view === 'stats' && typeof loadStatsAvancees === 'function'){
+      loadStatsAvancees();
+    }
+  });
+
+  /* Compatibilité app:nav (dispatché par certains modules) */
+  document.addEventListener('app:nav', e=>{
+    if(e.detail?.view === 'tur'){
+      setTimeout(()=>{ initTurMap(); updateCAEstimate(); }, 150);
     }
   });
 
