@@ -9,7 +9,7 @@
 
 /* ── 1. ENREGISTREMENT SERVICE WORKER ────────── */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(reg => {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
     log('SW enregistré:', reg.scope);
     /* Écouter les messages du SW (sync offline) */
     navigator.serviceWorker.addEventListener('message', e => {
