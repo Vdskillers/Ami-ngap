@@ -337,6 +337,225 @@ async function recalculTournee(){
   }catch(e){alert('Erreur recalcul: '+e.message);}
 }
 
+/* ============================================================
+   IMPORT CALENDRIER
+   ============================================================ */
+function importCalendar() {
+  const fileEl  = $('imp-file');
+  const textEl  = $('imp-text');
+  const result  = $('imp-result');
+  const text    = textEl ? textEl.value.trim() : '';
+
+  if (!result) return;
+
+  if (fileEl && fileEl.files && fileEl.files.length > 0) {
+    const file   = fileEl.files[0];
+    const reader = new FileReader();
+    reader.onload = e => _processImportData(e.target.result, file.name);
+    reader.onerror = () => {
+      result.innerHTML = '<div class="ai er">❌ Impossible de lire le fichier.</div>';
+      result.classList.add('show');
+    };
+    reader.readAsText(file, 'UTF-8');
+    return;
+  }
+
+  if (text) {
+    _processImportData(text, 'texte collé');
+    return;
+  }
+
+  result.innerHTML = '<div class="ai er">⚠️ Aucun fichier ou texte fourni. Déposez un fichier ou collez votre planning.</div>';
+  result.classList.add('show');
+}
+
+function _processImportData(content, source) {
+  const result = $('imp-result');
+  if (!result) return;
+
+  let parsed = null;
+  let patientsFound = 0;
+
+  // Tentative JSON
+  try {
+    parsed = JSON.parse(content);
+    const patients = parsed.patients || parsed.entries || (Array.isArray(parsed) ? parsed : null);
+    if (patients) {
+      patientsFound = patients.length;
+      storeImportedData({ patients, total: patientsFound, source });
+    }
+  } catch { /* pas JSON */ }
+
+  // Tentative ICS / texte
+  if (!parsed) {
+    const lines = content.split('\n').filter(l => l.trim().length > 3);
+    patientsFound = lines.length;
+    const patients = lines.map((l, i) => ({
+      id: 'imp_' + i,
+      description: l.trim().replace(/^[-*•→]+\s*/, ''),
+      texte: l.trim(),
+      heure_soin: (l.match(/(\d{1,2})[hH:](\d{2})/) || [])[0] || '',
+    }));
+    storeImportedData({ patients, total: patientsFound, source });
+  }
+
+  result.innerHTML = `
+    <div class="ai su">
+      ✅ Import réussi depuis <strong>${source}</strong><br>
+      📋 <strong>${patientsFound}</strong> entrée(s) chargée(s)<br>
+      <span style="font-size:11px;color:var(--m);margin-top:4px;display:block">Allez dans <strong>Planning</strong> ou <strong>Tournée IA</strong> pour utiliser ces données.</span>
+    </div>`;
+  result.classList.add('show');
+}
+
+/* ============================================================
+   MODE IA PLANNING
+   ============================================================ */
+function modeAI(mode) {
+  if (mode === 'planning') {
+    const txtEl = $('pl-txt');
+    const texte = txtEl ? txtEl.value.trim() : '';
+
+    // Masquer erreur précédente
+    const perr = $('perr');
+    if (perr) perr.style.display = 'none';
+
+    if (!texte) {
+      if (perr) { $('perr-m').textContent = 'Saisissez des informations patients avant de générer le planning (ex: "Patient A : injection 2x/jour").'; perr.style.display = 'flex'; }
+      return;
+    }
+
+    // Parser le texte comme des patients
+    const lines = texte.split('\n').filter(l => l.trim());
+    const patients = lines.map((l, i) => ({
+      id: 'manual_' + i,
+      description: l.trim(),
+      texte: l.trim(),
+    }));
+
+    // Stocker temporairement et générer
+    if (!APP.importedData) {
+      APP.importedData = { patients, total: patients.length, source: 'saisie manuelle' };
+    } else {
+      // Fusionner avec import existant
+      APP.importedData.patients = [...(APP.importedData.patients || []), ...patients];
+    }
+
+    generatePlanningFromImport();
+  }
+}
+
+/* ============================================================
+   STOP JOURNÉE (terminer la tournée)
+   ============================================================ */
+function stopDay() {
+  if (!confirm('Terminer la tournée du jour ?\n\nLe chronomètre sera arrêté et la journée sera clôturée.')) return;
+
+  // Arrêter le timer
+  if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
+
+  // Reset badge
+  const badge = $('live-badge');
+  if (badge) { badge.textContent = 'TERMINÉE'; badge.style.background = 'rgba(34,197,94,.15)'; badge.style.color = '#22c55e'; }
+
+  $('live-patient-name').textContent = 'Tournée terminée ✅';
+  $('live-info').textContent = '🏁 Bonne fin de journée ! CA total : ' + LIVE_CA_TOTAL.toFixed(2) + ' €';
+  $('live-controls').style.display = 'none';
+
+  // Afficher bouton démarrer, cacher bouton terminer
+  const btnStart = $('btn-live-start');
+  const btnStop  = $('btn-live-stop');
+  if (btnStart) btnStart.style.display = 'inline-flex';
+  if (btnStop)  btnStop.style.display  = 'none';
+
+  // Résumé CA
+  const caEl = $('live-ca-total');
+  if (caEl) { caEl.textContent = '💶 CA journée clôturée : ' + LIVE_CA_TOTAL.toFixed(2) + ' €'; caEl.style.display = 'block'; }
+
+  // Reset CA pour prochaine journée
+  LIVE_CA_TOTAL = 0;
+
+  if (typeof showToast === 'function') showToast('🏁 Tournée terminée — bonne journée !');
+}
+
+/* ============================================================
+   RECOMMANDATIONS NGAP TEMPS RÉEL (live input)
+   ============================================================ */
+function analyzeLive(texte) {
+  const t = texte.toLowerCase();
+  const recos = [];
+
+  if ((t.includes('domicile') || t.includes('chez')) && !t.includes('ifd'))
+    recos.push({ type: 'gain', msg: 'Ajouter IFD — indemnité déplacement (+2,75 €)', gain: 2.75 });
+
+  const kmMatch = t.match(/(\d+)\s*km/);
+  if (kmMatch && !t.includes(' ik'))
+    recos.push({ type: 'gain', msg: `Ajouter IK — ${kmMatch[1]} km (+${(parseInt(kmMatch[1])*0.35).toFixed(2)} €)`, gain: parseInt(kmMatch[1])*0.35 });
+
+  if ((t.includes('22h') || t.includes('23h') || t.includes('0h') || t.includes('1h') || t.includes('2h') || t.includes('3h') || t.includes('4h') || t.includes('5h') || t.includes('6h') || t.includes('7h')) && !t.includes('nuit') && !t.includes('mn'))
+    recos.push({ type: 'gain', msg: 'Majoration nuit possible (+9,15 €)', gain: 9.15 });
+
+  if (t.includes('dimanche') && !t.includes('md'))
+    recos.push({ type: 'gain', msg: 'Majoration dimanche possible (+9,15 €)', gain: 9.15 });
+
+  if (t.includes('injection') && !t.includes('ami'))
+    recos.push({ type: 'info', msg: 'Acte AMI1 probable (injection SC/IM — 3,15 €)', gain: 0 });
+
+  if (t.includes('ald') && !t.includes('exo'))
+    recos.push({ type: 'warn', msg: 'Patient ALD détecté — penser à cocher exonération', gain: 0 });
+
+  return recos;
+}
+
+function renderLiveReco(texte) {
+  const el = $('live-reco');
+  if (!el) return;
+  const recos = analyzeLive(texte);
+  if (!recos.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+
+  const totalGain = recos.reduce((s, r) => s + (r.gain||0), 0);
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px">💡 Suggestions NGAP</div>
+    ${recos.map(r => `<div style="padding:5px 8px;border-radius:6px;margin:3px 0;font-size:12px;background:${r.type==='gain'?'rgba(34,197,94,.08)':r.type==='warn'?'rgba(255,180,0,.1)':'rgba(79,168,255,.08)'};border:1px solid ${r.type==='gain'?'rgba(34,197,94,.2)':r.type==='warn'?'rgba(255,180,0,.2)':'rgba(79,168,255,.2)'}">
+      ${r.type==='gain'?'💰':r.type==='warn'?'⚠️':'💡'} ${r.msg}
+    </div>`).join('')}
+    ${totalGain > 0 ? `<div style="font-size:11px;color:var(--a);margin-top:6px;font-family:var(--fm)">💶 Gain potentiel : +${totalGain.toFixed(2)} €</div>` : ''}
+  `;
+}
+
+/* ============================================================
+   AUTO-COTATION LOCALE (réponse immédiate sans réseau)
+   ============================================================ */
+function autoCotationLocale(texte) {
+  const t = texte.toLowerCase();
+  const actes = []; let total = 0;
+
+  if (t.includes('injection') || t.includes('insuline') || t.includes('piquer')) {
+    actes.push({ code:'AMI1', nom:'Injection SC/IM', total:3.15 }); total += 3.15;
+  }
+  if (t.includes('pansement complexe') || t.includes('escarre') || t.includes('plaie')) {
+    actes.push({ code:'AMI4', nom:'Pansement complexe', total:12.60 }); total += 12.60;
+  } else if (t.includes('pansement')) {
+    actes.push({ code:'AMI1', nom:'Pansement simple', total:3.15 }); total += 3.15;
+  }
+  if (t.includes('prélèvement') || t.includes('prise de sang')) {
+    actes.push({ code:'AMI1', nom:'Prélèvement sanguin', total:3.15 }); total += 3.15;
+  }
+  if (t.includes('toilette')) {
+    actes.push({ code:'BSC', nom:'Bilan soins infirmiers C', total:28.00 }); total += 28.00;
+  }
+  if (t.includes('domicile') || t.includes('chez')) {
+    actes.push({ code:'IFD', nom:'Déplacement domicile', total:2.75 }); total += 2.75;
+  }
+  const kmM = t.match(/(\d+)\s*km/);
+  if (kmM) {
+    const ik = parseInt(kmM[1]) * 0.35;
+    actes.push({ code:'IK', nom:`${kmM[1]} km`, total: Math.round(ik*100)/100 }); total += ik;
+  }
+  return { actes, total: Math.round(total*100)/100, source:'local' };
+}
+
 /* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
@@ -344,6 +563,9 @@ window.startDay=async function(){
   const el=$('live-badge');
   if(el){el.textContent='EN COURS';el.style.background='var(--ad)';el.style.color='var(--a)';}
   $('btn-live-start').style.display='none';
+  // Afficher bouton "Terminer la tournée"
+  const btnStop = $('btn-live-stop');
+  if (btnStop) btnStop.style.display = 'inline-flex';
   $('live-controls').style.display='block';
   /* ── Démarrer le moteur IA temps réel ── */
   if(typeof startLiveOptimization==='function') startLiveOptimization();

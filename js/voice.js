@@ -74,34 +74,13 @@ function stopVoice(){
 }
 
 /* ============================================================
-   DASHBOARD — FETCH SÉCURISÉ + CACHE + IA
+   DASHBOARD — CACHE
+   fetchAPI est défini dans utils.js (source unique de vérité)
    ============================================================ */
 
-/* 1. fetchAPI sécurisé */
-async function fetchAPI(url, options={}) {
-  const token = ss.tok();
-  try {
-    const res = await fetch(W+url, {
-      ...options,
-      headers: {
-        'Content-Type':'application/json',
-        'Authorization': token ? 'Bearer '+token : '',
-        ...(options.headers||{})
-      }
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error('API '+res.status+': '+text);
-    }
-    return await res.json();
-  } catch(err) {
-    console.error('API ERROR:', err);
-    throw err;
-  }
-}
-
-/* 2. Cache local 1 minute */
+/* Cache local 5 minutes — DASH_CACHE_KEY défini ici (une seule fois) */
 const DASH_CACHE_KEY = 'ami_dash_cache';
+
 function saveDashCache(data) {
   try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({t:Date.now(),data})); } catch{}
 }
