@@ -58,12 +58,26 @@ async function cotation() {
 
 function renderCot(d) {
   const a = d.actes || [], al = d.alerts || [], op = d.optimisations || [];
+  const aiQualBadge = d.ai_quality
+    ? `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${d.ai_quality==='high'?'rgba(0,212,170,.15)':d.ai_quality==='medium'?'rgba(251,191,36,.15)':'rgba(239,68,68,.15)'};color:${d.ai_quality==='high'?'#00d4aa':d.ai_quality==='medium'?'#f59e0b':'#ef4444'}">
+        ${d.ai_quality==='high'?'🟢 IA haute qualité':d.ai_quality==='medium'?'🟡 IA qualité moyenne':'🔴 IA incertaine'}
+        ${d.ai_score!=null?` — ${d.ai_score}/100`:''}
+      </div>` : '';
+  const gainBadge = d.gain_potentiel > 0
+    ? `<div class="ai in" style="margin-top:8px">💰 Gain potentiel non coté : <strong>+${d.gain_potentiel.toFixed(2)} €</strong></div>`
+    : '';
+  const rentBadge = d.rentabilite_minute > 0
+    ? `<div style="font-size:11px;color:var(--m);margin-top:4px">⏱️ Rentabilité estimée : ${d.rentabilite_minute.toFixed(2)} €/min · Temps ~${d.temps_estime||'?'}min</div>`
+    : '';
   return `<div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div><div class="lbl">Total cotation</div>
     <div style="display:flex;align-items:baseline;gap:6px"><div class="ta">${(d.total || 0).toFixed(2)}</div><div class="tu">€</div></div>
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${d.dre_requise ? '<div class="dreb">📋 DRE requise</div>' : ''}</div></div>
-    <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g, "&#39;")})'>🖨️ Imprimer</button>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${d.dre_requise ? '<div class="dreb">📋 DRE requise</div>' : ''}</div>
+    ${aiQualBadge}
+    ${rentBadge}
+    </div>
+    <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g, "&#39;")})'>📥 Télécharger facture</button>
   </div>
   <div class="rg">
     <div class="rc am"><div class="rl">Part AMO (SS)</div><div class="ra">${fmt(d.part_amo)}</div><div class="rp">${d.taux_amo ? Math.round(d.taux_amo * 100) + '%' : '60%'}</div></div>
@@ -72,8 +86,10 @@ function renderCot(d) {
   </div>
   <div class="lbl" style="margin-bottom:10px">Détail des actes</div>
   <div class="al">${a.length ? a.map(x => `<div class="ar"><div class="ac ${cc(x.code)}">${x.code || '?'}</div><div class="an">${x.nom || ''}</div><div class="ao">×${(x.coefficient || 1).toFixed(1)}</div><div class="at">${fmt(x.total)}</div></div>`).join('') : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}</div>
-  ${al.length ? `<div class="aic">${al.map(x => `<div class="ai er">❌ ${x}</div>`).join('')}</div>` : '<div class="ai su">✅ Aucune alerte NGAP</div>'}
-  ${op.length ? `<div style="margin-top:16px"><div class="aic">${op.map(x => `<div class="ai in">💡 ${x}</div>`).join('')}</div></div>` : ''}
+  ${al.length ? `<div class="aic" style="margin-top:12px">${al.map(x => `<div class="ai ${x.startsWith('⚠️')?'wa':'er'}">⚠️ ${x.replace(/^⚠️\s*/,'')}</div>`).join('')}</div>` : '<div class="ai su" style="margin-top:12px">✅ Aucune alerte NGAP</div>'}
+  ${gainBadge}
+  ${op.length ? `<div style="margin-top:12px"><div class="lbl" style="font-size:10px;margin-bottom:6px">Optimisations détectées</div><div class="aic">${op.map(x => `<div class="ai in">💡 ${x}</div>`).join('')}</div></div>` : ''}
+  ${d.ai_issues && d.ai_issues.length ? `<div class="aic" style="margin-top:8px">${d.ai_issues.map(x=>`<div class="ai wa">🔍 ${x}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -231,10 +247,8 @@ function _doPrint(d, u) {
        </div>`
     : '';
 
-  const w = window.open('', '_blank');
-  if (!w) { alert("Le navigateur a bloqué la fenêtre d'impression. Autorisez les popups pour ce site."); return; }
-
-  w.document.write(`<!DOCTYPE html>
+  /* ── Construction du HTML de facture ── */
+  const htmlContent = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -257,10 +271,12 @@ function _doPrint(d, u) {
   .rv { font-size: 22px; font-weight: 700; color: #0b3954; }
   .dre { margin-top: 16px; padding: 10px 14px; background: #e8f4ff; border-radius: 6px; font-size: 13px; color: #2563eb; }
   .footer { margin-top: 30px; padding-top: 16px; border-top: 1px solid #e0e7ef; font-size: 11px; color: #9ca3af; text-align: center; }
-  @media print { button { display: none !important; } body { padding: 20px; } }
+  .print-btn { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px; padding: 10px 20px; background: #0b3954; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  @media print { .print-btn, .no-print { display: none !important; } body { padding: 20px; } }
 </style>
 </head>
 <body>
+<button class="print-btn no-print" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
 ${missingWarning}
 <div class="hdr">
   <div class="hdr-left">
@@ -304,11 +320,38 @@ ${d.dre_requise ? '<div class="dre">📋 <strong>DRE requise</strong> — Demand
 <div class="footer">
   AMI NGAP · N° facture : ${num} · Cotation NGAP métropole en vigueur · Généré le ${new Date().toLocaleDateString('fr-FR')}
 </div>
-
-<script>window.onload = () => window.print();<\/script>
 </body>
-</html>`);
-  w.document.close();
+</html>`;
+
+  /* ── Téléchargement via Blob (contourne le blocage popup navigateur) ── */
+  try {
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `facture-${num}.html`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    /* Nettoyer après 3s */
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      if (a.parentNode) document.body.removeChild(a);
+    }, 3000);
+    /* Feedback visuel */
+    const btn = document.querySelector('[onclick*="printInv"]') || document.querySelector('.btn.bs');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ Téléchargé !';
+      setTimeout(() => { btn.innerHTML = orig; }, 2500);
+    }
+  } catch (e) {
+    /* Fallback : essayer window.open si Blob échoue (très rare) */
+    const w = window.open('', '_blank');
+    if (!w) { alert('Impossible d\'ouvrir la facture. Vérifiez que les popups sont autorisés.'); return; }
+    w.document.write(htmlContent);
+    w.document.close();
+  }
 }
 
 /* ════════════════════════════════════════════════

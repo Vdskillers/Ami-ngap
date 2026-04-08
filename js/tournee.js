@@ -18,6 +18,13 @@
   assertDep(typeof L !== 'undefined',              'tournee.js : Leaflet non chargé.');
 })();
 
+/* Fallback défensif si optimizeTour non disponible (ne devrait pas arriver) */
+if (typeof optimizeTour === 'undefined') {
+  window.optimizeTour = async function(patients) {
+    return [...patients].sort((a,b) => (a.heure||'').localeCompare(b.heure||''));
+  };
+}
+
 function storeImportedData(d){
   APP.importedData=d;
   // Mettre à jour le banner Planning
