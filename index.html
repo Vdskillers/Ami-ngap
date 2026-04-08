@@ -868,8 +868,13 @@
 <!-- Modules dépendant de Leaflet -->
 <script src="js/map.js"></script>
 <script src="js/uber.js"></script>
+
+<!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
+<script src="js/ai-tournee.js"></script>
 <script src="js/ai-assistant.js"></script>
 <script src="js/pwa.js"></script>
+
+<!-- Tournée — dépend de tout ce qui précède -->
 <script src="js/tournee.js"></script>
 
 </body>
