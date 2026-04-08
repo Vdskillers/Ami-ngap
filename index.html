@@ -276,7 +276,9 @@
           <div class="f"><label for="f-hs">Heure du soin</label><input type="time" id="f-hs" name="heure_soin"></div>
         </div>
         <div class="lbl">Description des soins <span style="color:var(--d)">*</span></div>
-        <div class="f" style="margin-bottom:16px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."></textarea></div>
+        <div class="f" style="margin-bottom:4px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..." oninput="if(typeof renderLiveReco==='function')renderLiveReco(this.value)"></textarea></div>
+        <!-- Recommandations NGAP temps réel -->
+        <div id="live-reco" style="display:none;margin-bottom:12px"></div>
         <div class="ar-row">
           <button class="btn bp" id="btn-cot" onclick="cotation()"><span>⚡</span> Coter avec l'IA</button>
           <button class="btn bv" id="btn-verify" onclick="openVerify()"><span>🔍</span> Vérifier & corriger</button>
@@ -381,6 +383,7 @@
         <div class="live-delay" id="live-delay-alert">⏰ <span id="live-delay-msg"></span></div>
         <div class="live-actions">
           <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
+          <button class="btn bs" id="btn-live-stop" onclick="stopDay()" style="display:none"><span>🏁</span> Terminer la tournée</button>
           <button class="btn bs" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
         </div>
       </div>
@@ -463,6 +466,8 @@
     <section class="view" id="view-dash">
       <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
       <p class="ps">Revenus · KPIs · Actes fréquents · Tendances</p>
+      <!-- Badge cache / hors-ligne -->
+      <div id="dash-cache-info" style="display:none;font-size:12px;margin-bottom:10px;padding:6px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
       <div id="dash-loading" style="text-align:center;padding:60px 20px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="color:var(--m);font-size:13px">Chargement des statistiques...</p></div>
       <div id="dash-body" style="display:none">
         <!-- KPIs -->
