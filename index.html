@@ -88,6 +88,25 @@
       <button class="bs bsm" onclick="loadAdm()" style="padding:10px 18px;font-size:13px">↻ Actualiser</button>
     </div>
     <div id="accs" class="accs"><div class="empty"><div class="ei"><div class="spin spinw" style="width:32px;height:32px"></div></div><p style="margin-top:12px">Chargement...</p></div></div>
+
+    <!-- Messages des infirmières -->
+    <div style="margin-top:32px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+        <div class="lbl">💬 Messages des infirmières <span id="adm-msg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:11px;padding:2px 10px;margin-left:8px;font-family:var(--fm)">0 non lu(s)</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="adm-msg-filter" onchange="loadAdmMessages()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+            <option value="all">Tous les messages</option>
+            <option value="bug">🐛 Bugs</option>
+            <option value="amelioration">💡 Améliorations</option>
+            <option value="question">❓ Questions</option>
+            <option value="ngap">📋 Cotation NGAP</option>
+            <option value="unread">🔴 Non lus</option>
+          </select>
+          <button class="bs bsm" onclick="loadAdmMessages()" style="padding:8px 16px;font-size:12px">↻ Actualiser</button>
+        </div>
+      </div>
+      <div id="adm-messages"><div class="empty" style="padding:24px 0"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:10px">Chargement...</p></div></div>
+    </div>
   </div>
 </div>
 
@@ -206,6 +225,7 @@
       <div class="slbl">Système</div>
       <div class="ni" data-v="dash"><span class="nic">📈</span> Dashboard</div>
       <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
+      <div class="ni nurse-only" data-v="contact"><span class="nic">💬</span> Contact Admin <span id="contact-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:9px;padding:1px 6px;margin-left:4px;font-family:var(--fm)">!</span></div>
       <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
     </div>
   </nav>
@@ -236,6 +256,7 @@
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
@@ -777,7 +798,50 @@
       <div style="text-align:center;padding:16px;font-size:11px;color:var(--m);font-family:var(--fm)">AMI · Tarifs NGAP métropole en vigueur au 05/02/2026</div>
     </section>
 
+    <!-- CONTACT ADMIN (nurse-only) -->
+    <section class="view" id="view-contact">
+      <h1 class="pt">Contact <em>Administrateur</em></h1>
+      <p class="ps">Signalez un bug, demandez une amélioration ou posez une question à l'équipe technique</p>
+
+      <!-- Formulaire d'envoi -->
+      <div class="card">
+        <div class="adm-notice" style="margin-bottom:20px"><span style="font-size:18px;flex-shrink:0">💬</span><p>Votre message sera transmis à l'équipe d'administration. Vous recevrez une réponse directement dans cet espace. <strong>N'incluez jamais de données patient dans vos messages.</strong></p></div>
+        <div class="af" style="margin-bottom:14px">
+          <label for="contact-cat">Catégorie</label>
+          <select id="contact-cat" name="contact_categorie">
+            <option value="bug">🐛 Signalement de bug</option>
+            <option value="amelioration">💡 Demande d'amélioration</option>
+            <option value="question">❓ Question technique</option>
+            <option value="ngap">📋 Erreur de cotation NGAP</option>
+            <option value="autre">📩 Autre</option>
+          </select>
+        </div>
+        <div class="af" style="margin-bottom:14px">
+          <label for="contact-sujet">Sujet <span style="color:var(--d)">*</span></label>
+          <input type="text" id="contact-sujet" placeholder="Ex : La cotation IFD ne s'applique pas automatiquement" maxlength="120">
+        </div>
+        <div class="af" style="margin-bottom:16px">
+          <label for="contact-msg">Message <span style="color:var(--d)">*</span></label>
+          <textarea id="contact-msg" placeholder="Décrivez le problème ou votre demande avec le plus de détails possibles (étapes pour reproduire le bug, version navigateur…). Ne mentionnez pas de données patient." style="min-height:130px" maxlength="2000"></textarea>
+          <div style="text-align:right;font-size:11px;color:var(--m);margin-top:4px;font-family:var(--fm)"><span id="contact-count">0</span>/2000</div>
+        </div>
+        <div class="msg o" id="contact-ok" style="display:none"></div>
+        <div class="msg e" id="contact-err" style="display:none"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn bp" id="btn-contact-send" onclick="sendContactMessage()"><span>📤</span> Envoyer le message</button>
+          <button class="btn bs bsm" onclick="loadMyMessages()">↻ Actualiser mes messages</button>
+        </div>
+      </div>
+
+      <!-- Historique des échanges -->
+      <div class="card" style="margin-top:16px">
+        <div class="ct">📬 Mes échanges avec l'administration</div>
+        <div id="contact-history"><div class="empty" style="padding:24px 0"><div class="ei">💬</div><p style="margin-top:8px;color:var(--m)">Chargement de vos messages...</p></div></div>
+      </div>
+    </section>
+
     <!-- SECURITE -->
+
     <section class="view" id="view-sec">
       <h1 class="pt">Sécurité <em>& RGPD</em></h1><p class="ps">AES-256 · Privacy by Design · HDS ready</p>
 
@@ -856,6 +920,7 @@
 <script src="js/admin.js"></script>
 <script src="js/profil.js"></script>
 <script src="js/cotation.js"></script>
+<script src="js/contact.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/dashboard.js"></script>
 
