@@ -115,18 +115,36 @@ function hideM(...ids){ ids.forEach(id=>{ const el=$(id); if(el) el.style.displa
 function ld(id,on){ const b=$(id); if(!b)return; b.disabled=on; if(on){b._o=b.innerHTML;b.innerHTML='<span class="spin"></span> En cours...';}else b.innerHTML=b._o||b.innerHTML; }
 
 /* ── 8. API — FETCH AVEC RETRY ───────────────────
-   ✅ Timeout 35s
-   ✅ Retry x2 automatique (timeout + erreur réseau)
-   ✅ Pas de retry sur 4xx (erreurs métier)
-   ✅ Délai 800ms entre retries
+   ✅ v5 : parsing JSON sécurisé (anti "Unexpected end of JSON")
+   ✅ Timeout IA 30s (Grok-3 peut prendre ~25s)
+   ✅ Timeout standard 8s
+   ✅ Retry 1× propre
+   ✅ Détection réponse vide / HTML / JSON cassé
 ─────────────────────────────────────────────── */
-const API_TIMEOUT_MS=35000;
+
+// Lecture sécurisée d'une Response — jamais de crash JSON
+async function _safeParseResponse(res) {
+  const text = await res.text().catch(() => '');
+
+  // Réponse vide
+  if (!text || text.trim() === '') {
+    throw new Error('Réponse vide du serveur (n8n en erreur)');
+  }
+  // Réponse HTML (erreur Express/n8n)
+  if (text.trim().startsWith('<')) {
+    throw new Error('Erreur serveur inattendue — réessayez dans quelques secondes');
+  }
+  // JSON sécurisé
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Réponse invalide du serveur');
+  }
+}
 
 async function _apiFetch(path, body, retry = true) {
-
-  // 🔥 Timeout intelligent selon endpoint
-  const isIA = path.includes('ami-calcul');
-  const TIMEOUT = isIA ? 25000 : 8000;
+  const isIA    = path.includes('ami-calcul') || path.includes('ami-historique');
+  const TIMEOUT = isIA ? 30000 : 8000;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT);
@@ -135,46 +153,44 @@ async function _apiFetch(path, body, retry = true) {
     const res = await fetch(W + path, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': ss.tok() ? 'Bearer ' + ss.tok() : ''
+        'Content-Type':  'application/json',
+        'Authorization': ss.tok() ? 'Bearer ' + ss.tok() : '',
       },
-      body: JSON.stringify(body),
-      signal: controller.signal
+      body:   JSON.stringify(body),
+      signal: controller.signal,
     });
 
     clearTimeout(timeout);
 
+    // Session expirée
     if (res.status === 401) {
       ss.clear();
       if (typeof showAuthOv === 'function') showAuthOv();
       throw new Error('Session expirée — reconnectez-vous');
     }
 
+    // ✅ Parsing sécurisé (protège contre vide / HTML / JSON cassé)
+    const data = await _safeParseResponse(res);
+
     if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(txt || ('Erreur serveur ' + res.status));
+      throw new Error(data?.error || ('Erreur serveur ' + res.status));
     }
 
-    return await res.json();
+    return data;
 
   } catch (e) {
     clearTimeout(timeout);
 
-    if (retry && e.name !== 'AbortError') {
+    // Retry 1× sur erreur réseau (pas sur AbortError ni 4xx)
+    if (retry && e.name !== 'AbortError' && !e.message.includes('Session expirée')) {
       await new Promise(r => setTimeout(r, 500));
       return _apiFetch(path, body, false);
     }
 
-    if (!navigator.onLine) {
-      throw new Error('Pas de connexion internet.');
-    }
+    if (!navigator.onLine) throw new Error('Pas de connexion internet.');
 
     if (e.name === 'AbortError') {
-      throw new Error(
-        isIA
-          ? 'IA en cours… un peu plus long que prévu 🤖'
-          : 'Serveur trop lent (>8s)'
-      );
+      throw new Error(isIA ? "L'IA met plus de temps que prévu 🤖 — réessayez" : 'Serveur trop lent (>8s)');
     }
 
     throw e;
@@ -184,22 +200,32 @@ async function _apiFetch(path, body, retry = true) {
 async function wpost(path,body)   { return _apiFetch(path,body); }
 async function apiCall(path,body) { return _apiFetch(path,body); }
 
-async function fetchAPI(url,options={}){
-  const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT_MS);
-  try{
-    const res=await fetch(W+url,{
+// fetchAPI — utilisé par dashboard et historique (GET ou POST)
+async function fetchAPI(url, options = {}) {
+  const isIA    = url.includes('ami-calcul') || url.includes('ami-historique');
+  const TIMEOUT = isIA ? 30000 : 8000;
+  const ctrl    = new AbortController();
+  const timer   = setTimeout(() => ctrl.abort(), TIMEOUT);
+
+  try {
+    const res = await fetch(W + url, {
       ...options,
-      headers:{'Content-Type':'application/json','Authorization':ss.tok()?'Bearer '+ss.tok():'',...(options.headers||{})},
-      signal:ctrl.signal
+      headers: { 'Content-Type':'application/json', 'Authorization': ss.tok() ? 'Bearer '+ss.tok() : '', ...(options.headers||{}) },
+      signal: ctrl.signal,
     });
     clearTimeout(timer);
-    if(!res.ok){const text=await res.text();throw new Error('API '+res.status+': '+text);}
-    return await res.json();
-  }catch(err){
+
+    if (res.status === 401) { ss.clear(); if (typeof showAuthOv==='function') showAuthOv(); throw new Error('Session expirée — reconnectez-vous'); }
+
+    // ✅ Parsing sécurisé
+    const data = await _safeParseResponse(res);
+    if (!res.ok) throw new Error(data?.error || ('API ' + res.status));
+    return data;
+
+  } catch (err) {
     clearTimeout(timer);
-    if(err.name==='AbortError') throw new Error('Délai dépassé');
-    logErr('fetchAPI:',err);
+    if (err.name === 'AbortError') throw new Error('Délai dépassé');
+    logErr('fetchAPI:', err);
     throw err;
   }
 }
