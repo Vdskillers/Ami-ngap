@@ -107,6 +107,15 @@
       </div>
       <div id="adm-messages"><div class="empty" style="padding:24px 0"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:10px">Chargement...</p></div></div>
     </div>
+
+    <!-- Monitoring système (admin) -->
+    <div style="margin-top:32px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+        <div class="lbl">🖥️ Santé du système</div>
+        <button class="bs bsm" onclick="loadSystemHealth()" style="padding:8px 16px;font-size:12px">↻ Rafraîchir monitoring</button>
+      </div>
+      <div id="system-health-body"><div class="empty" style="padding:20px"><div class="ei">🖥️</div><p style="margin-top:8px;color:var(--m);font-size:13px">Cliquez sur "Rafraîchir monitoring" pour charger l'état du système.</p></div></div>
+    </div>
   </div>
 </div>
 
@@ -224,11 +233,14 @@
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
       <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique</div>
       <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
+      <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
     </div>
     <div class="sl" style="margin-top:auto">
       <div class="slbl">Système</div>
       <div class="ni" data-v="dash"><span class="nic">📈</span> Dashboard</div>
       <div class="ni nurse-only" data-v="stats"><span class="nic">📊</span> Statistiques</div>
+      <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
+      <div class="ni nurse-only" data-v="ngap-ref"><span class="nic">📚</span> Référentiel NGAP</div>
       <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
       <div class="ni nurse-only" data-v="contact"><span class="nic">💬</span> Contact Admin <span id="contact-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:9px;padding:1px 6px;margin-left:4px;font-family:var(--fm)">!</span></div>
       <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
@@ -369,38 +381,29 @@
       <div class="card">
         <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez d'abord via "Import calendrier".</p></div>
 
-        <!-- Recherche adresse avec géocodage Nominatim (tur-map) -->
+        <!-- Barre de recherche unifiée -->
         <div class="map-search" style="margin-bottom:10px">
-          <input type="text" id="t-address" placeholder="🔍 Adresse de départ (ex: 12 rue de la Paix, Nice...)" onkeydown="if(event.key==='Enter')searchAddress()" style="flex:1">
-          <button class="map-btn search" onclick="searchAddress()">Rechercher</button>
-          <button class="map-btn gps" onclick="useMyLocation()">📍 GPS</button>
+          <input type="text" id="dep-addr" id2="t-address" placeholder="🔍 Adresse de départ (ex: 12 rue de la Paix, Nice...)" onkeydown="if(event.key==='Enter'){if(typeof searchAddress==='function')searchAddress();else geocodeAddress()}" style="flex:1">
+          <button class="map-btn search" onclick="if(typeof searchAddress==='function')searchAddress();else geocodeAddress()">Rechercher</button>
+          <button class="map-btn gps" onclick="if(typeof useMyLocation==='function')useMyLocation();else getGPS()">📍 GPS</button>
         </div>
 
-        <!-- Coords actuelles -->
-        <div class="dep-coords" id="tur-coords-txt" style="margin-bottom:10px">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
+        <!-- Input t-address pour extras.js -->
+        <input type="text" id="t-address" style="display:none">
 
-        <!-- Barre de recherche legacy (garde compatibilité avec map.js geocodeAddress) -->
-        <div class="map-search" style="display:none">
-          <input type="text" id="dep-addr" placeholder="Adresse (geocodeAddress)" onkeydown="if(event.key==='Enter')geocodeAddress()">
-          <button class="map-btn search" onclick="geocodeAddress()">Rechercher</button>
-          <button class="map-btn gps" onclick="getGPS()">📍 GPS</button>
-        </div>
-        <div class="dep-coords" id="dep-coords" style="display:none"></div>
+        <!-- Coords affichées -->
+        <div class="dep-coords" id="tur-coords-txt" style="margin-bottom:6px;display:none"></div>
+        <div class="dep-coords" id="dep-coords">📌 Cliquez sur la carte ou entrez une adresse pour définir votre départ</div>
 
-        <!-- Carte tur-map (tournée) — distincte de dep-map -->
-        <div id="tur-map" style="height:340px;border-radius:var(--r);overflow:hidden;margin-bottom:12px;border:1px solid var(--b)"></div>
-
-        <!-- Carte dep-map (legacy, masquée si tur-map présent) -->
-        <div id="dep-map" style="display:none"></div>
+        <!-- Carte principale — dep-map géré par map.js (toujours présent) -->
+        <div id="dep-map"></div>
 
         <!-- Champs lat/lng cachés -->
         <input type="hidden" id="t-lat" value="">
         <input type="hidden" id="t-lng" value="">
 
-        <!-- CA estimé (box utilisée par updateCAEstimate) -->
+        <!-- CA estimé -->
         <div id="ca-box" style="display:none;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.25);border-radius:var(--r);padding:10px 14px;font-size:13px;margin-bottom:12px;color:var(--a)"></div>
-
-        <!-- CA estimé depuis import (version tur-ca-wrap) -->
         <div id="tur-ca-wrap" style="display:none">
           <div class="ca-pill">💶 <span id="tur-ca-val">—</span> estimés depuis l'import</div>
         </div>
@@ -920,6 +923,77 @@
       <div id="stats-avancees-body"></div>
     </section>
 
+    <!-- RAPPORT MENSUEL -->
+    <section class="view" id="view-rapport">
+      <h1 class="pt">Rapport <em>d'activité</em></h1>
+      <p class="ps">Rapport mensuel complet · Export PDF · Pour votre comptable et l'URSSAF</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">📄 Générer le rapport</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+          <select id="rapport-period" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+            <option value="month">Ce mois-ci</option>
+            <option value="lastmonth">Mois précédent</option>
+            <option value="3month">3 derniers mois</option>
+            <option value="year">Cette année</option>
+          </select>
+          <button class="btn bp" id="btn-rapport" onclick="generateRapportMensuel()"><span>📄</span> Télécharger le rapport</button>
+          <button class="btn bv bsm" onclick="previewRapport()">👁️ Aperçu</button>
+        </div>
+        <div class="aic">
+          <div class="ai in">📊 Le rapport inclut : KPIs revenus, détail de chaque cotation, top actes, graphique journalier, répartition AMO/AMC/patient</div>
+          <div class="ai in">💡 Format HTML — ouvrez-le dans Chrome et faites Fichier → Imprimer → Enregistrer en PDF pour un PDF propre</div>
+          <div class="ai su">✅ Conforme URSSAF · Inclut N° ADELI, RPPS, N° factures séquentiels, version NGAP</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COPILOTE IA -->
+    <section class="view" id="view-copilote">
+      <h1 class="pt">Copilote <em>IA</em></h1>
+      <p class="ps">Expert NGAP disponible 24h/24 · Posez n'importe quelle question · Suggestions proactives</p>
+      <div id="copilote-chat-area"></div>
+    </section>
+
+    <!-- RÉFÉRENTIEL NGAP -->
+    <section class="view" id="view-ngap-ref">
+      <h1 class="pt">Référentiel <em>NGAP 2026</em></h1>
+      <p class="ps">Nomenclature complète · Recherche instantanée · Validateur de cumuls</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">🔍 Rechercher un acte</div>
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <input type="text" id="ngap-search-input" placeholder="Code ou description (ex: AMI1, injection, toilette, nuit...)" oninput="renderNGAPSearch()" style="flex:1;min-width:200px">
+          <button class="btn bp bsm" onclick="renderNGAPSearch()">🔍 Rechercher</button>
+        </div>
+        <div id="ngap-search-results"></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">📋 Validateur de cumuls</div>
+        <p style="font-size:13px;color:var(--m);margin-bottom:12px">Entrez les codes séparés par des virgules pour vérifier si le cumul est conforme NGAP.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <input type="text" id="cumul-check-input" placeholder="Ex : AMI1, IFD, MN" style="flex:1;min-width:200px">
+          <button class="btn bv bsm" onclick="_checkCumul()">✅ Vérifier le cumul</button>
+        </div>
+        <div id="cumul-check-result"></div>
+      </div>
+      <div class="card">
+        <div class="ct">📚 Table des actes principaux</div>
+        <div class="al" style="margin-top:8px">
+          ${Object.entries({
+            'AMI1':'Acte infirmier simple — 3,15 €','AMI4':'Pansement complexe — 12,60 €',
+            'BSA':'Bilan soins A (légère) — 13 €','BSB':'Bilan soins B (modérée) — 18,20 €','BSC':'Bilan soins C (lourde) — 28,70 €',
+            'IFD':'Déplacement domicile — 2,75 €','MN':'Majoration nuit — 9,15 €','MN2':'Nuit profonde — 18,30 €','MD':'Dimanche/férié — 8,50 €'
+          }).map(([code,desc]) => `<div class="ar"><div class="ac">${code}</div><div class="an">${desc}</div><button class="btn bp bsm" onclick="document.getElementById('f-txt').value+=' ${code}';navTo('cot',null)" style="font-size:10px">+ Coter</button></div>`).join('')}
+        </div>
+      </div>
+    </section>
+
+    <!-- MONITORING SYSTÈME (admin) — aussi accessible aux nurses pour la transparence -->
+    <section class="view" id="view-syshealth" style="display:none">
+      <h1 class="pt">Santé <em>système</em></h1>
+      <p class="ps">Monitoring temps réel · N8N · Worker · IA · Logs système</p>
+      <div id="system-health-body"></div>
+    </section>
+
     <!-- CONTACT ADMIN (nurse-only) -->
     <section class="view" id="view-contact">
       <h1 class="pt">Contact <em>Administrateur</em></h1>
@@ -1069,6 +1143,33 @@
 
 <!-- Extras — fonctions complémentaires de ami-ngap.html -->
 <script src="js/extras.js"></script>
+
+<!-- Nouveaux modules SaaS médical -->
+<script src="js/signature.js"></script>
+<script src="js/copilote.js"></script>
+<script src="js/rapport.js"></script>
+
+<!-- Helper inline pour le référentiel NGAP -->
+<script>
+function _checkCumul() {
+  const input = document.getElementById('cumul-check-input');
+  const result= document.getElementById('cumul-check-result');
+  if (!input || !result) return;
+  const codes = input.value.split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
+  if (!codes.length) { result.innerHTML = ''; return; }
+  if (typeof validateNGAPCumul !== 'function') { result.innerHTML = '<div class="ai wa">Référentiel non chargé.</div>'; return; }
+  const errors = validateNGAPCumul(codes.map(c=>({code:c})));
+  if (errors.length) {
+    result.innerHTML = errors.map(e=>`<div class="ai er">❌ ${e}</div>`).join('');
+  } else {
+    result.innerHTML = `<div class="ai su">✅ Cumul conforme NGAP pour : ${codes.join(' + ')}</div>`;
+  }
+}
+// Exposer checkOnboarding pour l'événement login
+document.addEventListener('ami:login', () => {
+  if (typeof checkOnboarding === 'function') checkOnboarding();
+});
+</script>
 
 </body>
 </html>
