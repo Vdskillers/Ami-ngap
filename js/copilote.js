@@ -346,74 +346,16 @@ function openCopilotSection() {
   if (typeof navTo === 'function') navTo('copilote', null);
 }
 
-/* ── Montage de l'interface dans #copilote-chat-area ── */
+/* ── Initialisation du Copilote (HTML déjà dans le DOM via index.html) ── */
 function initCopiloteSection() {
   _loadHistory();
-  const target = document.getElementById('copilote-chat-area');
-  if (!target) return;
 
-  // ── Notice admin : toujours visible si admin ──
+  // ── Notice admin ──
   const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
   const notice  = document.getElementById('copilote-admin-notice');
   if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
 
-  // ── Vérifier si l'UI est déjà montée ET les éléments sont présents ──
-  const alreadyMounted = target.dataset.ok === '1'
-    && !!document.getElementById('copilote-messages-full')
-    && !!document.getElementById('copilote-input-full');
-
-  if (alreadyMounted) {
-    _renderFullHistory();
-    _renderFullSuggestions();
-    setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 100);
-    return;
-  }
-
-  // ── Monter l'interface complète (nurses ET admins) ──
-  target.dataset.ok = '1';
-  target.style.cssText = 'display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:420px;';
-
-  target.innerHTML = `
-    <!-- Zone messages -->
-    <div id="copilote-messages-full"
-      style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;
-             gap:12px;background:var(--s);border:1px solid var(--b);
-             border-radius:var(--r) var(--r) 0 0;scroll-behavior:smooth"></div>
-
-    <!-- Suggestions rapides -->
-    <div id="copilote-sugg-full"
-      style="padding:8px 14px 6px;background:var(--c);border:1px solid var(--b);
-             border-top:none;display:flex;gap:6px;flex-wrap:wrap;min-height:42px"></div>
-
-    <!-- Barre d'envoi -->
-    <div style="display:flex;gap:8px;padding:12px 14px;background:var(--c);
-                border:1px solid var(--b);border-top:none;
-                border-radius:0 0 var(--r) var(--r);align-items:flex-end">
-      <textarea id="copilote-input-full"
-        placeholder="Posez votre question NGAP… (Entrée pour envoyer, Maj+Entrée pour retour à la ligne)"
-        rows="2"
-        style="flex:1;resize:none;background:var(--s);border:1px solid var(--b);color:var(--t);
-               border-radius:10px;padding:10px 14px;font-size:14px;font-family:var(--ff);
-               line-height:1.5;transition:border .15s;max-height:120px"
-        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendCopilotFull();}"
-        oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'">
-      </textarea>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <button id="copilote-send-btn" onclick="sendCopilotFull()"
-          style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
-                 border:none;border-radius:10px;padding:11px 18px;font-size:18px;
-                 cursor:pointer;transition:all .15s;font-weight:700"
-          onmouseenter="this.style.opacity='.85'"
-          onmouseleave="this.style.opacity='1'">↑</button>
-        <button onclick="clearCopilotHistory()"
-          title="Effacer la conversation"
-          style="background:none;border:1px solid var(--b);color:var(--m);
-                 border-radius:10px;padding:8px;font-size:13px;cursor:pointer"
-          onmouseenter="this.style.borderColor='var(--d)';this.style.color='var(--d)'"
-          onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">🗑️</button>
-      </div>
-    </div>`;
-
+  // ── Remplir messages et suggestions (le HTML existe déjà) ──
   _renderFullHistory();
   _renderFullSuggestions();
   setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 150);
