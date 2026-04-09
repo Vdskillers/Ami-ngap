@@ -49,8 +49,9 @@ function initTurMap(){
   const turMapEl = document.getElementById('tur-map');
 
   if(_turMap) {
-    // Déjà initialisé — juste invalider la taille
+    // Déjà initialisé — juste invalider la taille + s'assurer que le click est bien branché
     setTimeout(() => { try { _turMap.invalidateSize(); } catch {} }, 100);
+    _rebindMapClick(_turMap);
     return;
   }
 
@@ -58,12 +59,7 @@ function initTurMap(){
   if(APP.map?.instance && depMapEl) {
     _turMap = APP.map.instance;
     window._tourMap = _turMap;
-    // Brancher le clic pour setDepartPoint
-    _turMap.off('click'); // éviter les doublons
-    _turMap.on('click', function(e){
-      const {lat, lng} = e.latlng;
-      setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
-    });
+    _rebindMapClick(_turMap);
     setTimeout(() => { try { _turMap.invalidateSize(); } catch {} }, 100);
     return;
   }
@@ -74,11 +70,7 @@ function initTurMap(){
     if(APP.map?.instance) {
       _turMap = APP.map.instance;
       window._tourMap = _turMap;
-      _turMap.off('click');
-      _turMap.on('click', function(e){
-        const {lat, lng} = e.latlng;
-        setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
-      });
+      _rebindMapClick(_turMap);
     }
     return;
   }
@@ -91,12 +83,52 @@ function initTurMap(){
     attribution:'© <a href="https://www.openstreetmap.org">OpenStreetMap</a>',
     maxZoom:19
   }).addTo(_turMap);
-  _turMap.on('click', function(e){
-    const {lat, lng} = e.latlng;
-    setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
-  });
+  _rebindMapClick(_turMap);
   setTimeout(() => _turMap.invalidateSize(), 300);
 }
+
+/* ─── Branche le handler de clic carte pour le point de départ ───────
+   Conserve TOUS les comportements de map.js (_setDepMarker, setDepCoords,
+   reverseGeocode) ET y ajoute setDepartPoint pour extras.js.
+   On ne supprime PLUS le handler existant — on l'augmente.
+──────────────────────────────────────────────────────────────────── */
+function _rebindMapClick(map){
+  if(!map) return;
+
+  // Retirer l'éventuel handler précédent d'extras.js uniquement
+  if(_turMapClickHandler) {
+    map.off('click', _turMapClickHandler);
+  }
+
+  // Curseur crosshair sur la carte pour indiquer qu'on peut cliquer
+  const container = map.getContainer();
+  if(container) container.style.cursor = 'crosshair';
+
+  // Hint visuel sur dep-coords si pas encore de point défini
+  const coordsEl = document.getElementById('dep-coords');
+  if(coordsEl && !APP.get('startPoint')) {
+    coordsEl.textContent = '👆 Cliquez sur la carte pour définir votre départ';
+    coordsEl.style.display = 'block';
+  }
+
+  _turMapClickHandler = function(e){
+    const {lat, lng} = e.latlng;
+
+    // Appeler map.js si disponible (marker draggable + geocodage inverse)
+    if(typeof _setDepMarker === 'function') _setDepMarker(lat, lng);
+    if(typeof setDepCoords  === 'function') setDepCoords(lat, lng);
+    if(typeof reverseGeocode=== 'function') reverseGeocode(lat, lng);
+
+    // Puis setDepartPoint d'extras.js (synchro APP.startPoint + inputs cachés)
+    setDepartPoint(lat, lng, '📍 Sélectionné sur la carte');
+
+    // Remettre curseur normal après sélection
+    if(container) container.style.cursor = '';
+  };
+
+  map.on('click', _turMapClickHandler);
+}
+let _turMapClickHandler = null;
 
 function setDepartPoint(lat, lng, label){
   /* Mettre à jour les inputs et APP.startPoint */
@@ -108,24 +140,31 @@ function setDepartPoint(lat, lng, label){
   /* Déléguer à setDepCoords de map.js si disponible — met aussi à jour dep-addr/dep-coords */
   if(typeof setDepCoords === 'function') setDepCoords(lat, lng);
 
-  /* Marker de départ sur _turMap si distinct de APP.map.instance */
+  /* Marker de départ — affiché sur _turMap dans tous les cas
+     (même si _turMap === APP.map.instance, map.js place depMarker draggable via _setDepMarker)
+     On ajoute un second marker coloré d'extras.js uniquement si tur-map dédié */
   if(_turMap && _turMap !== APP.map?.instance){
     if(_turMarker) _turMap.removeLayer(_turMarker);
     const icon = L.divIcon({
       className:'',
       html:`<div style="background:#00d4aa;border:3px solid #fff;border-radius:50%;width:18px;height:18px;box-shadow:0 0 12px rgba(0,212,170,.8)"></div>`,
-      iconSize:[18,18]
+      iconSize:[18,18], iconAnchor:[9,9]
     });
     _turMarker = L.marker([lat,lng],{icon}).addTo(_turMap)
-      .bindPopup(`<b>Départ</b><br>${label}`).openPopup();
+      .bindPopup(`<b>📍 Départ</b><br>${label}`).openPopup();
     _turMap.setView([lat,lng],14);
   } else if(_turMap) {
     // map.js gère le marker via _setDepMarker — juste zoomer
     _turMap.setView([lat,lng],14);
   }
 
+  /* Affichage coordonnées */
   const coordsEl = $('dep-coords') || $('tur-coords-txt');
-  if(coordsEl) coordsEl.textContent = `📌 ${label} — ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  if(coordsEl) {
+    coordsEl.textContent = `📌 Départ : ${label} — ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    coordsEl.style.display = 'block';
+  }
+
   updateCAEstimate();
 }
 

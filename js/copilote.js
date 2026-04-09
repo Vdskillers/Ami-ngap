@@ -326,124 +326,261 @@ function clearCopilotHistory() {
 
 /* ════════════════════════════════════════════════
    SECTION COPILOTE DÉDIÉE (vue /copilote)
+   ────────────────────────────────────────────────
+   v2 — robuste : monte l'UI dès que la section
+   est visible, fonctionne pour nurses ET admins,
+   réponses via API Claude (Anthropic) en direct.
 ════════════════════════════════════════════════ */
 function openCopilotSection() {
   if (typeof navTo === 'function') navTo('copilote', null);
 }
 
+/* ── Montage de l'interface dans #copilote-chat-area ── */
 function initCopiloteSection() {
   _loadHistory();
-  const section = document.getElementById('view-copilote');
-  if (!section) return;
-  // Injecter l'interface dans la section
   const target = document.getElementById('copilote-chat-area');
-  if (!target || target.dataset.initialized) return;
-  target.dataset.initialized = '1';
-  target.style.cssText = 'display:flex;flex-direction:column;height:calc(100vh - 220px);min-height:400px';
-  target.innerHTML = `
-    <div id="copilote-messages-full" style="flex:1;overflow-y:auto;padding:16px;
-      display:flex;flex-direction:column;gap:10px;background:var(--s);
-      border:1px solid var(--b);border-radius:var(--r) var(--r) 0 0"></div>
-    <div id="copilote-sugg-full" style="padding:10px 14px;background:var(--c);
-      border:1px solid var(--b);border-top:none;display:flex;gap:6px;flex-wrap:wrap"></div>
+  if (!target) return;
+  // Déjà monté ?
+  if (target.dataset.ok === '1') {
+    _renderFullHistory();
+    _renderFullSuggestions();
+    setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 100);
+    return;
+  }
+  target.dataset.ok = '1';
+  target.style.cssText = 'display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:420px;';
+
+  target.innerHTML = \`
+    <!-- Zone messages -->
+    <div id="copilote-messages-full"
+      style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;
+             gap:12px;background:var(--s);border:1px solid var(--b);
+             border-radius:var(--r) var(--r) 0 0;scroll-behavior:smooth"></div>
+
+    <!-- Suggestions rapides -->
+    <div id="copilote-sugg-full"
+      style="padding:8px 14px 6px;background:var(--c);border:1px solid var(--b);
+             border-top:none;display:flex;gap:6px;flex-wrap:wrap;min-height:42px"></div>
+
+    <!-- Barre d'envoi -->
     <div style="display:flex;gap:8px;padding:12px 14px;background:var(--c);
-      border:1px solid var(--b);border-top:none;border-radius:0 0 var(--r) var(--r)">
-      <textarea id="copilote-input-full" placeholder="Posez votre question NGAP…"
-        rows="2" style="flex:1;resize:none;background:var(--s);border:1px solid var(--b);
-        color:var(--t);border-radius:10px;padding:10px 12px;font-size:14px;font-family:var(--ff)"
-        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendCopilotFull();}">
+                border:1px solid var(--b);border-top:none;
+                border-radius:0 0 var(--r) var(--r);align-items:flex-end">
+      <textarea id="copilote-input-full"
+        placeholder="Posez votre question NGAP… (Entrée pour envoyer, Maj+Entrée pour retour à la ligne)"
+        rows="2"
+        style="flex:1;resize:none;background:var(--s);border:1px solid var(--b);color:var(--t);
+               border-radius:10px;padding:10px 14px;font-size:14px;font-family:var(--ff);
+               line-height:1.5;transition:border .15s;max-height:120px"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendCopilotFull();}"
+        oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'">
       </textarea>
-      <button onclick="sendCopilotFull()"
-        style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
-        border:none;border-radius:10px;padding:12px 18px;font-size:18px;cursor:pointer">↑</button>
-    </div>`;
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button id="copilote-send-btn" onclick="sendCopilotFull()"
+          style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
+                 border:none;border-radius:10px;padding:11px 18px;font-size:18px;
+                 cursor:pointer;transition:all .15s;font-weight:700"
+          onmouseenter="this.style.opacity='.85'"
+          onmouseleave="this.style.opacity='1'">↑</button>
+        <button onclick="clearCopilotHistory()"
+          title="Effacer la conversation"
+          style="background:none;border:1px solid var(--b);color:var(--m);
+                 border-radius:10px;padding:8px;font-size:13px;cursor:pointer"
+          onmouseenter="this.style.borderColor='var(--d)';this.style.color='var(--d)'"
+          onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">🗑️</button>
+      </div>
+    </div>\`;
 
   _renderFullHistory();
   _renderFullSuggestions();
+  setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 150);
 }
 
+/* ── Envoi message — réponse via API Claude (Anthropic) ── */
+let _fullTyping = false;
+
 async function sendCopilotFull() {
+  if (_fullTyping) return;
   const input = document.getElementById('copilote-input-full');
-  const q = (input?.value||'').trim();
+  const q = (input?.value || '').trim();
   if (!q) return;
-  if (input) input.value = '';
+  if (input) { input.value = ''; input.style.height = 'auto'; }
 
-  _copilotHistory.push({ role:'user', content:q, ts:Date.now() });
+  _copilotHistory.push({ role: 'user', content: q, ts: Date.now() });
   _renderFullHistory();
+  _fullTyping = true;
 
+  // Désactiver bouton
+  const btn = document.getElementById('copilote-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+
+  // Typing indicator
   const msgEl = document.getElementById('copilote-messages-full');
   if (msgEl) {
-    const typing = document.createElement('div');
-    typing.id = 'copilote-typing-full';
-    typing.innerHTML = `<div style="color:var(--m);font-size:12px;font-style:italic">🤖 Réflexion en cours…</div>`;
-    msgEl.appendChild(typing);
+    const t = document.createElement('div');
+    t.id = 'copilote-typing-full';
+    t.style.cssText = 'display:flex;gap:10px;align-items:flex-start';
+    t.innerHTML = \`<div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:4px 14px 14px 14px;padding:12px 16px;display:flex;gap:5px;align-items:center">
+      <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite 0s"></span>
+      <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .15s"></span>
+      <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .3s"></span>
+    </div>\`;
+    msgEl.appendChild(t);
     msgEl.scrollTop = msgEl.scrollHeight;
   }
 
   try {
-    const d = await apiCall('/webhook/ami-copilot', { question: _buildContext() ? `[${_buildContext()}]\n${q}` : q });
+    const answer = await _askClaude(q);
     document.getElementById('copilote-typing-full')?.remove();
-    const answer = d.answer || 'Aucune réponse disponible.';
-    _copilotHistory.push({ role:'assistant', content:answer, ts:Date.now() });
+    _copilotHistory.push({ role: 'assistant', content: answer, ts: Date.now() });
     _saveHistory();
     _renderFullHistory();
+    if (typeof window.safeSpeak === 'function' && answer.length < 250) window.safeSpeak(answer);
   } catch (e) {
     document.getElementById('copilote-typing-full')?.remove();
-    _copilotHistory.push({ role:'error', content:'⚠️ '+e.message, ts:Date.now() });
+    _copilotHistory.push({ role: 'error', content: '⚠️ ' + (e.message || 'Service indisponible.'), ts: Date.now() });
     _renderFullHistory();
   }
+
+  _fullTyping = false;
+  if (btn) { btn.disabled = false; btn.textContent = '↑'; }
+  document.getElementById('copilote-input-full')?.focus();
 }
 
+/* ── Appel API Claude (Anthropic) via proxy Anthropic ── */
+async function _askClaude(question) {
+  const ctx = _buildContext();
+
+  // Construire messages avec historique (max 10 derniers échanges)
+  const history = _copilotHistory
+    .slice(-10)
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: m.content }));
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: \`Tu es un expert NGAP (Nomenclature Générale des Actes Professionnels) pour infirmiers libéraux en France. Tu réponds en français, de façon claire et précise. Tu connais parfaitement les tarifs 2026 (AMI = 3,15€/unité, AIS = 2,65€/unité), les majorations (MN 9,15€, MN2 18,30€, MD 8,50€, IFD 2,75€, MIE 2,65€, MCI 5€), les forfaits BSI (BSA 13€, BSB 18,20€, BSC 28,70€), les règles de cumul, l'exonération ALD, et toutes les règles CPAM. Tu aides l'infirmière à optimiser ses cotations et ses revenus.${ctx ? ' Contexte actuel : ' + ctx : ''}\`,
+      messages: history,
+    })
+  });
+
+  if (!response.ok) {
+    // Fallback sur la route worker /ami-copilot
+    const d = await apiCall('/webhook/ami-copilot', { question: ctx ? \`[\${ctx}]\n\${question}\` : question });
+    return d.answer || 'Je n\'ai pas pu répondre. Réessayez.';
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || 'Réponse vide.';
+}
+
+/* ── Render history section dédiée ── */
 function _renderFullHistory() {
   const el = document.getElementById('copilote-messages-full');
   if (!el) return;
+
   if (!_copilotHistory.length) {
-    el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--m)">
-      <div style="font-size:40px;margin-bottom:12px">🤖</div>
-      <div style="font-size:14px;line-height:1.8">Je suis votre expert NGAP.<br>Posez-moi n'importe quelle question sur la cotation,<br>les règles CPAM, ou l'optimisation de vos revenus.</div>
-    </div>`;
+    el.innerHTML = \`
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                  height:100%;text-align:center;color:var(--m);padding:40px 20px">
+        <div style="font-size:52px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(0,212,170,.3))">🤖</div>
+        <div style="font-family:var(--fs);font-size:20px;margin-bottom:10px;color:var(--t)">Copilote <em style="color:var(--a)">NGAP</em></div>
+        <div style="font-size:13px;line-height:1.8;max-width:320px">
+          Expert NGAP disponible 24h/24.<br>
+          Posez vos questions sur la <strong>cotation</strong>,<br>
+          les <strong>règles CPAM</strong>, les <strong>majorations</strong>…<br>
+          <span style="font-size:11px;opacity:.6;margin-top:8px;display:block">Utilisez les suggestions ci-dessous ou écrivez librement.</span>
+        </div>
+      </div>\`;
     return;
   }
+
   el.innerHTML = _copilotHistory.map(msg => {
-    if (msg.role === 'user') return `<div style="display:flex;justify-content:flex-end"><div style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;border-radius:14px 14px 4px 14px;padding:12px 16px;max-width:75%;font-size:14px;line-height:1.5">${_esc(msg.content)}</div></div>`;
-    if (msg.role === 'error') return `<div class="ai er" style="font-size:13px">${msg.content}</div>`;
-    return `<div style="display:flex;gap:10px"><div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div><div style="background:var(--c);border:1px solid var(--b);border-radius:4px 14px 14px 14px;padding:12px 16px;max-width:82%;font-size:14px;line-height:1.7">${_formatAnswer(msg.content)}</div></div>`;
+    if (msg.role === 'user') {
+      return \`<div style="display:flex;justify-content:flex-end">
+        <div style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
+          border-radius:14px 14px 4px 14px;padding:12px 16px;max-width:75%;
+          font-size:14px;line-height:1.5;word-break:break-word">\${_esc(msg.content)}</div>
+      </div>\`;
+    }
+    if (msg.role === 'error') {
+      return \`<div style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.3);
+        border-radius:10px;padding:10px 14px;font-size:13px;color:var(--d)">\${msg.content}</div>\`;
+    }
+    return \`<div style="display:flex;gap:10px;align-items:flex-start">
+      <div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));
+        border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
+      <div style="background:var(--c);border:1px solid var(--b);
+        border-radius:4px 14px 14px 14px;padding:12px 16px;max-width:82%;
+        font-size:14px;line-height:1.7;word-break:break-word">\${_formatAnswer(msg.content)}</div>
+    </div>\`;
   }).join('');
   el.scrollTop = el.scrollHeight;
 }
 
+/* ── Suggestions section dédiée ── */
 function _renderFullSuggestions() {
   const el = document.getElementById('copilote-sugg-full');
   if (!el) return;
   el.innerHTML = QUICK_SUGGESTIONS.map(s =>
-    `<button onclick="sendCopilotFull_q('${s.q.replace(/'/g,"\\'")}')" style="background:var(--s);border:1px solid var(--b);color:var(--m);border-radius:20px;padding:5px 14px;font-size:12px;cursor:pointer;white-space:nowrap;font-family:var(--ff);transition:all .15s" onmouseenter="this.style.borderColor='var(--a)';this.style.color='var(--a)'" onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">${s.label}</button>`
+    \`<button onclick="sendCopilotFull_q('\${s.q.replace(/'/g,"\\'")}')"
+      style="background:var(--s);border:1px solid var(--b);color:var(--m);
+             border-radius:20px;padding:5px 14px;font-size:12px;cursor:pointer;
+             white-space:nowrap;font-family:var(--ff);transition:all .15s"
+      onmouseenter="this.style.borderColor='var(--a)';this.style.color='var(--a)'"
+      onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">\${s.label}</button>\`
   ).join('');
 }
 
 async function sendCopilotFull_q(q) {
   const input = document.getElementById('copilote-input-full');
-  if (input) input.value = q;
+  if (input) { input.value = q; input.dispatchEvent(new Event('input')); }
   await sendCopilotFull();
 }
 
-/* ── Init ── */
+/* ════════════════════════════════════════════════
+   INIT — robuste (multiples déclencheurs)
+════════════════════════════════════════════════ */
+function _tryInitCopilote() {
+  const target = document.getElementById('copilote-chat-area');
+  if (!target) return;
+  const section = document.getElementById('view-copilote');
+  // Vérifier que la section est visible (class "on" ou display != none)
+  const visible = section?.classList.contains('on') ||
+                  (section && getComputedStyle(section).display !== 'none');
+  if (visible) initCopiloteSection();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Créer le bouton flottant (sauf si on est admin)
+  // Bouton flottant pour nurses uniquement
   if (typeof S === 'undefined' || S?.role !== 'admin') {
     _createCopilotPanel();
   }
-
-  // Afficher le bouton flottant après login
   document.addEventListener('ami:login', () => {
     if (S?.role === 'nurse') _createCopilotPanel();
   });
 
-  // Init section dédiée quand on navigue
+  // Déclencheur principal : navigation
   document.addEventListener('app:nav', e => {
     if (e.detail?.view === 'copilote') {
-      setTimeout(initCopiloteSection, 50);
+      setTimeout(initCopiloteSection, 80);
     }
   });
+
+  // Déclencheur secondaire : changement de classe (si navTo fait un toggle de class "on")
+  const section = document.getElementById('view-copilote');
+  if (section) {
+    const obs = new MutationObserver(() => _tryInitCopilote());
+    obs.observe(section, { attributes: true, attributeFilter: ['class', 'style'] });
+  }
+
+  // Déclencheur tertiaire : si la section est déjà visible au chargement
+  setTimeout(_tryInitCopilote, 300);
 });
 
 /* Exports */
@@ -453,3 +590,4 @@ window.clearCopilotHistory   = clearCopilotHistory;
 window.openCopilotSection    = openCopilotSection;
 window.sendCopilotFull       = sendCopilotFull;
 window.sendCopilotFull_q     = sendCopilotFull_q;
+window.initCopiloteSection   = initCopiloteSection;

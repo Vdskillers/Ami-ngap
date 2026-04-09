@@ -78,14 +78,29 @@ function showApp(){
     if(invSec) invSec.style.display='none';
     // Pré-remplir date pour test fonctionnel
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
-    // Bouton "Panneau admin" dans la sidebar (créé une seule fois)
+    // Boutons "Mon compte" + "Panneau admin" dans la sidebar (créés une seule fois)
     if(!$('btn-goto-admin')){
-      const li=document.createElement('div');
-      li.className='ni';li.id='btn-goto-admin';
-      li.innerHTML='<span class="nic">⚙️</span> Panneau admin';
-      li.style.cssText='color:var(--d);background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);margin:8px 14px;border-radius:var(--r);';
-      li.onclick=()=>{$('app').style.display='none';$('adm').classList.add('show');loadAdm();loadAdmStats();};
-      document.querySelector('.side .sl:last-child')?.prepend(li);
+      const slLast = document.querySelector('.side .sl:last-child');
+
+      // Bouton "Panneau admin"
+      const liAdmin=document.createElement('div');
+      liAdmin.className='ni';liAdmin.id='btn-goto-admin';
+      liAdmin.innerHTML='<span class="nic">⚙️</span> Panneau admin';
+      liAdmin.style.cssText='color:var(--d);background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);margin:4px 14px 8px;border-radius:var(--r);';
+      liAdmin.onclick=()=>{$('app').style.display='none';$('adm').classList.add('show');loadAdm();loadAdmStats();};
+
+      // Bouton "Mon compte" (au-dessus du panneau admin)
+      const liCompte=document.createElement('div');
+      liCompte.className='ni';liCompte.id='btn-goto-compte';
+      const u=S?.user||{};
+      const nom=((u.prenom||'')+' '+(u.nom||'')).trim()||'Mon compte';
+      liCompte.innerHTML=`<span class="nic">👤</span> ${nom}`;
+      liCompte.style.cssText='color:var(--a);background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.15);margin:8px 14px 4px;border-radius:var(--r);';
+      liCompte.onclick=()=>{ if(typeof openPM==='function') openPM(); };
+
+      // Insérer : Mon compte en premier, Panneau admin en second
+      slLast?.prepend(liAdmin);   // admin en bas
+      slLast?.prepend(liCompte);  // compte au-dessus
     }
   } else {
     /* ── MODE INFIRMIÈRE ─────────────────────────────────────────── */
