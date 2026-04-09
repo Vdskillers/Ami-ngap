@@ -61,7 +61,7 @@ function _showInstallButton() {
   btn.id = 'btn-install-pwa';
   btn.innerHTML = '📱 Installer AMI';
   btn.className = 'btn bs bsm';
-  btn.style.cssText = 'position:fixed;top: 16px;right:16px;z-index:800;box-shadow:0 4px 20px rgba(0,0,0,.4)';
+  btn.style.cssText = 'position:fixed;top:16px;right:16px;z-index:800;box-shadow:0 4px 20px rgba(0,0,0,.4)';
   btn.onclick = installApp;
   document.body.appendChild(btn);
 }
