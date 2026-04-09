@@ -429,13 +429,24 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   /* DASH chart */
   #dash-chart{height:120px}
 
-  /* VOICE FAB */
-  #voicebtn{bottom:80px;right:14px;width:48px;height:48px;font-size:18px}
-  #voice-toast{bottom:138px;right:76px;max-width:220px}
+  /* VOICE FAB — dans le header sur mobile */
+  #voicebtn{
+    position:static !important;bottom:auto !important;right:auto !important;
+    width:34px !important;height:34px !important;font-size:15px !important;
+    box-shadow:none !important;flex-shrink:0;
+  }
+  #voice-toast{top:64px;right:8px;bottom:auto !important;max-width:calc(100vw - 16px);left:8px}
 
-  /* COPILOTE FAB — à gauche du bouton vocal, même hauteur */
-  #copilot-fab{bottom:80px !important;right:76px !important;width:48px !important;height:48px !important;font-size:18px !important}
-  #copilot-panel{bottom:140px !important;right:14px !important;width:calc(100vw - 28px) !important}
+  /* COPILOTE FAB — dans le header sur mobile */
+  #copilot-fab{
+    position:static !important;bottom:auto !important;right:auto !important;
+    width:34px !important;height:34px !important;font-size:15px !important;
+    box-shadow:none !important;flex-shrink:0;
+  }
+  #copilot-panel{top:64px !important;bottom:auto !important;right:8px !important;left:8px !important;width:auto !important}
+
+  /* Wrapper des FAB dans le header */
+  #mobile-header-fabs{display:flex;align-items:center;gap:6px;margin-left:6px}
 
   /* LIVE CARD */
   .live-card{padding:20px 16px}
