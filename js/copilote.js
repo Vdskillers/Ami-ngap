@@ -351,6 +351,17 @@ function initCopiloteSection() {
   _loadHistory();
   const target = document.getElementById('copilote-chat-area');
   if (!target) return;
+
+  // ── Mode admin : ne monter QUE la notice, pas l'interface chat ──
+  if (typeof S !== 'undefined' && S?.role === 'admin') {
+    // S'assurer que la notice admin est bien visible (au cas où auth.js ne l'a pas encore activée)
+    const notice = document.getElementById('copilote-admin-notice');
+    if (notice) notice.style.display = 'flex';
+    // Zone vide — pas d'interface chat pour l'admin
+    target.innerHTML = '';
+    return;
+  }
+
   // Déjà monté ?
   if (target.dataset.ok === '1') {
     _renderFullHistory();
@@ -412,6 +423,8 @@ let _fullTyping = false;
 
 async function sendCopilotFull() {
   if (_fullTyping) return;
+  // ── Sécurité : l'admin ne peut pas envoyer de messages ──
+  if (typeof S !== 'undefined' && S?.role === 'admin') return;
   const input = document.getElementById('copilote-input-full');
   const q = (input?.value || '').trim();
   if (!q) return;
