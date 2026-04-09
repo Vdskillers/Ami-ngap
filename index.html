@@ -336,6 +336,10 @@
     <!-- VERIFY -->
     <section class="view" id="view-ver">
       <h1 class="pt">Vérifier <em>un soin</em></h1><p class="ps">Correction auto · Normalisation médicale · Alertes NGAP</p>
+      <!-- Notice admin -->
+      <div id="ver-admin-notice" class="ai in" style="display:none;margin-bottom:16px">
+        🛡️ <strong>Mode admin — test fonctionnel</strong> · Saisissez une description de soin pour tester l'analyse IA. Aucune donnée patient n'est requise.
+      </div>
       <div class="card">
         <div class="aic" style="margin-bottom:20px">
           <div class="ai in">✏️ <strong>Corrige</strong> les fautes de frappe et erreurs de reconnaissance vocale</div>
@@ -936,6 +940,10 @@
     <section class="view" id="view-stats">
       <h1 class="pt">Statistiques <em>avancées</em></h1>
       <p class="ps">Comparatif mois/mois · Évolution actes · Analyse horaire · Tendances</p>
+      <!-- Notice admin -->
+      <div id="stats-admin-notice" class="ai in" style="display:none;margin-bottom:16px">
+        🛡️ <strong>Mode admin — aperçu structure</strong> · Les statistiques sont vides. Vous pouvez vérifier que tous les blocs s'affichent correctement.
+      </div>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
         <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
