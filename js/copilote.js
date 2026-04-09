@@ -448,36 +448,30 @@ async function sendCopilotFull() {
   document.getElementById('copilote-input-full')?.focus();
 }
 
-/* ── Appel API Claude (Anthropic) via proxy Anthropic ── */
+
+/* ── Appel via worker Cloudflare → xAI Grok (clé sécurisée côté serveur) ── */
 async function _askClaude(question) {
   const ctx = _buildContext();
 
-  // Construire messages avec historique (max 10 derniers échanges)
+  // Transmettre l'historique au worker pour conversation continue
   const history = _copilotHistory
     .slice(-10)
     .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => ({ role: m.role, content: m.content }));
+    .map(m => ({ role: m.role, content: String(m.content).slice(0, 500) }));
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: \`Tu es un expert NGAP (Nomenclature Générale des Actes Professionnels) pour infirmiers libéraux en France. Tu réponds en français, de façon claire et précise. Tu connais parfaitement les tarifs 2026 (AMI = 3,15€/unité, AIS = 2,65€/unité), les majorations (MN 9,15€, MN2 18,30€, MD 8,50€, IFD 2,75€, MIE 2,65€, MCI 5€), les forfaits BSI (BSA 13€, BSB 18,20€, BSC 28,70€), les règles de cumul, l'exonération ALD, et toutes les règles CPAM. Tu aides l'infirmière à optimiser ses cotations et ses revenus.${ctx ? ' Contexte actuel : ' + ctx : ''}\`,
-      messages: history,
-    })
+  const fullQuestion = ctx ? `[Contexte: ${ctx}]
+${question}` : question;
+
+  // Le worker appelle xAI Grok côté serveur (clé API jamais exposée au client)
+  const d = await apiCall('/webhook/ami-copilot', {
+    question: fullQuestion,
+    history,
   });
 
-  if (!response.ok) {
-    // Fallback sur la route worker /ami-copilot
-    const d = await apiCall('/webhook/ami-copilot', { question: ctx ? \`[\${ctx}]\n\${question}\` : question });
-    return d.answer || 'Je n\'ai pas pu répondre. Réessayez.';
-  }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || 'Réponse vide.';
+  if (!d.ok) throw new Error(d.error || 'Service indisponible.');
+  return d.answer || "Je n'ai pas pu répondre. Réessayez.";
 }
+
 
 /* ── Render history section dédiée ── */
 function _renderFullHistory() {
