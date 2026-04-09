@@ -184,17 +184,13 @@ async function sendCopilotMessage(text) {
 /* ── Contexte automatique ── */
 function _buildContext() {
   const parts = [];
-  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
-
-  // ── Mode admin : contexte limité — aucune donnée médicale patient ──
+  const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
   if (isAdmin) {
-    parts.push('Mode: administrateur (test fonctionnel — sans données patients)');
-    const user = S?.user;
-    if (user?.nom) parts.push('Admin: ' + (user.prenom||'') + ' ' + user.nom);
-    return parts.join(' · ') || '';
+    parts.push('Mode: administrateur (test — sans données patients)');
+    const u = S?.user;
+    if (u?.nom) parts.push('Admin: ' + (u.prenom||'') + ' ' + u.nom);
+    return parts.join(' · ');
   }
-
-  // ── Mode infirmière : contexte complet (sans données nominatives patient) ──
   const txt = document.getElementById('f-txt')?.value?.trim();
   if (txt) parts.push('Description soin en cours: "' + txt.slice(0, 80) + '"');
   const exo = document.getElementById('f-exo')?.value;
@@ -346,58 +342,91 @@ function openCopilotSection() {
   if (typeof navTo === 'function') navTo('copilote', null);
 }
 
-/* ── Initialisation du Copilote ── */
+/* ── Montage de l'interface dans #copilote-chat-area ── */
 function initCopiloteSection() {
   _loadHistory();
+  const target = document.getElementById('copilote-chat-area');
+  if (!target) return;
+
+  // Notice admin
   const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
-  const notice  = document.getElementById('copilote-admin-notice');
+  const notice = document.getElementById('copilote-admin-notice');
   if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
+
+  // Si l'interface est déjà montée (éléments présents), juste rafraîchir
+  if (document.getElementById('copilote-messages-full')) {
+    _renderFullHistory();
+    _renderFullSuggestions();
+    setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 100);
+    return;
+  }
+
+  // Monter l'interface
+  target.style.cssText = 'display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:420px;';
+  target.innerHTML = `
+    <div id="copilote-messages-full"
+      style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;
+             gap:12px;background:var(--s);border:1px solid var(--b);
+             border-radius:var(--r) var(--r) 0 0;scroll-behavior:smooth"></div>
+    <div id="copilote-sugg-full"
+      style="padding:8px 14px 6px;background:var(--c);border:1px solid var(--b);
+             border-top:none;display:flex;gap:6px;flex-wrap:wrap;min-height:42px"></div>
+    <div style="display:flex;gap:8px;padding:12px 14px;background:var(--c);
+                border:1px solid var(--b);border-top:none;
+                border-radius:0 0 var(--r) var(--r);align-items:flex-end">
+      <textarea id="copilote-input-full"
+        placeholder="Posez votre question NGAP…"
+        rows="2"
+        style="flex:1;resize:none;background:var(--s);border:1px solid var(--b);color:var(--t);
+               border-radius:10px;padding:10px 14px;font-size:14px;font-family:var(--ff);
+               line-height:1.5;transition:border .15s;max-height:120px"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendCopilotFull();}"
+        oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'">
+      </textarea>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button id="copilote-send-btn" onclick="sendCopilotFull()"
+          style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
+                 border:none;border-radius:10px;padding:11px 18px;font-size:18px;
+                 cursor:pointer;font-weight:700">↑</button>
+        <button onclick="clearCopilotHistory()" title="Effacer"
+          style="background:none;border:1px solid var(--b);color:var(--m);
+                 border-radius:10px;padding:8px;font-size:13px;cursor:pointer">🗑️</button>
+      </div>
+    </div>`;
+
   _renderFullHistory();
   _renderFullSuggestions();
   setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 150);
 }
 
-/* ── Envoi message section dédiée ── */
+/* ── Envoi message — réponse via API xAI Grok ── */
 let _fullTyping = false;
-let _fullTypingTimeout = null;
 
 async function sendCopilotFull() {
-  // Reset si bloqué
-  if (_fullTyping && !_fullTypingTimeout) _fullTyping = false;
   if (_fullTyping) return;
-
   const input = document.getElementById('copilote-input-full');
-  if (!input) { console.error('[Copilote] textarea #copilote-input-full introuvable'); return; }
-
-  const q = input.value.trim();
+  const q = (input?.value || '').trim();
   if (!q) return;
-
-  // S'assurer que l'historique est chargé
-  if (!_copilotHistory.length) _loadHistory();
-
-  input.value = '';
-  input.style.height = 'auto';
+  if (input) { input.value = ''; input.style.height = 'auto'; }
 
   _copilotHistory.push({ role: 'user', content: q, ts: Date.now() });
   _renderFullHistory();
   _fullTyping = true;
-  _fullTypingTimeout = setTimeout(() => { _fullTyping = false; _fullTypingTimeout = null; }, 40000);
 
   const btn = document.getElementById('copilote-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
-  // Indicateur de frappe
   const msgEl = document.getElementById('copilote-messages-full');
   if (msgEl) {
     const t = document.createElement('div');
     t.id = 'copilote-typing-full';
-    t.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:4px 0';
-    t.innerHTML = `<div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
-    <div style="background:var(--s);border:1px solid var(--b);border-radius:4px 14px 14px 14px;padding:12px 16px;display:flex;gap:5px;align-items:center">
-      <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite 0s"></span>
-      <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .15s"></span>
-      <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .3s"></span>
-    </div>`;
+    t.style.cssText = 'display:flex;gap:10px;align-items:flex-start';
+    t.innerHTML = '<div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>'
+      + '<div style="background:var(--s);border:1px solid var(--b);border-radius:4px 14px 14px 14px;padding:12px 16px;display:flex;gap:5px;align-items:center">'
+      + '<span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite 0s"></span>'
+      + '<span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .15s"></span>'
+      + '<span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .3s"></span>'
+      + '</div>';
     msgEl.appendChild(t);
     msgEl.scrollTop = msgEl.scrollHeight;
   }
@@ -410,21 +439,16 @@ async function sendCopilotFull() {
     _renderFullHistory();
     if (typeof window.safeSpeak === 'function' && answer.length < 250) window.safeSpeak(answer);
   } catch (e) {
-    console.error('[Copilote] Erreur envoi:', e.message);
     document.getElementById('copilote-typing-full')?.remove();
-    _copilotHistory.push({ role: 'error', content: '⚠️ ' + (e.message || 'Service indisponible. Vérifiez votre connexion.'), ts: Date.now() });
+    _copilotHistory.push({ role: 'error', content: '⚠️ ' + (e.message || 'Service indisponible.'), ts: Date.now() });
     _renderFullHistory();
   } finally {
-    clearTimeout(_fullTypingTimeout);
-    _fullTypingTimeout = null;
     _fullTyping = false;
     if (btn) { btn.disabled = false; btn.textContent = '↑'; }
-    input.focus();
+    document.getElementById('copilote-input-full')?.focus();
   }
 }
-
-
-/* ── Appel via worker Cloudflare → xAI Grok ── */
+/* ── Appel via worker Cloudflare → xAI Grok (clé sécurisée côté serveur) ── */
 async function _askClaude(question) {
   const ctx = _buildContext();
 
@@ -519,61 +543,44 @@ function _tryInitCopilote() {
   const target = document.getElementById('copilote-chat-area');
   if (!target) return;
   const section = document.getElementById('view-copilote');
+  // Vérifier que la section est visible (class "on" ou display != none)
   const visible = section?.classList.contains('on') ||
                   (section && getComputedStyle(section).display !== 'none');
   if (visible) initCopiloteSection();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-
-  /* ── Panneau flottant : créé après login selon le rôle ── */
-  function _setupByRole() {
-    const role = typeof S !== 'undefined' ? S?.role : null;
-    if (role === 'nurse' && !document.getElementById('copilot-panel')) {
-      _createCopilotPanel();
-    }
-    /* Admin ou rôle inconnu : pas de panneau flottant, mais Copilote section pleine */
+  // Panneau flottant nurse uniquement
+  if (typeof S === 'undefined' || S?.role !== 'admin') {
+    _createCopilotPanel();
   }
 
-  /* Tenter immédiatement si déjà connecté (rechargement page) */
-  _setupByRole();
-
-  /* ── Écouter le login — S est hydraté à ce moment ── */
+  // Après login : créer panel nurse, init copilote si déjà sur la page
   document.addEventListener('ami:login', () => {
-    _setupByRole();
-    /* Réinitialiser le flag pour forcer un remontage propre */
-    const target = document.getElementById('copilote-chat-area');
-    if (target) { target.dataset.ok = ''; target.innerHTML = ''; }
-    /* Si on est déjà sur la page copilote, monter immédiatement */
+    if (S?.role === 'nurse' && !document.getElementById('copilot-panel')) {
+      _createCopilotPanel();
+    }
     setTimeout(_tryInitCopilote, 100);
   });
 
-  /* ── Déclencheur principal : ui:navigate (événement réel de navTo dans ui.js) ── */
+  // Déclencheur principal : ui:navigate (événement réel de navTo dans ui.js)
   document.addEventListener('ui:navigate', e => {
-    if (e.detail?.view !== 'copilote') return;
-    const target = document.getElementById('copilote-chat-area');
-    if (target && !document.getElementById('copilote-messages-full')) {
-      target.dataset.ok = '';
-    }
-    setTimeout(initCopiloteSection, 80);
+    if (e.detail?.view === 'copilote') setTimeout(initCopiloteSection, 80);
   });
 
-  /* ── Compatibilité : app:nav (ancien nom) ── */
+  // Compatibilité app:nav (ancien nom)
   document.addEventListener('app:nav', e => {
-    if (e.detail?.view !== 'copilote') return;
-    const target = document.getElementById('copilote-chat-area');
-    if (target && !document.getElementById('copilote-messages-full')) target.dataset.ok = '';
-    setTimeout(initCopiloteSection, 80);
+    if (e.detail?.view === 'copilote') setTimeout(initCopiloteSection, 80);
   });
 
-  /* ── Déclencheur secondaire : MutationObserver sur la section ── */
+  // MutationObserver sur la section
   const section = document.getElementById('view-copilote');
   if (section) {
     const obs = new MutationObserver(() => _tryInitCopilote());
     obs.observe(section, { attributes: true, attributeFilter: ['class', 'style'] });
   }
 
-  /* ── Déclencheur tertiaire : section déjà visible au chargement ── */
+  // Si section déjà visible au chargement
   setTimeout(_tryInitCopilote, 300);
 });
 
