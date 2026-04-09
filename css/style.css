@@ -363,6 +363,14 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   /* CARDS */
   .card{padding:16px;border-radius:14px}
   .card+.card{margin-top:14px}
+
+  /* SECTION SÉCURITÉ — forcer 1 colonne sur mobile */
+  #view-sec .card+.card{margin-top:0}
+  #view-sec > div[style*="grid"]{grid-template-columns:1fr !important}
+
+  /* BOUTON INSTALL — masqué sur mobile (dans menu Plus) */
+  #btn-install-pwa{display:none !important}
+  #btn-install-header{display:none !important}
   .ct{font-size:14px;margin-bottom:12px}
 
   /* GRILLES → 1 colonne */
