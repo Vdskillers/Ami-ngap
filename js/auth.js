@@ -84,15 +84,10 @@ function showApp(){
       const el = $(id); if(el) el.style.display = 'flex';
     });
 
-    // ── Sections accessibles en mode admin (test fonctionnel, sans données patients) ──
-    const adminViews = ['dash', 'copilote', 'stats', 'ngap-ref', 'aide', 'ver', 'pla'];
-    // Masquer toutes les sections nurse-only dans la sidebar
-    document.querySelectorAll('.ni.nurse-only').forEach(el => el.style.display = 'none');
-    // Exposer uniquement les vues utiles pour l'admin
-    adminViews.forEach(v => {
+    // ── Rebrancher onclick pour copilote et stats (nurse-only mais accessibles admin) ──
+    ['dash','copilote','stats','ngap-ref'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
-        ni.style.display = 'flex';
         ni.classList.remove('nurse-only');
         ni.onclick = () => navTo(v, null);
       }

@@ -424,9 +424,6 @@ async function sendCopilotFull() {
 }
 
 
-/* ── Rendre sendCopilotFull globalement accessible dès maintenant ── */
-window.sendCopilotFull = sendCopilotFull;
-
 /* ── Appel via worker Cloudflare → xAI Grok ── */
 async function _askClaude(question) {
   const ctx = _buildContext();
