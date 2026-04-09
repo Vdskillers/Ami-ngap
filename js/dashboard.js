@@ -47,6 +47,13 @@ function _hideCacheInfo() {
 /* ── 3. loadDash robuste + fallback cache ─────── */
 async function loadDash() {
   if(!requireAuth()) return;
+
+  // ── Mode admin : afficher la structure vide pour tester l'UI ──
+  if (typeof S !== 'undefined' && S?.role === 'admin') {
+    _renderAdminDashDemo();
+    return;
+  }
+
   $('dash-loading').style.display='block';
   $('dash-body').style.display='none';
   $('dash-empty').style.display='none';
@@ -90,6 +97,51 @@ async function loadDash() {
       $('dash-empty').innerHTML='<div style="font-size:40px;margin-bottom:12px">⚠️</div><p>Impossible de charger les statistiques.<br><small style="color:var(--m)">'+e.message+'</small></p>';
     }
   }
+}
+
+/* ── Mode admin : structure vide pour vérification UI ─────── */
+function _renderAdminDashDemo() {
+  $('dash-loading').style.display = 'none';
+  $('dash-empty').style.display   = 'none';
+  $('dash-body').style.display    = 'block';
+
+  // KPIs — libellés visibles, valeurs vides
+  $('dash-kpis').innerHTML = [
+    { icon:'💶', val:'— €',  label:'CA total (mois)',      cls:'g' },
+    { icon:'🏦', val:'— €',  label:'Part AMO',              cls:'b' },
+    { icon:'🏥', val:'— €',  label:'Part AMC',              cls:'b' },
+    { icon:'👤', val:'— €',  label:'Part Patient',          cls:'o' },
+    { icon:'☀️', val:'— €',  label:'Revenus du jour',       cls:'o' },
+    { icon:'🏆', val:'— €',  label:'Meilleure facture',     cls:'g' },
+    { icon:'📋', val:'—',    label:'DRE requises',          cls:'r' },
+    { icon:'📊', val:'— €',  label:'Moy. par passage',      cls:'b' },
+  ].map(k => `<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv" style="color:var(--m)">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
+
+  // Graphique 30j — barres vides
+  const emptyBars = Array(30).fill(0).map((_, i) =>
+    `<div style="flex:1;background:var(--b);border-radius:3px 3px 0 0;height:4px;opacity:0.4" title="Aucune donnée"></div>`
+  ).join('');
+  $('dash-chart').innerHTML = emptyBars;
+  const emptyLabels = Array(30).fill(0).map((_, i) =>
+    `<div style="flex:1;font-family:var(--fm);font-size:9px;color:var(--m);text-align:center">${i%7===0 ? '—' : ''}</div>`
+  ).join('');
+  $('dash-chart-labels').innerHTML = emptyLabels;
+
+  // Top actes — placeholder
+  $('dash-top-actes').innerHTML = `<div class="ai in" style="font-size:12px;color:var(--m)">
+    🛡️ Aucune cotation — les actes s'afficheront ici avec les barres de fréquence</div>`;
+
+  // Prévision
+  $('dash-prevision').innerHTML = `<span style="color:var(--m)">— Projection disponible avec des données réelles</span>`;
+
+  // Alerte perte
+  $('dash-loss').innerHTML = `<div class="ai in" style="font-size:12px">🔔 Alertes revenus manqués : aucune donnée à analyser</div>`;
+
+  // Anomalies
+  $('dash-anomalies').innerHTML = `<div class="ai in" style="font-size:12px">💸 Détection d'anomalies : aucune donnée à analyser</div>`;
+
+  // IA analyse
+  $('dash-ai').innerHTML = `<div class="ai in" style="font-size:12px">🧠 Analyse IA & Optimisations NGAP : aucune cotation à analyser</div>`;
 }
 
 /* 4. renderDashboard — version optimisée complète */

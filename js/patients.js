@@ -109,7 +109,7 @@ function openAddPatient() {
   _editingPatientId = null;
   const form = $('patient-form');
   if (form) form.style.display = 'block';
-  ['pat-nom','pat-prenom','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo']
+  ['pat-nom','pat-prenom','pat-adresse','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo']
     .forEach(id => { const el=$(id); if(el) el.value=''; });
   const sel = $('pat-exo'); if(sel) sel.selectedIndex=0;
   $('pat-form-title').textContent = '➕ Nouveau patient';
@@ -132,6 +132,7 @@ async function savePatient() {
     id:             _editingPatientId || ('pat_' + Date.now()),
     nom,
     prenom,
+    adresse:        gv('pat-adresse')   || '',
     ddn:            gv('pat-ddn')       || '',
     secu:           gv('pat-secu')      || '',
     amo:            gv('pat-amo')       || '',
@@ -188,9 +189,11 @@ async function loadPatients() {
     const ordoDate = p.ordo_date ? new Date(p.ordo_date) : null;
     const ordoAlert= ordoDate && ordoDate <= in30;
     const exoBadge = p.exo ? `<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:1px 7px;border-radius:20px;font-family:var(--fm)">${p.exo}</span>` : '';
+    const adresseTxt = p.adresse ? `<div style="font-size:11px;color:var(--a);margin-top:2px">📍 ${p.adresse}</div>` : '';
     return `<div class="acc" style="cursor:pointer" onclick="openPatientDetail('${p.id}')">
       <div class="avat">${ini}</div>
       <div class="acc-name">${fullName}</div>
+      ${adresseTxt}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         ${exoBadge}
         ${p.medecin ? `<span style="font-size:11px;color:var(--m)">${p.medecin}</span>` : ''}
@@ -198,6 +201,7 @@ async function loadPatients() {
       </div>
       <div class="acc-acts">
         <button class="bxs b-unblk" onclick="event.stopPropagation();coterDepuisPatient('${p.id}')">⚡ Coter</button>
+        <button class="bxs" onclick="event.stopPropagation();_importSinglePatient('${p.id}')" style="background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2)">🗺️</button>
         <button class="bxs b-del" onclick="event.stopPropagation();deletePatient('${p.id}','${fullName.replace(/'/g,'')}')">🗑️</button>
       </div>
     </div>`;
@@ -279,7 +283,8 @@ async function editPatient(id) {
   openAddPatient();
   $('pat-form-title').textContent = '✏️ Modifier patient';
   Object.entries({
-    'pat-nom': p.nom, 'pat-prenom': p.prenom, 'pat-ddn': p.ddn,
+    'pat-nom': p.nom, 'pat-prenom': p.prenom, 'pat-adresse': p.adresse,
+    'pat-ddn': p.ddn,
     'pat-secu': p.secu, 'pat-amo': p.amo, 'pat-amc': p.amc,
     'pat-medecin': p.medecin, 'pat-allergies': p.allergies,
     'pat-pathologies': p.pathologies, 'pat-traitements': p.traitements,
@@ -383,6 +388,159 @@ function showToastSafe(msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
+}
+
+/* ════════════════════════════════════════════════
+   SÉLECTION PATIENTS POUR IMPORT CALENDRIER
+════════════════════════════════════════════════ */
+
+let _selectedPatientIds = new Set();
+
+/* Ouvre la modale de sélection des patients pour l'import */
+async function openPatientImportPicker() {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const patients = rows.map(r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) }));
+
+  if (!patients.length) {
+    showToastSafe('⚠️ Aucun patient dans le carnet. Ajoutez des patients d\'abord.');
+    return;
+  }
+
+  // Créer modale
+  let modal = document.getElementById('patient-import-picker-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'patient-import-picker-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px;';
+    document.body.appendChild(modal);
+  }
+
+  _selectedPatientIds = new Set();
+
+  modal.innerHTML = `
+    <div style="background:var(--bg,#0b0f14);border:1px solid var(--b,#1e2d3d);border-radius:16px;padding:24px;max-width:520px;width:100%;max-height:80vh;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-family:var(--fs);font-size:18px;color:var(--t,#e2e8f0)">📋 Sélectionner des patients</div>
+        <button onclick="document.getElementById('patient-import-picker-modal').style.display='none'" style="background:none;border:none;color:var(--m);font-size:20px;cursor:pointer">✕</button>
+      </div>
+      <p style="font-size:12px;color:var(--m);margin:0">Sélectionnez les patients à importer dans l'Import calendrier (tournée IA). Leur adresse sera utilisée pour le routage.</p>
+      <input type="text" id="picker-search" placeholder="🔍 Rechercher..." oninput="_filterPickerList()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:13px;width:100%;box-sizing:border-box">
+      <div id="picker-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;min-height:200px">
+        ${patients.map(p => `
+          <label style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:10px;cursor:pointer;transition:border-color .15s" 
+                 onmouseenter="this.style.borderColor='var(--a)'" onmouseleave="this.style.borderColor='var(--b)'">
+            <input type="checkbox" value="${p.id}" onchange="_togglePickerPatient(this)" 
+                   style="width:16px;height:16px;accent-color:var(--a,#00d4aa)">
+            <div class="avat" style="width:36px;height:36px;font-size:13px;flex-shrink:0">${((p.prenom||'?')[0]+(p.nom||'?')[0]).toUpperCase()}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;color:var(--t);font-weight:500">${(p.prenom||'')} ${p.nom||''}</div>
+              ${p.adresse ? `<div style="font-size:11px;color:var(--a);margin-top:2px">📍 ${p.adresse}</div>` : '<div style="font-size:11px;color:var(--d);margin-top:2px">⚠️ Adresse manquante</div>'}
+              ${p.medecin ? `<div style="font-size:11px;color:var(--m)">${p.medecin}</div>` : ''}
+            </div>
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <span id="picker-count" style="font-size:12px;color:var(--m);font-family:var(--fm);flex:1">0 patient(s) sélectionné(s)</span>
+        <button onclick="_selectAllPickerPatients()" class="btn bs bsm">☑️ Tout sélectionner</button>
+        <button onclick="_importPickerPatients()" class="btn bp bsm" id="btn-picker-import">📥 Importer dans la tournée</button>
+      </div>
+    </div>`;
+
+  modal.style.display = 'flex';
+}
+
+function _togglePickerPatient(cb) {
+  if (cb.checked) _selectedPatientIds.add(cb.value);
+  else _selectedPatientIds.delete(cb.value);
+  const cnt = document.getElementById('picker-count');
+  if (cnt) cnt.textContent = `${_selectedPatientIds.size} patient(s) sélectionné(s)`;
+}
+
+function _selectAllPickerPatients() {
+  document.querySelectorAll('#picker-list input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    _selectedPatientIds.add(cb.value);
+  });
+  const cnt = document.getElementById('picker-count');
+  if (cnt) cnt.textContent = `${_selectedPatientIds.size} patient(s) sélectionné(s)`;
+}
+
+function _filterPickerList() {
+  const q = (document.getElementById('picker-search')?.value || '').toLowerCase();
+  document.querySelectorAll('#picker-list label').forEach(lbl => {
+    const txt = lbl.textContent.toLowerCase();
+    lbl.style.display = txt.includes(q) ? '' : 'none';
+  });
+}
+
+async function _importPickerPatients() {
+  if (_selectedPatientIds.size === 0) { showToastSafe('⚠️ Sélectionnez au moins un patient.'); return; }
+
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const selected = rows
+    .filter(r => _selectedPatientIds.has(r.id))
+    .map(r => {
+      const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
+      return {
+        id:          p.id,
+        description: `${p.prenom||''} ${p.nom}`.trim(),
+        texte:       `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
+        adresse:     p.adresse || '',
+        medecin:     p.medecin || '',
+        pathologies: p.pathologies || '',
+        heure_soin:  '',
+        source:      'carnet_patients',
+      };
+    });
+
+  // Stocker dans APP.importedData (compatible tournee.js)
+  if (typeof storeImportedData === 'function') {
+    storeImportedData({ patients: selected, total: selected.length, source: 'Carnet patients' });
+  } else {
+    APP.importedData = { patients: selected, total: selected.length, source: 'Carnet patients' };
+  }
+
+  // Fermer modale
+  const modal = document.getElementById('patient-import-picker-modal');
+  if (modal) modal.style.display = 'none';
+
+  showToastSafe(`✅ ${selected.length} patient(s) importé(s) vers la tournée.`);
+
+  // Naviguer vers la Tournée IA
+  if (typeof navTo === 'function') navTo('tur', null);
+}
+
+/* Import rapide d'un seul patient (depuis la liste) */
+async function _importSinglePatient(id) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === id);
+  if (!row) return;
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+  const entry = {
+    id:          p.id,
+    description: `${p.prenom||''} ${p.nom}`.trim(),
+    texte:       `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
+    adresse:     p.adresse || '',
+    medecin:     p.medecin || '',
+    pathologies: p.pathologies || '',
+    heure_soin:  '',
+    source:      'carnet_patients',
+  };
+
+  // Fusionner avec les patients déjà importés
+  const existing = APP.importedData?.patients || [];
+  const alreadyIn = existing.some(e => e.id === id);
+  if (alreadyIn) { showToastSafe('ℹ️ Ce patient est déjà dans la tournée.'); return; }
+
+  const merged = [...existing, entry];
+  if (typeof storeImportedData === 'function') {
+    storeImportedData({ patients: merged, total: merged.length, source: 'Carnet patients' });
+  } else {
+    APP.importedData = { patients: merged, total: merged.length, source: 'Carnet patients' };
+  }
+
+  showToastSafe(`🗺️ ${(p.prenom||'')} ${p.nom} ajouté(e) à la tournée.`);
 }
 
 /* ── Initialisation ── */

@@ -78,6 +78,18 @@ function showApp(){
     if(invSec) invSec.style.display='none';
     // Pré-remplir date pour test fonctionnel
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
+
+    // ── Notices admin pour Dashboard et Copilote ──
+    const dashNotice=$('dash-admin-notice');
+    if(dashNotice) dashNotice.style.display='flex';
+    const copiloteNotice=$('copilote-admin-notice');
+    if(copiloteNotice) copiloteNotice.style.display='flex';
+
+    // ── Rendre Dashboard et Copilote visibles dans la sidebar pour les admins ──
+    ['dash','copilote'].forEach(v => {
+      const ni = document.querySelector(`.ni[data-v="${v}"]`);
+      if (ni) { ni.style.removeProperty('display'); ni.classList.remove('nurse-only'); }
+    });
     // Boutons "Mon compte" + "Panneau admin" dans la sidebar (créés une seule fois)
     if(!$('btn-goto-admin')){
       const slLast = document.querySelector('.side .sl:last-child');

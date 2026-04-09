@@ -184,6 +184,17 @@ async function sendCopilotMessage(text) {
 /* ── Contexte automatique ── */
 function _buildContext() {
   const parts = [];
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+
+  // ── Mode admin : contexte limité — aucune donnée médicale patient ──
+  if (isAdmin) {
+    parts.push('Mode: administrateur (test fonctionnel — sans données patients)');
+    const user = S?.user;
+    if (user?.nom) parts.push('Admin: ' + (user.prenom||'') + ' ' + user.nom);
+    return parts.join(' · ') || '';
+  }
+
+  // ── Mode infirmière : contexte complet (sans données nominatives patient) ──
   const txt = document.getElementById('f-txt')?.value?.trim();
   if (txt) parts.push('Description soin en cours: "' + txt.slice(0, 80) + '"');
   const exo = document.getElementById('f-exo')?.value;
