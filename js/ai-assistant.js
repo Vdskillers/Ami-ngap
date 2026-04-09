@@ -251,22 +251,49 @@ Tu ne dois JAMAIS inventer de données patient.
 `.trim();
 
 async function initLLM() {
-  if (_llmEngine || _llmLoading) return;
-  if (!navigator.gpu) { log('WebGPU non supporté — LLM désactivé'); return; }
+  if (_llmEngine) {
+    const el = document.getElementById('llm-progress');
+    if (el) { el.textContent = '🤖 IA locale déjà prête ✅'; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
+    return;
+  }
+  if (_llmLoading) {
+    const el = document.getElementById('llm-progress');
+    if (el) { el.textContent = '⏳ Chargement IA déjà en cours…'; el.style.display = 'block'; }
+    return;
+  }
+
+  /* Vérifier WebGPU — afficher un message clair si non supporté */
+  if (!navigator.gpu) {
+    const el = document.getElementById('llm-progress');
+    if (el) {
+      el.textContent = '⚠️ IA locale non disponible — WebGPU requis (Chrome 113+ avec GPU)';
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 5000);
+    }
+    if (typeof showToast === 'function') showToast('⚠️ IA locale indisponible : WebGPU non supporté par ce navigateur.');
+    log('WebGPU non supporté — LLM désactivé');
+    return;
+  }
+
   _llmLoading = true;
+  const el = document.getElementById('llm-progress');
+  if (el) { el.textContent = '⏳ Chargement IA locale… (peut prendre 1-2 min)'; el.style.display = 'block'; }
+
   try {
     const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
     _llmEngine = await CreateMLCEngine('Llama-3.2-1B-Instruct-q4f16_1', {
       initProgressCallback: p => {
-        const el = document.getElementById('llm-progress');
-        if (el) el.textContent = `🤖 Chargement IA: ${Math.round((p.progress||0)*100)}%`;
+        const pct = Math.round((p.progress || 0) * 100);
+        if (el) el.textContent = `🤖 Chargement IA locale : ${pct}%`;
       }
     });
     log('LLM offline prêt ✅');
-    const el = document.getElementById('llm-progress');
-    if (el) el.textContent = '🤖 IA locale prête';
+    if (el) { el.textContent = '🤖 IA locale prête ✅'; setTimeout(() => el.style.display = 'none', 4000); }
+    if (typeof showToast === 'function') showToast('🤖 IA locale chargée et prête.');
   } catch (e) {
     logWarn('LLM non disponible:', e.message);
+    if (el) { el.textContent = `❌ IA locale : ${e.message.slice(0, 60)}`; setTimeout(() => el.style.display = 'none', 5000); }
+    if (typeof showToast === 'function') showToast('❌ Impossible de charger l\'IA locale : ' + e.message.slice(0, 80));
   } finally { _llmLoading = false; }
 }
 
@@ -302,6 +329,7 @@ async function cachedLLM(input) {
 
 let _voiceMuted = false;
 let _lastSpeak  = 0;
+let _ttsActive  = false; /* true pendant que le TTS parle — évite l'auto-captation micro */
 
 function speak(text, force = false) {
   if (_voiceMuted && !force) return;
@@ -317,6 +345,11 @@ function speak(text, force = false) {
   u.pitch = 1;
   const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('fr'));
   if (voices.length) u.voice = voices[0];
+  /* Bloquer le micro pendant la synthèse pour éviter l'auto-captation */
+  _ttsActive = true;
+  u.onend = u.onerror = () => {
+    setTimeout(() => { _ttsActive = false; }, 600); /* 600ms de délai après la fin */
+  };
   speechSynthesis.speak(u);
 }
 
@@ -330,6 +363,8 @@ function unmuteVoice() { _voiceMuted = false; log('Vocal actif'); }
 
 async function handleAICommand(rawText, confidence = 1) {
   if (confidence < 0.5) return;
+  /* Ignorer si le TTS est en train de parler — évite l'auto-captation */
+  if (_ttsActive) return;
 
   const { intent, entities } = processNLP(rawText);
 
@@ -447,13 +482,15 @@ function startHandsFree() {
     if (checkWakeWord(transcript)) return;
     handleAICommand(transcript, confidence);
   };
-  speak('Mode mains libres activé.', true);
+  /* ⚠️ Pas de speak() ici — évite que "Mode mains libres activé"
+     soit capté par le micro et réinjecté dans le champ transcript */
   log('Mains libres actif');
 }
 
 function stopHandsFree() {
   if (window._origHandleVoice) window.handleVoice = window._origHandleVoice;
-  speak('Mode mains libres désactivé.', true);
+  /* Pas de speak() ici non plus — évite le feedback TTS indésirable */
+  log('Mains libres arrêté');
 }
 
 function goToNextPatient() {

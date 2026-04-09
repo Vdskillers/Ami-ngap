@@ -241,6 +241,10 @@ async function openPatientDetail(id) {
       </div>
       ${ordoAlert ? '<div class="ai wa" style="margin-bottom:14px">⚠️ Ordonnance à renouveler avant le '+p.ordo_date+'</div>' : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+        ${p.adresse ? `<div style="grid-column:1/-1"><div class="lbl" style="margin-bottom:6px">📍 Adresse</div>
+          <div style="font-size:13px;color:var(--t)">${p.adresse}</div>
+          ${p.lat ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-top:2px">✅ Coordonnées GPS : ${parseFloat(p.lat).toFixed(5)}, ${parseFloat(p.lng).toFixed(5)}</div>` : `<button class="btn bv bsm" style="margin-top:6px;font-size:11px;padding:4px 10px" onclick="_geocodeAndSaveSingle('${id}')">📡 Géocoder l'adresse</button>`}
+        </div>` : ''}
         <div><div class="lbl" style="margin-bottom:6px">Couverture</div>
           <div style="font-size:13px;color:var(--m)">${p.amo||'—'} <span style="color:var(--a2)">${p.amc||''}</span></div></div>
         <div><div class="lbl" style="margin-bottom:6px">Médecin</div>
@@ -473,6 +477,51 @@ function _filterPickerList() {
   });
 }
 
+/* ════════════════════════════════════════════════
+   GÉOCODAGE ADRESSES (Nominatim)
+   Convertit l'adresse texte → lat/lng pour la tournée
+════════════════════════════════════════════════ */
+
+const _geocodeCache = new Map();
+
+async function _geocodeAdresse(adresse) {
+  if (!adresse || !adresse.trim()) return null;
+  const key = adresse.trim().toLowerCase();
+  if (_geocodeCache.has(key)) return _geocodeCache.get(key);
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1`,
+      { headers: { 'Accept-Language': 'fr' } }
+    );
+    const d = await r.json();
+    if (!d.length) { _geocodeCache.set(key, null); return null; }
+    const coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    _geocodeCache.set(key, coords);
+    return coords;
+  } catch { return null; }
+}
+
+/* Géocoder un tableau de patients — retourne les patients enrichis avec lat/lng */
+async function _geocodePatients(patients, onProgress) {
+  const results = [];
+  let geocoded = 0, failed = 0;
+  for (let i = 0; i < patients.length; i++) {
+    const p = patients[i];
+    if (onProgress) onProgress(i + 1, patients.length, p.description || p.nom || '');
+    if (p.adresse) {
+      const coords = await _geocodeAdresse(p.adresse);
+      if (coords) { geocoded++; results.push({ ...p, lat: coords.lat, lng: coords.lng }); }
+      else { failed++; results.push(p); }
+      // Respecter le rate-limit Nominatim (1 req/s)
+      if (i < patients.length - 1) await new Promise(r => setTimeout(r, 1100));
+    } else {
+      failed++;
+      results.push(p);
+    }
+  }
+  return { patients: results, geocoded, failed };
+}
+
 async function _importPickerPatients() {
   if (_selectedPatientIds.size === 0) { showToastSafe('⚠️ Sélectionnez au moins un patient.'); return; }
 
@@ -493,18 +542,50 @@ async function _importPickerPatients() {
       };
     });
 
-  // Stocker dans APP.importedData (compatible tournee.js)
-  if (typeof storeImportedData === 'function') {
-    storeImportedData({ patients: selected, total: selected.length, source: 'Carnet patients' });
+  // Afficher progression géocodage dans la modale
+  const btn = document.getElementById('btn-picker-import');
+  const cnt = document.getElementById('picker-count');
+  const withAddr = selected.filter(p => p.adresse).length;
+
+  if (withAddr > 0) {
+    if (btn) { btn.disabled = true; btn.textContent = '📡 Géocodage…'; }
+    if (cnt) cnt.textContent = `📡 Géocodage des adresses (0/${withAddr})…`;
+
+    const { patients: geocoded, geocoded: ok, failed } = await _geocodePatients(
+      selected,
+      (i, total, name) => {
+        if (cnt) cnt.textContent = `📡 Géocodage ${i}/${total} : ${name.slice(0, 30)}…`;
+      }
+    );
+
+    if (btn) { btn.disabled = false; btn.textContent = '📥 Importer dans la tournée'; }
+
+    const msg = ok > 0
+      ? `✅ ${ok} adresse(s) géocodée(s)${failed > 0 ? ` · ⚠️ ${failed} sans coordonnées` : ''}`
+      : `⚠️ Aucune adresse géocodée — vérifiez les adresses`;
+    if (cnt) cnt.textContent = msg;
+
+    // Stocker dans APP.importedData (compatible tournee.js)
+    if (typeof storeImportedData === 'function') {
+      storeImportedData({ patients: geocoded, total: geocoded.length, source: 'Carnet patients' });
+    } else {
+      APP.importedData = { patients: geocoded, total: geocoded.length, source: 'Carnet patients' };
+    }
+
+    showToastSafe(`✅ ${geocoded.length} patient(s) importé(s) — ${ok} position(s) GPS résolue(s).`);
   } else {
-    APP.importedData = { patients: selected, total: selected.length, source: 'Carnet patients' };
+    // Pas d'adresses → import direct sans géocodage
+    if (typeof storeImportedData === 'function') {
+      storeImportedData({ patients: selected, total: selected.length, source: 'Carnet patients' });
+    } else {
+      APP.importedData = { patients: selected, total: selected.length, source: 'Carnet patients' };
+    }
+    showToastSafe(`⚠️ ${selected.length} patient(s) importé(s) sans adresse GPS — ajoutez des adresses dans le carnet.`);
   }
 
   // Fermer modale
   const modal = document.getElementById('patient-import-picker-modal');
   if (modal) modal.style.display = 'none';
-
-  showToastSafe(`✅ ${selected.length} patient(s) importé(s) vers la tournée.`);
 
   // Naviguer vers la Tournée IA
   if (typeof navTo === 'function') navTo('tur', null);
@@ -517,6 +598,15 @@ async function _importSinglePatient(id) {
   if (!row) return;
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
+  showToastSafe(`📡 Géocodage de ${p.prenom||''} ${p.nom}…`);
+
+  // Géocoder l'adresse si disponible
+  let lat = null, lng = null;
+  if (p.adresse) {
+    const coords = await _geocodeAdresse(p.adresse);
+    if (coords) { lat = coords.lat; lng = coords.lng; }
+  }
+
   const entry = {
     id:          p.id,
     description: `${p.prenom||''} ${p.nom}`.trim(),
@@ -526,6 +616,7 @@ async function _importSinglePatient(id) {
     pathologies: p.pathologies || '',
     heure_soin:  '',
     source:      'carnet_patients',
+    ...(lat !== null ? { lat, lng } : {}),
   };
 
   // Fusionner avec les patients déjà importés
@@ -540,7 +631,41 @@ async function _importSinglePatient(id) {
     APP.importedData = { patients: merged, total: merged.length, source: 'Carnet patients' };
   }
 
-  showToastSafe(`🗺️ ${(p.prenom||'')} ${p.nom} ajouté(e) à la tournée.`);
+  const gpsMsg = lat ? ` (📍 GPS résolu)` : p.adresse ? ` (⚠️ adresse non géocodée)` : ` (⚠️ sans adresse)`;
+  showToastSafe(`🗺️ ${(p.prenom||'')} ${p.nom} ajouté(e) à la tournée${gpsMsg}.`);
+}
+
+/* Géocoder l'adresse d'un patient et sauvegarder lat/lng dans l'IDB */
+async function _geocodeAndSaveSingle(id) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === id);
+  if (!row) return;
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+  if (!p.adresse) { showToastSafe('⚠️ Aucune adresse renseignée pour ce patient.'); return; }
+
+  showToastSafe(`📡 Géocodage de "${p.adresse}"…`);
+  const coords = await _geocodeAdresse(p.adresse);
+
+  if (!coords) {
+    showToastSafe('❌ Adresse non trouvée — vérifiez l\'adresse dans la fiche patient.');
+    return;
+  }
+
+  // Sauvegarder lat/lng dans l'IDB
+  const updated = { ...p, lat: coords.lat, lng: coords.lng };
+  const toStore = {
+    id:         updated.id,
+    nom:        updated.nom,
+    prenom:     updated.prenom,
+    _data:      _enc(updated),
+    updated_at: new Date().toISOString(),
+  };
+  await _idbPut(PATIENTS_STORE, toStore);
+
+  showToastSafe(`✅ Coordonnées GPS enregistrées pour ${p.prenom||''} ${p.nom}.`);
+  // Recharger la fiche
+  openPatientDetail(id);
 }
 
 /* ── Initialisation ── */

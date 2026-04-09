@@ -25,6 +25,8 @@ const NGAP_KEYWORDS=['injection','pansement','prélèvement','perfusion','toilet
 function handleVoice(transcript,confidence){
   if(confidence<VOICE_CONFIDENCE)return;
   const t=transcript.toLowerCase().trim();
+  /* Ne pas afficher ni traiter si le TTS est en cours (évite l'auto-captation) */
+  if(typeof _ttsActive!=='undefined'&&_ttsActive)return;
   $('voice-interim').textContent=t;
 
   /* ── Pipeline IA avancé (ai-assistant.js) ──────
@@ -56,7 +58,7 @@ function startVoice(){
   if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){alert('Reconnaissance vocale non supportée. Utilisez Chrome.');return;}
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   recognition=new SR();recognition.lang='fr-FR';recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;
-  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const res=e.results[i];if(res.isFinal)handleVoice(res[0].transcript,res[0].confidence);else $('voice-interim').textContent=res[0].transcript;}};
+  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const res=e.results[i];if(res.isFinal)handleVoice(res[0].transcript,res[0].confidence);else{/* Ne pas afficher les résultats intermédiaires pendant le TTS */if(typeof _ttsActive==='undefined'||!_ttsActive)$('voice-interim').textContent=res[0].transcript;}}};
   recognition.onerror=e=>{if(e.error!=='no-speech')stopVoice();};
   recognition.onend=()=>{if(voiceActive)recognition.start();};
   recognition.start();voiceActive=true;
