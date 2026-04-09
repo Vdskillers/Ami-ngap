@@ -122,28 +122,33 @@ function showApp(){
       slLast?.prepend(liCompte);  // compte au-dessus
 
       // ── Mobile : injecter bouton Panneau admin dans le menu Plus ──
-      if(!document.getElementById('btn-goto-admin-mobile')){
+      // Utiliser setTimeout pour attendre que le DOM soit prêt
+      const _injectAdminMobile = () => {
+        if(document.getElementById('btn-goto-admin-mobile')) return;
         const mobileGrid = document.querySelector('#mobile-menu > div');
-        if(mobileGrid){
-          // Bouton Panneau admin mobile
-          const btnAdminM = document.createElement('button');
-          btnAdminM.id = 'btn-goto-admin-mobile';
-          btnAdminM.className = 'bn-item';
-          btnAdminM.style.cssText = 'background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)';
-          btnAdminM.innerHTML = '<span class="bn-ic">⚙️</span>Admin';
-          btnAdminM.onclick = () => {
-            document.getElementById('app').style.display='none';
-            document.getElementById('adm').classList.add('show');
-            if(typeof loadAdm==='function') loadAdm();
-            if(typeof loadAdmStats==='function') loadAdmStats();
-            if(typeof toggleMobileMenu==='function') toggleMobileMenu();
-          };
-          // Insérer avant le bouton Quitter
-          const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
-          if(btnQuitter) mobileGrid.insertBefore(btnAdminM, btnQuitter);
-          else mobileGrid.appendChild(btnAdminM);
+        if(!mobileGrid){
+          // Réessayer si le DOM n'est pas encore prêt
+          setTimeout(_injectAdminMobile, 100);
+          return;
         }
-      }
+        const btnAdminM = document.createElement('button');
+        btnAdminM.id = 'btn-goto-admin-mobile';
+        btnAdminM.className = 'bn-item';
+        btnAdminM.style.cssText = 'background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)';
+        btnAdminM.innerHTML = '<span class="bn-ic">⚙️</span>Admin';
+        btnAdminM.onclick = () => {
+          document.getElementById('app').style.display='none';
+          document.getElementById('adm').classList.add('show');
+          if(typeof loadAdm==='function') loadAdm();
+          if(typeof loadAdmStats==='function') loadAdmStats();
+          if(typeof toggleMobileMenu==='function') toggleMobileMenu();
+        };
+        // Insérer avant le bouton Quitter
+        const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
+        if(btnQuitter) mobileGrid.insertBefore(btnAdminM, btnQuitter);
+        else mobileGrid.appendChild(btnAdminM);
+      };
+      setTimeout(_injectAdminMobile, 200);
     }
   } else {
     /* ── MODE INFIRMIÈRE ─────────────────────────────────────────── */
