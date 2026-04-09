@@ -201,40 +201,6 @@ function _downloadHTML(html, filename) {
    MONITORING SYSTÈME (ADMIN)
    ═══════════════════════════════════════════════ */
 
-/* ── Compteurs d'erreurs locaux (réinitialisables) ── */
-const _HEALTH_COUNTERS_KEY = 'ami_health_counters';
-
-function _getHealthCounters() {
-  try { return JSON.parse(localStorage.getItem(_HEALTH_COUNTERS_KEY)||'{}'); } catch { return {}; }
-}
-function _saveHealthCounters(c) {
-  try { localStorage.setItem(_HEALTH_COUNTERS_KEY, JSON.stringify(c)); } catch {}
-}
-function incrementHealthCounter(type) {
-  const c = _getHealthCounters();
-  c[type] = (c[type]||0) + 1;
-  c[type+'_last'] = new Date().toISOString();
-  _saveHealthCounters(c);
-}
-function resetHealthCounters() {
-  localStorage.removeItem(_HEALTH_COUNTERS_KEY);
-  if (typeof showToast === 'function') showToast('✅ Compteurs d\'erreurs réinitialisés', 'ok');
-  loadSystemHealth();
-}
-window.resetHealthCounters = resetHealthCounters;
-window.incrementHealthCounter = incrementHealthCounter;
-
-/* Diagnostics N8N détaillés */
-const _N8N_DIAG_KEY = 'ami_n8n_diag';
-function logN8NDiag(stage, detail={}) {
-  try {
-    const diags = JSON.parse(localStorage.getItem(_N8N_DIAG_KEY)||'[]');
-    diags.unshift({ stage, detail, time: new Date().toISOString() });
-    localStorage.setItem(_N8N_DIAG_KEY, JSON.stringify(diags.slice(0,50)));
-  } catch {}
-}
-window.logN8NDiag = logN8NDiag;
-
 async function loadSystemHealth() {
   const el = document.getElementById('system-health-body');
   if (!el) return;
@@ -249,62 +215,41 @@ async function loadSystemHealth() {
     const sl = logs?.system_logs || [];
     const s  = stats?.stats || {};
 
-    const localCounters = _getHealthCounters();
+    const n8nFails     = (logs?.stats?.n8n_failures     || 0);
+    const iaFallbacks  = (logs?.stats?.ia_fallbacks      || 0);
+    const fraudAlerts  = (logs?.stats?.fraud_alerts      || 0);
+    const frontErrors  = (logs?.stats?.frontend_errors   || 0);
 
-    // Combiner compteurs serveur + locaux
-    const n8nFails    = Math.max(logs?.stats?.n8n_failures  || 0, localCounters.n8n_error  || 0);
-    const iaFallbacks = Math.max(logs?.stats?.ia_fallbacks   || 0, localCounters.ia_fallback || 0);
-    const fraudAlerts = logs?.stats?.fraud_alerts  || 0;
-    const frontErrors = logs?.stats?.frontend_errors || 0;
+    const n8nOk    = n8nFails === 0;
+    const iaOk     = iaFallbacks < 5;
+    const fraudOk  = fraudAlerts === 0;
 
-    // Diagnostics N8N détaillés locaux
-    const n8nDiags = JSON.parse(localStorage.getItem(_N8N_DIAG_KEY)||'[]');
-    const n8nTypes = { timeout:0, parse_fail:0, empty:0, http_error:0, other:0 };
-    n8nDiags.forEach(d => {
-      const stage = (d.stage||'').toLowerCase();
-      if (stage.includes('timeout')) n8nTypes.timeout++;
-      else if (stage.includes('parse')) n8nTypes.parse_fail++;
-      else if (stage.includes('empty')) n8nTypes.empty++;
-      else if (stage.includes('http') || stage.includes('status')) n8nTypes.http_error++;
-      else if (stage.includes('error')) n8nTypes.other++;
-    });
-
-    const n8nOk   = n8nFails === 0;
-    const iaOk    = iaFallbacks < 5;
-    const fraudOk = fraudAlerts === 0;
-
-    const overallHealth = n8nOk && iaOk ? 'green' : n8nFails < 10 ? 'orange' : 'red';
+    const overallHealth = n8nOk && iaOk ? 'green' : n8nFails < 3 ? 'orange' : 'red';
     const healthLabel   = overallHealth === 'green' ? '✅ Opérationnel' : overallHealth === 'orange' ? '⚠️ Dégradé' : '🔴 Incident';
 
-    const n8nLastErr = localCounters.n8n_error_last ? new Date(localCounters.n8n_error_last).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
-    const iaLastFb   = localCounters.ia_fallback_last ? new Date(localCounters.ia_fallback_last).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
-
     el.innerHTML = `
-      <!-- Score global + bouton reset -->
+      <!-- Score global -->
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding:16px;
         background:${overallHealth==='green'?'rgba(0,212,170,.06)':overallHealth==='orange'?'rgba(255,181,71,.08)':'rgba(255,95,109,.08)'};
         border:1px solid ${overallHealth==='green'?'rgba(0,212,170,.25)':overallHealth==='orange'?'rgba(255,181,71,.3)':'rgba(255,95,109,.3)'};
-        border-radius:var(--r);flex-wrap:wrap;gap:12px">
+        border-radius:var(--r);flex-wrap:wrap">
         <div style="font-size:36px">${overallHealth==='green'?'✅':overallHealth==='orange'?'⚠️':'🔴'}</div>
-        <div style="flex:1">
+        <div>
           <div style="font-size:18px;font-weight:700">${healthLabel}</div>
           <div style="font-size:12px;color:var(--m)">Dernière vérification : ${new Date().toLocaleTimeString('fr-FR')}</div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn bs bsm" onclick="loadSystemHealth()">↻ Rafraîchir</button>
-          <button class="btn bsm" style="background:rgba(255,95,109,.1);border:1px solid rgba(255,95,109,.3);color:var(--d);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer" onclick="if(confirm('Réinitialiser tous les compteurs d\\'erreurs ?')) resetHealthCounters()">🔄 Réinitialiser les erreurs</button>
-        </div>
+        <button class="btn bs bsm" onclick="loadSystemHealth()" style="margin-left:auto">↻ Rafraîchir</button>
       </div>
 
       <!-- Indicateurs services -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">
         ${[
-          { label:'Worker Cloudflare',  ok:true,            detail:'API opérationnelle',    icon:'⚙️', extra:'' },
-          { label:'N8N / IA',           ok:n8nOk,           detail:`${n8nFails} erreur(s) · dernier : ${n8nLastErr}`, icon:'🤖', extra: n8nFails>0 ? `<div style="margin-top:8px;font-size:10px;font-family:var(--fm);color:var(--m)">Timeout: ${n8nTypes.timeout} · Parse fail: ${n8nTypes.parse_fail} · Vide: ${n8nTypes.empty} · HTTP err: ${n8nTypes.http_error} · Autre: ${n8nTypes.other}</div>` : '' },
-          { label:'Moteur cotation IA', ok:iaOk,            detail:`${iaFallbacks} fallback(s) · dernier : ${iaLastFb}`, icon:'🩺', extra: iaFallbacks>0 ? `<div style="margin-top:6px;font-size:10px;font-family:var(--fm);color:var(--w)">→ NGAP local utilisé comme secours</div>` : '' },
-          { label:'Fraude détectée',    ok:fraudOk,         detail:`${fraudAlerts} alerte(s)`,  icon:'🚨', extra:'' },
-          { label:'Erreurs frontend',   ok:frontErrors===0, detail:`${frontErrors} erreur(s)`,  icon:'🖥️', extra:'' },
-          { label:'Base de données',    ok:true,            detail:'Supabase EU',            icon:'🗄️', extra:'' },
+          { label:'Worker Cloudflare',  ok:true,            detail:'API opérationnelle',    icon:'⚙️' },
+          { label:'N8N / IA',           ok:n8nOk,           detail:`${n8nFails} erreur(s)`,  icon:'🤖' },
+          { label:'Moteur cotation IA', ok:iaOk,            detail:`${iaFallbacks} fallback(s)`, icon:'🩺' },
+          { label:'Fraude détectée',    ok:fraudOk,         detail:`${fraudAlerts} alerte(s)`,  icon:'🚨' },
+          { label:'Erreurs frontend',   ok:frontErrors===0, detail:`${frontErrors} erreur(s)`,  icon:'🖥️' },
+          { label:'Base de données',    ok:true,            detail:'Supabase EU',            icon:'🗄️' },
         ].map(c => `
           <div style="background:var(--c);border:1px solid ${c.ok?'rgba(0,212,170,.2)':'rgba(255,181,71,.3)'};
             border-radius:var(--r);padding:14px">
@@ -314,28 +259,8 @@ async function loadSystemHealth() {
               <span style="margin-left:auto;font-size:18px">${c.ok?'✅':'⚠️'}</span>
             </div>
             <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${c.detail}</div>
-            ${c.extra}
           </div>`).join('')}
       </div>
-
-      <!-- Diagnostics N8N détaillés -->
-      ${n8nDiags.length > 0 ? `
-      <div style="margin-bottom:20px">
-        <div class="lbl" style="margin-bottom:10px">🔍 Diagnostics N8N détaillés (${n8nDiags.length} entrées)</div>
-        <div style="max-height:180px;overflow-y:auto;border:1px solid rgba(255,181,71,.3);border-radius:var(--r);background:rgba(255,181,71,.03)">
-          ${n8nDiags.slice(0,20).map(d => {
-            const dt = new Date(d.time).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
-            const isErr = d.stage.toLowerCase().includes('error')||d.stage.toLowerCase().includes('fail');
-            const color = isErr ? 'var(--d)' : 'var(--w)';
-            const detail = typeof d.detail === 'object' ? Object.entries(d.detail).map(([k,v])=>`${k}: ${v}`).join(' · ') : String(d.detail||'');
-            return `<div style="padding:6px 12px;border-bottom:1px solid var(--b);font-size:11px;font-family:var(--fm)">
-              <span style="color:${color};font-weight:600;margin-right:8px">${d.stage}</span>
-              <span style="color:var(--m)">${detail}</span>
-              <span style="float:right;color:var(--m);font-size:10px">${dt}</span>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>` : ''}
 
       <!-- Stats globales -->
       <div class="lbl" style="margin-bottom:10px">Activité plateforme</div>
@@ -349,26 +274,59 @@ async function loadSystemHealth() {
       </div>
 
       <!-- Logs système récents -->
-      <div class="lbl" style="margin-bottom:10px">Logs système récents (${sl.length})</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div class="lbl">Logs système récents (${sl.length})</div>
+        ${sl.length > 0 ? `<button class="btn bsm" onclick="resetSystemLogs()" style="background:rgba(255,95,109,.1);border:1px solid rgba(255,95,109,.3);color:var(--d);border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">🗑️ Réinitialiser les logs</button>` : ''}
+      </div>
       <div style="max-height:280px;overflow-y:auto;border:1px solid var(--b);border-radius:var(--r)">
-        ${sl.length ? sl.slice(0,30).map(l => {
+        ${sl.length ? sl.slice(0,50).map(l => {
           const lvlColor = l.level==='error'||l.level==='critical' ? 'var(--d)' : l.level==='warn' ? 'var(--w)' : 'var(--a)';
           const dt = new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-          const meta = l.meta ? ` · ${typeof l.meta==='object'?Object.entries(l.meta).map(([k,v])=>`${k}:${v}`).join(' '):l.meta}` : '';
+          let metaStr = '';
+          try {
+            const m = typeof l.meta === 'string' ? JSON.parse(l.meta) : (l.meta || {});
+            if (m.path) metaStr = ` · ${m.path}`;
+            if (m.error) metaStr += ` (${m.error})`;
+          } catch {}
           return `<div style="display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--b);font-size:12px">
-            <span style="font-family:var(--fm);color:${lvlColor};font-size:10px;min-width:50px">${(l.level||'').toUpperCase()}</span>
+            <span style="font-family:var(--fm);color:${lvlColor};font-size:10px;min-width:50px;font-weight:600">${(l.level||'').toUpperCase()}</span>
             <span style="font-family:var(--fm);color:var(--m);font-size:10px;min-width:60px">${l.source||'—'}</span>
-            <span style="flex:1;font-weight:500">${l.event||'—'}<span style="font-weight:400;color:var(--m);font-size:10px">${meta}</span></span>
+            <span style="flex:1;font-weight:500">${l.event||'—'}<span style="font-weight:400;color:var(--m)">${metaStr}</span></span>
             <span style="color:var(--m);font-size:11px;white-space:nowrap">${dt}</span>
           </div>`;
         }).join('')
-        : '<div style="padding:20px;text-align:center;color:var(--m)">Aucun log système disponible.</div>'}
+        : '<div style="padding:20px;text-align:center;color:var(--m)">✅ Aucun log système — tout est propre.</div>'}
       </div>`;
 
   } catch(e) {
-    el.innerHTML = `<div class="ai er">⚠️ Impossible de charger le monitoring : ${e.message}<br><small style="opacity:.6">Vérifiez la connexion au worker Cloudflare.</small></div>`;
+    el.innerHTML = `<div class="ai er">⚠️ Impossible de charger le monitoring : ${e.message}</div>`;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   RESET LOGS SYSTÈME
+   ═══════════════════════════════════════════════ */
+
+async function resetSystemLogs() {
+  if (!confirm('Supprimer toutes les entrées de logs système ?\nCette action est irréversible.')) return;
+
+  const btn = document.querySelector('button[onclick="resetSystemLogs()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Réinitialisation...'; }
+
+  try {
+    const d = await wpost('/webhook/admin-system-reset', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    if (typeof showToast === 'function') showToast('✅ Logs système réinitialisés', 'ok');
+    // Recharger le monitoring
+    await loadSystemHealth();
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('⚠️ ' + e.message, 'err');
+    alert('Erreur : ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '🗑️ Réinitialiser les logs'; }
+  }
+}
+
+window.resetSystemLogs = resetSystemLogs;
 
 /* ═══════════════════════════════════════════════
    NOMENCLATURE NGAP 2026 COMPLÈTE
