@@ -216,6 +216,7 @@
     <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
     <div id="mobile-header-fabs"></div>
     <div class="tr">
+      <button id="btn-install-header" onclick="installApp()" style="display:none;background:var(--ad);border:1px solid var(--a);color:var(--a);font-family:var(--fm);font-size:10px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:all .15s">📱 Installer AMI</button>
       <div class="badge">NGAP 2026</div>
       <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
@@ -283,6 +284,7 @@
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
+      <button id="btn-install-mobile" class="bn-item" style="display:none;background:var(--ad);border:1px solid rgba(0,212,170,.3);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--a)" onclick="installApp()"><span class="bn-ic">📱</span>Installer</button>
       <button class="bn-item" style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)" onclick="logout()"><span class="bn-ic">⏻</span>Quitter</button>
     </div>
   </div>
