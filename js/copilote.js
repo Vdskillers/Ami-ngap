@@ -19,8 +19,14 @@ let _copilotTyping  = false;
 /* ── Charger l'historique de session ── */
 function _loadHistory() {
   try {
-    _copilotHistory = JSON.parse(sessionStorage.getItem(COPILOT_HISTORY_KEY) || '[]');
-  } catch { _copilotHistory = []; }
+    const raw = sessionStorage.getItem(COPILOT_HISTORY_KEY);
+    _copilotHistory = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(_copilotHistory)) _copilotHistory = [];
+  } catch (e) {
+    console.warn('[Copilote] Historique corrompu, reset');
+    sessionStorage.removeItem(COPILOT_HISTORY_KEY);
+    _copilotHistory = [];
+  }
 }
 function _saveHistory() {
   try { sessionStorage.setItem(COPILOT_HISTORY_KEY, JSON.stringify(_copilotHistory.slice(-20))); } catch {}
@@ -353,8 +359,9 @@ function initCopiloteSection() {
   const notice = document.getElementById('copilote-admin-notice');
   if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
 
-  // Si l'interface est déjà montée (éléments présents), juste rafraîchir
-  if (document.getElementById('copilote-messages-full')) {
+  // Si l'interface est déjà montée ET non vide, juste rafraîchir
+  const alreadyMounted = document.getElementById('copilote-messages-full');
+  if (alreadyMounted && alreadyMounted.innerHTML.trim() !== '') {
     _renderFullHistory();
     _renderFullSuggestions();
     setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 100);
