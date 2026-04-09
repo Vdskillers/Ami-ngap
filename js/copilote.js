@@ -357,11 +357,17 @@ function initCopiloteSection() {
   setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 150);
 }
 
-/* ── Envoi message — réponse via API Claude (Anthropic) ── */
+/* ── Envoi message section dédiée ── */
 let _fullTyping = false;
+let _fullTypingTimeout = null;
 
 async function sendCopilotFull() {
-  if (_fullTyping) return;
+  // Sécurité : reset _fullTyping si bloqué depuis plus de 40s
+  if (_fullTyping) {
+    if (_fullTypingTimeout) return; // vraiment en cours
+    _fullTyping = false; // reset forcé
+  }
+
   const input = document.getElementById('copilote-input-full');
   const q = (input?.value || '').trim();
   if (!q) return;
@@ -370,23 +376,23 @@ async function sendCopilotFull() {
   _copilotHistory.push({ role: 'user', content: q, ts: Date.now() });
   _renderFullHistory();
   _fullTyping = true;
+  _fullTypingTimeout = setTimeout(() => { _fullTyping = false; _fullTypingTimeout = null; }, 40000);
 
-  // Désactiver bouton
   const btn = document.getElementById('copilote-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
-  // Typing indicator
+  // Indicateur de frappe
   const msgEl = document.getElementById('copilote-messages-full');
   if (msgEl) {
     const t = document.createElement('div');
     t.id = 'copilote-typing-full';
     t.style.cssText = 'display:flex;gap:10px;align-items:flex-start';
-    t.innerHTML = \`<div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
+    t.innerHTML = `<div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
     <div style="background:var(--s);border:1px solid var(--b);border-radius:4px 14px 14px 14px;padding:12px 16px;display:flex;gap:5px;align-items:center">
       <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite 0s"></span>
       <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .15s"></span>
       <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite .3s"></span>
-    </div>\`;
+    </div>`;
     msgEl.appendChild(t);
     msgEl.scrollTop = msgEl.scrollHeight;
   }
@@ -400,13 +406,15 @@ async function sendCopilotFull() {
     if (typeof window.safeSpeak === 'function' && answer.length < 250) window.safeSpeak(answer);
   } catch (e) {
     document.getElementById('copilote-typing-full')?.remove();
-    _copilotHistory.push({ role: 'error', content: '⚠️ ' + (e.message || 'Service indisponible.'), ts: Date.now() });
+    _copilotHistory.push({ role: 'error', content: '⚠️ ' + (e.message || 'Service indisponible. Vérifiez votre connexion.'), ts: Date.now() });
     _renderFullHistory();
+  } finally {
+    clearTimeout(_fullTypingTimeout);
+    _fullTypingTimeout = null;
+    _fullTyping = false;
+    if (btn) { btn.disabled = false; btn.textContent = '↑'; }
+    document.getElementById('copilote-input-full')?.focus();
   }
-
-  _fullTyping = false;
-  if (btn) { btn.disabled = false; btn.textContent = '↑'; }
-  document.getElementById('copilote-input-full')?.focus();
 }
 
 
@@ -440,7 +448,7 @@ function _renderFullHistory() {
   if (!el) return;
 
   if (!_copilotHistory.length) {
-    el.innerHTML = \`
+    el.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
                   height:100%;text-align:center;color:var(--m);padding:40px 20px">
         <div style="font-size:52px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(0,212,170,.3))">🤖</div>
@@ -451,29 +459,29 @@ function _renderFullHistory() {
           les <strong>règles CPAM</strong>, les <strong>majorations</strong>…<br>
           <span style="font-size:11px;opacity:.6;margin-top:8px;display:block">Utilisez les suggestions ci-dessous ou écrivez librement.</span>
         </div>
-      </div>\`;
+      </div>`;
     return;
   }
 
   el.innerHTML = _copilotHistory.map(msg => {
     if (msg.role === 'user') {
-      return \`<div style="display:flex;justify-content:flex-end">
+      return `<div style="display:flex;justify-content:flex-end">
         <div style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
           border-radius:14px 14px 4px 14px;padding:12px 16px;max-width:75%;
           font-size:14px;line-height:1.5;word-break:break-word">\${_esc(msg.content)}</div>
-      </div>\`;
+      </div>`;
     }
     if (msg.role === 'error') {
-      return \`<div style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.3);
-        border-radius:10px;padding:10px 14px;font-size:13px;color:var(--d)">\${msg.content}</div>\`;
+      return `<div style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.3);
+        border-radius:10px;padding:10px 14px;font-size:13px;color:var(--d)">\${msg.content}</div>`;
     }
-    return \`<div style="display:flex;gap:10px;align-items:flex-start">
+    return `<div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));
         border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
       <div style="background:var(--c);border:1px solid var(--b);
         border-radius:4px 14px 14px 14px;padding:12px 16px;max-width:82%;
         font-size:14px;line-height:1.7;word-break:break-word">\${_formatAnswer(msg.content)}</div>
-    </div>\`;
+    </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
 }
@@ -483,12 +491,12 @@ function _renderFullSuggestions() {
   const el = document.getElementById('copilote-sugg-full');
   if (!el) return;
   el.innerHTML = QUICK_SUGGESTIONS.map(s =>
-    \`<button onclick="sendCopilotFull_q('\${s.q.replace(/'/g,"\\'")}')"
+    `<button onclick="sendCopilotFull_q('\${s.q.replace(/'/g,"\\'")}')"
       style="background:var(--s);border:1px solid var(--b);color:var(--m);
              border-radius:20px;padding:5px 14px;font-size:12px;cursor:pointer;
              white-space:nowrap;font-family:var(--ff);transition:all .15s"
       onmouseenter="this.style.borderColor='var(--a)';this.style.color='var(--a)'"
-      onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">\${s.label}</button>\`
+      onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">\${s.label}</button>`
   ).join('');
 }
 

@@ -105,6 +105,10 @@ function _renderAdminDashDemo() {
   $('dash-empty').style.display   = 'none';
   $('dash-body').style.display    = 'block';
 
+  // Activer la notice admin
+  const notice = $('dash-admin-notice');
+  if (notice) notice.style.display = 'flex';
+
   // KPIs — libellés visibles, valeurs vides
   $('dash-kpis').innerHTML = [
     { icon:'💶', val:'— €',  label:'CA total (mois)',      cls:'g' },

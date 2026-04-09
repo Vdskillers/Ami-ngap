@@ -79,20 +79,21 @@ function showApp(){
     // Pré-remplir date pour test fonctionnel
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
 
-    // ── Notices admin pour Dashboard et Copilote ──
-    const dashNotice=$('dash-admin-notice');
-    if(dashNotice) dashNotice.style.display='flex';
-    const copiloteNotice=$('copilote-admin-notice');
-    if(copiloteNotice) copiloteNotice.style.display='flex';
+    // ── Notices admin pour toutes les sections accessibles ──
+    ['dash-admin-notice','copilote-admin-notice','ver-admin-notice','stats-admin-notice'].forEach(id => {
+      const el = $(id); if(el) el.style.display = 'flex';
+    });
 
-    // ── Rendre Dashboard et Copilote visibles dans la sidebar pour les admins ──
-    // ET rebrancher le listener navTo si nurse-only l'avait empêché
-    ['dash','copilote'].forEach(v => {
+    // ── Sections accessibles en mode admin (test fonctionnel, sans données patients) ──
+    const adminViews = ['dash', 'copilote', 'stats', 'ngap-ref', 'aide', 'ver', 'pla'];
+    // Masquer toutes les sections nurse-only dans la sidebar
+    document.querySelectorAll('.ni.nurse-only').forEach(el => el.style.display = 'none');
+    // Exposer uniquement les vues utiles pour l'admin
+    adminViews.forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
-        ni.style.removeProperty('display');
+        ni.style.display = 'flex';
         ni.classList.remove('nurse-only');
-        // Rebrancher le click handler (au cas où il n'était pas attaché)
         ni.onclick = () => navTo(v, null);
       }
     });
