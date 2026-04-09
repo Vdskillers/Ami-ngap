@@ -78,7 +78,7 @@ function _createCopilotPanel() {
   const panel = document.createElement('div');
   panel.id = 'copilot-panel';
   panel.style.cssText = `
-    position:fixed;bottom:154px;right:20px;z-index:900;
+    position:fixed;bottom:140px;right:14px;z-index:900;
     width:360px;max-width:calc(100vw - 40px);
     height:480px;max-height:calc(100vh - 200px);
     background:var(--c);border:1px solid var(--b);
