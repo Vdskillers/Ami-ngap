@@ -429,40 +429,28 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   /* DASH chart */
   #dash-chart{height:120px}
 
-  /* FABs vocal + copilote — dans le header sur mobile */
+  /* VOICE FAB — dans le header sur mobile */
   #voicebtn{
     position:static !important;bottom:auto !important;right:auto !important;
     width:34px !important;height:34px !important;font-size:15px !important;
-    box-shadow:none !important;flex-shrink:0;display:flex !important;
+    box-shadow:none !important;flex-shrink:0;
   }
-  #voice-toast{
-    position:fixed !important;top:64px;left:8px;right:8px;bottom:auto !important;
-    max-width:calc(100vw - 16px);z-index:500;
-  }
+  #voice-toast{top:64px;right:8px;bottom:auto !important;max-width:calc(100vw - 16px);left:8px}
+
+  /* COPILOTE FAB — dans le header sur mobile */
   #copilot-fab{
     position:static !important;bottom:auto !important;right:auto !important;
     width:34px !important;height:34px !important;font-size:15px !important;
     box-shadow:none !important;flex-shrink:0;
   }
-  #copilot-panel{
-    position:fixed !important;
-    top:64px !important;bottom:auto !important;
-    left:8px !important;right:8px !important;width:auto !important;
-    max-height:calc(100vh - 140px) !important;
-  }
-  /* Wrapper FABs dans le header — entre le logo et les boutons droite */
-  #mobile-header-fabs{
-    display:flex;align-items:center;gap:6px;
-    margin-left:8px;flex-shrink:0;
-  }
-  /* Bouton install PWA — sous le header, pas dans le .tr */
-  #btn-install-pwa{
-    position:fixed !important;
-    top:64px !important;right:8px !important;
-    bottom:auto !important;
-    font-size:11px !important;padding:5px 12px !important;
-    z-index:800;
-  }
+  #copilot-panel{top:64px !important;bottom:auto !important;right:8px !important;left:8px !important;width:auto !important}
+
+  /* Wrapper des FAB dans le header */
+  #mobile-header-fabs{display:flex;align-items:center;gap:6px;margin-left:6px}
+
+  /* Bouton install — masqué sur mobile (géré dans menu Plus) */
+  #btn-install-pwa{ display:none !important; }
+  #btn-install-header{ display:none !important; }
 
   /* LIVE CARD */
   .live-card{padding:20px 16px}
