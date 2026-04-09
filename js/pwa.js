@@ -51,7 +51,18 @@ let _installPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   _installPrompt = e;
-  _showInstallButton();
+
+  // Bouton header desktop (avant NGAP 2026)
+  const btnH = document.getElementById('btn-install-header');
+  if (btnH) btnH.style.display = 'block';
+
+  // Bouton menu Plus mobile
+  const btnM = document.getElementById('btn-install-mobile');
+  if (btnM) btnM.style.display = 'flex';
+
+  // Masquer l'ancien bouton flottant s'il existe encore
+  const old = document.getElementById('btn-install-pwa');
+  if (old) old.style.display = 'none';
 });
 
 function _showInstallButton() {
@@ -72,9 +83,13 @@ async function installApp() {
   const { outcome } = await _installPrompt.userChoice;
   log('Install prompt:', outcome);
   _installPrompt = null;
-  const btn = document.getElementById('btn-install-pwa');
-  if (btn) btn.remove();
+  // Masquer tous les boutons install
+  ['btn-install-pwa','btn-install-header','btn-install-mobile'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.style.display = 'none';
+  });
 }
+window.installApp = installApp;
 
 window.addEventListener('appinstalled', () => {
   log('AMI installée comme PWA ✅');
