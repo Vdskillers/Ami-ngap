@@ -69,16 +69,16 @@ function _createCopilotPanel() {
   fab.onclick = toggleCopilot;
   fab.onmouseenter = () => fab.style.transform = 'scale(1.1)';
   fab.onmouseleave = () => fab.style.transform = 'scale(1)';
-  // Sur mobile : insérer dans le wrapper header
+  // Sur mobile (≤768px) : insérer dans le wrapper header, sinon body flottant
   const headerFabs = document.getElementById('mobile-header-fabs');
-  if (headerFabs) headerFabs.appendChild(fab);
+  if (headerFabs && window.innerWidth <= 768) headerFabs.appendChild(fab);
   else document.body.appendChild(fab);
 
   // Panel chat
   const panel = document.createElement('div');
   panel.id = 'copilot-panel';
   panel.style.cssText = `
-    position:fixed;bottom:140px;right:14px;z-index:900;
+    position:fixed;bottom:154px;right:20px;z-index:900;
     width:360px;max-width:calc(100vw - 40px);
     height:480px;max-height:calc(100vh - 200px);
     background:var(--c);border:1px solid var(--b);
