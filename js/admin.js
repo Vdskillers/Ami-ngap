@@ -29,7 +29,8 @@ async function loadAdm(){
   try{
     const d=await wpost('/webhook/admin-liste',{});
     if(!d.ok)throw new Error(d.error||'Erreur');
-    ACCS=d.comptes||[];renderAccs(ACCS);
+    // ⚠️ RGPD/HDS : les admins ne voient pas les autres admins — nurses uniquement
+    ACCS=(d.comptes||[]).filter(a=>a.role!=='admin');renderAccs(ACCS);
   }catch(e){admAlert(e.message,'e');$('accs').innerHTML='<div class="empty"><div class="ei">⚠️</div><p>Impossible de charger les comptes</p></div>';}
   // Charger aussi logs + stats sécurité + messages
   loadAdmSecurityStats();

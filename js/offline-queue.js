@@ -259,6 +259,12 @@ function showToast(msg, type='ok') {
    ONBOARDING PREMIÈRE CONNEXION
    ═══════════════════════════════════════════════ */
 
+// Clé d'onboarding par utilisateur (email) pour que chaque compte ait sa propre première connexion
+function _getOnboardingKey() {
+  const email = (typeof S !== 'undefined' && S?.user?.email) ? S.user.email : 'default';
+  return 'ami_onboarding_done_' + btoa(email).replace(/=/g,'');
+}
+// Compatibilité : ONBOARDING_KEY statique pour les appels externes (resetOnboarding)
 const ONBOARDING_KEY = 'ami_onboarding_done';
 
 const ONBOARDING_STEPS = [
@@ -295,7 +301,8 @@ const ONBOARDING_STEPS = [
 let _onboardingStep = 0;
 
 function checkOnboarding() {
-  const done = localStorage.getItem(ONBOARDING_KEY);
+  const key = _getOnboardingKey();
+  const done = localStorage.getItem(key);
   if (!done && S?.token && S?.role === 'nurse') {
     setTimeout(showOnboarding, 800);
   }
@@ -351,15 +358,17 @@ function _onboardingAction(nav) {
   else if (nav) { if(typeof navTo === 'function') navTo(nav, null); }
 }
 function completeOnboarding() {
-  localStorage.setItem(ONBOARDING_KEY, '1');
+  const key = _getOnboardingKey();
+  localStorage.setItem(key, '1');
   const modal = document.getElementById('onboarding-modal');
   if (modal) modal.remove();
   showToast('🎉 Bienvenue dans AMI — bonne utilisation !', 'ok');
 }
 
-/* Réinitialiser l'onboarding (pour les tests) */
+/* Réinitialiser l'onboarding pour l'utilisateur courant */
 function resetOnboarding() {
-  localStorage.removeItem(ONBOARDING_KEY);
+  const key = _getOnboardingKey();
+  localStorage.removeItem(key);
   showOnboarding();
 }
 
