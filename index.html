@@ -214,8 +214,8 @@
 <div id="app" style="display:none">
   <header class="top">
     <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
+    <div id="mobile-header-fabs"></div>
     <div class="tr">
-      <button onclick="resetOnboarding()" style="background:none;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5);font-size:10px;padding:3px 10px;border-radius:20px;cursor:pointer;font-family:var(--fm);transition:all .2s" onmouseenter="this.style.borderColor='rgba(255,255,255,.4)';this.style.color='rgba(255,255,255,.8)'" onmouseleave="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='rgba(255,255,255,.5)'">📖 Revoir l'intro</button>
       <div class="badge">NGAP 2026</div>
       <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
@@ -279,6 +279,7 @@
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="stats" onclick="navTo('stats',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="resetOnboarding();toggleMobileMenu()"><span class="bn-ic">📖</span>Intro</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
@@ -290,7 +291,10 @@
 
     <!-- COTATION -->
     <section class="view on" id="view-cot">
-      <h1 class="pt">Cotation <em>intelligente</em></h1>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <h1 class="pt" style="margin-bottom:0">Cotation <em>intelligente</em></h1>
+        <button onclick="resetOnboarding()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
+      </div>
       <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
       <div class="card">
         <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
@@ -1212,5 +1216,15 @@ document.addEventListener('ami:login', () => {
 });
 </script>
 
+<script>
+(function(){
+  if(window.innerWidth > 768) return;
+  document.addEventListener('DOMContentLoaded', function(){
+    var wrap = document.getElementById('mobile-header-fabs');
+    var vbtn = document.getElementById('voicebtn');
+    if(wrap && vbtn) wrap.appendChild(vbtn);
+  });
+})();
+</script>
 </body>
 </html>
