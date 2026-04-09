@@ -47,6 +47,11 @@ document.addEventListener('ui:navigate', e => {
   /* Dashboard → charger données */
   if (v === 'dash' && typeof loadDash === 'function') loadDash();
 
+  /* Copilote IA → monter l'interface */
+  if (v === 'copilote' && typeof initCopiloteSection === 'function') {
+    setTimeout(initCopiloteSection, 80);
+  }
+
   /* Tournée → init carte tur-map + invalider taille */
   if (v === 'tur') {
     setTimeout(() => {

@@ -586,23 +586,31 @@ document.addEventListener('DOMContentLoaded', () => {
   /* Tenter immédiatement si déjà connecté (rechargement page) */
   _setupByRole();
 
-  /* Écouter le login — S est hydraté à ce moment */
+  /* ── Écouter le login — S est hydraté à ce moment ── */
   document.addEventListener('ami:login', () => {
     _setupByRole();
     /* Réinitialiser le flag pour forcer un remontage propre */
     const target = document.getElementById('copilote-chat-area');
     if (target) { target.dataset.ok = ''; target.innerHTML = ''; }
+    /* Si on est déjà sur la page copilote, monter immédiatement */
+    setTimeout(_tryInitCopilote, 100);
   });
 
-  /* ── Déclencheur principal : event de navigation ── */
-  document.addEventListener('app:nav', e => {
+  /* ── Déclencheur principal : ui:navigate (événement réel de navTo dans ui.js) ── */
+  document.addEventListener('ui:navigate', e => {
     if (e.detail?.view !== 'copilote') return;
-    /* Réinitialiser si les éléments internes ont disparu */
     const target = document.getElementById('copilote-chat-area');
     if (target && !document.getElementById('copilote-messages-full')) {
       target.dataset.ok = '';
     }
-    /* Délai court pour laisser le DOM se mettre en place */
+    setTimeout(initCopiloteSection, 80);
+  });
+
+  /* ── Compatibilité : app:nav (ancien nom) ── */
+  document.addEventListener('app:nav', e => {
+    if (e.detail?.view !== 'copilote') return;
+    const target = document.getElementById('copilote-chat-area');
+    if (target && !document.getElementById('copilote-messages-full')) target.dataset.ok = '';
     setTimeout(initCopiloteSection, 80);
   });
 
