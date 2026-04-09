@@ -359,7 +359,18 @@
       <p class="ps">Google Calendar · Excel · CSV · JSON · texte libre · anonymisation automatique</p>
       <div class="card">
         <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Anonymisation RGPD automatique :</strong> les noms de patients sont convertis en identifiants anonymes. Vous seul(e) pouvez voir vos données importées.</p></div>
-        <div class="lbl" style="margin-bottom:16px">Glissez votre fichier ou cliquez pour sélectionner</div>
+
+        <!-- Import depuis le Carnet patients -->
+        <div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="font-size:22px">👤</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:var(--t);margin-bottom:2px">Importer depuis le Carnet patients</div>
+            <div style="font-size:12px;color:var(--m)">Sélectionnez directement vos patients enregistrés — leur adresse sera utilisée pour l'optimisation de tournée.</div>
+          </div>
+          <button class="btn bv bsm" onclick="openPatientImportPicker()"><span>📋</span> Choisir mes patients</button>
+        </div>
+
+        <div class="lbl" style="margin-bottom:16px">Ou importez depuis un fichier / texte</div>
         <div class="drop-zone" id="drop-zone">
           <input type="file" id="imp-file" accept=".ics,.csv,.xlsx,.json,.txt" onchange="handleFileSelect(this)">
           <div class="drop-icon">📂</div>
@@ -523,6 +534,10 @@
     <section class="view" id="view-dash">
       <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
       <p class="ps">Revenus · KPIs · Actes fréquents · Tendances</p>
+      <!-- Notice admin (masquée pour les infirmières) -->
+      <div id="dash-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
+        🛡️ <strong>Mode admin — aperçu structure</strong> · Les statistiques affichées ci-dessous sont vides (aucune donnée médicale). Vous pouvez vérifier que tous les blocs, KPIs et graphiques s'affichent correctement.
+      </div>
       <!-- Badge cache / hors-ligne -->
       <div id="dash-cache-info" style="display:none;font-size:12px;margin-bottom:10px;padding:6px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
       <div id="dash-loading" style="text-align:center;padding:60px 20px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="color:var(--m);font-size:13px">Chargement des statistiques...</p></div>
@@ -845,6 +860,7 @@
       <!-- Actions -->
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
         <button class="btn bp" onclick="openAddPatient()"><span>➕</span> Nouveau patient</button>
+        <button class="btn bv bsm" onclick="openPatientImportPicker()"><span>🗺️</span> Importer vers tournée</button>
         <input type="text" id="pat-search" placeholder="🔍 Rechercher un patient..." oninput="loadPatients()" style="flex:1;min-width:180px;max-width:320px">
         <button class="btn bs bsm" onclick="exportPatientData()">📥 Export RGPD</button>
       </div>
@@ -856,6 +872,7 @@
           <div class="fg" style="margin-bottom:16px">
             <div class="f"><label for="pat-prenom">Prénom *</label><input type="text" id="pat-prenom" placeholder="Marie"></div>
             <div class="f"><label for="pat-nom">Nom *</label><input type="text" id="pat-nom" placeholder="DUPONT"></div>
+            <div class="f" style="grid-column:1/-1"><label for="pat-adresse">Adresse complète <span style="font-size:10px;color:var(--a);font-family:var(--fm)">📍 utilisée pour la tournée IA</span></label><input type="text" id="pat-adresse" placeholder="12 rue de la Paix, 06000 Nice"></div>
             <div class="f"><label for="pat-ddn">Date de naissance</label><input type="date" id="pat-ddn"></div>
             <div class="f"><label for="pat-secu">N° Sécu <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="pat-secu" autocomplete="off" placeholder="1 85 06..."></div>
           </div>
@@ -954,6 +971,10 @@
     <section class="view" id="view-copilote">
       <h1 class="pt">Copilote <em>IA</em></h1>
       <p class="ps">Expert NGAP disponible 24h/24 · Posez n'importe quelle question · Suggestions proactives</p>
+      <!-- Notice admin (masquée pour les infirmières) -->
+      <div id="copilote-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
+        🛡️ <strong>Mode admin — test fonctionnel</strong> · Vous pouvez tester le Copilote IA normalement. Aucune donnée médicale de patient ne sera transmise dans ce mode. Les questions posées ici concernent uniquement les règles NGAP et le fonctionnement de l'application.
+      </div>
       <div id="copilote-chat-area"></div>
     </section>
 
