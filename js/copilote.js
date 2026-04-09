@@ -474,19 +474,19 @@ function _renderFullHistory() {
       return `<div style="display:flex;justify-content:flex-end">
         <div style="background:linear-gradient(135deg,var(--a),#00b891);color:#000;
           border-radius:14px 14px 4px 14px;padding:12px 16px;max-width:75%;
-          font-size:14px;line-height:1.5;word-break:break-word">\${_esc(msg.content)}</div>
+          font-size:14px;line-height:1.5;word-break:break-word">${_esc(msg.content)}</div>
       </div>`;
     }
     if (msg.role === 'error') {
       return `<div style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.3);
-        border-radius:10px;padding:10px 14px;font-size:13px;color:var(--d)">\${msg.content}</div>`;
+        border-radius:10px;padding:10px 14px;font-size:13px;color:var(--d)">${msg.content}</div>`;
     }
     return `<div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));
         border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
       <div style="background:var(--c);border:1px solid var(--b);
         border-radius:4px 14px 14px 14px;padding:12px 16px;max-width:82%;
-        font-size:14px;line-height:1.7;word-break:break-word">\${_formatAnswer(msg.content)}</div>
+        font-size:14px;line-height:1.7;word-break:break-word">${_formatAnswer(msg.content)}</div>
     </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
@@ -497,12 +497,12 @@ function _renderFullSuggestions() {
   const el = document.getElementById('copilote-sugg-full');
   if (!el) return;
   el.innerHTML = QUICK_SUGGESTIONS.map(s =>
-    `<button onclick="sendCopilotFull_q('\${s.q.replace(/'/g,"\\'")}')"
+    `<button onclick="sendCopilotFull_q('${s.q.replace(/'/g,"\\'")}')"
       style="background:var(--s);border:1px solid var(--b);color:var(--m);
              border-radius:20px;padding:5px 14px;font-size:12px;cursor:pointer;
              white-space:nowrap;font-family:var(--ff);transition:all .15s"
       onmouseenter="this.style.borderColor='var(--a)';this.style.color='var(--a)'"
-      onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">\${s.label}</button>`
+      onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">${s.label}</button>`
   ).join('');
 }
 
