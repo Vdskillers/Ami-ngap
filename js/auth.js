@@ -85,6 +85,10 @@ function showApp(){
     const copiloteNotice=$('copilote-admin-notice');
     if(copiloteNotice) copiloteNotice.style.display='flex';
 
+    // ── Forcer le remontage du Copilote (réinitialiser le flag) ──
+    const copiloteArea=$('copilote-chat-area');
+    if(copiloteArea){ copiloteArea.dataset.ok=''; copiloteArea.innerHTML=''; }
+
     // ── Rendre Dashboard et Copilote visibles dans la sidebar pour les admins ──
     ['dash','copilote'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
@@ -130,6 +134,9 @@ function showApp(){
 
   // Correction Leaflet après changement de layout
   setTimeout(()=>{ if(typeof depMap!=='undefined'&&depMap) depMap.invalidateSize(); },250);
+
+  // Dispatcher l'event de login pour les modules qui en dépendent (copilote, etc.)
+  setTimeout(()=>{ document.dispatchEvent(new CustomEvent('ami:login', { detail: { role: S?.role } })); }, 150);
 }
 function switchTab(t){['l','r'].forEach(x=>{$('tab-'+x).classList.toggle('on',x===t);$('pan-'+x).style.display=x===t?'block':'none';});hideM('le','re','ro');}
 async function login(){

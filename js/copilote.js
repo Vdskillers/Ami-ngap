@@ -352,23 +352,28 @@ function initCopiloteSection() {
   const target = document.getElementById('copilote-chat-area');
   if (!target) return;
 
-  // ── Mode admin : afficher la notice (déjà dans le HTML), monter l'interface normalement ──
-  if (typeof S !== 'undefined' && S?.role === 'admin') {
-    const notice = document.getElementById('copilote-admin-notice');
-    if (notice) notice.style.display = 'flex';
-  }
+  // ── Notice admin : toujours visible si admin ──
+  const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
+  const notice  = document.getElementById('copilote-admin-notice');
+  if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
 
-  // Déjà monté ?
-  if (target.dataset.ok === '1') {
+  // ── Vérifier si l'UI est déjà montée ET les éléments sont présents ──
+  const alreadyMounted = target.dataset.ok === '1'
+    && !!document.getElementById('copilote-messages-full')
+    && !!document.getElementById('copilote-input-full');
+
+  if (alreadyMounted) {
     _renderFullHistory();
     _renderFullSuggestions();
     setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 100);
     return;
   }
+
+  // ── Monter l'interface complète (nurses ET admins) ──
   target.dataset.ok = '1';
   target.style.cssText = 'display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:420px;';
 
-  target.innerHTML = \`
+  target.innerHTML = `
     <!-- Zone messages -->
     <div id="copilote-messages-full"
       style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;
@@ -407,7 +412,7 @@ function initCopiloteSection() {
           onmouseenter="this.style.borderColor='var(--d)';this.style.color='var(--d)'"
           onmouseleave="this.style.borderColor='var(--b)';this.style.color='var(--m)'">🗑️</button>
       </div>
-    </div>\`;
+    </div>`;
 
   _renderFullHistory();
   _renderFullSuggestions();
@@ -562,36 +567,53 @@ function _tryInitCopilote() {
   const target = document.getElementById('copilote-chat-area');
   if (!target) return;
   const section = document.getElementById('view-copilote');
-  // Vérifier que la section est visible (class "on" ou display != none)
   const visible = section?.classList.contains('on') ||
                   (section && getComputedStyle(section).display !== 'none');
   if (visible) initCopiloteSection();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Bouton flottant pour nurses uniquement
-  if (typeof S === 'undefined' || S?.role !== 'admin') {
-    _createCopilotPanel();
-  }
-  document.addEventListener('ami:login', () => {
-    if (S?.role === 'nurse') _createCopilotPanel();
-  });
 
-  // Déclencheur principal : navigation
-  document.addEventListener('app:nav', e => {
-    if (e.detail?.view === 'copilote') {
-      setTimeout(initCopiloteSection, 80);
+  /* ── Panneau flottant : créé après login selon le rôle ── */
+  function _setupByRole() {
+    const role = typeof S !== 'undefined' ? S?.role : null;
+    if (role === 'nurse' && !document.getElementById('copilot-panel')) {
+      _createCopilotPanel();
     }
+    /* Admin ou rôle inconnu : pas de panneau flottant, mais Copilote section pleine */
+  }
+
+  /* Tenter immédiatement si déjà connecté (rechargement page) */
+  _setupByRole();
+
+  /* Écouter le login — S est hydraté à ce moment */
+  document.addEventListener('ami:login', () => {
+    _setupByRole();
+    /* Réinitialiser le flag pour forcer un remontage propre */
+    const target = document.getElementById('copilote-chat-area');
+    if (target) { target.dataset.ok = ''; target.innerHTML = ''; }
   });
 
-  // Déclencheur secondaire : changement de classe (si navTo fait un toggle de class "on")
+  /* ── Déclencheur principal : event de navigation ── */
+  document.addEventListener('app:nav', e => {
+    if (e.detail?.view !== 'copilote') return;
+    /* Réinitialiser si les éléments internes ont disparu */
+    const target = document.getElementById('copilote-chat-area');
+    if (target && !document.getElementById('copilote-messages-full')) {
+      target.dataset.ok = '';
+    }
+    /* Délai court pour laisser le DOM se mettre en place */
+    setTimeout(initCopiloteSection, 80);
+  });
+
+  /* ── Déclencheur secondaire : MutationObserver sur la section ── */
   const section = document.getElementById('view-copilote');
   if (section) {
     const obs = new MutationObserver(() => _tryInitCopilote());
     obs.observe(section, { attributes: true, attributeFilter: ['class', 'style'] });
   }
 
-  // Déclencheur tertiaire : si la section est déjà visible au chargement
+  /* ── Déclencheur tertiaire : section déjà visible au chargement ── */
   setTimeout(_tryInitCopilote, 300);
 });
 

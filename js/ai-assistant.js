@@ -250,6 +250,13 @@ Tu dois :
 Tu ne dois JAMAIS inventer de données patient.
 `.trim();
 
+/* Modèles WebLLM disponibles — par ordre de préférence (léger → lourd) */
+const LLM_MODELS = [
+  'Llama-3.2-1B-Instruct-q4f32_1-MLC',   /* ~800 MB — le plus léger */
+  'Llama-3.2-3B-Instruct-q4f16_1-MLC',   /* ~2 GB  — meilleure qualité */
+  'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',/* ~600 MB — fallback compact */
+];
+
 async function initLLM() {
   if (_llmEngine) {
     const el = document.getElementById('llm-progress');
@@ -279,22 +286,34 @@ async function initLLM() {
   const el = document.getElementById('llm-progress');
   if (el) { el.textContent = '⏳ Chargement IA locale… (peut prendre 1-2 min)'; el.style.display = 'block'; }
 
-  try {
-    const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
-    _llmEngine = await CreateMLCEngine('Llama-3.2-1B-Instruct-q4f16_1', {
-      initProgressCallback: p => {
-        const pct = Math.round((p.progress || 0) * 100);
-        if (el) el.textContent = `🤖 Chargement IA locale : ${pct}%`;
-      }
-    });
-    log('LLM offline prêt ✅');
-    if (el) { el.textContent = '🤖 IA locale prête ✅'; setTimeout(() => el.style.display = 'none', 4000); }
-    if (typeof showToast === 'function') showToast('🤖 IA locale chargée et prête.');
-  } catch (e) {
-    logWarn('LLM non disponible:', e.message);
-    if (el) { el.textContent = `❌ IA locale : ${e.message.slice(0, 60)}`; setTimeout(() => el.style.display = 'none', 5000); }
-    if (typeof showToast === 'function') showToast('❌ Impossible de charger l\'IA locale : ' + e.message.slice(0, 80));
-  } finally { _llmLoading = false; }
+  let lastError = null;
+  for (const modelId of LLM_MODELS) {
+    try {
+      if (el) el.textContent = `⏳ Chargement ${modelId.split('-').slice(0,2).join(' ')}…`;
+      const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
+      _llmEngine = await CreateMLCEngine(modelId, {
+        initProgressCallback: p => {
+          const pct = Math.round((p.progress || 0) * 100);
+          if (el) el.textContent = `🤖 Chargement IA locale : ${pct}%`;
+        }
+      });
+      log(`LLM offline prêt ✅ (${modelId})`);
+      if (el) { el.textContent = '🤖 IA locale prête ✅'; setTimeout(() => el.style.display = 'none', 4000); }
+      if (typeof showToast === 'function') showToast('🤖 IA locale chargée et prête.');
+      _llmLoading = false;
+      return; /* succès — on sort */
+    } catch (e) {
+      lastError = e;
+      logWarn(`Modèle ${modelId} indisponible:`, e.message);
+      _llmEngine = null; /* réinitialiser pour tenter le suivant */
+    }
+  }
+
+  /* Tous les modèles ont échoué */
+  logWarn('Aucun modèle LLM disponible:', lastError?.message);
+  if (el) { el.textContent = `❌ IA locale indisponible — ${lastError?.message?.slice(0, 60) || 'modèle non trouvé'}`; setTimeout(() => el.style.display = 'none', 6000); }
+  if (typeof showToast === 'function') showToast('❌ IA locale indisponible sur ce navigateur. Le Copilote cloud reste actif.');
+  _llmLoading = false;
 }
 
 function buildLLMContext() {
