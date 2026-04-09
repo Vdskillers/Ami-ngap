@@ -362,16 +362,21 @@ let _fullTyping = false;
 let _fullTypingTimeout = null;
 
 async function sendCopilotFull() {
-  // Sécurité : reset _fullTyping si bloqué depuis plus de 40s
-  if (_fullTyping) {
-    if (_fullTypingTimeout) return; // vraiment en cours
-    _fullTyping = false; // reset forcé
-  }
+  // Reset si bloqué
+  if (_fullTyping && !_fullTypingTimeout) _fullTyping = false;
+  if (_fullTyping) return;
 
   const input = document.getElementById('copilote-input-full');
-  const q = (input?.value || '').trim();
+  if (!input) { console.error('[Copilote] textarea #copilote-input-full introuvable'); return; }
+
+  const q = input.value.trim();
   if (!q) return;
-  if (input) { input.value = ''; input.style.height = 'auto'; }
+
+  // S'assurer que l'historique est chargé
+  if (!_copilotHistory.length) _loadHistory();
+
+  input.value = '';
+  input.style.height = 'auto';
 
   _copilotHistory.push({ role: 'user', content: q, ts: Date.now() });
   _renderFullHistory();
@@ -386,7 +391,7 @@ async function sendCopilotFull() {
   if (msgEl) {
     const t = document.createElement('div');
     t.id = 'copilote-typing-full';
-    t.style.cssText = 'display:flex;gap:10px;align-items:flex-start';
+    t.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:4px 0';
     t.innerHTML = `<div style="width:32px;height:32px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:10px;display:grid;place-items:center;font-size:16px;flex-shrink:0">🤖</div>
     <div style="background:var(--s);border:1px solid var(--b);border-radius:4px 14px 14px 14px;padding:12px 16px;display:flex;gap:5px;align-items:center">
       <span style="width:7px;height:7px;background:var(--a);border-radius:50%;animation:dotbounce .9s infinite 0s"></span>
@@ -405,6 +410,7 @@ async function sendCopilotFull() {
     _renderFullHistory();
     if (typeof window.safeSpeak === 'function' && answer.length < 250) window.safeSpeak(answer);
   } catch (e) {
+    console.error('[Copilote] Erreur envoi:', e.message);
     document.getElementById('copilote-typing-full')?.remove();
     _copilotHistory.push({ role: 'error', content: '⚠️ ' + (e.message || 'Service indisponible. Vérifiez votre connexion.'), ts: Date.now() });
     _renderFullHistory();
@@ -413,12 +419,15 @@ async function sendCopilotFull() {
     _fullTypingTimeout = null;
     _fullTyping = false;
     if (btn) { btn.disabled = false; btn.textContent = '↑'; }
-    document.getElementById('copilote-input-full')?.focus();
+    input.focus();
   }
 }
 
 
-/* ── Appel via worker Cloudflare → xAI Grok (clé sécurisée côté serveur) ── */
+/* ── Rendre sendCopilotFull globalement accessible dès maintenant ── */
+window.sendCopilotFull = sendCopilotFull;
+
+/* ── Appel via worker Cloudflare → xAI Grok ── */
 async function _askClaude(question) {
   const ctx = _buildContext();
 
