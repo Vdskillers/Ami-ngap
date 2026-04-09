@@ -346,16 +346,12 @@ function openCopilotSection() {
   if (typeof navTo === 'function') navTo('copilote', null);
 }
 
-/* ── Initialisation du Copilote (HTML déjà dans le DOM via index.html) ── */
+/* ── Initialisation du Copilote ── */
 function initCopiloteSection() {
   _loadHistory();
-
-  // ── Notice admin ──
   const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
   const notice  = document.getElementById('copilote-admin-notice');
   if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
-
-  // ── Remplir messages et suggestions (le HTML existe déjà) ──
   _renderFullHistory();
   _renderFullSuggestions();
   setTimeout(() => document.getElementById('copilote-input-full')?.focus(), 150);

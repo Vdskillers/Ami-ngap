@@ -85,15 +85,22 @@ function showApp(){
     const copiloteNotice=$('copilote-admin-notice');
     if(copiloteNotice) copiloteNotice.style.display='flex';
 
-    // ── Forcer le remontage du Copilote (réinitialiser le flag) ──
-    const copiloteArea=$('copilote-chat-area');
-    if(copiloteArea){ copiloteArea.dataset.ok=''; copiloteArea.innerHTML=''; }
-
     // ── Rendre Dashboard et Copilote visibles dans la sidebar pour les admins ──
+    // ET rebrancher le listener navTo si nurse-only l'avait empêché
     ['dash','copilote'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
-      if (ni) { ni.style.removeProperty('display'); ni.classList.remove('nurse-only'); }
+      if (ni) {
+        ni.style.removeProperty('display');
+        ni.classList.remove('nurse-only');
+        // Rebrancher le click handler (au cas où il n'était pas attaché)
+        ni.onclick = () => navTo(v, null);
+      }
     });
+
+    // ── Initialiser le Copilote immédiatement (HTML déjà dans le DOM) ──
+    setTimeout(() => {
+      if (typeof initCopiloteSection === 'function') initCopiloteSection();
+    }, 200);
     // Boutons "Mon compte" + "Panneau admin" dans la sidebar (créés une seule fois)
     if(!$('btn-goto-admin')){
       const slLast = document.querySelector('.side .sl:last-child');
