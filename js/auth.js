@@ -120,6 +120,30 @@ function showApp(){
       // Insérer : Mon compte en premier, Panneau admin en second
       slLast?.prepend(liAdmin);   // admin en bas
       slLast?.prepend(liCompte);  // compte au-dessus
+
+      // ── Mobile : injecter bouton Panneau admin dans le menu Plus ──
+      if(!document.getElementById('btn-goto-admin-mobile')){
+        const mobileGrid = document.querySelector('#mobile-menu > div');
+        if(mobileGrid){
+          // Bouton Panneau admin mobile
+          const btnAdminM = document.createElement('button');
+          btnAdminM.id = 'btn-goto-admin-mobile';
+          btnAdminM.className = 'bn-item';
+          btnAdminM.style.cssText = 'background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)';
+          btnAdminM.innerHTML = '<span class="bn-ic">⚙️</span>Admin';
+          btnAdminM.onclick = () => {
+            document.getElementById('app').style.display='none';
+            document.getElementById('adm').classList.add('show');
+            if(typeof loadAdm==='function') loadAdm();
+            if(typeof loadAdmStats==='function') loadAdmStats();
+            if(typeof toggleMobileMenu==='function') toggleMobileMenu();
+          };
+          // Insérer avant le bouton Quitter
+          const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
+          if(btnQuitter) mobileGrid.insertBefore(btnAdminM, btnQuitter);
+          else mobileGrid.appendChild(btnAdminM);
+        }
+      }
     }
   } else {
     /* ── MODE INFIRMIÈRE ─────────────────────────────────────────── */
