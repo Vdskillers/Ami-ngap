@@ -10,7 +10,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>AMI — Cotation NGAP</title>
 <meta name="description" content="Cotation NGAP intelligente pour infirmiers — IA · RAG BM25 · Tarifs 2026">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230b0f14'/><text y='.9em' font-size='80' x='10'>💊</text></svg>">
+<link rel="icon" href="./favicon.ico">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -215,6 +215,7 @@
   <header class="top">
     <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
     <div class="tr">
+      <button onclick="resetOnboarding()" style="background:none;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5);font-size:10px;padding:3px 10px;border-radius:20px;cursor:pointer;font-family:var(--fm);transition:all .2s" onmouseenter="this.style.borderColor='rgba(255,255,255,.4)';this.style.color='rgba(255,255,255,.8)'" onmouseleave="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='rgba(255,255,255,.5)'">📖 Revoir l'intro</button>
       <div class="badge">NGAP 2026</div>
       <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
@@ -290,10 +291,7 @@
     <!-- COTATION -->
     <section class="view on" id="view-cot">
       <h1 class="pt">Cotation <em>intelligente</em></h1>
-      <p class="ps" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span>Agent IA NGAP · RAG BM25 · Tarifs 2026</span>
-        <button class="btn bs bsm" onclick="resetOnboarding()" style="opacity:.45;font-size:10px;padding:3px 10px;border-radius:20px;margin-left:auto">📖 Revoir l'intro</button>
-      </p>
+      <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
       <div class="card">
         <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — vérification fonctionnelle</strong> · Données patients masquées · cotation et toutes les pages testables normalement</div>
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
@@ -942,7 +940,7 @@
       <p class="ps">Comparatif mois/mois · Évolution actes · Analyse horaire · Tendances</p>
       <!-- Notice admin -->
       <div id="stats-admin-notice" class="ai in" style="display:none;margin-bottom:16px">
-        🛡️ <strong>Mode admin — aperçu structure</strong> · Les statistiques sont vides. Vous pouvez vérifier que tous les blocs s'affichent correctement.
+        🛡️ <strong>Mode admin — statistiques globales</strong> · Données agrégées anonymisées de toutes les infirmières · Aucune donnée patient identifiable.
       </div>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
@@ -1211,164 +1209,6 @@ function _checkCumul() {
 // Exposer checkOnboarding pour l'événement login
 document.addEventListener('ami:login', () => {
   if (typeof checkOnboarding === 'function') checkOnboarding();
-});
-</script>
-
-
-<!-- ═══════════════════════════════════════════
-     CGV / CGU / MENTIONS LÉGALES — AMI NGAP
-═══════════════════════════════════════════ -->
-<footer id="cgv-footer" style="display:none;background:var(--s);border-top:1px solid var(--b);padding:48px 24px 32px;font-family:var(--ff);color:var(--m);font-size:13px;line-height:1.8;margin-top:auto">
-  <div style="max-width:860px;margin:0 auto">
-
-    <!-- Bouton toggle -->
-    <div style="text-align:center;margin-bottom:32px">
-      <button onclick="document.getElementById('cgv-content').style.display=document.getElementById('cgv-content').style.display==='none'?'block':'none';this.textContent=this.textContent.includes('Afficher')?'▲ Masquer les CGV / Mentions légales':'▼ Afficher les CGV / Mentions légales'" style="background:none;border:1px solid var(--b);color:var(--m);font-family:var(--fm);font-size:11px;padding:6px 18px;border-radius:20px;cursor:pointer;letter-spacing:1px">▼ Afficher les CGV / Mentions légales</button>
-    </div>
-
-    <div id="cgv-content" style="display:none">
-
-      <!-- En-tête -->
-      <div style="text-align:center;margin-bottom:40px">
-        <div style="font-family:var(--fs);font-size:26px;color:var(--t);margin-bottom:6px">Conditions Générales d'Utilisation</div>
-        <div style="font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:2px">AMI NGAP — VERSION 1.0 — AVRIL 2026</div>
-      </div>
-
-      <!-- Article 1 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 1 — Présentation de l'application</div>
-        <p>AMI NGAP (ci-après « l'Application ») est un assistant numérique destiné exclusivement aux infirmiers et infirmières diplômés d'État (IDE) exerçant en libéral sur le territoire français. Elle permet la cotation automatisée des actes infirmiers selon la Nomenclature Générale des Actes Professionnels (NGAP) en vigueur, la gestion des tournées de soins, la planification des visites à domicile, et la génération de feuilles de soins conformes aux exigences de l'Assurance Maladie.</p>
-        <p style="margin-top:8px">L'Application est développée et exploitée par Ai BonoVan (ci-après « l'Éditeur », contact : vdskillers@hotmail.com). Elle est accessible via navigateur web compatible (Chrome, Edge, Safari) et installable comme application progressive (PWA) sur appareils mobiles et desktop. L'hébergement technique est assuré par Cloudflare Workers (traitement) et Supabase (base de données), conformément aux exigences de sécurité applicables aux données de santé.</p>
-      </div>
-
-      <!-- Article 2 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 2 — Accès et inscription</div>
-        <p>L'accès à l'Application est réservé aux professionnels de santé titulaires d'un diplôme d'État d'infirmier. En créant un compte, l'utilisateur certifie exercer en qualité d'infirmier libéral ou salarié habilité à facturer des actes NGAP.</p>
-        <p style="margin-top:8px">L'inscription nécessite la fourniture d'une adresse email valide, d'un mot de passe sécurisé (minimum 8 caractères), ainsi qu'optionnellement d'un numéro ADELI, d'un numéro RPPS et d'une dénomination de cabinet. Ces informations professionnelles sont nécessaires à la génération de feuilles de soins conformes.</p>
-        <p style="margin-top:8px">L'Éditeur se réserve le droit de suspendre ou supprimer tout compte dont l'utilisation s'avérerait non-conforme aux présentes CGU, frauduleuse, ou contraire à la réglementation applicable aux professions de santé.</p>
-      </div>
-
-      <!-- Article 3 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 3 — Description des services</div>
-        <p>L'Application propose les fonctionnalités suivantes :</p>
-        <ul style="margin:10px 0 10px 20px;list-style:disc">
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Cotation NGAP assistée par IA</strong> — saisie en langage naturel ou par dictée vocale, calcul automatique des actes, majorations et indemnités selon les tarifs NGAP 2026 en vigueur (AMI, AIS, BSA/BSB/BSC, IFD, IK, MN, MCI, etc.).</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Génération de feuilles de soins PDF</strong> — documents conformes aux exigences de facturation Assurance Maladie, incluant numéro de facture unique, coordonnées professionnelles, prescripteur et cotation détaillée.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Optimisation de tournée</strong> — calcul d'itinéraire optimisé par algorithme VRPTW, carte interactive, pilotage en temps réel de la journée de soins.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Carnet patients local</strong> — stockage chiffré sur l'appareil de l'utilisateur, aucune transmission au serveur.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Trésorerie et comptabilité</strong> — suivi des remboursements AMO/AMC, export CSV comptable, checklist CPAM.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Copilote IA NGAP</strong> — assistant conversationnel répondant aux questions de cotation, de facturation et de réglementation infirmière.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Fonctionnement hors ligne</strong> — l'Application est utilisable sans connexion internet pour les fonctionnalités de cotation et de tournée, avec synchronisation automatique au retour en ligne.</li>
-        </ul>
-        <p>Les tarifs NGAP intégrés sont mis à jour selon les arrêtés ministériels en vigueur. L'Éditeur ne saurait être tenu responsable d'un retard de mise à jour postérieur à une publication officielle.</p>
-      </div>
-
-      <!-- Article 4 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 4 — Données personnelles et santé (RGPD / HDS)</div>
-        <p>L'Application traite des données à caractère personnel et des données de santé au sens du Règlement Général sur la Protection des Données (RGPD — Règlement UE 2016/679) et de la loi Informatique et Libertés modifiée.</p>
-
-        <p style="margin-top:12px;color:var(--t);font-weight:500">4.1 — Données traitées</p>
-        <ul style="margin:8px 0 8px 20px;list-style:disc">
-          <li style="margin-bottom:4px">Données professionnelles de l'infirmier : nom, prénom, email, ADELI, RPPS, structure d'exercice.</li>
-          <li style="margin-bottom:4px">Données de facturation : actes cotés, dates, montants, prescripteurs, numéros de facture.</li>
-          <li style="margin-bottom:4px">Données patients (carnet local uniquement) : nom, prénom, date de naissance, numéro de sécurité sociale, coordonnées. Ces données ne quittent jamais l'appareil de l'utilisateur.</li>
-          <li style="margin-bottom:4px">Données de navigation : logs d'accès anonymisés, statistiques d'utilisation agrégées.</li>
-        </ul>
-
-        <p style="margin-top:12px;color:var(--t);font-weight:500">4.2 — Mesures de sécurité techniques</p>
-        <ul style="margin:8px 0 8px 20px;list-style:disc">
-          <li style="margin-bottom:4px">Chiffrement AES-256-GCM de toutes les données sensibles stockées localement.</li>
-          <li style="margin-bottom:4px">Dérivation de clé PBKDF2 avec 100 000 itérations.</li>
-          <li style="margin-bottom:4px">Mots de passe hashés avec sel côté serveur (SHA-256).</li>
-          <li style="margin-bottom:4px">Authentification par token JWT Bearer — aucun cookie de session.</li>
-          <li style="margin-bottom:4px">Transmission exclusivement en HTTPS (TLS 1.3).</li>
-          <li style="margin-bottom:4px">Accès administrateur strictement limité : aucun accès aux données patients, aucune visibilité des comptes administrateurs entre eux.</li>
-          <li style="margin-bottom:4px">Verrouillage automatique de l'application après 10 minutes d'inactivité.</li>
-          <li style="margin-bottom:4px">Purge automatique des logs d'accès après 90 jours.</li>
-        </ul>
-
-        <p style="margin-top:12px;color:var(--t);font-weight:500">4.3 — Droits des utilisateurs</p>
-        <p>Conformément au RGPD, l'utilisateur dispose des droits suivants, exerçables depuis la section « Sécurité » de l'Application ou par email à l'Éditeur :</p>
-        <ul style="margin:8px 0 8px 20px;list-style:disc">
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Droit d'accès</strong> — export JSON de toutes ses données personnelles.</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Droit de rectification</strong> — modification des informations professionnelles depuis le profil.</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Droit à l'effacement</strong> — suppression définitive du compte et de toutes les données associées.</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Droit à la portabilité</strong> — export CSV des cotations et JSON des données patients locales.</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Droit d'opposition</strong> — désactivation des statistiques d'utilisation depuis les paramètres.</li>
-        </ul>
-
-        <p style="margin-top:12px;color:var(--t);font-weight:500">4.4 — Conservation des données</p>
-        <p>Les données de cotation sont conservées pendant la durée légale applicable à la facturation médicale (5 ans). Les logs d'accès sont purgés automatiquement après 90 jours. Les données patients stockées localement sont sous la seule responsabilité de l'utilisateur et peuvent être effacées à tout moment.</p>
-
-        <p style="margin-top:12px;color:var(--t);font-weight:500">4.5 — Sous-traitants</p>
-        <p>L'Application fait appel aux sous-traitants suivants, liés par des clauses contractuelles conformes au RGPD : <strong style="color:var(--t)">Cloudflare Inc.</strong> (traitement des requêtes API, CDN — États-Unis, couvert par des clauses contractuelles types), <strong style="color:var(--t)">Supabase Inc.</strong> (base de données PostgreSQL hébergée en Europe), <strong style="color:var(--t)">xAI</strong> (traitement des questions du Copilote IA — aucune donnée patient transmise).</p>
-      </div>
-
-      <!-- Article 5 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 5 — Responsabilité et limites</div>
-        <p>AMI NGAP est un outil d'aide à la cotation. Les résultats générés par l'intelligence artificielle ont valeur indicative et ne sauraient se substituer au jugement professionnel de l'infirmier ni à une consultation de la nomenclature officielle.</p>
-        <p style="margin-top:8px">L'Éditeur ne saurait être tenu responsable :</p>
-        <ul style="margin:8px 0 8px 20px;list-style:disc">
-          <li style="margin-bottom:4px">D'erreurs de cotation résultant d'une description incomplète ou inexacte des soins par l'utilisateur.</li>
-          <li style="margin-bottom:4px">De refus de remboursement ou de redressement CPAM liés à une utilisation non-conforme.</li>
-          <li style="margin-bottom:4px">D'une indisponibilité temporaire du service liée à des opérations de maintenance ou à des tiers.</li>
-          <li style="margin-bottom:4px">De la perte de données locales consécutive à la réinitialisation ou au remplacement de l'appareil de l'utilisateur.</li>
-        </ul>
-        <p>L'utilisateur reste seul responsable de la conformité de sa facturation aux règles NGAP et aux conventions avec l'Assurance Maladie.</p>
-      </div>
-
-      <!-- Article 6 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 6 — Propriété intellectuelle</div>
-        <p>L'Application, son code source, ses algorithmes, son interface et l'ensemble de ses composants sont la propriété exclusive de Ai BonoVan et sont protégés par le droit d'auteur. Toute reproduction, modification, distribution ou exploitation commerciale sans autorisation écrite préalable est interdite.</p>
-        <p style="margin-top:8px">La nomenclature NGAP est issue de textes réglementaires officiels de droit public français. Les tarifs et codes d'actes sont reproduits à titre informatif conformément à leur caractère public.</p>
-      </div>
-
-      <!-- Article 7 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 7 — Modification des CGU et résiliation</div>
-        <p>L'Éditeur se réserve le droit de modifier les présentes CGU à tout moment. L'utilisateur sera informé de toute modification substantielle lors de sa prochaine connexion et devra donner son consentement explicite pour continuer à utiliser l'Application.</p>
-        <p style="margin-top:8px">L'utilisateur peut résilier son compte à tout moment depuis la section « Sécurité » de l'Application. La résiliation entraîne la suppression définitive de toutes les données du compte dans un délai de 30 jours, à l'exception des données devant être conservées au titre des obligations légales.</p>
-      </div>
-
-      <!-- Article 8 -->
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 8 — Droit applicable et juridiction</div>
-        <p>Les présentes CGU sont soumises au droit français. En cas de litige, les parties s'engagent à rechercher une solution amiable avant tout recours judiciaire. À défaut d'accord amiable, tout litige sera soumis à la compétence exclusive des tribunaux français.</p>
-        <p style="margin-top:8px">Pour toute question relative aux présentes CGU, à la protection des données ou à l'utilisation de l'Application : <span style="color:var(--a);font-family:var(--fm)"><a href="mailto:vdskillers@hotmail.com" style="color:var(--a);font-family:var(--fm)">vdskillers@hotmail.com</a></span>.</p>
-      </div>
-
-      <!-- Mentions légales -->
-      <div style="margin-bottom:32px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:12px;padding:20px 24px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px">Mentions légales</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;font-size:12px">
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">ÉDITEUR</div><div>Ai BonoVan</div><div style="color:var(--m)">vdskillers@hotmail.com</div></div><div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">APPLICATION</div><div>AMI NGAP v6.0</div><div style="color:var(--m)">Assistant infirmier intelligent</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">HÉBERGEMENT</div><div>Cloudflare Workers</div><div style="color:var(--m)">101 Townsend St, San Francisco CA</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">BASE DE DONNÉES</div><div>Supabase (EU)</div><div style="color:var(--m)">Hébergement Europe — AWS Frankfurt</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">RÉFÉRENTIEL</div><div>NGAP 2026</div><div style="color:var(--m)">Tarifs métropole en vigueur</div></div>
-        </div>
-      </div>
-
-      <!-- Pied de page CGV -->
-      <div style="text-align:center;padding-top:20px;border-top:1px solid var(--b);font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1px">
-        AMI NGAP — COTATION NGAP IA · TOURNÉE · TRÉSORERIE · PRIVACY BY DESIGN<br>
-        <span style="color:rgba(0,212,170,.4)">▪</span> RGPD · HDS · AES-256-GCM · HTTPS <span style="color:rgba(0,212,170,.4)">▪</span><br>
-        <span style="margin-top:6px;display:block">© 2026 Ai BonoVan — AMI NGAP — Tous droits réservés</span>
-      </div>
-
-    </div><!-- /cgv-content -->
-  </div>
-</footer>
-
-<script>
-// Afficher le footer CGV uniquement quand l'app est connectée
-document.addEventListener('ami:login', function(){
-  var f = document.getElementById('cgv-footer');
-  if(f) f.style.display = 'block';
 });
 </script>
 
