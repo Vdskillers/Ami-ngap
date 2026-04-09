@@ -313,6 +313,7 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .tr{gap:6px}
   .bout{font-size:10px;padding:4px 10px}
   .buser{font-size:10px;padding:4px 10px}
+  #btn-revoir-intro{display:none} /* masqué sur mobile — accessible via menu Plus */
 
   /* SIDEBAR — masquée, remplacée par bottom nav */
   .side{display:none}
@@ -430,12 +431,12 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   #dash-chart{height:120px}
 
   /* VOICE FAB */
-  #voicebtn{bottom:140px;right:14px;width:48px;height:48px;font-size:18px}
-  #voice-toast{bottom:198px;right:14px;max-width:240px}
+  #voicebtn{bottom:80px;right:14px;width:48px;height:48px;font-size:18px}
+  #voice-toast{bottom:138px;right:14px;max-width:240px}
 
   /* COPILOTE FAB — décalé au-dessus du bouton vocal sur mobile */
-  #copilot-fab{bottom:198px !important;right:14px !important;width:48px !important;height:48px !important;font-size:18px !important}
-  #copilot-panel{bottom:258px !important;right:14px !important}
+  #copilot-fab{bottom:138px !important;right:14px !important;width:48px !important;height:48px !important;font-size:18px !important}
+  #copilot-panel{bottom:198px !important;right:14px !important}
 
   /* LIVE CARD */
   .live-card{padding:20px 16px}
