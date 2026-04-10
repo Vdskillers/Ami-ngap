@@ -61,19 +61,21 @@
 <!-- ADMIN PANEL -->
 <div id="adm">
   <div class="adm-top">
-    <!-- Ligne 1 : logo + Mon compte -->
-    <div class="adm-top-row1">
-      <div style="display:flex;align-items:center;gap:10px"><div class="adm-mark">⚙</div><div><div class="adm-name">Administration AMI</div></div></div>
-      <button class="bs bsm adm-btn-compte" style="margin-left:auto;padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);color:var(--a)" onclick="openPM()">👤 Mon compte</button>
+    <!-- Logo + titre -->
+    <div class="adm-top-logo">
+      <div class="adm-mark">⚙</div>
+      <div class="adm-name">Administration AMI</div>
     </div>
-    <!-- Ligne 2 : Accès restreint + Vue limitée + Retour + Déco -->
-    <div class="adm-top-row2">
-      <div class="adm-top-row2-info">
-        <div class="adm-sub">ACCÈS RESTREINT</div>
-        <div class="priv-badge adm-priv-inline">🔒 Vue limitée : nom + prénom uniquement</div>
-      </div>
-      <button class="bs bsm adm-btn-retour" style="margin-left:auto;padding:6px 12px;font-size:11px;border-radius:20px;cursor:pointer" onclick="goToApp()">← Retour à l'app</button>
-      <button class="bout adm-btn-deco" style="font-size:11px;padding:6px 12px" onclick="logout()">⏻ Déconnexion</button>
+    <!-- Badge accès restreint -->
+    <div class="adm-top-badge">
+      <div class="adm-sub">ACCÈS RESTREINT</div>
+      <div class="priv-badge adm-priv-inline">🔒 Vue limitée : nom + prénom uniquement</div>
+    </div>
+    <!-- Actions : Mon compte + Retour + Déconnexion -->
+    <div class="adm-top-actions">
+      <button class="bs bsm" onclick="openPM()">👤 Mon compte</button>
+      <button class="bs bsm" onclick="goToApp()">← Retour à l'app</button>
+      <button class="bout bsm" onclick="logout()">⏻ Déconnexion</button>
     </div>
   </div>
   <div class="adm-body">
@@ -227,15 +229,15 @@
     <div class="tr">
       <button id="btn-install-header" onclick="installApp()" style="display:none;background:var(--ad);border:1px solid var(--a);color:var(--a);font-family:var(--fm);font-size:10px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:all .15s">📱 Installer AMI</button>
       <div class="badge">NGAP 2026</div>
-      <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
-      <!-- Sur mobile en mode admin : badge + déco juste après Vocal -->
-      <div id="admin-header-mobile" style="display:none;flex-direction:column;align-items:flex-end;gap:2px">
-        <div class="admin-mode-badge" style="font-size:9px;padding:3px 8px">🛡️ MODE ADMIN SÉCURISÉ</div>
-        <button class="bout" style="font-size:9px;padding:3px 8px" onclick="logout()">⏻ Déconnexion</button>
+      <!-- Mode admin : badge + déconnexion (visible desktop ET mobile, géré par CSS/JS) -->
+      <div id="admin-header-controls" style="display:none;align-items:center;gap:8px">
+        <div class="admin-mode-badge" id="admin-mode-badge">🛡️ MODE ADMIN SÉCURISÉ</div>
+        <button class="bout" style="font-size:11px;padding:5px 12px" onclick="logout()">⏻ Déconnexion</button>
       </div>
+      <!-- Mode normal : profil + déconnexion -->
       <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
-      <button class="bout" onclick="logout()">⏻ Déconnexion</button>
+      <button class="bout" id="btn-logout-normal" onclick="logout()">⏻ Déconnexion</button>
     </div>
   </header>
   <nav class="side">
@@ -294,12 +296,14 @@
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="stats" onclick="navTo('stats',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
-      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="copilote" onclick="navTo('copilote',this);toggleMobileMenu()"><span class="bn-ic">🤖</span>Copilote</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="rapport" onclick="navTo('rapport',this);toggleMobileMenu()"><span class="bn-ic">📄</span>Rapport</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sig" onclick="navTo('sig',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Signatures</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ngap-ref" onclick="navTo('ngap-ref',this);toggleMobileMenu()"><span class="bn-ic">📚</span>Référentiel</button>
+      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
       <button id="btn-install-mobile" class="bn-item" style="display:none;background:var(--ad);border:1px solid rgba(0,212,170,.3);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--a)" onclick="installApp()"><span class="bn-ic">📱</span>Installer</button>
       <button class="bn-item" style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)" onclick="logout()"><span class="bn-ic">⏻</span>Quitter</button>
     </div>
