@@ -80,12 +80,12 @@ function showApp(){
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
 
     // ── Notices admin pour toutes les sections accessibles ──
-    ['dash-admin-notice','copilote-admin-notice','ver-admin-notice','stats-admin-notice'].forEach(id => {
+    ['dash-admin-notice','copilote-admin-notice','ver-admin-notice','stats-admin-notice','sig-admin-notice'].forEach(id => {
       const el = $(id); if(el) el.style.display = 'flex';
     });
 
     // ── Rebrancher onclick pour copilote et stats (nurse-only mais accessibles admin) ──
-    ['dash','copilote','stats','ngap-ref'].forEach(v => {
+    ['dash','copilote','stats','ngap-ref','rapport','sig'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
         ni.classList.remove('nurse-only');
@@ -147,6 +147,25 @@ function showApp(){
         const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
         if(btnQuitter) mobileGrid.insertBefore(btnAdminM, btnQuitter);
         else mobileGrid.appendChild(btnAdminM);
+
+        // ── Rendre Copilote et Rapport visibles dans le menu Plus mobile (admin) ──
+        ['copilote','rapport'].forEach(v => {
+          const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
+          if (btn) btn.classList.remove('nurse-only');
+        });
+
+        // ── Ajouter bouton Signatures dans le menu Plus mobile (admin) ──
+        if (!document.getElementById('btn-sig-mobile')) {
+          const btnSig = document.createElement('button');
+          btnSig.id = 'btn-sig-mobile';
+          btnSig.className = 'bn-item';
+          btnSig.style.cssText = 'background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none';
+          btnSig.innerHTML = '<span class="bn-ic">✍️</span>Signatures';
+          btnSig.onclick = () => { if(typeof navTo==='function') navTo('sig', null); if(typeof toggleMobileMenu==='function') toggleMobileMenu(); };
+          const btnQ = mobileGrid.querySelector('[onclick*="logout"]');
+          if (btnQ) mobileGrid.insertBefore(btnSig, btnQ);
+          else mobileGrid.appendChild(btnSig);
+        }
       };
       setTimeout(_injectAdminMobile, 200);
     }

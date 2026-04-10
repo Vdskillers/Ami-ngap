@@ -303,3 +303,56 @@ document.addEventListener('DOMContentLoaded', () => {
     cbody.querySelector('.card')?.appendChild(wrap);
   });
 });
+
+/* ════════════════════════════════════════════════
+   LISTE DES SIGNATURES (vue #view-sig)
+════════════════════════════════════════════════ */
+async function loadSignatureList() {
+  const el = document.getElementById('sig-list-body');
+  if (!el) return;
+  el.innerHTML = '<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Chargement…</p>';
+  try {
+    await _initSigDB();
+    const db = await _initSigDB();
+    const tx = db.transaction(SIG_STORE, 'readonly');
+    const store = tx.objectStore(SIG_STORE);
+    const all = await new Promise((res, rej) => {
+      const req = store.getAll();
+      req.onsuccess = () => res(req.result || []);
+      req.onerror  = () => rej(req.error);
+    });
+
+    if (!all.length) {
+      const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
+      el.innerHTML = `<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">
+        ${isAdmin ? '🛡️ Mode admin · Aucune signature stockée sur cet appareil.<br><span style="font-size:11px;opacity:.6">Le module fonctionne correctement.</span>'
+                  : 'Aucune signature enregistrée.<br><span style="font-size:11px;opacity:.6">Les signatures apparaissent après chaque cotation signée.</span>'}
+      </p>`;
+      return;
+    }
+
+    const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
+    el.innerHTML = all.map(sig => {
+      const date = sig.created_at ? new Date(sig.created_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+      const invoiceId = isAdmin ? '— masqué (admin) —' : (sig.invoice_id || '—');
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b)">
+        <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
+          ${sig.data_url ? `<img src="${sig.data_url}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500;font-family:var(--fm)">${invoiceId}</div>
+          <div style="font-size:11px;color:var(--m)">${date}</div>
+        </div>
+        ${!isAdmin ? `<button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px">🗑️</button>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<p style="color:var(--d);font-size:13px;padding:20px 0;text-align:center">Erreur de chargement des signatures.</p>';
+    console.warn('[Signatures] loadSignatureList:', e);
+  }
+}
+
+/* Charger la liste quand on navigue vers #view-sig */
+document.addEventListener('ui:navigate', e => {
+  if (e.detail?.view === 'sig') loadSignatureList();
+});
