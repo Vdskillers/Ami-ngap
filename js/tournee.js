@@ -380,39 +380,112 @@ function _processImportData(content, source) {
   const result = $('imp-result');
   if (!result) return;
 
-  let parsed = null;
-  let patientsFound = 0;
+  let parsed    = null;
+  let patients  = [];
 
   // Tentative JSON
   try {
     parsed = JSON.parse(content);
-    const patients = parsed.patients || parsed.entries || (Array.isArray(parsed) ? parsed : null);
-    if (patients) {
-      patientsFound = patients.length;
-      storeImportedData({ patients, total: patientsFound, source });
-    }
+    const found = parsed.patients || parsed.entries || (Array.isArray(parsed) ? parsed : null);
+    if (found) patients = found;
   } catch { /* pas JSON */ }
 
-  // Tentative ICS / texte
-  if (!parsed) {
+  // Tentative ICS / texte libre
+  if (!patients.length) {
     const lines = content.split('\n').filter(l => l.trim().length > 3);
-    patientsFound = lines.length;
-    const patients = lines.map((l, i) => ({
-      id: 'imp_' + i,
-      description: l.trim().replace(/^[-*•→]+\s*/, ''),
-      texte: l.trim(),
-      heure_soin: (l.match(/(\d{1,2})[hH:](\d{2})/) || [])[0] || '',
-    }));
-    storeImportedData({ patients, total: patientsFound, source });
+    patients = lines.map((l, i) => {
+      // Essayer d'extraire une adresse depuis la ligne (format : "Nom — 12 rue X, Ville")
+      const addrMatch = l.match(/(?:—|-|:)\s*(\d+[^,\n]+(?:rue|avenue|bd|boulevard|allée|impasse|chemin|place|villa|résidence)[^,\n]+(?:,\s*\d{5}[^,\n]*)?)/i);
+      return {
+        id:          'imp_' + i,
+        description: l.trim().replace(/^[-*•→]+\s*/, ''),
+        texte:       l.trim(),
+        heure_soin:  (l.match(/(\d{1,2})[hH:](\d{2})/) || [])[0] || '',
+        adresse:     addrMatch ? addrMatch[1].trim() : '',
+      };
+    });
   }
+
+  storeImportedData({ patients, total: patients.length, source });
+
+  // Compter les patients avec adresse pour proposer le géocodage
+  const withAddr = patients.filter(p => p.adresse && p.adresse.trim()).length;
+  const missingGPS = patients.filter(p => (!p.lat || !p.lng) && p.adresse && p.adresse.trim()).length;
 
   result.innerHTML = `
     <div class="ai su">
       ✅ Import réussi depuis <strong>${source}</strong><br>
-      📋 <strong>${patientsFound}</strong> entrée(s) chargée(s)<br>
+      📋 <strong>${patients.length}</strong> entrée(s) chargée(s)
+      ${missingGPS > 0
+        ? `<br><span style="font-size:12px;color:var(--w)">⚠️ ${missingGPS} adresse(s) sans coordonnées GPS</span>`
+        : withAddr > 0
+          ? `<br><span style="font-size:12px;color:var(--a)">📍 ${withAddr} adresse(s) détectée(s)</span>`
+          : ''}
       <span style="font-size:11px;color:var(--m);margin-top:4px;display:block">Allez dans <strong>Planning</strong> ou <strong>Tournée IA</strong> pour utiliser ces données.</span>
-    </div>`;
+    </div>
+    ${missingGPS > 0 ? `
+    <div style="margin-top:10px">
+      <button class="btn bv bsm" id="btn-geocode-import" onclick="geocodeImportedPatients()">
+        <span>📡</span> Résoudre ${missingGPS} adresse(s) GPS
+      </button>
+      <span style="font-size:11px;color:var(--m);margin-left:8px">Recommandé pour optimiser la tournée</span>
+    </div>` : ''}`;
   result.classList.add('show');
+}
+
+/* ============================================================
+   GÉOCODAGE POST-IMPORT
+   Résout les adresses manquantes après un import ICS/CSV/texte.
+   Utilise Nominatim (OpenStreetMap) — 1 req/s max.
+   ============================================================ */
+async function geocodeImportedPatients() {
+  const btn = $('btn-geocode-import');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span> Géocodage…'; }
+
+  const data     = APP.importedData;
+  if (!data || !data.patients || !data.patients.length) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>📡</span> Résoudre les adresses GPS'; }
+    return;
+  }
+
+  const patients = [...data.patients];
+  let geocoded = 0, failed = 0;
+
+  for (let i = 0; i < patients.length; i++) {
+    const p = patients[i];
+    // Sauter si déjà géocodé ou pas d'adresse
+    if ((p.lat && p.lng) || !p.adresse || !p.adresse.trim()) continue;
+
+    if (btn) btn.innerHTML = `<span>📡</span> ${i + 1}/${patients.length}…`;
+
+    try {
+      const q   = encodeURIComponent(p.adresse.trim());
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+        headers: { 'Accept-Language': 'fr', 'User-Agent': 'AMI-NGAP/6.1' },
+      });
+      const data = await res.json();
+      if (data && data[0]) {
+        patients[i] = { ...p, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        geocoded++;
+      } else {
+        failed++;
+      }
+    } catch { failed++; }
+
+    // Respecter rate-limit Nominatim : 1 req/s
+    if (i < patients.length - 1) await new Promise(r => setTimeout(r, 1100));
+  }
+
+  storeImportedData({ ...APP.importedData, patients, total: patients.length });
+
+  const msg = `✅ ${geocoded} GPS résolu(s)${failed > 0 ? ` · ⚠️ ${failed} non trouvé(s)` : ''}`;
+  showToastSafe(msg);
+
+  if (btn) {
+    btn.disabled  = false;
+    btn.innerHTML = `<span>✅</span> ${msg}`;
+    btn.style.background = 'var(--a)';
+  }
 }
 
 /* ============================================================

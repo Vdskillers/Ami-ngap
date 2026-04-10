@@ -1,12 +1,13 @@
 /* ════════════════════════════════════════════════
-   security.js — AMI NGAP v1.0
+   security.js — AMI NGAP v2.0
    ────────────────────────────────────────────────
    Sécurité RGPD + HDS — Privacy by Design
    ─────────────────────────────────────────────────
    1. Chiffrement AES-GCM (Web Crypto API)
-      - generateEncKey() — clé dérivée du mot de passe
+      - generateEncKey() — clé PBKDF2 100 000 itérations
       - encryptData() / decryptData()
       - encryptField() / decryptField() — champs unitaires
+      🔒 Clé dérivée du token de session, jamais persistée
    2. IndexedDB chiffré (remplace IDB en clair de pwa.js)
       - saveSecure() / loadSecure()
       - clearSecureStore()
@@ -24,6 +25,10 @@
       - setupPIN() / checkPIN() / lockApp()
    7. Minimisation données
       - stripSensitive() — retire les champs non nécessaires
+   8. ✅ v2.0 — Surveillance fraude temps réel
+      - watchFraudScore() — alerte si fraud_score ≥ FRAUD_ALERT_THRESHOLD
+      - reportFraudAlert() — envoi log serveur + audit local
+      - FRAUD_ALERT_THRESHOLD = 70 (configurable)
 ════════════════════════════════════════════════ */
 
 /* ── Guards ──────────────────────────────────── */
@@ -465,13 +470,70 @@ function _startPinTimer() {
 function stripSensitive(data) {
   if (typeof data === 'string') {
     /* Masquer numéros qui ressemblent à des données sensibles */
-    return data.replace(/\b\d{13,15}\b/g, '[NIR]').replace(/\b\d{9}\b/g, '[ADELI]');
+    return data
+      .replace(/\b\d{13,15}\b/g, '[NIR]')
+      .replace(/\b\d{9}\b/g, '[ADELI]')
+      .replace(/\b\d{11}\b/g, '[RPPS]');
   }
   if (typeof data !== 'object' || !data) return data;
-  const SENSITIVE_KEYS = ['nom_patient','prenom_patient','numero_secu','nir','date_naissance','f_pt','f_sec','adresse_patient','tel_patient'];
+  const SENSITIVE_KEYS = [
+    'nom_patient','prenom_patient','numero_secu','nir',
+    'date_naissance','f_pt','f_sec',
+    'adresse_patient','tel_patient','email_patient',
+    'mutuelle','num_adherent','num_contrat',
+    'secu','amo','amc','ddn',
+  ];
   const clean = { ...data };
-  SENSITIVE_KEYS.forEach(k => { if (clean[k]) clean[k] = '[MASQUÉ]'; });
+  SENSITIVE_KEYS.forEach(k => { if (clean[k] !== undefined) clean[k] = '[MASQUÉ]'; });
   return clean;
+}
+
+/* ════════════════════════════════════════════════
+   8. SURVEILLANCE FRAUDE TEMPS RÉEL (v2.0)
+   Détecte les fraud_score élevés et déclenche une
+   alerte locale + log serveur automatique.
+   Seuil FRAUD_ALERT_THRESHOLD = 70 (configurable).
+════════════════════════════════════════════════ */
+
+const FRAUD_ALERT_THRESHOLD = 70;
+
+/**
+ * À appeler après chaque retour de cotation.
+ * Si fraud_score >= FRAUD_ALERT_THRESHOLD, déclenche l'alerte.
+ * @param {number} score   — fraud_score retourné par le worker
+ * @param {object} context — contexte minimal (acte, date) — JAMAIS de données patient
+ */
+async function watchFraudScore(score, context = {}) {
+  if (!score || score < FRAUD_ALERT_THRESHOLD) return;
+
+  const safeCtx = {
+    score,
+    acte:    context.acte    || '—',
+    date:    context.date    || new Date().toISOString().slice(0,10),
+    source:  context.source  || 'cotation',
+  };
+
+  log(`⚠️ Alerte fraude — score ${score} ≥ ${FRAUD_ALERT_THRESHOLD}`);
+  auditLocal('FRAUD_ALERT_LOCAL', `Score ${score} — ${safeCtx.acte}`);
+  await reportFraudAlert(safeCtx);
+}
+
+/**
+ * Envoie l'alerte fraude au worker (system_logs côté serveur).
+ * Ne transmet jamais de données patient — uniquement le score et l'acte anonymisé.
+ */
+async function reportFraudAlert(ctx) {
+  try {
+    if (typeof wpost !== 'function') return;
+    await wpost('/webhook/log', {
+      level:   'warn',
+      source:  'security_front',
+      event:   'FRAUD_ALERT_FRONT',
+      message: `Score fraude ${ctx.score} — acte : ${ctx.acte} — date : ${ctx.date}`,
+    });
+  } catch (e) {
+    logWarn('reportFraudAlert:', e.message);
+  }
 }
 
 /* ════════════════════════════════════════════════
@@ -483,5 +545,5 @@ async function initSecurity(token) {
   cleanOldLogs();
   _startPinTimer();
   auditLocal('LOGIN', 'Connexion sécurisée');
-  log('Module sécurité initialisé ✅');
+  log('Module sécurité v2.0 initialisé ✅ — AES-256-GCM · PBKDF2 100k · Fraude surveillée (seuil ' + FRAUD_ALERT_THRESHOLD + ')');
 }

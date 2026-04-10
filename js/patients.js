@@ -128,31 +128,63 @@ async function savePatient() {
   const prenom    = (gv('pat-prenom') || '').trim();
   if (!nom) { alert('Le nom est obligatoire.'); return; }
 
+  // Récupérer les coordonnées GPS existantes si on édite (ne pas les écraser)
+  let existingLat = null, existingLng = null;
+  if (_editingPatientId) {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === _editingPatientId);
+    if (row) {
+      const prev = _dec(row._data) || {};
+      existingLat = prev.lat || null;
+      existingLng = prev.lng || null;
+    }
+  }
+
   const patient = {
     id:             _editingPatientId || ('pat_' + Date.now()),
     nom,
     prenom,
-    adresse:        gv('pat-adresse')   || '',
-    ddn:            gv('pat-ddn')       || '',
-    secu:           gv('pat-secu')      || '',
-    amo:            gv('pat-amo')       || '',
-    amc:            gv('pat-amc')       || '',
-    medecin:        gv('pat-medecin')   || '',
-    allergies:      gv('pat-allergies') || '',
+    adresse:        gv('pat-adresse')    || '',
+    ddn:            gv('pat-ddn')        || '',
+    secu:           gv('pat-secu')       || '',
+    amo:            gv('pat-amo')        || '',
+    amc:            gv('pat-amc')        || '',
+    medecin:        gv('pat-medecin')    || '',
+    allergies:      gv('pat-allergies')  || '',
     pathologies:    gv('pat-pathologies')|| '',
     traitements:    gv('pat-traitements')|| '',
     contact_nom:    gv('pat-contact-nom')|| '',
     contact_tel:    gv('pat-contact-tel')|| '',
-    notes:          gv('pat-notes')     || '',
-    ordo_date:      gv('pat-ordo-date') || '',
-    exo:            gv('pat-exo')       || '',
+    notes:          gv('pat-notes')      || '',
+    ordo_date:      gv('pat-ordo-date')  || '',
+    exo:            gv('pat-exo')        || '',
     created_at:     _editingPatientId ? undefined : new Date().toISOString(),
     updated_at:     new Date().toISOString(),
     _enc:           true,
+    // Conserver les coordonnées GPS précédentes sauf si l'adresse a changé
+    ...(existingLat !== null ? { lat: existingLat, lng: existingLng } : {}),
   };
 
-  // Chiffrement des champs sensibles
-  const toStore = { id: patient.id, nom: patient.nom, prenom: patient.prenom, _data: _enc(patient), updated_at: patient.updated_at };
+  // Si l'adresse a été modifiée, on invalide les coordonnées GPS pour forcer un re-géocodage
+  if (_editingPatientId && existingLat !== null) {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === _editingPatientId);
+    const prev = row ? (_dec(row._data) || {}) : {};
+    if (prev.adresse && prev.adresse !== patient.adresse) {
+      delete patient.lat;
+      delete patient.lng;
+      showToastSafe('ℹ️ Adresse modifiée — utilisez "📡 Géocoder" depuis la fiche pour mettre à jour les coordonnées GPS.');
+    }
+  }
+
+  // Chiffrement des champs sensibles — lat/lng sont dans _data (chiffré), jamais en clair
+  const toStore = {
+    id:         patient.id,
+    nom:        patient.nom,
+    prenom:     patient.prenom,
+    _data:      _enc(patient),
+    updated_at: patient.updated_at,
+  };
 
   await _idbPut(PATIENTS_STORE, toStore);
   closePatientForm();
