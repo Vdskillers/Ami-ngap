@@ -61,11 +61,20 @@
 <!-- ADMIN PANEL -->
 <div id="adm">
   <div class="adm-top">
-    <div style="display:flex;align-items:center;gap:10px"><div class="adm-mark">⚙</div><div><div class="adm-name">Administration AMI</div><div class="adm-sub">Accès restreint</div></div></div>
-    <div class="priv-badge">🔒 Vue limitée : nom + prénom uniquement</div>
-    <button class="bs bsm" style="margin-left:auto;padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);color:var(--a)" onclick="openPM()">👤 Mon compte</button>
-    <button class="bs bsm" style="padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer" onclick="goToApp()">← Retour à l'app</button>
-    <button class="bout" onclick="logout()">⏻ Déconnexion</button>
+    <!-- Ligne 1 : logo + Mon compte -->
+    <div class="adm-top-row1">
+      <div style="display:flex;align-items:center;gap:10px"><div class="adm-mark">⚙</div><div><div class="adm-name">Administration AMI</div></div></div>
+      <button class="bs bsm adm-btn-compte" style="margin-left:auto;padding:8px 16px;font-size:12px;border-radius:20px;cursor:pointer;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);color:var(--a)" onclick="openPM()">👤 Mon compte</button>
+    </div>
+    <!-- Ligne 2 : Accès restreint + Vue limitée + Retour + Déco -->
+    <div class="adm-top-row2">
+      <div class="adm-top-row2-info">
+        <div class="adm-sub">ACCÈS RESTREINT</div>
+        <div class="priv-badge adm-priv-inline">🔒 Vue limitée : nom + prénom uniquement</div>
+      </div>
+      <button class="bs bsm adm-btn-retour" style="margin-left:auto;padding:6px 12px;font-size:11px;border-radius:20px;cursor:pointer" onclick="goToApp()">← Retour à l'app</button>
+      <button class="bout adm-btn-deco" style="font-size:11px;padding:6px 12px" onclick="logout()">⏻ Déconnexion</button>
+    </div>
   </div>
   <div class="adm-body">
     <h1 style="font-family:var(--fs);font-size:28px;margin-bottom:6px">Tableau de bord <em style="font-style:italic;color:var(--a)">Admin</em></h1>
@@ -220,6 +229,11 @@
       <div class="badge">NGAP 2026</div>
       <div id="admin-mode-badge" class="admin-mode-badge" style="display:none">🛡️ MODE ADMIN SÉCURISÉ</div>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
+      <!-- Sur mobile en mode admin : badge + déco juste après Vocal -->
+      <div id="admin-header-mobile" style="display:none;flex-direction:column;align-items:flex-end;gap:2px">
+        <div class="admin-mode-badge" style="font-size:9px;padding:3px 8px">🛡️ MODE ADMIN SÉCURISÉ</div>
+        <button class="bout" style="font-size:9px;padding:3px 8px" onclick="logout()">⏻ Déconnexion</button>
+      </div>
       <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
       <button class="bout" onclick="logout()">⏻ Déconnexion</button>
     </div>
