@@ -61,13 +61,11 @@ function showApp(){
 
   if(isAdmin){
     /* ── MODE ADMIN : données patients masquées (RGPD/HDS) ────────── */
-    $('admin-mode-badge').style.display='flex';
-    // Sur mobile : afficher bloc admin dans le header (badge + déco)
-    const admHdrM = $('admin-header-mobile');
-    if(admHdrM){ admHdrM.style.display='flex'; }
-    // Masquer le bloc .tr classique sur mobile en mode admin
-    const trBlock = document.querySelector('.top .tr');
-    if(trBlock) trBlock.classList.add('admin-hidden');
+    // Afficher bloc badge+déco admin, masquer les contrôles normaux
+    const admCtrl = $('admin-header-controls');
+    if(admCtrl) admCtrl.style.display='flex';
+    const btnLogoutNormal = $('btn-logout-normal');
+    if(btnLogoutNormal) btnLogoutNormal.style.display='none';
     $('admin-cot-notice').style.display='flex';
     $('priv-cot').style.display='none';
     $('btn-profil').style.display='none';
@@ -128,15 +126,12 @@ function showApp(){
       slLast?.prepend(liCompte);  // compte au-dessus
 
       // ── Mobile : injecter bouton Panneau admin dans le menu Plus ──
-      // Utiliser setTimeout pour attendre que le DOM soit prêt
       const _injectAdminMobile = () => {
         if(document.getElementById('btn-goto-admin-mobile')) return;
         const mobileGrid = document.querySelector('#mobile-menu > div');
-        if(!mobileGrid){
-          // Réessayer si le DOM n'est pas encore prêt
-          setTimeout(_injectAdminMobile, 100);
-          return;
-        }
+        if(!mobileGrid){ setTimeout(_injectAdminMobile, 100); return; }
+
+        // Bouton "Panneau admin"
         const btnAdminM = document.createElement('button');
         btnAdminM.id = 'btn-goto-admin-mobile';
         btnAdminM.className = 'bn-item';
@@ -149,35 +144,24 @@ function showApp(){
           if(typeof loadAdmStats==='function') loadAdmStats();
           if(typeof toggleMobileMenu==='function') toggleMobileMenu();
         };
-        // Insérer avant le bouton Quitter
         const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
         if(btnQuitter) mobileGrid.insertBefore(btnAdminM, btnQuitter);
         else mobileGrid.appendChild(btnAdminM);
 
-        // ── Rendre Copilote et Rapport visibles dans le menu Plus mobile (admin) ──
-        ['copilote','rapport'].forEach(v => {
+        // Rendre nurse-only visibles pour l'admin (copilote, rapport, contact, sig…)
+        ['copilote','rapport','contact','sec'].forEach(v => {
           const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
-          if (btn) btn.classList.remove('nurse-only');
+          if(btn) btn.classList.remove('nurse-only');
         });
-
-        // ── Ajouter bouton Signatures dans le menu Plus mobile (admin) ──
-        if (!document.getElementById('btn-sig-mobile')) {
-          const btnSig = document.createElement('button');
-          btnSig.id = 'btn-sig-mobile';
-          btnSig.className = 'bn-item';
-          btnSig.style.cssText = 'background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none';
-          btnSig.innerHTML = '<span class="bn-ic">✍️</span>Signatures';
-          btnSig.onclick = () => { if(typeof navTo==='function') navTo('sig', null); if(typeof toggleMobileMenu==='function') toggleMobileMenu(); };
-          const btnQ = mobileGrid.querySelector('[onclick*="logout"]');
-          if (btnQ) mobileGrid.insertBefore(btnSig, btnQ);
-          else mobileGrid.appendChild(btnSig);
-        }
       };
       setTimeout(_injectAdminMobile, 200);
     }
   } else {
     /* ── MODE INFIRMIÈRE ─────────────────────────────────────────── */
-    $('admin-mode-badge').style.display='none';
+    const admCtrl = $('admin-header-controls');
+    if(admCtrl) admCtrl.style.display='none';
+    const btnLogoutNormal = $('btn-logout-normal');
+    if(btnLogoutNormal) btnLogoutNormal.style.display='';
     $('admin-cot-notice').style.display='none';
     $('priv-cot').style.display='';
     $('btn-profil').style.display='';
