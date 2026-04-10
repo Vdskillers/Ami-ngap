@@ -470,6 +470,58 @@
     <section class="view" id="view-live">
       <h1 class="pt">Pilotage <em>de journée</em></h1>
       <p class="ps">Assistant temps réel · auto-facturation · détection retard · recalcul automatique</p>
+
+      <!-- Sélecteur mode optimisation tournée -->
+      <div class="card" style="margin-bottom:16px;border:1px solid rgba(0,212,170,.2);background:rgba(0,212,170,.03)">
+        <div class="ct" style="margin-bottom:4px">🧠 Comment voulez-vous organiser votre tournée ?</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:14px;font-family:var(--fm)">Choisissez le mode avant de cliquer sur "Optimiser la tournée" ou "Démarrer la journée"</p>
+        <div style="display:flex;flex-direction:column;gap:10px" id="live-mode-selector">
+
+          <!-- MODE 1 : IA pure -->
+          <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;border-radius:10px;border:2px solid var(--a);background:rgba(0,212,170,.06);transition:all .2s" id="live-mode-ia-lbl">
+            <input type="radio" name="live-optim-mode" value="ia" id="live-mode-ia" checked style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0;margin-top:2px">
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">🚀 Automatique — L'IA choisit le meilleur ordre</div>
+              <div style="font-size:12px;color:var(--m);line-height:1.5">
+                L'application calcule elle-même l'ordre de passage le plus efficace : elle prend en compte <strong style="color:var(--t)">la distance entre les domiciles</strong>, <strong style="color:var(--t)">le temps de trajet réel</strong> et <strong style="color:var(--t)">la priorité médicale</strong> de chaque acte (insuline, pansement lourd, perfusion…).
+              </div>
+              <div style="margin-top:8px;padding:8px 10px;background:rgba(0,212,170,.08);border-radius:6px;font-size:11px;color:var(--a);font-family:var(--fm)">
+                ✅ Idéal quand vous n'avez pas de contrainte d'horaire particulière et voulez faire le moins de kilomètres possible.
+              </div>
+            </div>
+          </label>
+
+          <!-- MODE 2 : Heures préférées -->
+          <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;border-radius:10px;border:1px solid var(--b);background:var(--s);transition:all .2s" id="live-mode-heure-lbl">
+            <input type="radio" name="live-optim-mode" value="heure" id="live-mode-heure" style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0;margin-top:2px">
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">🕐 Par horaires — Je respecte les heures de passage</div>
+              <div style="font-size:12px;color:var(--m);line-height:1.5">
+                Les patients sont classés dans l'ordre <strong style="color:var(--t)">des heures de passage que vous avez renseignées</strong> dans le carnet patient (champ "Heure de passage préférée"). Le patient prévu à 8h00 passe en premier, celui de 9h30 ensuite, etc.
+              </div>
+              <div style="margin-top:8px;padding:8px 10px;background:rgba(255,181,71,.08);border-radius:6px;font-size:11px;color:var(--w);font-family:var(--fm)">
+                ✅ Idéal quand vous avez des patients qui ont des créneaux fixes à respecter (insuline matin à jeun, dialyse, garde d'enfant…). Pensez à renseigner les heures dans le carnet patient au préalable.
+              </div>
+            </div>
+          </label>
+
+          <!-- MODE 3 : Mixte -->
+          <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;border-radius:10px;border:1px solid var(--b);background:var(--s);transition:all .2s" id="live-mode-mixte-lbl">
+            <input type="radio" name="live-optim-mode" value="mixte" id="live-mode-mixte" style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0;margin-top:2px">
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">⚡ Mixte — L'IA optimise, sauf les patients prioritaires</div>
+              <div style="font-size:12px;color:var(--m);line-height:1.5">
+                L'IA organise librement la tournée <strong style="color:var(--t)">sauf pour les patients où vous avez coché "Respecter cet horaire"</strong> dans le carnet. Pour ces patients-là, l'heure est bloquée et l'IA ne la déplacera pas. Les autres restent optimisés automatiquement.
+              </div>
+              <div style="margin-top:8px;padding:8px 10px;background:rgba(79,168,255,.08);border-radius:6px;font-size:11px;color:var(--a2);font-family:var(--fm)">
+                ✅ Le meilleur des deux mondes : par exemple, M. Dupont doit avoir son insuline à 7h30 exactement — case cochée. Les autres patients sont réorganisés autour de cette contrainte pour minimiser vos trajets.
+              </div>
+            </div>
+          </label>
+
+        </div>
+      </div>
+
       <div id="live-status" class="live-card">
         <div class="live-badge" id="live-badge">EN ATTENTE</div>
         <div class="live-patient" id="live-patient-name">Démarrez votre journée</div>
@@ -920,6 +972,18 @@
             <div class="f"><label for="pat-contact-nom">Contact urgence</label><input type="text" id="pat-contact-nom" placeholder="Jean DUPONT (fils)"></div>
             <div class="f"><label for="pat-contact-tel">Tél. urgence</label><input type="tel" id="pat-contact-tel" placeholder="06 12 34 56 78"></div>
           </div>
+          <!-- Heure de passage préférée -->
+          <div class="fg" style="margin-bottom:16px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:var(--r);padding:14px">
+            <div style="grid-column:1/-1;font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🕐 Tournée — Contrainte horaire</div>
+            <div class="f"><label for="pat-heure-preferee">Heure de passage préférée <span style="font-size:10px;color:var(--m);font-family:var(--fm)">(ex : 08:30)</span></label><input type="time" id="pat-heure-preferee" placeholder="08:30"></div>
+            <div class="f" style="display:flex;align-items:center;gap:10px;padding-top:22px">
+              <input type="checkbox" id="pat-respecter-horaire" style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0">
+              <label for="pat-respecter-horaire" style="font-size:13px;cursor:pointer;margin:0">
+                <strong>Respecter cet horaire</strong><br>
+                <span style="font-size:11px;color:var(--m);font-family:var(--fm)">La tournée sera contrainte par cette heure lors de l'optimisation</span>
+              </label>
+            </div>
+          </div>
           <div class="f" style="margin-bottom:16px"><label for="pat-notes">Notes libres</label><textarea id="pat-notes" placeholder="Observations, habitudes, préférences..." style="min-height:80px"></textarea></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn bp" onclick="savePatient()"><span>💾</span> Enregistrer</button>
@@ -1293,103 +1357,3 @@ document.addEventListener('ami:login', () => {
 })();
 </script>
 
-<!-- CGV / CGU / MENTIONS LÉGALES — AMI NGAP -->
-<footer id="cgv-footer" style="display:none;background:var(--s);border-top:1px solid var(--b);padding:48px 24px 32px;font-family:var(--ff);color:var(--m);font-size:13px;line-height:1.8;margin-top:auto">
-  <div style="max-width:860px;margin:0 auto">
-    <div style="text-align:center;margin-bottom:32px">
-      <button onclick="var c=document.getElementById('cgv-content');var open=c.style.display!=='none';c.style.display=open?'none':'block';this.textContent=open?'▼ Afficher les CGV / Mentions légales':'▲ Masquer les CGV / Mentions légales'" style="background:none;border:1px solid var(--b);color:var(--m);font-family:var(--fm);font-size:11px;padding:6px 18px;border-radius:20px;cursor:pointer;letter-spacing:1px">▼ Afficher les CGV / Mentions légales</button>
-    </div>
-    <div id="cgv-content" style="display:none">
-      <div style="text-align:center;margin-bottom:40px">
-        <div style="font-family:var(--fs);font-size:26px;color:var(--t);margin-bottom:6px">Conditions Générales d'Utilisation</div>
-        <div style="font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:2px">AMI NGAP — VERSION 1.0 — AVRIL 2026</div>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 1 — Présentation de l'application</div>
-        <p>AMI NGAP est un assistant numérique destiné exclusivement aux infirmiers et infirmières diplômés d'État (IDE) exerçant en libéral sur le territoire français. Elle permet la cotation automatisée des actes infirmiers selon la Nomenclature Générale des Actes Professionnels (NGAP) en vigueur, la gestion des tournées de soins, la planification des visites à domicile, et la génération de feuilles de soins conformes aux exigences de l'Assurance Maladie.</p>
-        <p style="margin-top:8px">L'Application est développée et exploitée par <strong style="color:var(--t)">Ai BonoVan</strong> (contact : <a href="mailto:vdskillers@hotmail.com" style="color:var(--a)">vdskillers@hotmail.com</a>). Elle est accessible via navigateur web compatible (Chrome, Edge, Safari) et installable comme application progressive (PWA). L'hébergement technique est assuré par Cloudflare Workers et Supabase, conformément aux exigences de sécurité applicables aux données de santé.</p>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 2 — Accès et inscription</div>
-        <p>L'accès est réservé aux professionnels de santé titulaires d'un diplôme d'État d'infirmier. En créant un compte, l'utilisateur certifie exercer en qualité d'infirmier libéral ou salarié habilité à facturer des actes NGAP. L'inscription nécessite une adresse email valide, un mot de passe sécurisé (minimum 8 caractères), et optionnellement un numéro ADELI, RPPS et une dénomination de cabinet.</p>
-        <p style="margin-top:8px">Ai BonoVan se réserve le droit de suspendre ou supprimer tout compte dont l'utilisation s'avérerait non-conforme, frauduleuse, ou contraire à la réglementation applicable aux professions de santé.</p>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 3 — Description des services</div>
-        <ul style="margin:10px 0 10px 20px;list-style:disc">
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Cotation NGAP assistée par IA</strong> — saisie en langage naturel ou par dictée vocale, calcul automatique des actes, majorations et indemnités selon les tarifs NGAP 2026.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Génération de feuilles de soins PDF</strong> — documents conformes aux exigences de facturation Assurance Maladie.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Optimisation de tournée</strong> — calcul d'itinéraire optimisé par algorithme VRPTW, carte interactive, pilotage en temps réel.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Carnet patients local</strong> — stockage chiffré sur l'appareil de l'utilisateur, aucune transmission au serveur.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Trésorerie et comptabilité</strong> — suivi des remboursements AMO/AMC, export CSV, checklist CPAM.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Copilote IA NGAP</strong> — assistant conversationnel pour les questions de cotation et de facturation.</li>
-          <li style="margin-bottom:6px"><strong style="color:var(--t)">Fonctionnement hors ligne</strong> — utilisable sans connexion internet avec synchronisation automatique au retour en ligne.</li>
-        </ul>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 4 — Données personnelles et santé (RGPD / HDS)</div>
-        <p style="color:var(--t);font-weight:500;margin-bottom:6px">4.1 — Données traitées</p>
-        <ul style="margin:0 0 12px 20px;list-style:disc">
-          <li style="margin-bottom:4px">Données professionnelles : nom, prénom, email, ADELI, RPPS, structure.</li>
-          <li style="margin-bottom:4px">Données de facturation : actes cotés, dates, montants, prescripteurs, numéros de facture.</li>
-          <li style="margin-bottom:4px">Données patients (carnet local uniquement) — ne quittent jamais l'appareil de l'utilisateur.</li>
-        </ul>
-        <p style="color:var(--t);font-weight:500;margin-bottom:6px">4.2 — Mesures de sécurité</p>
-        <ul style="margin:0 0 12px 20px;list-style:disc">
-          <li style="margin-bottom:4px">Chiffrement AES-256-GCM, dérivation PBKDF2 (100 000 itérations).</li>
-          <li style="margin-bottom:4px">Mots de passe hashés avec sel. Authentification JWT Bearer. HTTPS obligatoire.</li>
-          <li style="margin-bottom:4px">Accès admin limité : aucune donnée patient visible, aucune visibilité entre admins.</li>
-          <li style="margin-bottom:4px">Verrouillage automatique après 10 minutes d'inactivité. Purge des logs après 90 jours.</li>
-        </ul>
-        <p style="color:var(--t);font-weight:500;margin-bottom:6px">4.3 — Droits des utilisateurs (RGPD)</p>
-        <ul style="margin:0 0 12px 20px;list-style:disc">
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Accès</strong> — export JSON depuis la section « Sécurité ».</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Rectification</strong> — modification depuis le profil.</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Effacement</strong> — suppression définitive du compte et des données.</li>
-          <li style="margin-bottom:4px"><strong style="color:var(--t)">Portabilité</strong> — export CSV des cotations et JSON des données patients.</li>
-        </ul>
-        <p style="color:var(--t);font-weight:500;margin-bottom:6px">4.4 — Sous-traitants</p>
-        <p><strong style="color:var(--t)">Cloudflare Inc.</strong> (traitement API, CDN), <strong style="color:var(--t)">Supabase Inc.</strong> (base de données PostgreSQL hébergée en Europe), <strong style="color:var(--t)">xAI</strong> (Copilote IA — aucune donnée patient transmise).</p>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 5 — Responsabilité et limites</div>
-        <p>AMI NGAP est un outil d'aide à la cotation. Les résultats générés par l'IA ont valeur indicative et ne sauraient se substituer au jugement professionnel de l'infirmier. Ai BonoVan ne saurait être tenu responsable d'erreurs de cotation, de refus de remboursement CPAM, d'indisponibilité temporaire, ou de perte de données locales. L'utilisateur reste seul responsable de la conformité de sa facturation.</p>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 6 — Propriété intellectuelle</div>
-        <p>L'Application, son code source, ses algorithmes et son interface sont la propriété exclusive de <strong style="color:var(--t)">Ai BonoVan</strong> et protégés par le droit d'auteur. Toute reproduction ou exploitation commerciale sans autorisation écrite préalable est interdite.</p>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 7 — Modification des CGU et résiliation</div>
-        <p>Ai BonoVan se réserve le droit de modifier les présentes CGU. L'utilisateur sera informé de toute modification lors de sa prochaine connexion. La résiliation entraîne la suppression définitive de toutes les données dans un délai de 30 jours, à l'exception des données conservées au titre des obligations légales.</p>
-      </div>
-      <div style="margin-bottom:32px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b)">Article 8 — Droit applicable et contact</div>
-        <p>Les présentes CGU sont soumises au droit français. Pour toute question : <a href="mailto:vdskillers@hotmail.com" style="color:var(--a)">vdskillers@hotmail.com</a></p>
-      </div>
-      <div style="margin-bottom:32px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:12px;padding:20px 24px">
-        <div style="font-family:var(--fs);font-size:17px;color:var(--t);margin-bottom:14px">Mentions légales</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;font-size:12px">
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">ÉDITEUR</div><div style="color:var(--t)">Ai BonoVan</div><div>vdskillers@hotmail.com</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">APPLICATION</div><div style="color:var(--t)">AMI NGAP v6.0</div><div>Assistant infirmier intelligent</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">HÉBERGEMENT</div><div style="color:var(--t)">Cloudflare Workers</div><div>101 Townsend St, San Francisco CA</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">BASE DE DONNÉES</div><div style="color:var(--t)">Supabase (EU)</div><div>AWS Frankfurt — Europe</div></div>
-          <div><div style="color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:1px;margin-bottom:4px">RÉFÉRENTIEL</div><div style="color:var(--t)">NGAP 2026</div><div>Tarifs métropole en vigueur</div></div>
-        </div>
-      </div>
-      <div style="text-align:center;padding-top:20px;border-top:1px solid var(--b);font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1px">
-        AMI NGAP — COTATION NGAP IA · TOURNÉE · TRÉSORERIE · PRIVACY BY DESIGN<br>
-        <span style="color:rgba(0,212,170,.4)">▪</span> RGPD · HDS · AES-256-GCM · HTTPS <span style="color:rgba(0,212,170,.4)">▪</span><br>
-        <span style="margin-top:6px;display:block">© 2026 Ai BonoVan — AMI NGAP — Tous droits réservés</span>
-      </div>
-    </div>
-  </div>
-</footer>
-<script>
-document.addEventListener('ami:login', function(){
-  var f = document.getElementById('cgv-footer');
-  if(f) f.style.display = 'block';
-});
-</script>
-</body>
-</html>
