@@ -109,9 +109,10 @@ function openAddPatient() {
   _editingPatientId = null;
   const form = $('patient-form');
   if (form) form.style.display = 'block';
-  ['pat-nom','pat-prenom','pat-adresse','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo']
+  ['pat-nom','pat-prenom','pat-adresse','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee']
     .forEach(id => { const el=$(id); if(el) el.value=''; });
   const sel = $('pat-exo'); if(sel) sel.selectedIndex=0;
+  const chk = $('pat-respecter-horaire'); if(chk) chk.checked = false;
   $('pat-form-title').textContent = '➕ Nouveau patient';
 }
 
@@ -158,6 +159,8 @@ async function savePatient() {
     notes:          gv('pat-notes')      || '',
     ordo_date:      gv('pat-ordo-date')  || '',
     exo:            gv('pat-exo')        || '',
+    heure_preferee:    gv('pat-heure-preferee') || '',
+    respecter_horaire: !!($('pat-respecter-horaire')?.checked),
     created_at:     _editingPatientId ? undefined : new Date().toISOString(),
     updated_at:     new Date().toISOString(),
     _enc:           true,
@@ -285,6 +288,12 @@ async function openPatientDetail(id) {
         ${p.pathologies ? `<div><div class="lbl" style="margin-bottom:6px">Pathologies</div><div style="font-size:13px">${p.pathologies}</div></div>` : ''}
         ${p.traitements ? `<div><div class="lbl" style="margin-bottom:6px">Traitements</div><div style="font-size:13px">${p.traitements}</div></div>` : ''}
         ${p.contact_nom ? `<div><div class="lbl" style="margin-bottom:6px">Contact urgence</div><div style="font-size:13px">${p.contact_nom} ${p.contact_tel?'— '+p.contact_tel:''}</div></div>` : ''}
+        ${p.heure_preferee ? `<div style="grid-column:1/-1"><div class="lbl" style="margin-bottom:6px;color:var(--a)">🕐 Heure de passage préférée</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="font-size:18px;font-family:var(--fm);color:var(--a);font-weight:600">${p.heure_preferee}</div>
+            ${p.respecter_horaire ? `<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 10px;border-radius:20px;font-family:var(--fm)">🔒 CONTRAINTE ACTIVE — tournée mixte</span>` : `<span style="font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.25);padding:2px 10px;border-radius:20px;font-family:var(--fm)">⏰ Indicatif — mode IA</span>`}
+          </div>
+        </div>` : ''}
       </div>
       ${p.notes ? `<div class="ai in">${p.notes}</div>` : ''}
     </div>
@@ -326,8 +335,10 @@ async function editPatient(id) {
     'pat-pathologies': p.pathologies, 'pat-traitements': p.traitements,
     'pat-contact-nom': p.contact_nom, 'pat-contact-tel': p.contact_tel,
     'pat-notes': p.notes, 'pat-ordo-date': p.ordo_date,
+    'pat-heure-preferee': p.heure_preferee || '',
   }).forEach(([id, val]) => { const el=$(id); if(el) el.value = val||''; });
   const sel = $('pat-exo'); if(sel && p.exo) sel.value = p.exo;
+  const chk = $('pat-respecter-horaire'); if(chk) chk.checked = !!p.respecter_horaire;
 }
 
 /* Supprimer un patient (RGPD) */
@@ -563,14 +574,16 @@ async function _importPickerPatients() {
     .map(r => {
       const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
       return {
-        id:          p.id,
-        description: `${p.prenom||''} ${p.nom}`.trim(),
-        texte:       `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
-        adresse:     p.adresse || '',
-        medecin:     p.medecin || '',
-        pathologies: p.pathologies || '',
-        heure_soin:  '',
-        source:      'carnet_patients',
+        id:                p.id,
+        description:       `${p.prenom||''} ${p.nom}`.trim(),
+        texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
+        adresse:           p.adresse || '',
+        medecin:           p.medecin || '',
+        pathologies:       p.pathologies || '',
+        heure_soin:        p.heure_preferee || '',
+        heure_preferee:    p.heure_preferee || '',
+        respecter_horaire: !!p.respecter_horaire,
+        source:            'carnet_patients',
       };
     });
 
@@ -640,14 +653,16 @@ async function _importSinglePatient(id) {
   }
 
   const entry = {
-    id:          p.id,
-    description: `${p.prenom||''} ${p.nom}`.trim(),
-    texte:       `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
-    adresse:     p.adresse || '',
-    medecin:     p.medecin || '',
-    pathologies: p.pathologies || '',
-    heure_soin:  '',
-    source:      'carnet_patients',
+    id:                p.id,
+    description:       `${p.prenom||''} ${p.nom}`.trim(),
+    texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
+    adresse:           p.adresse || '',
+    medecin:           p.medecin || '',
+    pathologies:       p.pathologies || '',
+    heure_soin:        p.heure_preferee || '',
+    heure_preferee:    p.heure_preferee || '',
+    respecter_horaire: !!p.respecter_horaire,
+    source:            'carnet_patients',
     ...(lat !== null ? { lat, lng } : {}),
   };
 

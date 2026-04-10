@@ -115,8 +115,10 @@ function dynamicScore({ currentTime, travelTime, patient, userPos }) {
   /* ⏰ Fenêtre temporelle */
   if (patient.window) {
     const [wStart, wEnd] = patient.window;
-    if (arrival > wEnd)    score += 2000;                        // retard critique
-    if (arrival < wStart)  score += (wStart - arrival) * 0.5;  // attente (moins grave)
+    /* Contrainte stricte (mode mixte, respecter_horaire) → pénalité ×10 */
+    const penalty = patient._contrainte_stricte ? 20000 : 2000;
+    if (arrival > wEnd)    score += penalty;                       // retard critique
+    if (arrival < wStart)  score += (wStart - arrival) * 0.5;     // attente (moins grave)
   }
 
   /* 🚨 Priorité médicale (soustrait = remonte) */
@@ -154,18 +156,37 @@ function geoPenalty(patient, userPos) {
    - fenêtres temporelles patients
    - score médical
    - anticipation lookahead 2 niveaux
+   - mode 'mixte' : patients avec respecter_horaire=true
+     ont une fenêtre temporelle stricte (pénalité ×10)
 ════════════════════════════════════════════════ */
-async function optimizeTour(patients, startPoint, startTimeMin = 480) {
+async function optimizeTour(patients, startPoint, startTimeMin = 480, mode = 'ia') {
   if (!patients?.length) return [];
 
   /* Normalisation entrée */
   let remaining = patients
     .filter(p => p.lat && p.lng)
-    .map(p => ({
-      ...p,
-      window: p.window || _parseWindow(p.heure_soin),
-      duration: p.duration || _estimateDuration(p),
-    }));
+    .map(p => {
+      /* En mode mixte : si le patient a "respecter_horaire", on force une fenêtre stricte
+         de ±15 min autour de l'heure préférée.
+         En mode ia standard : on utilise heure_soin comme fenêtre souple. */
+      let window = p.window || null;
+      const heureSource = p.heure_preferee || p.heure_soin || '';
+      if (!window && heureSource) {
+        const parsed = _parseWindow(heureSource);
+        if (parsed && mode === 'mixte' && p.respecter_horaire) {
+          /* Fenêtre stricte : ±15 min */
+          window = [parsed[0] - 15, parsed[0] + 15];
+        } else {
+          window = parsed;
+        }
+      }
+      return {
+        ...p,
+        window,
+        duration: p.duration || _estimateDuration(p),
+        _contrainte_stricte: mode === 'mixte' && !!p.respecter_horaire,
+      };
+    });
 
   const noCoords = patients.filter(p => !p.lat || !p.lng);
 

@@ -40,6 +40,37 @@ function storeImportedData(d){
   showCaFromImport();
 }
 
+/* ── Mode d'optimisation sélectionné dans le pilotage ── */
+function getOptimMode() {
+  const el = document.querySelector('input[name="live-optim-mode"]:checked');
+  return el ? el.value : 'ia'; // 'ia' | 'heure' | 'mixte'
+}
+
+/* ── Style réactif des radio buttons du sélecteur de mode ── */
+function _bindOptimModeUI() {
+  document.querySelectorAll('input[name="live-optim-mode"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const labels = { ia: 'live-mode-ia-lbl', heure: 'live-mode-heure-lbl', mixte: 'live-mode-mixte-lbl' };
+      Object.entries(labels).forEach(([val, lblId]) => {
+        const lbl = $(lblId);
+        if (!lbl) return;
+        if (radio.value === val && radio.checked) {
+          lbl.style.border = '2px solid var(--a)';
+          lbl.style.background = 'rgba(0,212,170,.06)';
+        } else {
+          lbl.style.border = '1px solid var(--b)';
+          lbl.style.background = 'var(--s)';
+        }
+      });
+    });
+  });
+}
+
+/* Initialiser le binding UI au chargement de la section live */
+document.addEventListener('app:nav', e => {
+  if (e.detail?.view === 'live') setTimeout(_bindOptimModeUI, 100);
+});
+
 function showCaFromImport(){
   if(!APP.importedData)return;
   const patients=APP.importedData.patients||APP.importedData.entries||[];
@@ -160,14 +191,39 @@ async function optimiserTournee(){
   ld('btn-tur',true); $('res-tur').classList.remove('show');
   _showOptimProgress('🧠 Calcul des temps de trajet réels…');
 
+  /* ── Lire le mode d'optimisation choisi ── */
+  const optimMode = getOptimMode();
+
   try {
     const startPoint = { lat: startLat, lng: startLng };
 
+    /* ── MODE HEURES PRÉFÉRÉES : tri chronologique strict ── */
+    if (optimMode === 'heure') {
+      _showOptimProgress('🕐 Tri par heures préférées…');
+      const withHeure  = rawPatients.filter(p => p.heure_preferee || p.heure_soin).sort((a,b)=>
+        (a.heure_preferee||a.heure_soin||'99:99').localeCompare(b.heure_preferee||b.heure_soin||'99:99'));
+      const withoutH   = rawPatients.filter(p => !p.heure_preferee && !p.heure_soin);
+      const route      = [...withHeure, ...withoutH];
+      const ca         = estimateRevenue(route);
+      const pts        = route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
+      let osrm = null;
+      if(pts.length >= 2) osrm = await getOsrmRoute([startPoint,...pts]);
+      $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, null, 'heure');
+      $('terr').style.display = 'none';
+      if(typeof renderPatientsOnMap === 'function')
+        renderPatientsOnMap(route, startPoint).catch(()=>{});
+      APP.set('uberPatients', route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false,late:false,amount:0})));
+      startLiveOptimization();
+      $('res-tur').classList.add('show');
+      ld('btn-tur',false);
+      return;
+    }
+
     /* ── 1. Moteur IA local — VRPTW greedy + cache OSRM ── */
     _showOptimProgress('⚡ Optimisation VRPTW en cours…');
-    let route = await optimizeTour(rawPatients, startPoint);
+    let route = await optimizeTour(rawPatients, startPoint, 480, optimMode);
 
-    /* ── 2. 2-opt — amélioration du chemin ────────────── */
+    /* ── 2. 2-opt — amélioration du chemin (sauf si contraintes strictes) ── */
     _showOptimProgress('🔁 Optimisation 2-opt…');
     route = twoOpt(route);
 
@@ -184,7 +240,7 @@ async function optimiserTournee(){
     }
 
     /* ── 5. Rendu liste ───────────────────────────────── */
-    $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, rentab);
+    $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, rentab, optimMode);
     $('terr').style.display = 'none';
 
     /* ── 6. Map premium — markers + route + timeline ──── */
@@ -226,11 +282,19 @@ function _showOptimProgress(msg) {
 }
 
 /* Rendu HTML de la route optimisée */
-function _renderRouteHTML(route, osrm, ca, rentab) {
+function _renderRouteHTML(route, osrm, ca, rentab, mode) {
   const total = route.filter(p=>p.lat&&p.lng).length;
+  const modeBadge = mode === 'heure'
+    ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 10px;border-radius:20px;letter-spacing:1px">🕐 Heures préférées</span>`
+    : mode === 'mixte'
+    ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.3);padding:2px 10px;border-radius:20px;letter-spacing:1px">⚡ Mode mixte</span>`
+    : `<span style="font-family:var(--fm);font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.25);padding:2px 10px;border-radius:20px;letter-spacing:1px">🧠 IA VRPTW</span>`;
+
   return `<div class="card">
-    <div class="ct">🧠 Tournée IA optimisée — ${total} patients</div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <div class="ct" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      🗺️ Tournée optimisée — ${total} patients ${modeBadge}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
       <div class="dreb">📍 ${total} patients</div>
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
       <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
@@ -240,13 +304,20 @@ function _renderRouteHTML(route, osrm, ca, rentab) {
       const sd  = encodeURIComponent(p.description||'');
       const leg = osrm?.legs?.[i];
       const hasTime = p.start_str && p.start_str !== '—';
+      const heureAff = p.heure_preferee || p.heure_soin || '';
+      const contrainteBadge = p.respecter_horaire
+        ? `<span style="font-size:10px;background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.25);padding:1px 7px;border-radius:20px;font-family:var(--fm)">🔒 ${heureAff}</span>`
+        : heureAff
+        ? `<span style="font-size:10px;background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;font-family:var(--fm)">⏰ ${heureAff}</span>`
+        : '';
       return `<div class="route-item ${p.urgent?'route-urgent':''}">
         <div class="route-num">${i+1}</div>
         <div class="route-info">
           <strong style="font-size:13px">${p.description||'Patient'}</strong>
-          <div style="font-size:11px;color:var(--m);margin-top:2px">
+          <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
-            ${p.urgent?'<span style="color:#ff5f6d;font-weight:700;margin-left:6px">🚨 URGENT</span>':''}
+            ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
+            ${contrainteBadge}
           </div>
         </div>
         ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km">~${p.travel_min}min</div>`:'')}
