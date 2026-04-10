@@ -66,6 +66,9 @@ function showApp(){
     if(admCtrl) admCtrl.style.display='flex';
     const btnLogoutNormal = $('btn-logout-normal');
     if(btnLogoutNormal) btnLogoutNormal.style.display='none';
+    // Classe admin-active sur le header pour le layout mobile
+    const topBar = document.querySelector('.top');
+    if(topBar) topBar.classList.add('admin-active');
     $('admin-cot-notice').style.display='flex';
     $('priv-cot').style.display='none';
     $('btn-profil').style.display='none';
@@ -162,6 +165,9 @@ function showApp(){
     if(admCtrl) admCtrl.style.display='none';
     const btnLogoutNormal = $('btn-logout-normal');
     if(btnLogoutNormal) btnLogoutNormal.style.display='';
+    // Retirer la classe admin-active du header
+    const topBar = document.querySelector('.top');
+    if(topBar) topBar.classList.remove('admin-active');
     $('admin-cot-notice').style.display='none';
     $('priv-cot').style.display='';
     $('btn-profil').style.display='';
