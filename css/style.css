@@ -424,9 +424,25 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .ht{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px}
   .ht table{min-width:520px}
 
-  /* TOP BAR admin */
-  .adm-top{padding:0 14px;height:56px;gap:10px}
+  /* TOP BAR admin — 2 lignes sur mobile */
+  .adm-top{padding:0;height:auto;flex-direction:column;align-items:stretch;gap:0}
+  .adm-top-row1{display:flex;align-items:center;padding:8px 14px;gap:8px;min-height:44px}
+  .adm-top-row2{display:flex;align-items:center;padding:4px 14px 6px;gap:6px;border-top:1px solid rgba(255,95,109,.1);flex-wrap:nowrap;overflow:hidden}
+  .adm-top-row2-info{display:flex;flex-direction:column;gap:1px;flex-shrink:1;min-width:0;overflow:hidden}
+  .adm-top-row2-info .adm-sub{font-size:9px}
+  .adm-priv-inline{font-size:9px!important;padding:2px 7px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .adm-top-row2 .priv-badge{font-size:9px;padding:3px 8px;flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .adm-btn-retour{font-size:10px!important;padding:5px 10px!important;white-space:nowrap;flex-shrink:0}
+  .adm-btn-deco{font-size:10px!important;padding:5px 10px!important;white-space:nowrap;flex-shrink:0}
+  .adm-btn-compte{font-size:11px!important;padding:6px 12px!important;flex-shrink:0}
   .adm-body{padding:16px 14px}
+  /* admin-header-mobile dans le header app */
+  #admin-header-mobile{display:none}
+  #admin-header-mobile.show{display:flex!important}
+  /* En mode admin sur mobile : masquer btn-profil et le bouton déco classique du .tr */
+  .top .tr.admin-hidden #btn-profil{display:none!important}
+  .top .tr.admin-hidden > .bout{display:none!important}
+  .top .tr.admin-hidden #admin-mode-badge{display:none!important}
 
   /* ADMIN notice compact */
   .adm-notice{padding:12px}
