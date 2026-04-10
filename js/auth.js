@@ -62,6 +62,12 @@ function showApp(){
   if(isAdmin){
     /* ── MODE ADMIN : données patients masquées (RGPD/HDS) ────────── */
     $('admin-mode-badge').style.display='flex';
+    // Sur mobile : afficher bloc admin dans le header (badge + déco)
+    const admHdrM = $('admin-header-mobile');
+    if(admHdrM){ admHdrM.style.display='flex'; }
+    // Masquer le bloc .tr classique sur mobile en mode admin
+    const trBlock = document.querySelector('.top .tr');
+    if(trBlock) trBlock.classList.add('admin-hidden');
     $('admin-cot-notice').style.display='flex';
     $('priv-cot').style.display='none';
     $('btn-profil').style.display='none';
