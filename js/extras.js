@@ -432,12 +432,12 @@ function showNextPatientLocal(){
   },0);
 
   if(nameEl) nameEl.textContent = p.acte || p.description || 'Patient suivant';
-  if(infoEl) infoEl.textContent = `Heure prévue : ${p.time||p.heure||'—'} · ${rest} patient(s) restant(s)`;
+  if(infoEl) infoEl.textContent = `Heure prévue : ${p.heure_soin||p.heure_preferee||p.time||p.heure||'—'} · ${rest} patient(s) restant(s)`;
 
   if(nextEl) nextEl.innerHTML = `<div class="card">
     <div class="ct">📋 Patient ${idx+1} / ${data.length}</div>
     <div style="margin:10px 0">
-      <div class="ai in" style="margin-bottom:8px">🕐 ${p.time||p.heure||'Horaire non défini'}</div>
+      <div class="ai in" style="margin-bottom:8px">🕐 ${p.heure_soin||p.heure_preferee||p.time||p.heure||'Horaire non défini'}</div>
       <div class="ai in">🩺 ${p.acte||p.description||'Soin infirmier'}</div>
       ${(p.acte||p.description||'').toLowerCase().includes('domicile') ? '<div class="ai wa" style="margin-top:8px">💡 IFD 2,75 € applicable</div>' : ''}
     </div>
@@ -450,9 +450,9 @@ function detectDelayLocal(){
   const data = APP.get('importedData')?.patients || window.IMPORTED_DATA || [];
   const idx  = window._liveIndex || 0;
   const p    = data[idx];
-  if(!p?.time && !p?.heure) return;
+  if(!p?.heure_soin && !p?.heure_preferee && !p?.time && !p?.heure) return;
 
-  const heure = p.time || p.heure;
+  const heure = p.heure_soin || p.heure_preferee || p.time || p.heure;
   const [h,m] = heure.split(':').map(Number);
   const target = new Date();
   target.setHours(h, m, 0, 0);
