@@ -152,13 +152,186 @@ async function generatePlanningFromImport(){
 }
 
 function renderPlanning(d){
-  const js=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'],pl=d.planning||{};
-  const ca=APP.importedData?estimateRevenue(APP.importedData.patients||APP.importedData.entries||[]):null;
-  $('pbody').innerHTML=`<div class="card"><div class="ct">📅 Planning hebdomadaire</div>
-    ${ca?`<div class="ca-pill">💶 CA semaine estimé : ${ca.toFixed(2)} €</div>`:''}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:14px">
-      ${js.map(j=>`<div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px"><div style="font-weight:600;text-transform:capitalize;margin-bottom:8px">${j}</div>${(pl[j]||[]).map(p=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--b)">${p}</div>`).join('')||'<div style="font-size:12px;color:var(--m)">—</div>'}</div>`).join('')}
-    </div></div>`;
+  // Source de données : APP.importedData en priorité (données réelles),
+  // sinon d.planning retourné par l'API (peut être vide ou mal structuré)
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const ca = patients.length ? estimateRevenue(patients) : null;
+
+  // Jours de la semaine français
+  const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+  const JOUR_IDX = { lundi:1, mardi:2, mercredi:3, jeudi:4, vendredi:5, samedi:6, dimanche:0 };
+
+  // Grouper les patients par jour
+  // Chaque patient peut avoir : date (ISO), heure_soin, description, texte, nom, prenom
+  const byDay = {};
+  JOURS.forEach(j => { byDay[j] = []; });
+
+  patients.forEach((p, idx) => {
+    // Extraire le jour depuis la date ISO, ou depuis le champ "jour" si présent
+    let jourKey = null;
+    const dateStr = p.date || p.date_soin || p.date_prevue || '';
+    if (dateStr) {
+      try {
+        const d2 = new Date(dateStr);
+        if (!isNaN(d2)) {
+          const nomJour = d2.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
+          jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
+        }
+      } catch {}
+    }
+    // Fallback : chercher un nom de jour dans la description
+    if (!jourKey) {
+      const desc = (p.description || p.texte || '').toLowerCase();
+      jourKey = JOURS.find(j => desc.includes(j)) || null;
+    }
+    // Fallback final : distribuer dans l'ordre
+    if (!jourKey) {
+      jourKey = JOURS[idx % JOURS.length];
+    }
+    byDay[jourKey].push({ ...p, _planIdx: idx });
+  });
+
+  // Rendu d'une carte patient dans le planning
+  function renderPatientCard(p) {
+    const nom = [p.prenom, p.nom].filter(Boolean).join(' ')
+      || p.patient_nom || p.patient_name
+      || (p.description || p.texte || 'Patient').split(' ').slice(0,3).join(' ');
+
+    // Date formatée
+    const dateStr = p.date || p.date_soin || p.date_prevue || '';
+    let dateAff = '';
+    if (dateStr) {
+      try {
+        const d2 = new Date(dateStr);
+        if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      } catch {}
+    }
+
+    // Heure
+    const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+
+    // Description courte du soin
+    const soin = (p.description || p.texte || '').slice(0, 60);
+
+    // Cotation déjà validée ?
+    const cot = p._cotation?.validated;
+
+    return `
+    <div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px;position:relative">
+
+      <!-- En-tête : nom + badges date/heure -->
+      <div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:600;color:var(--t);flex:1;min-width:0;word-break:break-word">${nom}</div>
+        ${dateAff
+          ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>`
+          : ''}
+        ${heure
+          ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>`
+          : ''}
+      </div>
+
+      <!-- Description du soin -->
+      ${soin ? `<div style="font-size:11px;color:var(--m);margin-bottom:6px;line-height:1.4">${soin}</div>` : ''}
+
+      <!-- Cotation validée -->
+      ${cot
+        ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${p._cotation.total?.toFixed(2)} €</div>`
+        : ''}
+
+      <!-- Actions -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        <button onclick="openCotationPatient(${p._planIdx})"
+          style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">
+          ${cot ? '✏️ Modifier' : '⚡ Coter'}
+        </button>
+        ${cot ? `
+        <button onclick="_planningDeleteCotation(${p._planIdx})"
+          style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">
+          🗑️ Supprimer cotation
+        </button>` : ''}
+        <button onclick="_planningRemovePatient(${p._planIdx})"
+          style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">
+          ✕ Retirer
+        </button>
+      </div>
+    </div>`;
+  }
+
+  // Total cotations validées
+  const totalCot = patients.reduce((s, p) => s + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
+  const nbCot = patients.filter(p => p._cotation?.validated).length;
+
+  $('pbody').innerHTML = `
+    <div class="card">
+      <!-- En-tête planning -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div>
+          <div class="ct" style="margin-bottom:4px">📅 Planning hebdomadaire</div>
+          <div style="font-size:12px;color:var(--m);font-family:var(--fm)">${patients.length} patient(s) · ${nbCot} cotation(s) validée(s)</div>
+        </div>
+        <button onclick="_planningResetAll()" style="font-family:var(--fm);font-size:11px;padding:6px 14px;border-radius:20px;border:1px solid rgba(255,95,109,.35);background:rgba(255,95,109,.06);color:var(--d);cursor:pointer;white-space:nowrap">
+          🗑️ Effacer tout le planning
+        </button>
+      </div>
+
+      <!-- KPI bande -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        ${ca ? `<div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CA ESTIMÉ</div><div style="color:var(--a);font-weight:700">${ca.toFixed(2)} €</div></div>` : ''}
+        ${nbCot > 0 ? `<div style="background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">COTATIONS VALIDÉES</div><div style="color:#22c55e;font-weight:700">${totalCot.toFixed(2)} €</div></div>` : ''}
+      </div>
+
+      <!-- Grille des jours -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+        ${JOURS.map(j => `
+          <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px">
+            <div style="font-weight:600;text-transform:capitalize;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between">
+              ${j}
+              ${byDay[j].length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px">${byDay[j].length}</span>` : ''}
+            </div>
+            ${byDay[j].length
+              ? byDay[j].map(p => renderPatientCard(p)).join('')
+              : '<div style="font-size:12px;color:var(--m);text-align:center;padding:12px 0">—</div>'}
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+/* Supprimer la cotation d'un patient du planning sans le retirer */
+function _planningDeleteCotation(idx) {
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const p = patients[idx];
+  if (!p) return;
+  if (!confirm(`Supprimer la cotation de ${[p.prenom, p.nom].filter(Boolean).join(' ') || 'ce patient'} ?`)) return;
+  delete p._cotation;
+  // Ré-afficher le planning
+  renderPlanning({});
+  if (typeof showToast === 'function') showToast('🗑️ Cotation supprimée.');
+}
+
+/* Retirer un patient du planning */
+function _planningRemovePatient(idx) {
+  if (!APP.importedData) return;
+  const arr = APP.importedData.patients || APP.importedData.entries || [];
+  const p = arr[idx];
+  const nom = [p?.prenom, p?.nom].filter(Boolean).join(' ') || p?.description?.split(' ').slice(0,3).join(' ') || 'ce patient';
+  if (!confirm(`Retirer ${nom} du planning ?`)) return;
+  const key = APP.importedData.patients ? 'patients' : 'entries';
+  APP.importedData[key] = arr.filter((_, i) => i !== idx);
+  APP.importedData.total = APP.importedData[key].length;
+  renderPlanning({});
+  if (typeof showToast === 'function') showToast('✅ Patient retiré du planning.');
+}
+
+/* Effacer tout le planning hebdomadaire */
+function _planningResetAll() {
+  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
+  if (!confirm(`Effacer tout le planning ?\n\n${n} patient(s) seront supprimés du planning.\nCette action ne supprime PAS les fiches du carnet patient.`)) return;
+  APP.importedData = null;
+  $('pbody').innerHTML = '<div class="ai in" style="margin-top:12px">Planning effacé. Importez de nouvelles données depuis "Import calendrier".</div>';
+  const banner = $('pla-import-banner');
+  if (banner) banner.style.display = 'none';
+  if (typeof showToast === 'function') showToast('🗑️ Planning effacé.');
 }
 
 /* ============================================================
