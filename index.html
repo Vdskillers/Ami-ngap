@@ -952,7 +952,24 @@
           <div class="fg" style="margin-bottom:16px">
             <div class="f"><label for="pat-prenom">Prénom *</label><input type="text" id="pat-prenom" placeholder="Marie"></div>
             <div class="f"><label for="pat-nom">Nom *</label><input type="text" id="pat-nom" placeholder="DUPONT"></div>
-            <div class="f" style="grid-column:1/-1"><label for="pat-adresse">Adresse complète <span style="font-size:10px;color:var(--a);font-family:var(--fm)">📍 utilisée pour la tournée IA</span></label><input type="text" id="pat-adresse" placeholder="12 rue de la Paix, 06000 Nice"></div>
+            <!-- Adresse structurée : rue + CP + ville -->
+            <div class="f" style="grid-column:1/-1">
+              <label for="pat-rue">Adresse <span style="font-size:10px;color:var(--a);font-family:var(--fm)">📍 pour la tournée IA</span></label>
+              <input type="text" id="pat-rue" placeholder="12 rue de la Paix" autocomplete="street-address" oninput="patRueInput(this.value)">
+              <div id="pat-rue-sug" style="position:absolute;width:100%;z-index:300;margin-top:2px"></div>
+            </div>
+            <div class="f" style="position:relative">
+              <label for="pat-cp">Code postal *</label>
+              <input type="text" id="pat-cp" placeholder="06000" maxlength="5" inputmode="numeric" oninput="patCpInput(this.value)" autocomplete="postal-code">
+              <div id="pat-cp-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
+            </div>
+            <div class="f" style="position:relative">
+              <label for="pat-ville">Ville *</label>
+              <input type="text" id="pat-ville" placeholder="Nice" autocomplete="address-level2" oninput="patVilleInput(this.value)">
+              <div id="pat-ville-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
+            </div>
+            <div id="pat-addr-preview" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);font-size:12px;font-family:var(--fm);color:var(--a)"></div>
+            <div id="pat-addr-warn" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.25);border-radius:var(--r);font-size:12px;color:var(--w)"></div>
             <div class="f"><label for="pat-ddn">Date de naissance</label><input type="date" id="pat-ddn"></div>
             <div class="f"><label for="pat-secu">N° Sécu <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="pat-secu" autocomplete="off" placeholder="1 85 06..."></div>
           </div>
