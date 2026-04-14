@@ -1,427 +1,242 @@
-/* ════════════════════════════════════════════════
-   map.js — AMI NGAP v5.0
-   ────────────────────────────────────────────────
-   Carte Leaflet & GPS — MAP PREMIUM
-   ⚠️  Requiert Leaflet.js chargé AVANT ce fichier
-   - initDepMap() — init + APP.map.register()
-   - getGPS() — GPS réel avec contrôle précision
-   - reverseGeocode() / geocodeAddress() — Nominatim
-   - setDepCoords() — met à jour APP.startPoint
-   ── FONCTIONS PREMIUM ────────────────────────────
-   - createPatientMarker() — markers style Uber/Doctolib
-   - addNumberedMarkers() — numérotation patients
-   - drawRoute() — tracé OSRM couleur #00d4aa
-   - renderTimeline() — timeline tournée sous la carte
-   - focusPatient() — flyTo style Uber
-   - toggleMapFullscreen() — mode plein écran
-   - renderPatientsOnMap() — affichage complet tournée
-   ── v5.0 ─────────────────────────────────────────
-   ✅ assertDep() guard strict Leaflet
-   ✅ APP.map.register() — instance partagée
-   ✅ APP.map.setUserMarker / centerMap exposés
-   ✅ depMap = APP.map.instance (alias rétrocompat)
-════════════════════════════════════════════════ */
+// ─────────────────────────────────────────────────────────────
+//  map.js
+//  Carte Leaflet + système tap-to-correct
+//  Correction manuelle de position : tap carte, drag marker
+//  Reverse geocoding automatique après correction
+// ─────────────────────────────────────────────────────────────
 
-/* ── Guards stricts ──────────────────────────── */
-(function checkDeps() {
-  assertDep(typeof L !== 'undefined',   'map.js : Leaflet non chargé avant map.js.');
-  assertDep(typeof APP !== 'undefined', 'map.js : utils.js non chargé.');
-})();
+let correctionMode   = false;
+let correctionMarker = null;
 
-/* depMap reste accessible globalement pour rétrocompat (uber.js, tournee.js) */
-let depMap = null, depMarker = null;
-let _routeLayer = null;
-let _patientMarkers = [];
-let _fullscreenActive = false;
+// ─────────────────────────────────────────────────────────────
+//  ACTIVER le mode correction pour un patient
+// ─────────────────────────────────────────────────────────────
+function enableCorrectionMode(lat, lng) {
+  correctionMode = true;
 
-function initDepMap() {
-  if (depMap) return;
-  depMap = L.map('dep-map').setView([20, 10], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap', maxZoom: 19
-  }).addTo(depMap);
+  // supprimer l'ancien marker de correction s'il existe
+  if (correctionMarker) {
+    APP.map.removeLayer(correctionMarker);
+    correctionMarker = null;
+  }
 
-  depMap.on('click', e => {
-    const { lat, lng } = e.latlng;
-    _setDepMarker(lat, lng);
-    setDepCoords(lat, lng);
-    reverseGeocode(lat, lng);
+  // créer un marker draggable vert
+  correctionMarker = L.marker([lat, lng], {
+    draggable: true,
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="
+        width:28px;height:28px;
+        background:#1D9E75;
+        border:3px solid white;
+        border-radius:50% 50% 50% 0;
+        transform:rotate(-45deg);
+        box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+      </div>`,
+      iconSize:   [28, 28],
+      iconAnchor: [14, 28],
+    }),
+  })
+  .addTo(APP.map)
+  .bindPopup('Glissez pour affiner la position')
+  .openPopup();
+
+  APP.map.setView([lat, lng], 18);
+  APP.map.getContainer().style.cursor = 'crosshair';
+
+  // tap sur la carte → déplace le marker
+  APP.map.on('click', _onMapClickCorrection);
+
+  // drag du marker → mise à jour adresse
+  correctionMarker.on('dragend', e => {
+    const { lat: la, lng: lo } = e.target.getLatLng();
+    _reverseAndUpdate(la, lo);
+    if (navigator.vibrate) navigator.vibrate(40);
   });
 
-  /* ✅ Enregistrer dans APP.map — accessible par uber.js et ui.js */
-  APP.map.register(depMap);
+  correctionMarker.on('drag', e => {
+    const { lat: la, lng: lo } = e.target.getLatLng();
+    APP.set('tempCoords', { lat: la, lng: lo });
+  });
 
-  /* Exposer les helpers dans APP.map */
-  APP.map.setUserMarker = (lat, lng) => {
-    if (window._liveMarker) {
-      window._liveMarker.setLatLng([lat, lng]);
-    } else {
-      window._liveMarker = L.circleMarker([lat, lng], {
-        radius: 10, fillColor: '#00d4aa', color: '#00b891', weight: 2, fillOpacity: 0.9
-      }).addTo(depMap).bindPopup('📍 Vous êtes ici');
-    }
-  };
-  APP.map.centerMap = (lat, lng, zoom=15) => depMap.setView([lat, lng], zoom);
-
-  /* ✅ invalidateSize après init */
-  setTimeout(() => depMap.invalidateSize(), 300);
+  showToast('Tapez sur la carte pour repositionner');
 }
 
-/* Place ou déplace le marker draggable de départ */
-function _setDepMarker(lat, lng) {
-  if (depMarker) {
-    depMarker.setLatLng([lat, lng]);
-  } else {
-    depMarker = L.marker([lat, lng], { draggable: true, title: '📍 Point de départ' }).addTo(depMap);
-    depMarker.on('dragend', e => {
-      const ll = e.target.getLatLng();
-      setDepCoords(ll.lat, ll.lng);
-      reverseGeocode(ll.lat, ll.lng);
-    });
+// ─────────────────────────────────────────────────────────────
+//  Clic carte en mode correction
+// ─────────────────────────────────────────────────────────────
+function _onMapClickCorrection(e) {
+  if (!correctionMode) return;
+
+  const { lat, lng } = e.latlng;
+  if (correctionMarker) correctionMarker.setLatLng([lat, lng]);
+
+  _reverseAndUpdate(lat, lng);
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Reverse geocoding après déplacement
+// ─────────────────────────────────────────────────────────────
+async function _reverseAndUpdate(lat, lng) {
+  APP.set('tempCoords', { lat, lng });
+
+  try {
+    const addr = await reverseGeocode(lat, lng);
+
+    const input = document.getElementById('patient-address')
+               || document.getElementById('f-rue');
+    if (input) input.value = addr;
+
+    const preview = document.getElementById('addr-preview');
+    if (preview) {
+      const span = preview.querySelector('#preview-text') || preview;
+      span.textContent = addr + ', France';
+      preview.style.display = 'block';
+    }
+
+    showToast('Adresse mise à jour');
+  } catch (_) {
+    // silencieux — les coords sont quand même sauvegardées
   }
 }
 
-/* Met à jour APP.startPoint + les inputs cachés */
-function setDepCoords(lat, lng) {
-  const tLat = $('t-lat'), tLng = $('t-lng');
-  if (tLat) tLat.value = lat.toFixed(6);
-  if (tLng) tLng.value = lng.toFixed(6);
-  /* ✅ APP.set() → déclenche l'event 'app:update' */
-  APP.set('startPoint', { lat, lng });
-  const el = $('dep-coords');
-  if (el) el.textContent = `📌 Départ défini : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-}
-
-/* Géocodage inverse : coordonnées → adresse lisible */
-async function reverseGeocode(lat, lng) {
-  try {
-    const r = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-      { headers: { 'Accept-Language': 'fr' } }
-    );
-    const d = await r.json();
-    if (d.display_name) {
-      const label = d.display_name.split(',').slice(0, 3).join(', ');
-      const el = $('dep-coords');
-      if (el) el.textContent = `📌 Départ : ${label}`;
-      const addr = $('dep-addr');
-      if (addr) addr.value = label;
-    }
-  } catch { /* Nominatim optionnel — pas bloquant */ }
-}
-
-/* Géocodage : adresse → coordonnées */
-async function geocodeAddress() {
-  const addr = gv('dep-addr').trim();
-  if (!addr) return;
-  const el = $('dep-coords');
-  if (el) el.textContent = '🔍 Recherche en cours...';
-  try {
-    const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`,
-      { headers: { 'Accept-Language': 'fr' } }
-    );
-    const d = await r.json();
-    if (!d.length) { if (el) el.textContent = '❌ Adresse non trouvée'; return; }
-    const lat = parseFloat(d[0].lat), lng = parseFloat(d[0].lon);
-    _setDepMarker(lat, lng);
-    setDepCoords(lat, lng);
-    if (depMap) depMap.setView([lat, lng], 15);
-  } catch (e) {
-    if (el) el.textContent = '❌ Erreur : ' + e.message;
-  }
-}
-
-/* ════════════════════════════════════════════════
-   GPS — position réelle avec contrôle précision
-   ────────────────────────────────────────────────
-   ✅ enableHighAccuracy:true  → puce GPS réelle
-   ✅ timeout:15000            → 15s (au lieu de 10)
-   ✅ maximumAge:0             → jamais de cache
-   ✅ accuracy check           → alerte si > 500m (IP fallback)
-   ✅ messages par code d'erreur
-   
-   ⚠️  IMPORTANT :
-   - Fonctionne uniquement en HTTPS
-   - Sur ordinateur sans GPS : accuracy ≈ 50000m (localisation IP)
-     → l'utilisateur voit un avertissement et peut entrer son adresse
-   - Sur mobile avec GPS activé : accuracy < 20m
-════════════════════════════════════════════════ */
-function getGPS() {
-  const el = $('dep-coords');
-  const btn = document.querySelector('.map-btn.gps');
-
-  if (!navigator.geolocation) {
-    if (el) el.textContent = '❌ GPS non supporté — entrez votre adresse manuellement';
+// ─────────────────────────────────────────────────────────────
+//  VALIDER la position corrigée
+// ─────────────────────────────────────────────────────────────
+async function confirmCorrectedPosition(patientId) {
+  const coords = APP.get('tempCoords');
+  if (!coords) {
+    showToast('Aucune position sélectionnée');
     return;
   }
 
-  if (el) el.textContent = '📡 Localisation GPS en cours…';
-  if (btn) btn.textContent = '📡 En cours…';
+  // snapper sur la route la plus proche
+  let finalCoords = coords;
+  try {
+    finalCoords = await snapToRoad(coords.lat, coords.lng);
+  } catch (_) {}
+
+  // injecter dans les champs cachés du formulaire
+  const latInput = document.getElementById('t-lat');
+  const lngInput = document.getElementById('t-lng');
+  if (latInput) latInput.value = finalCoords.lat;
+  if (lngInput) lngInput.value = finalCoords.lng;
+
+  // sauvegarder correction apprise si on a l'adresse d'origine
+  const origAddr = document.getElementById('f-rue')?.value
+                || document.getElementById('patient-address')?.value || '';
+  if (origAddr && patientId) {
+    const correctedAddr = await reverseGeocode(finalCoords.lat, finalCoords.lng);
+    await saveLearnedCorrection(origAddr, correctedAddr);
+  }
+
+  // mettre à jour le patient en base si patientId fourni
+  if (patientId) {
+    const patients = await loadSecure('patients', 'list') || [];
+    const patient  = patients.find(p => p.id === patientId);
+    if (patient) {
+      patient.lat      = finalCoords.lat;
+      patient.lng      = finalCoords.lng;
+      patient.geoScore = 95; // correction manuelle = très fiable
+      await saveSecure('patients', 'list', patients);
+    }
+  }
+
+  disableCorrectionMode();
+  showToast('Position validée et sauvegardée ✓');
+}
+
+// ─────────────────────────────────────────────────────────────
+//  DÉSACTIVER le mode correction
+// ─────────────────────────────────────────────────────────────
+function disableCorrectionMode() {
+  correctionMode = false;
+  APP.map.off('click', _onMapClickCorrection);
+  APP.map.getContainer().style.cursor = '';
+
+  if (correctionMarker) {
+    APP.map.removeLayer(correctionMarker);
+    correctionMarker = null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Utiliser la position GPS de l'appareil
+// ─────────────────────────────────────────────────────────────
+function useMyLocation(patientId) {
+  if (!navigator.geolocation) {
+    showToast('Géolocalisation non disponible');
+    return;
+  }
+
+  showToast('Récupération de votre position…');
 
   navigator.geolocation.getCurrentPosition(
-    pos => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const acc = pos.coords.accuracy; // précision en mètres
-
-      console.log(`📍 GPS : ${lat}, ${lng} — précision ±${acc}m`);
-
-      /* ─────────────────────────────────────────────
-         Contrôle de précision :
-         < 100m  → GPS réel ✅
-         100-500m → WiFi positioning ⚠️
-         > 500m  → localisation IP ❌ (pas fiable pour une tournée)
-      ───────────────────────────────────────────── */
-      if (acc > 5000) {
-        /* Localisation IP — inutilisable pour une tournée */
-        if (el) el.innerHTML = `
-          ⚠️ Position imprécise (±${Math.round(acc/1000)}km) — probablement votre adresse IP, pas votre position réelle.<br>
-          <strong>Entrez votre adresse de départ manuellement</strong> dans le champ ci-dessus.`;
-        if (btn) { btn.textContent = '📍 GPS'; }
-        /* On affiche quand même la position approximative sur la carte */
-        if (depMap) depMap.setView([lat, lng], 8);
-        return;
-      }
-
-      if (acc > 500) {
-        /* Précision WiFi — utilisable avec avertissement */
-        const warnEl = $('dep-coords');
-        if (warnEl) warnEl.textContent = `⚠️ Position approx. (±${Math.round(acc)}m) — active la localisation précise sur ton appareil`;
-      }
-
-      /* Position suffisamment précise → on l'utilise */
-      _setDepMarker(lat, lng);
-      setDepCoords(lat, lng);
-      if (depMap) depMap.setView([lat, lng], 15);
-      reverseGeocode(lat, lng);
-
-      if (btn) {
-        btn.textContent = acc < 100 ? '📍 GPS OK ✅' : '📍 Position mise à jour';
-        setTimeout(() => btn.textContent = '📍 GPS', 3000);
-      }
+    async pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      enableCorrectionMode(lat, lng);
+      await _reverseAndUpdate(lat, lng);
+      APP.set('tempCoords', { lat, lng });
     },
     err => {
-      console.error('GPS ERROR code', err.code, ':', err.message);
-
-      /* Messages précis par code d'erreur GPS */
-      const msgs = {
-        1: `❌ GPS refusé — clique sur 🔒 dans la barre d'adresse et autorise la localisation`,
-        2: `❌ Position indisponible — vérifie que le GPS est activé sur ton appareil`,
-        3: `❌ GPS trop lent — réessaie ou entre ton adresse manuellement`
-      };
-      if (el) el.textContent = msgs[err.code] || `❌ Erreur GPS (code ${err.code})`;
-      if (btn) btn.textContent = '📍 GPS';
+      console.warn('[GPS]', err.message);
+      showToast('Impossible d\'obtenir la position GPS');
     },
-    {
-      enableHighAccuracy: true,  // force la puce GPS réelle
-      timeout: 15000,            // 15s (augmenté pour mobile en intérieur)
-      maximumAge: 0              // jamais de position en cache
-    }
+    { enableHighAccuracy: true, timeout: 8000 }
   );
 }
 
-/* Initialisation carte à l'ouverture de l'onglet tournée */
-document.querySelectorAll('.ni[data-v="tur"]').forEach(n =>
-  n.addEventListener('click', () => setTimeout(() => { initDepMap(); showCaFromImport(); }, 100))
-);
+// ─────────────────────────────────────────────────────────────
+//  Afficher tous les patients sur la carte
+// ─────────────────────────────────────────────────────────────
+function renderPatientsOnMap(patients) {
+  if (!APP.map) return;
 
-/* ════════════════════════════════════════════════
-   MAP PREMIUM — Markers, Route, Timeline, Plein écran
-   Style Uber / Doctolib
-════════════════════════════════════════════════ */
+  // supprimer les markers existants
+  if (APP.markers) {
+    APP.markers.forEach(m => APP.map.removeLayer(m));
+  }
+  APP.markers = [];
 
-/* ── 1. MARKER PREMIUM (style carte Uber) ────────
-   Affiche heure + description dans une card noire
-   avec bordure verte AMI.
-─────────────────────────────────────────────── */
-function createPatientMarker(p) {
-  const heure = p.heure_soin || p.heure || '';
-  const label = (p.description || p.label || 'Patient').slice(0, 22);
-  const icon = L.divIcon({
-    className: 'patient-marker',
-    html: `<div class="marker-card">
-      ${heure ? `<div class="marker-time">${heure}</div>` : ''}
-      <div class="marker-name">${label}</div>
-    </div>`,
-    iconSize: [130, heure ? 44 : 30],
-    iconAnchor: [65, heure ? 44 : 30]
-  });
-  return L.marker([p.lat, p.lng], { icon });
-}
-
-/* ── 2. NUMÉROTATION DES PATIENTS ────────────────
-   Cercles numérotés verts (Doctolib style)
-─────────────────────────────────────────────── */
-function addNumberedMarkers(patients) {
-  // Nettoyer les anciens markers
-  _patientMarkers.forEach(m => depMap.removeLayer(m));
-  _patientMarkers = [];
-
-  patients.forEach((p, i) => {
+  patients.forEach((p, idx) => {
     if (!p.lat || !p.lng) return;
 
-    // Marker numéroté
-    const numIcon = L.divIcon({
-      html: `<div class="num-marker">${i + 1}</div>`,
-      className: '',
-      iconSize: [30, 30],
-      iconAnchor: [15, 15]
+    const color = p.geoScore >= 70 ? '#1D9E75'
+                : p.geoScore >= 50 ? '#EF9F27'
+                : '#E24B4A';
+
+    const marker = L.marker([p.lat, p.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="
+          width:32px;height:32px;
+          background:${color};
+          border:2px solid white;
+          border-radius:50%;
+          display:flex;align-items:center;justify-content:center;
+          font-size:12px;font-weight:600;color:white;
+          box-shadow:0 2px 6px rgba(0,0,0,0.25);">
+          ${idx + 1}
+        </div>`,
+        iconSize:   [32, 32],
+        iconAnchor: [16, 16],
+      }),
     });
-    const m = L.marker([p.lat, p.lng], { icon: numIcon })
-      .addTo(depMap)
-      .on('click', () => focusPatient(p));
 
-    // Popup au clic
-    const heure = p.heure_soin || p.heure || '—';
-    const desc  = p.description || p.label || 'Soin';
-    m.bindPopup(`
-      <div style="font-family:sans-serif;min-width:160px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:4px">#${i+1} · ${heure}</div>
-        <div style="font-size:12px;color:#444">${desc}</div>
-        ${p.actes ? `<div style="font-size:11px;color:#00b891;margin-top:4px">${Array.isArray(p.actes)?p.actes.join(', '):p.actes}</div>` : ''}
-      </div>
-    `, { maxWidth: 220 });
+    marker.bindPopup(`
+      <strong>${p.name}</strong><br>
+      ${p.address || p.addressFull || ''}<br>
+      <small>Score géo : ${p.geoScore}/100</small><br>
+      <a href="#" onclick="openNavigation(${JSON.stringify(p).replace(/"/g,'&quot;')})">
+        Naviguer
+      </a> |
+      <a href="#" onclick="enableCorrectionMode(${p.lat}, ${p.lng})">
+        Corriger position
+      </a>
+    `);
 
-    _patientMarkers.push(m);
+    marker.addTo(APP.map);
+    APP.markers.push(marker);
   });
-}
-
-/* ── 3. TRACÉ ROUTE OSRM ─────────────────────────
-   Ligne couleur AMI sur la carte depuis l'API OSRM.
-   Remplace l'ancienne couche si elle existe.
-─────────────────────────────────────────────── */
-async function drawRoute(points) {
-  if (!depMap || points.length < 2) return;
-
-  // Supprimer l'ancienne route
-  if (_routeLayer) { depMap.removeLayer(_routeLayer); _routeLayer = null; }
-
-  const coords = points
-    .filter(p => p.lat && p.lng)
-    .map(p => `${p.lng},${p.lat}`)
-    .join(';');
-
-  if (!coords) return;
-
-  try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-    const r = await fetch(url);
-    const d = await r.json();
-    if (d.code !== 'Ok' || !d.routes?.[0]) return;
-
-    _routeLayer = L.geoJSON(d.routes[0].geometry, {
-      style: { color: '#00d4aa', weight: 4, opacity: 0.85, dashArray: null }
-    }).addTo(depMap);
-
-    // Zoom sur la route
-    depMap.fitBounds(_routeLayer.getBounds(), { padding: [32, 32] });
-  } catch (e) {
-    console.warn('drawRoute OSRM:', e.message);
-  }
-}
-
-/* ── 4. TIMELINE TOURNÉE ─────────────────────────
-   Affichée sous la carte dans #map-timeline.
-   Clic sur un item → flyTo patient.
-─────────────────────────────────────────────── */
-function renderTimeline(patients) {
-  const el = $('map-timeline');
-  if (!el) return;
-  if (!patients || !patients.length) { el.style.display = 'none'; return; }
-
-  el.style.display = 'block';
-  el.innerHTML = patients.map((p, i) => {
-    const heure = p.heure_soin || p.heure || '—';
-    const desc  = (p.description || p.label || 'Patient').slice(0, 35);
-    const actes = Array.isArray(p.actes)
-      ? p.actes.map(a => a.code || a).join(', ')
-      : (p.actes || '');
-    const hasCoords = p.lat && p.lng;
-    return `<div class="tl-item ${p.done ? 'tl-done' : ''}" onclick="${hasCoords ? `focusPatient(window._tlPatients[${i}])` : ''}">
-      <div class="tl-num">${i + 1}</div>
-      <div class="tl-time">${heure}</div>
-      <div class="tl-body">
-        <div class="tl-name">${desc}</div>
-        ${actes ? `<div class="tl-actes">${actes}</div>` : ''}
-      </div>
-      ${p.done ? '<div class="tl-check">✅</div>' : ''}
-    </div>`;
-  }).join('');
-
-  // Stocker pour les callbacks onclick
-  window._tlPatients = patients;
-}
-
-/* ── 5. FOCUS PATIENT (flyTo style Uber) ─────────
-   Animation fluide vers le patient + ouverture popup.
-─────────────────────────────────────────────── */
-function focusPatient(p) {
-  if (!depMap || !p?.lat || !p?.lng) return;
-  depMap.flyTo([p.lat, p.lng], 16, { animate: true, duration: 0.8 });
-  // Ouvrir le popup du marker correspondant
-  const idx = (window._tlPatients || []).indexOf(p);
-  if (idx >= 0 && _patientMarkers[idx]) {
-    _patientMarkers[idx].openPopup();
-  }
-}
-
-/* ── 6. MODE PLEIN ÉCRAN ─────────────────────────
-   Bascule la carte en position fixed plein écran
-   (style Google Maps / Uber).
-─────────────────────────────────────────────── */
-function toggleMapFullscreen() {
-  const mapEl = $('dep-map');
-  const btn   = $('btn-map-fullscreen');
-  if (!mapEl) return;
-
-  _fullscreenActive = !_fullscreenActive;
-  mapEl.classList.toggle('fullscreen', _fullscreenActive);
-
-  if (btn) {
-    btn.textContent = _fullscreenActive ? '✕ Réduire' : '⛶ Plein écran';
-    btn.classList.toggle('active', _fullscreenActive);
-  }
-
-  // Fermer avec Échap
-  if (_fullscreenActive) {
-    document.addEventListener('keydown', _escFullscreen, { once: true });
-  }
-
-  setTimeout(() => { if (depMap) depMap.invalidateSize(); }, 200);
-}
-
-function _escFullscreen(e) {
-  if (e.key === 'Escape' && _fullscreenActive) toggleMapFullscreen();
-}
-
-/* ── 7. AFFICHAGE COMPLET TOURNÉE SUR CARTE ──────
-   Fonction principale appelée après optimiserTournee().
-   Affiche markers numérotés + route OSRM + timeline.
-   Appelable depuis tournee.js avec les données de route.
-─────────────────────────────────────────────── */
-async function renderPatientsOnMap(patients, startPoint) {
-  if (!depMap) initDepMap();
-  if (!patients || !patients.length) return;
-
-  const validPts = patients.filter(p => p.lat && p.lng);
-  if (!validPts.length) return;
-
-  // Markers numérotés
-  addNumberedMarkers(patients);
-
-  // Route OSRM (départ + patients avec coords)
-  const waypoints = [];
-  if (startPoint?.lat && startPoint?.lng) waypoints.push(startPoint);
-  waypoints.push(...validPts);
-  if (waypoints.length >= 2) await drawRoute(waypoints);
-
-  // Timeline
-  renderTimeline(patients);
-
-  // Zoom auto sur tous les patients
-  if (!waypoints.length) return;
-  const bounds = L.latLngBounds(validPts.map(p => [p.lat, p.lng]));
-  if (startPoint?.lat) bounds.extend([startPoint.lat, startPoint.lng]);
-  depMap.fitBounds(bounds, { padding: [40, 40] });
 }
