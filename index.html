@@ -278,8 +278,8 @@
     <button class="bn-item nurse-only" data-v="live" onclick="navTo('live',this)">
       <span class="bn-ic">▶️</span>Live
     </button>
-    <button class="bn-item" data-v="dash" onclick="navTo('dash',this)">
-      <span class="bn-ic">📈</span>Stats
+    <button class="bn-item nurse-only" data-v="patients" onclick="navTo('patients',this)">
+      <span class="bn-ic">👤</span>Patients
     </button>
     <button class="bn-item" data-v="more" onclick="toggleMobileMenu()">
       <span class="bn-ic">☰</span>Plus
@@ -289,7 +289,7 @@
   <!-- MENU "PLUS" MOBILE -->
   <div id="mobile-menu" style="display:none;position:fixed;bottom:68px;left:0;right:0;z-index:300;background:rgba(11,15,20,.98);border-top:1px solid var(--b);backdrop-filter:blur(20px);padding:12px 8px;padding-bottom:env(safe-area-inset-bottom)">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="patients" onclick="navTo('patients',this);toggleMobileMenu()"><span class="bn-ic">👤</span>Patients</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="dash" onclick="navTo('dash',this);toggleMobileMenu()"><span class="bn-ic">📈</span>Dashboard</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ver" onclick="navTo('ver',this);toggleMobileMenu()"><span class="bn-ic">✅</span>Vérifier</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="tresor" onclick="navTo('tresor',this);toggleMobileMenu()"><span class="bn-ic">💸</span>Tréso</button>
@@ -532,6 +532,17 @@
         <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
           <div class="live-patient" id="live-patient-name" style="flex:1;min-width:0;font-size:15px">Démarrez votre journée</div>
           <div class="live-timer" id="live-timer" style="display:none;font-family:var(--fm);font-size:13px;color:var(--a)"></div>
+          <div id="live-current-time" style="font-family:var(--fm);font-size:15px;font-weight:700;color:var(--t);letter-spacing:1px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:4px 12px"></div>
+          <script>
+            (function(){
+              function _updateLiveClock(){
+                var el=document.getElementById('live-current-time');
+                if(el) el.textContent=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+              }
+              _updateLiveClock();
+              setInterval(_updateLiveClock,1000);
+            })();
+          </script>
         </div>
         <p style="font-size:13px;color:var(--m);margin-bottom:12px" id="live-info">GPS continu · Dispatch intelligent · ETA live · Score priorité médicale</p>
         <div class="live-ca" id="live-ca-total" style="display:none;margin-bottom:8px"></div>
