@@ -258,6 +258,14 @@
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
       <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
     </div>
+    <div class="sl" style="margin-top:8px">
+      <div class="slbl">Outils pratiques</div>
+      <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
+      <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
+      <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
+      <div class="ni nurse-only" data-v="outils-simulation"><span class="nic">⚡</span> Simulateur majoration</div>
+      <div class="ni nurse-only" data-v="outils-ordos"><span class="nic">📋</span> Ordonnances <span id="ordo-nav-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
+    </div>
     <div class="sl" style="margin-top:auto">
       <div class="slbl">Système</div>
       <div class="ni nurse-only" data-v="ngap-ref"><span class="nic">📚</span> Référentiel NGAP</div>
@@ -304,6 +312,11 @@
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sec" onclick="navTo('sec',this);toggleMobileMenu()"><span class="bn-ic">🛡️</span>Sécurité</button>
+      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-charges" onclick="navTo('outils-charges',this);toggleMobileMenu()"><span class="bn-ic">💰</span>Charges</button>
+      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-km" onclick="navTo('outils-km',this);toggleMobileMenu()"><span class="bn-ic">🚗</span>Km</button>
+      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-modeles" onclick="navTo('outils-modeles',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Modèles</button>
+      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-simulation" onclick="navTo('outils-simulation',this);toggleMobileMenu()"><span class="bn-ic">⚡</span>Simulation</button>
+      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-ordos" onclick="navTo('outils-ordos',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Ordonnances</button>
       <button id="btn-install-mobile" class="bn-item" style="display:none;background:var(--ad);border:1px solid rgba(0,212,170,.3);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--a)" onclick="installApp()"><span class="bn-ic">📱</span>Installer</button>
       <button class="bn-item" style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none;color:var(--d)" onclick="logout()"><span class="bn-ic">⏻</span>Quitter</button>
     </div>
@@ -1753,6 +1766,242 @@
         </div>
       </div>
     </section>
+    <!-- ════════════════════════════════════════════
+         OUTILS PRATIQUES INFIRMIÈRE
+    ═════════════════════════════════════════════ -->
+
+    <!-- CALCUL CHARGES & NET RÉEL -->
+    <section class="view" id="view-outils-charges">
+      <h1 class="pt">Charges <em>& net réel</em></h1>
+      <p class="ps">URSSAF · CARPIMKO · Estimation IR · Revenu net journalier</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">💰 Simulateur annuel</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:16px">Saisissez votre chiffre d'affaires annuel pour estimer vos charges et votre revenu net réel.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px">
+          <div class="af">
+            <label for="calc-ca-annuel">CA annuel brut (€)</label>
+            <input type="number" id="calc-ca-annuel" placeholder="Ex: 65000" min="0" step="100" oninput="calculerCharges()">
+          </div>
+          <div class="af">
+            <label for="calc-frais-reel">Frais réels si > abattement 10% (€)</label>
+            <input type="number" id="calc-frais-reel" placeholder="Laissez vide = abattement forfaitaire" min="0" step="100" oninput="calculerCharges()">
+          </div>
+        </div>
+        <div id="calc-result"></div>
+      </div>
+      <div class="card">
+        <div class="ct">📊 Repères 2024</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:12px">
+          <div class="ai in">💡 Taux moyen charges IDEL : ~47% du CA</div>
+          <div class="ai in">💡 Abattement forfaitaire frais : 10% (min 448 €)</div>
+          <div class="ai in">💡 CARPIMKO forfait annuel : ~892 €</div>
+          <div class="ai in">💡 Barème IK infirmier 2025/2026 : 0,636 €/km (5 CV thermique) · non revalorisé</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- JOURNAL KILOMÉTRIQUE -->
+    <section class="view" id="view-outils-km">
+      <h1 class="pt">Journal <em>kilométrique</em></h1>
+      <p class="ps">Déplacements professionnels · Déduction fiscale · Export comptable</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">➕ Ajouter un trajet</div>
+        <div class="msg e" id="km-msg" style="display:none"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:12px">
+          <div class="af"><label>Date</label><input type="date" id="km-date"></div>
+          <div class="af"><label>Distance (km)</label><input type="number" id="km-distance" placeholder="Ex: 12" min="0.1" step="0.1"></div>
+          <div class="af"><label>Départ (optionnel)</label><input type="text" id="km-depart" placeholder="Ex: Cabinet"></div>
+          <div class="af"><label>Arrivée (optionnel)</label><input type="text" id="km-arrivee" placeholder="Ex: Domicile patient"></div>
+          <div class="af"><label>Motif</label>
+            <select id="km-motif">
+              <option>Visite patient</option>
+              <option>Prélèvement à domicile</option>
+              <option>Pansement</option>
+              <option>Perfusion</option>
+              <option>Garde</option>
+              <option>Formation</option>
+              <option>Pharmacie / fournitures</option>
+              <option>Autre déplacement professionnel</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn bp" onclick="addKmEntry()"><span>➕</span> Enregistrer le trajet</button>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div class="ct" style="margin-bottom:0">🚗 Mes trajets</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="km-period" onchange="renderKmJournal()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px">
+              <option value="week">Cette semaine</option>
+              <option value="month" selected>Ce mois</option>
+              <option value="year">Cette année</option>
+              <option value="all">Tout</option>
+            </select>
+            <select id="km-cv" onchange="renderKmJournal()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px" title="Puissance fiscale de votre véhicule">
+              <option value="3">3 CV</option>
+              <option value="4">4 CV</option>
+              <option value="5" selected>5 CV</option>
+              <option value="6">6 CV</option>
+              <option value="7">7 CV et +</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--t);white-space:nowrap">
+              <input type="checkbox" id="km-electrique" onchange="renderKmJournal()" style="accent-color:var(--a)"> ⚡ Électrique
+            </label>
+            <button class="btn bs bsm" onclick="exportKmCSV()"><span>📊</span> Export CSV</button>
+          </div>
+        </div>
+        <div id="km-stats"></div>
+        <div id="km-list"></div>
+      </div>
+    </section>
+
+    <!-- MODÈLES DE SOINS -->
+    <section class="view" id="view-outils-modeles">
+      <h1 class="pt">Modèles <em>de soins</em></h1>
+      <p class="ps">Bibliothèque de descriptions pré-remplies · Cotation en 1 clic</p>
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <input type="text" id="modeles-search" placeholder="🔍 Rechercher un modèle..." oninput="renderModeles()" style="flex:1;min-width:160px">
+          <select id="modeles-categorie" onchange="renderModeles()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+            <option value="">Toutes catégories</option>
+            <option value="injection">💉 Injection</option>
+            <option value="pansement">🩹 Pansement</option>
+            <option value="toilette">🧼 Toilette</option>
+            <option value="prelevement">🩸 Prélèvement</option>
+            <option value="perfusion">💊 Perfusion</option>
+            <option value="bilan">📋 Bilan</option>
+            <option value="autre">📝 Autre</option>
+          </select>
+        </div>
+        <div id="modeles-list"></div>
+      </div>
+      <div class="card" id="modele-form-section">
+        <div class="ct" id="modele-form-title">✏️ Nouveau modèle</div>
+        <input type="hidden" id="modele-edit-id" value="">
+        <div class="msg e" id="modele-msg" style="display:none"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px">
+          <div class="af"><label>Titre du modèle *</label><input type="text" id="modele-new-titre" placeholder="Ex: Injection insuline matin"></div>
+          <div class="af"><label>Catégorie</label>
+            <select id="modele-new-cat" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+              <option value="injection">💉 Injection</option>
+              <option value="pansement">🩹 Pansement</option>
+              <option value="toilette">🧼 Toilette</option>
+              <option value="prelevement">🩸 Prélèvement</option>
+              <option value="perfusion">💊 Perfusion</option>
+              <option value="bilan">📋 Bilan</option>
+              <option value="autre">📝 Autre</option>
+            </select>
+          </div>
+        </div>
+        <div class="af" style="margin-bottom:14px">
+          <label>Description du soin *</label>
+          <textarea id="modele-new-texte" placeholder="Description complète du soin, telle qu'elle sera insérée dans la cotation..." style="min-height:90px"></textarea>
+        </div>
+        <button class="btn bp" onclick="sauvegarderModele()"><span>💾</span> Sauvegarder le modèle</button>
+      </div>
+    </section>
+
+    <!-- SIMULATEUR MAJORATION -->
+    <section class="view" id="view-outils-simulation">
+      <h1 class="pt">Simulateur <em>de majoration</em></h1>
+      <p class="ps">Calcul instantané du montant applicable selon heure, jour et contexte</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+        <div class="card">
+          <div class="ct">⚙️ Paramètres du soin</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            <div class="af"><label>Heure du soin</label><input type="time" id="sim-heure" value="08:00" oninput="simulerMajoration()"></div>
+            <div class="af"><label>Jour</label>
+              <select id="sim-jour" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+                <option value="lundi">Lundi</option>
+                <option value="mardi">Mardi</option>
+                <option value="mercredi">Mercredi</option>
+                <option value="jeudi">Jeudi</option>
+                <option value="vendredi">Vendredi</option>
+                <option value="samedi">Samedi</option>
+                <option value="dimanche">Dimanche</option>
+                <option value="ferie">Jour férié</option>
+              </select>
+            </div>
+          </div>
+          <div class="af" style="margin-bottom:14px"><label>Acte principal</label>
+            <select id="sim-acte" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+              <option value="AMI1">AMI1 — 3,15 €</option>
+              <option value="AMI2">AMI2 — 6,30 €</option>
+              <option value="AMI3">AMI3 — 9,45 €</option>
+              <option value="AMI4">AMI4 — 12,60 €</option>
+              <option value="AMI5">AMI5 — 15,75 €</option>
+              <option value="BSA">BSA — 13,00 €</option>
+              <option value="BSB">BSB — 18,20 €</option>
+              <option value="BSC">BSC — 28,70 €</option>
+              <option value="AIS1">AIS1 — 2,65 €</option>
+              <option value="AIS3">AIS3 — 7,95 €</option>
+            </select>
+          </div>
+          <div class="af" style="margin-bottom:10px"><label>Distance (km, 0 = pas d'IK)</label><input type="number" id="sim-km" placeholder="0" min="0" step="1" value="0" oninput="simulerMajoration()"></div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="sim-domicile" checked onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+              📍 Visite à domicile (IFD)
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="sim-enfant" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+              👶 Patient enfant &lt; 7 ans (MIE)
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="sim-coordination" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+              🤝 Coordination pluridisciplinaire (MCI)
+            </label>
+          </div>
+          <button class="btn bp" onclick="simulerMajoration()"><span>⚡</span> Calculer</button>
+        </div>
+        <div>
+          <div id="sim-result" class="card">
+            <div style="color:var(--m);text-align:center;padding:30px;font-size:13px">
+              Renseignez les paramètres du soin pour calculer le montant applicable.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUIVI ORDONNANCES -->
+    <section class="view" id="view-outils-ordos">
+      <h1 class="pt">Ordonnances <em>& renouvellements</em></h1>
+      <p class="ps">Suivi des validités · Alertes expiration · Rappels renouvellement</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">➕ Enregistrer une ordonnance</div>
+        <div class="msg e" id="ordo-msg" style="display:none"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:12px">
+          <div class="af"><label>Patient *</label><input type="text" id="ordo-patient" placeholder="Nom Prénom"></div>
+          <div class="af"><label>Médecin prescripteur</label><input type="text" id="ordo-medecin" placeholder="Nom du médecin"></div>
+          <div class="af"><label>Date de prescription *</label><input type="date" id="ordo-date"></div>
+          <div class="af"><label>Durée de validité (jours)</label>
+            <select id="ordo-duree" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+              <option value="30">30 jours</option>
+              <option value="60">60 jours</option>
+              <option value="90">90 jours</option>
+              <option value="180">6 mois</option>
+              <option value="365">1 an</option>
+            </select>
+          </div>
+          <div class="af" style="grid-column:1/-1"><label>Actes prescrits</label><input type="text" id="ordo-actes" placeholder="Ex: Injections SC insuline 2x/jour, pansement jambe droite"></div>
+        </div>
+        <button class="btn bp" onclick="addOrdonnance()"><span>➕</span> Enregistrer</button>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div class="ct" style="margin-bottom:0">📋 Mes ordonnances</div>
+          <select id="ordo-filtre" onchange="renderOrdonnances()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px">
+            <option value="all">Toutes</option>
+            <option value="active">Actives</option>
+            <option value="alerte">⚠️ En alerte (&lt; 21 jours)</option>
+            <option value="expiree">Expirées</option>
+          </select>
+        </div>
+        <div id="ordo-list"></div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -1845,3 +2094,4 @@ document.addEventListener('ami:login', () => {
 })();
 </script>
 
+<script src="js/infirmiere-tools.js"></script>
