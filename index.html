@@ -441,19 +441,6 @@
         <!-- Carte principale — dep-map géré par map.js (toujours présent) -->
         <div id="dep-map"></div>
 
-        <!-- Panneau correction point de départ (Tournée IA) -->
-        <div id="start-editor" style="display:none;margin-top:10px;padding:12px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.25);border-radius:var(--r)">
-          <div style="font-size:12px;color:var(--a);font-family:var(--fm);margin-bottom:8px;display:flex;align-items:center;gap:6px">
-            <span>🎯</span>
-            <strong>Mode ajustement actif</strong>
-            <span style="color:var(--m)">— Tapez sur la carte ou glissez le marqueur 🏠</span>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn bp bsm" onclick="confirmStartPointCorrection()"><span>✅</span> Confirmer ce point de départ</button>
-            <button class="btn bs bsm" onclick="disableStartPointCorrection();document.getElementById('start-editor').style.display='none';document.getElementById('live-start-editor').style.display='none'"><span>✕</span> Annuler</button>
-          </div>
-        </div>
-
         <!-- Champs lat/lng cachés -->
         <input type="hidden" id="t-lat" value="">
         <input type="hidden" id="t-lng" value="">
@@ -466,7 +453,6 @@
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
-          <button class="btn bs bsm" onclick="openStartPointEditor('tur')"><span>🎯</span> Ajuster sur la carte</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
         </div>
       </div>
