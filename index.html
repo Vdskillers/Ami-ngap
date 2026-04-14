@@ -454,6 +454,7 @@
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
+          <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
         </div>
       </div>
       <!-- Panneau téléchargement cartes offline -->
@@ -533,6 +534,7 @@
           <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
           <button class="btn bs" id="btn-live-stop" onclick="stopDay()" style="display:none"><span>🏁</span> Terminer la tournée</button>
           <button class="btn bs" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
+          <button class="btn bs" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()"><span>🗑️</span> Réinitialiser</button>
         </div>
       </div>
       <div id="live-controls" style="display:none">
