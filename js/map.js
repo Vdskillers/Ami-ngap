@@ -162,6 +162,233 @@ function disableCorrectionMode() {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  MODE CORRECTION POINT DE DÉPART
+//  Utilisé dans Tournée IA et Pilotage Live
+//  Marker "maison" draggable sur dep-map ou live-dep-map
+// ─────────────────────────────────────────────────────────────
+
+let _startPtMarker  = null;
+let _startPtMode    = false;
+let _startPtMapInst = null; // référence à la carte active (dep-map ou live-dep-map)
+
+/**
+ * Active le mode correction du point de départ sur la carte passée en argument.
+ * @param {L.Map} mapInstance   - instance Leaflet de la carte cible
+ * @param {number} lat
+ * @param {number} lng
+ * @param {Function} onConfirm  - callback(lat, lng, addrStr) appelé à la validation
+ */
+function enableStartPointCorrection(mapInstance, lat, lng, onConfirm) {
+  _startPtMode    = true;
+  _startPtMapInst = mapInstance;
+
+  // Supprimer l'ancien marker s'il existe
+  if (_startPtMarker) {
+    try { mapInstance.removeLayer(_startPtMarker); } catch(_) {}
+    _startPtMarker = null;
+  }
+
+  _startPtMarker = L.marker([lat, lng], {
+    draggable: true,
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="
+        width:38px;height:38px;
+        background:#00d4aa;
+        border:3px solid white;
+        border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        font-size:18px;
+        box-shadow:0 3px 12px rgba(0,212,170,0.55);
+        cursor:grab;">🏠</div>`,
+      iconSize:   [38, 38],
+      iconAnchor: [19, 19],
+    }),
+  })
+  .addTo(mapInstance)
+  .bindPopup('<strong>Point de départ</strong><br><small>Glissez pour ajuster</small>')
+  .openPopup();
+
+  mapInstance.setView([lat, lng], 17);
+  mapInstance.getContainer().style.cursor = 'crosshair';
+
+  // Tap sur la carte → déplace le marker
+  mapInstance.on('click', _onStartPtClick);
+
+  // Drag terminé → reverse geocode
+  _startPtMarker.on('dragend', async e => {
+    const { lat: la, lng: lo } = e.target.getLatLng();
+    if (navigator.vibrate) navigator.vibrate(40);
+    await _updateStartPtDisplay(la, lo);
+  });
+
+  // Drag en cours → stocker coords temps réel
+  _startPtMarker.on('drag', e => {
+    const { lat: la, lng: lo } = e.target.getLatLng();
+    APP.set('startPtTemp', { lat: la, lng: lo, onConfirm });
+  });
+
+  // Stocker le callback pour la validation
+  APP.set('startPtTemp', { lat, lng, onConfirm });
+
+  showToast('📍 Tapez ou glissez le marqueur pour ajuster le départ');
+}
+
+function _onStartPtClick(e) {
+  if (!_startPtMode || !_startPtMarker) return;
+  const { lat, lng } = e.latlng;
+  _startPtMarker.setLatLng([lat, lng]);
+  if (navigator.vibrate) navigator.vibrate(40);
+  _updateStartPtDisplay(lat, lng);
+}
+
+async function _updateStartPtDisplay(lat, lng) {
+  const stored = APP.get('startPtTemp') || {};
+  APP.set('startPtTemp', { ...stored, lat, lng });
+
+  try {
+    const addr = await reverseGeocode(lat, lng);
+    // Mettre à jour les champs visibles dep-addr et live-dep-addr
+    const depAddr  = document.getElementById('dep-addr');
+    const liveAddr = document.getElementById('live-dep-addr');
+    if (depAddr)  depAddr.value  = addr;
+    if (liveAddr) liveAddr.value = addr;
+
+    // Mettre à jour le texte de coordonnées
+    const coordsTxt = document.getElementById('dep-coords');
+    const liveTxt   = document.getElementById('live-dep-coords');
+    const txt = `📍 ${addr}`;
+    if (coordsTxt) { coordsTxt.textContent = txt; coordsTxt.style.display = 'block'; }
+    if (liveTxt)   { liveTxt.textContent   = txt; liveTxt.style.display   = 'block'; }
+
+    APP.set('startPtTemp', { ...APP.get('startPtTemp'), addr });
+    showToast('Adresse mise à jour');
+  } catch (_) {}
+}
+
+/**
+ * Valide la position du point de départ corrigée.
+ * Snape sur route → injecte t-lat/t-lng → appelle onConfirm.
+ */
+async function confirmStartPointCorrection() {
+  const stored = APP.get('startPtTemp');
+  if (!stored || !stored.lat || !stored.lng) {
+    showToast('Aucune position sélectionnée');
+    return;
+  }
+
+  // Snap sur route
+  let coords = stored;
+  try {
+    coords = await snapToRoad(stored.lat, stored.lng);
+    coords.addr = stored.addr;
+  } catch(_) {}
+
+  // Injecter dans les champs cachés (communs aux deux sections)
+  const latEl = document.getElementById('t-lat');
+  const lngEl = document.getElementById('t-lng');
+  if (latEl) latEl.value = coords.lat;
+  if (lngEl) lngEl.value = coords.lng;
+
+  // Persister le point de départ dans APP
+  APP.set('startPoint', { lat: coords.lat, lng: coords.lng });
+
+  // Afficher les coords
+  const txt = `✅ Départ confirmé — ${coords.addr || coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5)}`;
+  const coordsTxt = document.getElementById('dep-coords');
+  const liveTxt   = document.getElementById('live-dep-coords');
+  if (coordsTxt) { coordsTxt.textContent = txt; coordsTxt.style.display = 'block'; }
+  if (liveTxt)   { liveTxt.textContent   = txt; liveTxt.style.display   = 'block'; }
+
+  // Callback optionnel
+  if (typeof stored.onConfirm === 'function') stored.onConfirm(coords.lat, coords.lng, coords.addr);
+
+  disableStartPointCorrection();
+  showToast('🏠 Point de départ enregistré ✓');
+}
+
+function disableStartPointCorrection() {
+  _startPtMode = false;
+  if (_startPtMapInst) {
+    _startPtMapInst.off('click', _onStartPtClick);
+    _startPtMapInst.getContainer().style.cursor = '';
+  }
+  // Ne pas supprimer le marker — il reste visible comme repère visuel
+  _startPtMapInst = null;
+}
+
+/**
+ * Point d'entrée appelé par les boutons "Ajuster sur la carte".
+ * Détermine les coordonnées initiales (GPS ou t-lat/t-lng ou centre France)
+ * et initialise la carte cible (dep-map pour Tournée, live-dep-map pour Pilotage).
+ * @param {'tur'|'live'} context - quelle section appelle la correction
+ */
+async function openStartPointEditor(context) {
+  // Récupérer les coords actuelles
+  let lat = parseFloat(document.getElementById('t-lat')?.value) || APP.get('startPoint')?.lat;
+  let lng = parseFloat(document.getElementById('t-lng')?.value) || APP.get('startPoint')?.lng;
+
+  // Fallback : position GPS de l'appareil
+  if (!lat || !lng) {
+    showToast('Récupération de votre position GPS…');
+    try {
+      const pos = await new Promise((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 6000 })
+      );
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+    } catch (_) {
+      // Fallback : centre de la France
+      lat = 46.5; lng = 2.3;
+      showToast('GPS indisponible — centré sur la France');
+    }
+  }
+
+  const mapContainerId = context === 'live' ? 'live-dep-map' : 'dep-map';
+  const panelId        = context === 'live' ? 'live-start-editor' : 'start-editor';
+
+  // Afficher le panneau d'édition
+  const panel = document.getElementById(panelId);
+  if (panel) panel.style.display = 'block';
+
+  // Obtenir ou créer l'instance Leaflet pour le conteneur cible
+  let mapInst;
+  const appMapEl = document.getElementById('dep-map');
+
+  if (context === 'live') {
+    // Pour le pilotage live : créer une carte dédiée si pas encore init
+    if (!APP._liveDepMap) {
+      const container = document.getElementById('live-dep-map');
+      if (!container) return;
+      APP._liveDepMap = L.map('live-dep-map', { zoomControl: true }).setView([lat, lng], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19,
+      }).addTo(APP._liveDepMap);
+    }
+    mapInst = APP._liveDepMap;
+    setTimeout(() => { try { mapInst.invalidateSize(); } catch(_){} }, 150);
+  } else {
+    // Section Tournée : utiliser APP.map (dep-map, déjà init par extras.js)
+    mapInst = (APP.map && typeof APP.map.invalidateSize === 'function') ? APP.map : APP.map?.instance;
+    if (!mapInst) {
+      showToast('Carte non disponible');
+      return;
+    }
+  }
+
+  enableStartPointCorrection(mapInst, lat, lng, (la, lo, addr) => {
+    // Synchroniser les deux champs
+    const latEl = document.getElementById('t-lat');
+    const lngEl = document.getElementById('t-lng');
+    if (latEl) latEl.value = la;
+    if (lngEl) lngEl.value = lo;
+    APP.set('startPoint', { lat: la, lng: lo });
+    if (typeof showToast === 'function') showToast('✅ Départ mis à jour');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Utiliser la position GPS de l'appareil
 // ─────────────────────────────────────────────────────────────
 function useMyLocation(patientId) {
@@ -242,7 +469,71 @@ function renderPatientsOnMap(patients) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  renderPatientsOnMap — VERSION TOURNÉE (remplace la précédente)
+//  Recherche d'adresse pour le point de départ du Pilotage Live
+// ─────────────────────────────────────────────────────────────
+
+async function searchLiveStartPoint() {
+  const input = document.getElementById('live-dep-addr');
+  if (!input || !input.value.trim()) return;
+
+  showToast('Recherche en cours…');
+  try {
+    const processed = await processAddressBeforeGeocode(input.value.trim(), null);
+    const geo = await smartGeocode(processed);
+    if (!geo) throw new Error('Adresse introuvable');
+
+    // Injecter dans les champs partagés
+    const latEl = document.getElementById('t-lat');
+    const lngEl = document.getElementById('t-lng');
+    if (latEl) latEl.value = geo.lat;
+    if (lngEl) lngEl.value = geo.lng;
+    APP.set('startPoint', { lat: geo.lat, lng: geo.lng });
+
+    // Mettre à jour l'affichage coords
+    const liveTxt = document.getElementById('live-dep-coords');
+    if (liveTxt) {
+      liveTxt.textContent = `✅ Départ — ${input.value.trim()} (score: ${computeGeoScore(input.value.trim(), geo)}/100)`;
+      liveTxt.style.display = 'block';
+    }
+
+    showToast('Point de départ mis à jour');
+
+    // Ouvrir l'éditeur carte pour permettre l'ajustement fin
+    await openStartPointEditor('live');
+
+  } catch(e) {
+    showToast('❌ Adresse introuvable — essayez d\'ajuster sur la carte');
+  }
+}
+
+async function useLiveMyLocation() {
+  if (!navigator.geolocation) { showToast('GPS non disponible'); return; }
+  showToast('Récupération de votre position…');
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+
+      const latEl = document.getElementById('t-lat');
+      const lngEl = document.getElementById('t-lng');
+      if (latEl) latEl.value = lat;
+      if (lngEl) lngEl.value = lng;
+      APP.set('startPoint', { lat, lng });
+
+      const addr = await reverseGeocode(lat, lng);
+      const inputEl = document.getElementById('live-dep-addr');
+      if (inputEl) inputEl.value = addr;
+      const liveTxt = document.getElementById('live-dep-coords');
+      if (liveTxt) { liveTxt.textContent = `📍 ${addr}`; liveTxt.style.display = 'block'; }
+
+      showToast('Position GPS obtenue ✓');
+      await openStartPointEditor('live');
+    },
+    err => showToast('Impossible d\'obtenir la position GPS'),
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
 //  Accepte (patients, startPoint?) — retourne une Promise
 //  Compatible avec tournee.js qui appelle .catch()
 // ─────────────────────────────────────────────────────────────
