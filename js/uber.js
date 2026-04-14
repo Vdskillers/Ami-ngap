@@ -178,22 +178,26 @@ function _updateUberProgress() {
    Google Maps utilise la position de l'appareil.
 ─────────────────────────────────────────────────────────────── */
 function openNavigation(p) {
-  if (!p?.lat || !p?.lng) { alert('Adresse GPS du patient non disponible.'); return; }
+  if (!p?.lat && !p?.adresse && !p?.addressFull) { alert('Adresse du patient non disponible.'); return; }
 
-  const dest = `${p.lat},${p.lng}`;
+  /* Destination : préférer l'adresse TEXTE exacte si disponible
+     → Google Maps utilise sa propre base pour trouver le bon numéro
+     → évite le reverse geocoding approximatif sur les coordonnées IGN
+     Fallback sur coordonnées GPS si pas d'adresse texte */
+  const addrText = p.addressFull || p.adresse || p.address || '';
+  const dest = addrText
+    ? encodeURIComponent(addrText)
+    : `${p.lat},${p.lng}`;
 
-  /* Origin = startPoint défini dans Tournée IA (adresse fixe)
-     userPos (GPS temps réel) est utilisé pour le dispatch interne Uber
-     mais NE doit PAS être passé à Google Maps comme point de départ —
-     Google Maps utilisera la position de l'appareil si origin est absent */
+  /* Origin = startPoint défini dans Tournée IA */
   const origin = APP.get('startPoint');
 
   let url;
+  const destParam = addrText ? `destination=${dest}` : `destination=${dest}`;
   if (origin && origin.lat && origin.lng) {
-    url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${dest}&travelmode=driving`;
+    url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&${destParam}&travelmode=driving`;
   } else {
-    // Pas de startPoint défini → Google Maps part de la position de l'appareil
-    url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`;
+    url = `https://www.google.com/maps/dir/?api=1&${destParam}&travelmode=driving`;
   }
 
   window.open(url, '_blank');

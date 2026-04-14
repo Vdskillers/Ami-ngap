@@ -11,20 +11,34 @@
  * Fallback  : adresse texte complète → Google géocode lui-même
  */
 function openNavigation(patient) {
-  const addr = buildNavigationAddress(patient);
+  /* Priorité adresse texte → Google Maps géocode précisément (évite reverse geocoding approx)
+     Ordre : addressFull > adresse > address complet > reconstruit depuis street/zip/city > coords GPS */
+  const addrFull = (patient.addressFull || patient.adresse || '').trim();
 
-  if (patient.geoScore >= 60 && patient.lat && patient.lng) {
-    // coordonnées fiables : navigation directe précise
+  // Si address contient déjà une adresse complète (numéro + rue + CP + ville), l'utiliser directement
+  const addrRaw  = (patient.address || '').trim();
+  const hasFullAddr = addrRaw && /\d{5}/.test(addrRaw); // contient un CP → adresse complète
+
+  const addr = addrFull || (hasFullAddr ? addrRaw : '') || buildNavigationAddress(patient);
+
+  const origin = APP.get('startPoint');
+  const originParam = (origin?.lat && origin?.lng)
+    ? `&origin=${origin.lat},${origin.lng}` : '';
+
+  if (addr) {
     const url = `https://www.google.com/maps/dir/?api=1`
+      + originParam
+      + `&destination=${encodeURIComponent(addr)}`
+      + `&travelmode=driving`;
+    window.open(url, '_blank');
+  } else if (patient.lat && patient.lng) {
+    const url = `https://www.google.com/maps/dir/?api=1`
+      + originParam
       + `&destination=${patient.lat},${patient.lng}`
       + `&travelmode=driving`;
     window.open(url, '_blank');
   } else {
-    // fallback adresse texte : Google Maps géocode avec sa propre précision
-    const url = `https://www.google.com/maps/dir/?api=1`
-      + `&destination=${encodeURIComponent(addr)}`
-      + `&travelmode=driving`;
-    window.open(url, '_blank');
+    alert('Adresse du patient non disponible.');
   }
 }
 
