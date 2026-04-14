@@ -22,47 +22,101 @@ async function smartGeocode(address) {
     }
   } catch (_) {}
 
-  // 2. Photon (komoot) — plus précis que Nominatim seul
-  try {
-    const res  = await fetch(
-      `https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lang=fr`
-    );
-    const data = await res.json();
+  /* Générer des variantes de l'adresse pour améliorer la précision
+     Ex: "Puget Ville" → "Puget-Ville", "st " → "Saint " */
+  const variants = _buildAddrVariants(address);
 
-    if (data.features?.length) {
-      const f      = data.features[0];
-      const result = {
-        lat:        f.geometry.coordinates[1],
-        lng:        f.geometry.coordinates[0],
-        confidence: f.properties?.score || 0.7,
-        source:     'photon',
-      };
-      await saveSecure('geocache', cacheKey, result);
-      return result;
-    }
-  } catch (_) {}
+  // 2. Photon (komoot) — essayer toutes les variantes, garder le meilleur résultat
+  let bestPhoton = null;
+  for (const variant of variants) {
+    try {
+      const res  = await fetch(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(variant)}&limit=3&lang=fr`
+      );
+      const data = await res.json();
 
-  // 3. Nominatim (fallback)
-  try {
-    const res  = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=fr`,
-      { headers: { 'Accept-Language': 'fr' } }
-    );
-    const data = await res.json();
+      if (data.features?.length) {
+        // Prendre le premier résultat de type house/street si disponible
+        const f = data.features.find(ft =>
+          ['house','street'].includes(ft.properties?.type)
+        ) || data.features[0];
 
-    if (data.length) {
-      const result = {
-        lat:        parseFloat(data[0].lat),
-        lng:        parseFloat(data[0].lon),
-        confidence: 0.6,
-        source:     'nominatim',
-      };
-      await saveSecure('geocache', cacheKey, result);
-      return result;
-    }
-  } catch (_) {}
+        const confidence = f.properties?.score || 0.7;
+        const result = {
+          lat:        f.geometry.coordinates[1],
+          lng:        f.geometry.coordinates[0],
+          confidence: confidence,
+          source:     'photon',
+        };
+        // Garder le résultat avec la meilleure confidence
+        if (!bestPhoton || confidence > bestPhoton.confidence) {
+          bestPhoton = result;
+        }
+        // Si on a un résultat de type house (adresse exacte), inutile de continuer
+        if (f.properties?.type === 'house') break;
+      }
+    } catch (_) {}
+  }
+
+  if (bestPhoton) {
+    await saveSecure('geocache', cacheKey, bestPhoton);
+    return bestPhoton;
+  }
+
+  // 3. Nominatim (fallback) — essayer les variantes aussi
+  for (const variant of variants) {
+    try {
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(variant)}&limit=3&countrycodes=fr&addressdetails=1`,
+        { headers: { 'Accept-Language': 'fr' } }
+      );
+      const data = await res.json();
+
+      if (data.length) {
+        // Préférer les résultats de type house/building/road
+        const best = data.find(d => ['house','building','road'].includes(d.type)) || data[0];
+        // Confidence plus haute si on a trouvé un numéro de rue exact
+        const hasHouseNum = /^\d/.test(variant);
+        const confidence = (best.type === 'house' || best.type === 'building') ? 0.75
+          : hasHouseNum ? 0.65
+          : 0.55;
+        const result = {
+          lat:        parseFloat(best.lat),
+          lng:        parseFloat(best.lon),
+          confidence: confidence,
+          source:     'nominatim',
+        };
+        await saveSecure('geocache', cacheKey, result);
+        return result;
+      }
+    } catch (_) {}
+  }
 
   throw new Error('Géocodage impossible pour : ' + address);
+}
+
+/* Génère des variantes d'une adresse pour maximiser les chances de géocodage précis */
+function _buildAddrVariants(address) {
+  const variants = [address];
+
+  // Variante avec tirets dans les noms de communes composés
+  // Ex: "Puget Ville" → "Puget-Ville", "Saint Germain" → "Saint-Germain"
+  const withHyphen = address.replace(
+    /\b(Saint|Sainte|Sur|Sous|En|Les|Le|La|Du|Des|De|Mont|Bois|Val|Puy|Puget|Pont|Port|Bourg|Ville|Roc|Grand|Vieux|Neuf)\s+([A-Z][a-zÀ-ÿ]+)/g,
+    (_, a, b) => `${a}-${b}`
+  );
+  if (withHyphen !== address) variants.push(withHyphen);
+
+  // Variante sans le numéro (pour les adresses où le numéro est inconnu d'OSM)
+  const withoutNum = address.replace(/^\d+\s+/, '');
+  if (withoutNum !== address) variants.push(withoutNum);
+
+  // Variante avec "Rue de la" → "Route de la" (communes rurales)
+  if (/rue de la/i.test(address)) {
+    variants.push(address.replace(/rue de la/i, 'Route de la'));
+  }
+
+  return [...new Set(variants)]; // dédoublonner
 }
 
 /**
@@ -160,16 +214,24 @@ async function processAddressBeforeGeocode(rawAddr, patient) {
 
   // 2. normalisation
   let addr = rawAddr
-    .replace(/\bav\b\.?/gi,  'Avenue')
-    .replace(/\bbd\b\.?/gi,  'Boulevard')
-    .replace(/\bbl\b\.?/gi,  'Boulevard')
-    .replace(/\br\b\.?/gi,   'Rue')
-    .replace(/\bst\b/gi,     'Saint')
-    .replace(/\bste\b/gi,    'Sainte')
-    .replace(/chez\s+\S+\s*/gi, '')
-    .replace(/appt?\s*\d+/gi,   '')
+    .replace(/\bav\b\.?/gi,    'Avenue')
+    .replace(/\bbd\b\.?/gi,    'Boulevard')
+    .replace(/\bbl\b\.?/gi,    'Boulevard')
+    .replace(/\br\b\.?/gi,     'Rue')
+    .replace(/\bst\b/gi,       'Saint')
+    .replace(/\bste\b/gi,      'Sainte')
+    .replace(/chez\s+\S+\s*/gi,  '')
+    .replace(/appt?\s*\d+/gi,    '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Normaliser les noms de communes composés avec espace → tiret
+  // Ex: "Puget Ville" → "Puget-Ville", "Saint Germain" → "Saint-Germain"
+  // Seulement si suivi d'une majuscule (pour éviter "Rue de la Paix")
+  addr = addr.replace(
+    /\b(Puget|Saint|Sainte|Mont|Bois|Val|Puy|Pont|Port|Bourg|Vieux|Neuf|Grand|Petit|Haut|Bas|Vieux|Neuf|Roc|Croix|Bel|Belle)\s+([A-ZÀ-Ÿ][a-zà-ÿ]+)/g,
+    (_, a, b) => `${a}-${b}`
+  );
 
   // 3. enrichissement si ville/CP disponibles dans l'objet patient
   if (patient) {

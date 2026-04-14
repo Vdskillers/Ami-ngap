@@ -973,14 +973,17 @@ async function _forceRegeocode(id) {
   // 2. Vider le cache IndexedDB (geocode.js)
   if (typeof saveSecure === 'function' && typeof hashAddr === 'function') {
     try { await saveSecure('geocache', hashAddr(adresseGeo), null); } catch (_) {}
-    // Vider aussi les variantes normalisées
-    const variants = [
-      adresseGeo,
-      adresseGeo + ', France',
-      p.adresse || '',
-    ];
-    for (const v of variants) {
-      if (v) try { await saveSecure('geocache', hashAddr(v), null); } catch (_) {}
+    // Vider toutes les variantes du cache (avec/sans tirets, avec/sans numéro, etc.)
+    const _makeVariants = (a) => {
+      const v = [a, a + ', France', (p.adresse || ''), (p.addressFull || '')];
+      // avec tirets communes composées
+      v.push(a.replace(/\b(Saint|Sainte|Puget|Mont|Pont|Port|Bourg|Val|Puy|Bois|Grand|Vieux|Neuf|Roc)\s+([A-ZÀ-Ÿ][a-zà-ÿ]+)/g, '$1-$2'));
+      // sans numéro de rue
+      v.push(a.replace(/^\d+\s+/, ''));
+      return [...new Set(v.filter(Boolean))];
+    };
+    for (const v of _makeVariants(adresseGeo)) {
+      try { await saveSecure('geocache', hashAddr(v), null); } catch (_) {}
     }
   }
 

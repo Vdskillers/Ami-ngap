@@ -13,7 +13,7 @@
 function openNavigation(patient) {
   const addr = buildNavigationAddress(patient);
 
-  if (patient.geoScore >= 70 && patient.lat && patient.lng) {
+  if (patient.geoScore >= 60 && patient.lat && patient.lng) {
     // coordonnées fiables : navigation directe précise
     const url = `https://www.google.com/maps/dir/?api=1`
       + `&destination=${patient.lat},${patient.lng}`
@@ -64,15 +64,18 @@ function buildNavigationAddress(patient) {
 function computeGeoScore(addr, geocodeResult) {
   let score = 50;
 
-  if (/\d/.test(addr))                                score += 10;
-  if (/rue|avenue|boulevard|impasse|allée/i.test(addr)) score += 10;
-  if (addr.length > 20)                               score += 10;
-  if ((geocodeResult.confidence || 0) > 0.8)          score += 20;
-  if (geocodeResult.source === 'photon')               score +=  5;
+  if (/\d/.test(addr))                                  score += 10; // numéro de rue
+  if (/rue|avenue|boulevard|impasse|allée|route|chemin|passage|place/i.test(addr)) score += 10;
+  if (addr.length > 20)                                 score += 10;
+  if ((geocodeResult.confidence || 0) >= 0.75)          score += 20;
+  else if ((geocodeResult.confidence || 0) >= 0.65)     score += 10;
+  if (geocodeResult.source === 'photon')                score +=  5;
+  // Bonus si Nominatim a trouvé un type précis (house/building)
+  if (geocodeResult.source === 'nominatim' && (geocodeResult.confidence || 0) >= 0.65) score += 5;
 
   // pénalités adresses imprécises
-  if (/chez |bat[i]?|appt?/i.test(addr))              score -= 15;
-  if (!geocodeResult.lat || !geocodeResult.lng)        score  =  0;
+  if (/chez |bat[i]?|appt?/i.test(addr))               score -= 15;
+  if (!geocodeResult.lat || !geocodeResult.lng)         score  =  0;
 
   return Math.min(100, Math.max(0, score));
 }
