@@ -1209,8 +1209,94 @@ async function openCotationPatient(patientIndex) {
   showCotationModal(patient, cotation || { actes: [], total: 0 }, null);
 }
 
-/* Patch liveStatus global */
+/* ============================================================
+   RÉINITIALISATION TOURNÉE DU JOUR
+   Efface tous les patients importés, remet le pilotage à zéro.
+   Accessible depuis Tournée IA ET Pilotage de journée.
+   ============================================================ */
+function resetTourneeJour() {
+  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
+  const msg = n > 0
+    ? `Réinitialiser la tournée du jour ?\n\n${n} patient(s) seront effacés de la Tournée IA et du Pilotage de journée.\nCette action ne supprime PAS les fiches du carnet patient.`
+    : 'Réinitialiser la tournée du jour ?\n\nLe pilotage sera remis à zéro.';
+  if (!confirm(msg)) return;
+
+  // Reset données importées
+  APP.importedData  = null;
+  APP.uberPatients  = [];
+  APP.nextPatient   = null;
+
+  // Arrêter le timer live
+  if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
+  LIVE_START_TIME = null;
+  LIVE_CA_TOTAL   = 0;
+
+  // Reset badge statut
+  const badge = $('live-badge');
+  if (badge) {
+    badge.textContent = 'EN ATTENTE';
+    badge.style.background = '';
+    badge.style.color = '';
+  }
+
+  // Reset textes pilotage
+  const patName = $('live-patient-name');
+  if (patName) patName.textContent = 'Démarrez votre journée';
+  const liveInfo = $('live-info');
+  if (liveInfo) liveInfo.textContent = 'Cliquez sur "Démarrer" pour activer le pilotage automatique';
+
+  // Reset timer + CA
+  const timerEl = $('live-timer');
+  if (timerEl) { timerEl.textContent = ''; timerEl.style.display = 'none'; }
+  const caTotal = $('live-ca-total');
+  if (caTotal) { caTotal.textContent = ''; caTotal.style.display = 'none'; }
+
+  // Cacher bloc contrôles live + reset boutons démarrer/arrêter
+  const liveControls = $('live-controls');
+  if (liveControls) liveControls.style.display = 'none';
+  const btnStart = $('btn-live-start');
+  if (btnStart) btnStart.style.display = 'inline-flex';
+  const btnStop = $('btn-live-stop');
+  if (btnStop) btnStop.style.display = 'none';
+
+  // Vider la liste patients du pilotage
+  const liveNext = $('live-next');
+  if (liveNext) liveNext.innerHTML = '';
+
+  // Vider la tournée IA
+  const tbody = $('tbody');
+  if (tbody) tbody.innerHTML = '';
+  const resTur = $('res-tur');
+  if (resTur) resTur.classList.remove('show');
+
+  // Cacher CA estimé
+  const caWrap = $('tur-ca-wrap');
+  if (caWrap) caWrap.style.display = 'none';
+  const caBox = $('ca-box');
+  if (caBox) caBox.style.display = 'none';
+
+  // Cacher banner planning
+  const banner = $('pla-import-banner');
+  if (banner) banner.style.display = 'none';
+
+  // Cacher CA journée
+  const caCard = $('live-ca-card');
+  if (caCard) caCard.style.display = 'none';
+  const caDetail = $('live-ca-detail');
+  if (caDetail) caDetail.innerHTML = '';
+
+  // Arrêter GPS Uber si actif
+  if (typeof stopLiveTracking === 'function') stopLiveTracking();
+
+  LIVE_PATIENT_ID = null;
+
+  if (typeof showToast === 'function') showToast('🗑️ Tournée du jour réinitialisée.');
+}
+
+/* Patch liveStatus global — affiche TOUJOURS l'état local d'abord */
 window.liveStatus = function() {
+  // Affichage local immédiat (toujours disponible, même hors ligne)
   renderLivePatientList();
-  liveStatusCore();
+  // Tentative de synchronisation API en arrière-plan (non bloquant)
+  liveStatusCore().catch(() => {});
 };

@@ -319,7 +319,12 @@ async function openPatientDetail(id) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;flex-wrap:wrap">
         ${p.adresse ? `<div style="grid-column:1/-1"><div class="lbl" style="margin-bottom:6px">📍 Adresse</div>
           <div style="font-size:13px;color:var(--t)">${p.adresse}</div>
-          ${p.lat ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-top:2px">✅ Coordonnées GPS : ${parseFloat(p.lat).toFixed(5)}, ${parseFloat(p.lng).toFixed(5)}</div>` : `<button class="btn bv bsm" style="margin-top:6px;font-size:11px;padding:4px 10px" onclick="_geocodeAndSaveSingle('${id}')">📡 Géocoder l'adresse</button>`}
+          ${p.lat
+            ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                ✅ GPS : ${parseFloat(p.lat).toFixed(5)}, ${parseFloat(p.lng).toFixed(5)}
+                <button class="btn bs bsm" style="font-size:10px;padding:2px 8px;color:var(--w);border-color:rgba(255,181,71,.3)" onclick="_forceRegeocode('${id}')" title="Recalculer les coordonnées GPS (si adresse incorrecte dans la tournée)">🔄 Corriger GPS</button>
+              </div>`
+            : `<button class="btn bv bsm" style="margin-top:6px;font-size:11px;padding:4px 10px" onclick="_geocodeAndSaveSingle('${id}')">📡 Géocoder l'adresse</button>`}
         </div>` : ''}
         <div><div class="lbl" style="margin-bottom:6px">Couverture</div>
           <div style="font-size:13px;color:var(--m)">${p.amo||'—'} <span style="color:var(--a2)">${p.amc||''}</span></div></div>
@@ -609,8 +614,10 @@ async function _geocodePatients(patients, onProgress) {
   for (let i = 0; i < patients.length; i++) {
     const p = patients[i];
     if (onProgress) onProgress(i + 1, patients.length, p.description || p.nom || '');
-    if (p.adresse) {
-      const coords = await _geocodeAdresse(p.adresse);
+    // Préférer addressFull (adresse complète structurée) à adresse (peut être tronquée)
+    const adresseGeo = p.addressFull || p.address || p.adresse || '';
+    if (adresseGeo && adresseGeo.trim() && adresseGeo !== 'France') {
+      const coords = await _geocodeAdresse(adresseGeo, p);
       if (coords) { geocoded++; results.push({ ...p, lat: coords.lat, lng: coords.lng, geoScore: coords.geoScore || 70 }); }
       else { failed++; results.push(p); }
       // Délai léger pour éviter le rate-limit si fallback Nominatim
@@ -816,6 +823,57 @@ async function _geocodeAndSaveSingle(id) {
   showToastSafe(`✅ Coordonnées GPS enregistrées pour ${p.prenom||''} ${p.nom}.`);
   // Recharger la fiche
   openPatientDetail(id);
+}
+
+/* Forcer le re-géocodage d'un patient (vide le cache + recalcule)
+   Utile quand l'adresse géocodée est incorrecte dans la tournée IA */
+async function _forceRegeocode(id) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === id);
+  if (!row) return;
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+  const adresseGeo = p.addressFull || p.address ||
+    [p.street, [p.zip, p.city].filter(Boolean).join(' '), 'France'].map(s=>(s||'').trim()).filter(Boolean).join(', ') ||
+    p.adresse || '';
+  if (!adresseGeo || adresseGeo === 'France') {
+    showToastSafe('⚠️ Aucune adresse renseignée pour ce patient.');
+    return;
+  }
+
+  // 1. Vider le cache mémoire pour cette adresse
+  const cacheKey = adresseGeo.trim().toLowerCase();
+  _geocodeCache.delete(cacheKey);
+
+  // 2. Vider le cache IndexedDB (geocode.js)
+  if (typeof saveSecure === 'function' && typeof hashAddr === 'function') {
+    try { await saveSecure('geocache', hashAddr(adresseGeo), null); } catch (_) {}
+    // Vider aussi les variantes normalisées
+    const variants = [
+      adresseGeo,
+      adresseGeo + ', France',
+      p.adresse || '',
+    ];
+    for (const v of variants) {
+      if (v) try { await saveSecure('geocache', hashAddr(v), null); } catch (_) {}
+    }
+  }
+
+  // 3. Effacer les coordonnées existantes (GPS potentiellement erronés)
+  const updated = { ...p, lat: null, lng: null, geoScore: 0 };
+  const toStore = {
+    id:         updated.id,
+    nom:        updated.nom,
+    prenom:     updated.prenom,
+    _data:      _enc(updated),
+    updated_at: new Date().toISOString(),
+  };
+  await _idbPut(PATIENTS_STORE, toStore);
+
+  showToastSafe(`🔄 Cache vidé — re-géocodage de "${adresseGeo}"…`);
+
+  // 4. Relancer le géocodage proprement
+  await _geocodeAndSaveSingle(id);
 }
 
 /* ── Initialisation ── */
