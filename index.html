@@ -523,48 +523,45 @@
         </div>
       </div>
 
-      <!-- 🚗 MODE UBER MÉDICAL — fusionné avec Pilotage de journée -->
+      <!-- 🚗 MODE UBER MÉDICAL — Pilotage de journée unifié -->
       <div class="card" style="margin-top:4px">
-        <div class="ct">🚗 Mode Uber Médical <span style="font-family:var(--fm);font-size:10px;background:var(--a2d);color:var(--a2);border:1px solid var(--a2);padding:2px 8px;border-radius:20px;letter-spacing:1px;vertical-align:middle">TEMPS RÉEL</span></div>
-        <p style="font-size:13px;color:var(--m);margin-bottom:16px">GPS continu · Dispatch intelligent · ETA live · Score priorité médicale · auto-facturation</p>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+          <div class="ct" style="margin-bottom:0">🚗 Mode Uber Médical <span style="font-family:var(--fm);font-size:10px;background:var(--a2d);color:var(--a2);border:1px solid var(--a2);padding:2px 8px;border-radius:20px;letter-spacing:1px;vertical-align:middle">TEMPS RÉEL</span></div>
+          <div class="live-badge" id="live-badge" style="margin-left:auto">EN ATTENTE</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+          <div class="live-patient" id="live-patient-name" style="flex:1;min-width:0;font-size:15px">Démarrez votre journée</div>
+          <div class="live-timer" id="live-timer" style="display:none;font-family:var(--fm);font-size:13px;color:var(--a)"></div>
+        </div>
+        <p style="font-size:13px;color:var(--m);margin-bottom:12px" id="live-info">GPS continu · Dispatch intelligent · ETA live · Score priorité médicale</p>
+        <div class="live-ca" id="live-ca-total" style="display:none;margin-bottom:8px"></div>
+        <div class="live-delay" id="live-delay-alert" style="margin-bottom:8px">⏰ <span id="live-delay-msg"></span></div>
+
+        <!-- ── Boutons principaux journée ── -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+          <button class="btn bp" id="btn-live-start" onclick="startLiveTracking();loadUberPatients();startDay()"><span>▶️</span> Démarrer la journée</button>
+          <button class="btn bs" id="btn-live-stop" onclick="stopDay()" style="display:none"><span>🏁</span> Terminer la tournée</button>
+          <button class="btn bs bsm" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
+          <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()"><span>🗑️</span> Réinitialiser</button>
+        </div>
 
         <!-- ── Contrôles GPS Uber ── -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-          <button class="btn bp bsm" onclick="startLiveTracking();loadUberPatients()"><span>▶️</span> Démarrer suivi GPS</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <button class="btn bs bsm" onclick="stopLiveTracking()"><span>⏹️</span> Arrêter GPS</button>
           <button class="btn bv bsm" onclick="recalcRouteUber()"><span>🔄</span> Recalculer route</button>
           <button class="btn bs bsm" onclick="selectBestPatient()"><span>🧠</span> Meilleur suivant</button>
         </div>
-        <div id="uber-tracking-status" style="font-family:var(--fm);font-size:11px;color:var(--m);margin-bottom:10px">⏸️ GPS non démarré — cliquez sur "Démarrer suivi GPS"</div>
-        <div id="uber-progress" style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:14px"></div>
+        <div id="uber-tracking-status" style="font-family:var(--fm);font-size:11px;color:var(--m);margin-bottom:6px">⏸️ GPS non démarré — cliquez sur "Démarrer la journée"</div>
+        <div id="uber-progress" style="font-family:var(--fm);font-size:11px;color:var(--a);margin-bottom:10px"></div>
         <div id="uber-route-info" style="font-size:13px;color:var(--t);margin-bottom:14px"></div>
 
         <!-- ── Prochain patient recommandé ── -->
-        <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:16px;margin-bottom:16px">
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:16px">
           <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">🎯 Prochain patient recommandé</div>
-          <div id="uber-next-patient" style="color:var(--m);font-size:13px">Démarrez le suivi GPS et chargez vos patients importés.</div>
+          <div id="uber-next-patient" style="color:var(--m);font-size:13px">Démarrez la journée pour charger vos patients.</div>
         </div>
 
-        <!-- ── Séparateur ── -->
-        <div style="border-top:1px solid var(--b);margin:4px 0 16px"></div>
-
-        <!-- ── Statut journée (ex live-status) ── -->
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
-          <div class="live-badge" id="live-badge">EN ATTENTE</div>
-          <div class="live-patient" id="live-patient-name" style="flex:1;min-width:0">Démarrez votre journée</div>
-        </div>
-        <p style="font-size:13px;color:var(--m);margin-bottom:10px" id="live-info">Cliquez sur "Démarrer" pour activer le pilotage automatique</p>
-        <div class="live-timer" id="live-timer" style="display:none"></div>
-        <div class="live-ca" id="live-ca-total" style="display:none"></div>
-        <div class="live-delay" id="live-delay-alert">⏰ <span id="live-delay-msg"></span></div>
-        <div class="live-actions" style="margin-top:14px">
-          <button class="btn bp" id="btn-live-start" onclick="startDay()"><span>▶️</span> Démarrer la journée</button>
-          <button class="btn bs" id="btn-live-stop" onclick="stopDay()" style="display:none"><span>🏁</span> Terminer la tournée</button>
-          <button class="btn bs" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
-          <button class="btn bs" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()"><span>🗑️</span> Réinitialiser</button>
-        </div>
-
-      </div><!-- /.card Mode Uber Médical fusionné -->
+      </div><!-- /.card Mode Uber Médical -->
 
       <!-- ── Actions patient en cours ── -->
       <div id="live-controls" style="display:none">
