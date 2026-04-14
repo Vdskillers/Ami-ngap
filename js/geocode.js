@@ -16,44 +16,54 @@
 async function smartGeocode(address) {
   const cacheKey = hashAddr(address);
 
-  // 1. Cache IndexedDB — seulement si résultat valide avec coordonnées
+  // 1. Cache IndexedDB — ignorer les entrées invalides (sans coordonnées)
   try {
     const cached = await loadSecure('geocache', cacheKey);
-    // Ignorer les entrées de cache invalides (null, sans lat/lng)
-    if (cached && cached.lat && cached.lng) return { ...cached, source: 'cache' };
+    if (cached && cached.lat && cached.lng) {
+      console.debug('[GEO] cache hit:', address, '→', cached.source, cached.type || '');
+      return { ...cached, source: 'cache' };
+    }
   } catch (_) {}
 
-  // Extraire le code postal si présent (améliore la précision)
+  // Extraire le code postal si présent
   const cpMatch = address.match(/\b(\d{5})\b/);
   const postcode = cpMatch ? cpMatch[1] : '';
 
-  // Variantes d'adresse (tirets communes composées, sans numéro, Route vs Rue)
+  // Variantes d'adresse
   const variants = _buildAddrVariants(address);
 
-  // 2. ── API Adresse data.gouv.fr ──────────────────────────────────────────
-  //    Données cadastrales officielles (IGN + La Poste) — 100% gratuit, sans clé
-  //    Priorité ABSOLUE — précision housenumber au numéro exact
+  // Utilitaire timeout compatible tous navigateurs
+  function _fetchWithTimeout(url, opts, ms) {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctrl.signal })
+      .finally(() => clearTimeout(tid));
+  }
+
+  // 2. ── API Adresse data.gouv.fr — PRIORITÉ ABSOLUE ──────────────────────
+  //    Données cadastrales IGN + La Poste — précision housenumber garantie
   for (const variant of variants) {
     try {
-      // Retirer le suffixe ", France" — l'API gouv.fr est France-only, ça perturbe le matching
       const variantFr = variant.replace(/,?\s*France\s*$/i, '').trim();
-      // Retirer aussi la ville du query si on a le postcode (la ville peut être mal orthographiée)
-      // Ex: "667 Rue de la Libération, 83390 Puget Ville" → "667 Rue de la Libération" + postcode=83390
+      // Stratégie optimale : numéro+rue uniquement dans q=, CP dans &postcode=
+      // Évite les erreurs de ville mal orthographiée / avec/sans tiret
       const variantCp = postcode
-        ? variantFr.replace(new RegExp(`,?\\s*${postcode}.*$`), '').trim()
+        ? variantFr.replace(new RegExp(`,?\s*${postcode}[^,]*`), '').trim()
         : variantFr;
-      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(variantCp || variantFr)}&limit=3`;
+      const query = variantCp || variantFr;
+
+      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`;
       if (postcode) url += `&postcode=${postcode}`;
 
-      const res  = await fetch(url, {
-        headers: { 'User-Agent': 'AMI-NGAP/1.0' },
-        signal:  AbortSignal.timeout(6000),
-      });
+      console.debug('[GEO] gouv.fr →', url);
+
+      const res  = await _fetchWithTimeout(url, { headers: { 'User-Agent': 'AMI-NGAP/1.0' } }, 7000);
       const data = await res.json();
       const feats = data.features || [];
 
+      console.debug('[GEO] gouv.fr résultats:', feats.length, feats.map(f => f.properties?.type + ':' + f.properties?.score?.toFixed(2)).join(', '));
+
       if (feats.length) {
-        // Préférer housenumber > street > locality
         const best = feats.find(f => f.properties?.type === 'housenumber')
                   || feats.find(f => f.properties?.type === 'street')
                   || feats[0];
@@ -62,8 +72,6 @@ async function smartGeocode(address) {
         const c = best.geometry.coordinates;
         const apiScore = p.score || 0.5;
 
-        // Confidence élevée pour housenumber (adresse exacte au bâtiment)
-        // Score API gouv.fr >= 0.9 = très fiable (données cadastrales IGN + La Poste)
         const confidence = p.type === 'housenumber' && apiScore >= 0.9 ? 0.98
                          : p.type === 'housenumber'                    ? Math.min(0.97, 0.75 + apiScore * 0.23)
                          : p.type === 'street'                         ? 0.70
@@ -71,18 +79,21 @@ async function smartGeocode(address) {
                          : 0.55;
 
         const result = { lat: c[1], lng: c[0], confidence, source: 'gouv', type: p.type, label: p.label };
-        await saveSecure('geocache', cacheKey, result);
+        console.info('[GEO] ✅ gouv.fr:', p.type, 'score', apiScore.toFixed(3), '→', p.label, result.lat, result.lng);
+        try { await saveSecure('geocache', cacheKey, result); } catch(_) {}
         return result;
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('[GEO] gouv.fr erreur:', e.message, '— adresse:', variant);
+    }
   }
 
-  // 3. ── Photon (komoot) — fallback international ──────────────────────────
+  // 3. ── Photon (komoot) — fallback ────────────────────────────────────────
   for (const variant of variants) {
     try {
-      const res  = await fetch(
+      const res  = await _fetchWithTimeout(
         `https://photon.komoot.io/api/?q=${encodeURIComponent(variant)}&limit=3&lang=fr`,
-        { signal: AbortSignal.timeout(5000) }
+        {}, 6000
       );
       const data = await res.json();
 
@@ -92,27 +103,23 @@ async function smartGeocode(address) {
         const result = {
           lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
           confidence: f.properties?.score || 0.65, source: 'photon',
+          type: f.properties?.type,
         };
-        if (f.properties?.type === 'house') {
-          await saveSecure('geocache', cacheKey, result);
-          return result;
-        }
-        // Garder comme meilleur résultat Photon mais continuer pour housenumber
-        if (!result._photonBest || result.confidence > result._photonBest.confidence) {
-          result._photonBest = result;
-        }
-        await saveSecure('geocache', cacheKey, result);
+        console.info('[GEO] photon:', f.properties?.type, result.lat, result.lng);
+        try { await saveSecure('geocache', cacheKey, result); } catch(_) {}
         return result;
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('[GEO] photon erreur:', e.message);
+    }
   }
 
   // 4. ── Nominatim — dernier recours ──────────────────────────────────────
   for (const variant of variants) {
     try {
-      const res  = await fetch(
+      const res  = await _fetchWithTimeout(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(variant)}&limit=3&countrycodes=fr&addressdetails=1`,
-        { headers: { 'Accept-Language': 'fr' }, signal: AbortSignal.timeout(5000) }
+        { headers: { 'Accept-Language': 'fr' } }, 6000
       );
       const data = await res.json();
 
@@ -122,12 +129,15 @@ async function smartGeocode(address) {
         const result = {
           lat: parseFloat(best.lat), lng: parseFloat(best.lon),
           confidence: best.type === 'house' ? 0.72 : hasNum ? 0.62 : 0.52,
-          source: 'nominatim',
+          source: 'nominatim', type: best.type,
         };
-        await saveSecure('geocache', cacheKey, result);
+        console.info('[GEO] nominatim:', best.type, result.lat, result.lng);
+        try { await saveSecure('geocache', cacheKey, result); } catch(_) {}
         return result;
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('[GEO] nominatim erreur:', e.message);
+    }
   }
 
   throw new Error('Géocodage impossible pour : ' + address);
