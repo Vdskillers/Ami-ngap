@@ -78,6 +78,7 @@ function renderCot(d) {
     ${rentBadge}
     </div>
     <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g, "&#39;")})'>📥 Télécharger facture</button>
+  ${window._editingCotation ? `<button class="btn bp bsm" onclick='_saveEditedCotation(${JSON.stringify(d).replace(/'/g, "&#39;")})' style="background:var(--a);color:#fff;border-color:var(--a)">💾 Mettre à jour la cotation patient</button>` : ''}
   </div>
   <div class="rg">
     <div class="rc am"><div class="rl">Part AMO (SS)</div><div class="ra">${fmt(d.part_amo)}</div><div class="rp">${d.taux_amo ? Math.round(d.taux_amo * 100) + '%' : '60%'}</div></div>
@@ -91,6 +92,61 @@ function renderCot(d) {
   ${op.length ? `<div style="margin-top:12px"><div class="lbl" style="font-size:10px;margin-bottom:6px">Optimisations détectées</div><div class="aic">${op.map(x => `<div class="ai in">💡 ${x}</div>`).join('')}</div></div>` : ''}
   ${d.ai_issues && d.ai_issues.length ? `<div class="aic" style="margin-top:8px">${d.ai_issues.map(x=>`<div class="ai wa">🔍 ${x}</div>`).join('')}</div>` : ''}
   </div>`;
+}
+
+/* Sauvegarde le résultat re-coté dans la cotation existante du carnet patient */
+async function _saveEditedCotation(d) {
+  const ref = window._editingCotation;
+  if (!ref) return;
+  const { patientId, cotationIdx } = ref;
+
+  try {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) throw new Error('Patient non trouvé');
+
+    const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+    if (!p.cotations?.[cotationIdx]) throw new Error('Cotation introuvable');
+
+    // Mettre à jour avec les nouvelles données IA
+    p.cotations[cotationIdx] = {
+      ...p.cotations[cotationIdx],
+      actes:     d.actes || [],
+      total:     d.total || 0,
+      part_amo:  d.part_amo,
+      part_amc:  d.part_amc,
+      part_patient: d.part_patient,
+      dre_requise:  d.dre_requise || false,
+      date_edit: new Date().toISOString(),
+      source:    'edit',
+    };
+
+    const toStore = {
+      id:         row.id,
+      nom:        row.nom,
+      prenom:     row.prenom,
+      _data:      _enc(p),
+      updated_at: new Date().toISOString(),
+    };
+    await _idbPut(PATIENTS_STORE, toStore);
+
+    // Réinitialiser le mode édition
+    window._editingCotation = null;
+
+    if (typeof showToastSafe === 'function')
+      showToastSafe(`✅ Cotation mise à jour — ${(d.total||0).toFixed(2)} €`);
+
+    // Retourner sur la fiche patient
+    setTimeout(() => {
+      if (typeof navTo === 'function') navTo('patients', null);
+      setTimeout(() => {
+        if (typeof openPatientDetail === 'function') openPatientDetail(patientId);
+      }, 200);
+    }, 800);
+
+  } catch(e) {
+    if (typeof showToastSafe === 'function') showToastSafe('❌ ' + e.message);
+  }
 }
 
 /* ════════════════════════════════════════════════

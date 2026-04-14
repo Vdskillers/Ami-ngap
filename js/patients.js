@@ -127,15 +127,9 @@ async function _idbGetByIndex(store, indexName, val) {
 
 let _editingPatientId = null;
 
-/* Ouvre le formulaire pour un NOUVEAU patient */
+/* Ouvre le formulaire d'ajout */
 function openAddPatient() {
-  _editingPatientId = null; // reset uniquement pour nouveau patient
-  _openPatientForm();
-  $('pat-form-title').textContent = '➕ Nouveau patient';
-}
-
-/* Ouvre le formulaire (interne — ne touche pas à _editingPatientId) */
-function _openPatientForm() {
+  _editingPatientId = null;
   const form = $('patient-form');
   if (form) form.style.display = 'block';
   ['pat-nom','pat-prenom','pat-rue','pat-cp','pat-ville','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee']
@@ -145,39 +139,7 @@ function _openPatientForm() {
   const warnEl=$('pat-addr-warn');    if(warnEl) warnEl.style.display='none';
   const sel = $('pat-exo'); if(sel) sel.selectedIndex=0;
   const chk = $('pat-respecter-horaire'); if(chk) chk.checked = false;
-}
-
-/* Prévisualisation adresse dans le formulaire carnet patient */
-function updatePatAddrPreview() {
-  const rue   = (document.getElementById('pat-rue')?.value   || '').trim();
-  const cp    = (document.getElementById('pat-cp')?.value    || '').trim();
-  const ville = (document.getElementById('pat-ville')?.value || '').trim();
-
-  const preview = document.getElementById('pat-addr-preview');
-  const warn    = document.getElementById('pat-addr-warn');
-
-  if (!rue && !cp && !ville) {
-    if (preview) preview.style.display = 'none';
-    if (warn)    warn.style.display    = 'none';
-    return;
-  }
-
-  // Prévisualisation adresse complète
-  if (preview) {
-    const parts = [rue, [cp, ville].filter(Boolean).join(' '), 'France'].filter(Boolean);
-    preview.textContent  = '📍 ' + parts.join(', ');
-    preview.style.display = 'block';
-  }
-
-  // Avertissement si adresse incomplète
-  if (warn) {
-    if (rue && (!cp || cp.length < 5 || !ville)) {
-      warn.textContent  = '⚠️ Ajoutez le code postal et la ville pour un géocodage précis.';
-      warn.style.display = 'block';
-    } else {
-      warn.style.display = 'none';
-    }
-  }
+  $('pat-form-title').textContent = '➕ Nouveau patient';
 }
 
 /* Ferme le formulaire */
@@ -444,7 +406,7 @@ async function editPatient(id) {
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
   _editingPatientId = id;
-  _openPatientForm();
+  openAddPatient();
   $('pat-form-title').textContent = '✏️ Modifier patient';
   Object.entries({
     'pat-nom': p.nom, 'pat-prenom': p.prenom,
@@ -533,33 +495,51 @@ async function editCotationPatient(patientId, cotationIdx) {
   if (!p.cotations?.[cotationIdx]) return;
 
   const c = p.cotations[cotationIdx];
-  const actesTxt = (c.actes||[]).map(a => `${a.code||a.nom} — ${parseFloat(a.total||0).toFixed(2)} €`).join('\n');
 
-  const newTxt = prompt(
-    `Modifier la cotation du ${new Date(c.date).toLocaleDateString('fr-FR')}\n\nActes (format libre) :`,
-    actesTxt
-  );
-  if (newTxt === null) return; // annulé
+  // Construire le texte des actes pour le champ description
+  // Format lisible par l'IA NGAP : "AMI4 pansement complexe + AMI1 injection"
+  const actesTxt = (c.actes||[]).map(a => {
+    const code = a.code || a.nom || '';
+    const desc = a.description || a.label || '';
+    return desc ? `${code} ${desc}` : code;
+  }).filter(Boolean).join(' + ') || c.soin || '';
 
-  // Parser les actes modifiés ligne par ligne
-  const actes = newTxt.split('\n').map(line => {
-    const parts = line.split('—');
-    const nom   = (parts[0]||'').trim();
-    const total = parseFloat((parts[1]||'0').replace('€','').trim()) || 0;
-    return { nom, code: nom, total };
-  }).filter(a => a.nom);
+  // Naviguer vers la vue "Vérifier un soin" (cotation)
+  if (typeof navTo === 'function') navTo('cot', null);
 
-  p.cotations[cotationIdx] = {
-    ...c,
-    actes,
-    total: actes.reduce((s, a) => s + a.total, 0),
-    date_edit: new Date().toISOString(),
-  };
+  // Pré-remplir tous les champs après navigation
+  setTimeout(() => {
+    // Champs patient
+    const fPt  = $('f-pt');  if (fPt)  fPt.value  = (p.prenom+' '+p.nom).trim();
+    const fDdn = $('f-ddn'); if (fDdn && p.ddn)  fDdn.value  = p.ddn;
+    const fAmo = $('f-amo'); if (fAmo && p.amo)  fAmo.value  = p.amo;
+    const fAmc = $('f-amc'); if (fAmc && p.amc)  fAmc.value  = p.amc;
+    const fExo = $('f-exo'); if (fExo && p.exo)  fExo.value  = p.exo;
+    const fPr  = $('f-pr');  if (fPr  && p.medecin) fPr.value = p.medecin;
 
-  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
-  await _idbPut(PATIENTS_STORE, toStore);
-  await openPatientDetail(patientId);
-  showToastSafe('✅ Cotation modifiée.');
+    // Date et heure du soin d'origine
+    if (c.date) {
+      const fDs = $('f-ds');
+      const fHs = $('f-hs');
+      const d   = new Date(c.date);
+      if (fDs) fDs.value = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      if (fHs) fHs.value = d.toTimeString().slice(0, 5);  // HH:MM
+    }
+
+    // Description des actes → champ principal IA
+    const fTxt = $('f-txt');
+    if (fTxt) {
+      fTxt.value = actesTxt;
+      // Déclencher l'analyse live NGAP si disponible
+      if (typeof renderLiveReco === 'function') renderLiveReco(actesTxt);
+      fTxt.focus();
+    }
+
+    // Stocker la référence pour mise à jour après re-cotation
+    window._editingCotation = { patientId, cotationIdx };
+
+    showToastSafe(`✏️ Cotation du ${new Date(c.date).toLocaleDateString('fr-FR')} chargée — modifiez et recotez.`);
+  }, 250);
 }
 
 async function deleteCotationPatient(patientId, cotationIdx) {
@@ -734,43 +714,30 @@ const _geocodeCache = new Map();
 
 async function _geocodeAdresse(adresse, patient) {
   if (!adresse || !adresse.trim()) return null;
+  const key = adresse.trim().toLowerCase();
+  if (_geocodeCache.has(key)) return _geocodeCache.get(key);
   try {
-    // 1. Pipeline geocode.js (API gouv.fr → Photon → Nominatim)
+    let coords = null;
+    // Pipeline complet si geocode.js est chargé (Photon → Nominatim + normalisation)
     if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
       const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
       const geo     = await smartGeocode(cleaned);
       if (geo && geo.lat && geo.lng) {
         const score = typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70;
-        return { lat: geo.lat, lng: geo.lng, geoScore: score };
+        coords = { lat: geo.lat, lng: geo.lng, geoScore: score };
       }
     }
-
-    // 2. Fallback direct si geocode.js indisponible ou API en erreur :
-    //    Essai API gouv.fr sans le suffixe ", France" qui cause des 503
-    const addrClean = adresse.replace(/,?\s*France\s*$/i, '').trim();
-    const cpMatch   = addrClean.match(/\b(\d{5})\b/);
-    const postcode  = cpMatch ? cpMatch[1] : '';
-    try {
-      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(addrClean)}&limit=1`;
-      if (postcode) url += `&postcode=${postcode}`;
-      const r = await fetch(url, { headers: { 'User-Agent': 'AMI-NGAP/1.0' }, signal: AbortSignal.timeout(6000) });
+    // Fallback Nominatim direct
+    if (!coords) {
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1&countrycodes=fr`,
+        { headers: { 'Accept-Language': 'fr' } }
+      );
       const d = await r.json();
-      if (d.features?.length) {
-        const f = d.features[0];
-        const score = f.properties.type === 'housenumber' ? 90 : f.properties.type === 'street' ? 68 : 55;
-        return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], geoScore: score };
-      }
-    } catch (_) {}
-
-    // 3. Fallback Nominatim en dernier recours
-    const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1&countrycodes=fr`,
-      { headers: { 'Accept-Language': 'fr' }, signal: AbortSignal.timeout(6000) }
-    );
-    const d = await r.json();
-    if (d.length) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 55 };
-
-    return null;
+      if (d.length) coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 60 };
+    }
+    _geocodeCache.set(key, coords);
+    return coords;
   } catch { return null; }
 }
 
@@ -1019,17 +986,14 @@ async function _forceRegeocode(id) {
   // 2. Vider le cache IndexedDB (geocode.js)
   if (typeof saveSecure === 'function' && typeof hashAddr === 'function') {
     try { await saveSecure('geocache', hashAddr(adresseGeo), null); } catch (_) {}
-    // Vider toutes les variantes du cache (avec/sans tirets, avec/sans numéro, etc.)
-    const _makeVariants = (a) => {
-      const v = [a, a + ', France', (p.adresse || ''), (p.addressFull || '')];
-      // avec tirets communes composées
-      v.push(a.replace(/\b(Saint|Sainte|Puget|Mont|Pont|Port|Bourg|Val|Puy|Bois|Grand|Vieux|Neuf|Roc)\s+([A-ZÀ-Ÿ][a-zà-ÿ]+)/g, '$1-$2'));
-      // sans numéro de rue
-      v.push(a.replace(/^\d+\s+/, ''));
-      return [...new Set(v.filter(Boolean))];
-    };
-    for (const v of _makeVariants(adresseGeo)) {
-      try { await saveSecure('geocache', hashAddr(v), null); } catch (_) {}
+    // Vider aussi les variantes normalisées
+    const variants = [
+      adresseGeo,
+      adresseGeo + ', France',
+      p.adresse || '',
+    ];
+    for (const v of variants) {
+      if (v) try { await saveSecure('geocache', hashAddr(v), null); } catch (_) {}
     }
   }
 
@@ -1053,15 +1017,12 @@ async function _forceRegeocode(id) {
 /* ── Initialisation ── */
 document.addEventListener('DOMContentLoaded', () => {
   // Charger patients quand on arrive sur la section
-  // Écouter les deux events de navigation (ui.js dispatche 'ui:navigate')
-  const _onPatNav = e => {
+  document.addEventListener('app:nav', e => {
     if (e.detail?.view === 'patients') {
       loadPatients();
       checkOrdoExpiry();
     }
-  };
-  document.addEventListener('app:nav',     _onPatNav);
-  document.addEventListener('ui:navigate', _onPatNav);
+  });
   // Init DB au démarrage pour les alertes ordo
   initPatientsDB().then(checkOrdoExpiry).catch(() => {});
 });
