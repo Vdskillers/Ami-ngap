@@ -539,9 +539,9 @@
 
         <!-- ── Boutons principaux journée ── -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-          <button class="btn bp" id="btn-live-start" onclick="startLiveTracking();loadUberPatients();startDay()"><span>▶️</span> Démarrer la journée</button>
-          <button class="btn bs" id="btn-live-stop" onclick="stopDay()" style="display:none"><span>🏁</span> Terminer la tournée</button>
-          <button class="btn bs bsm" onclick="liveStatus()"><span>📊</span> État de la tournée</button>
+          <button class="btn bp" id="btn-live-start" onclick="startJourneeUnifiee()"><span>▶️</span> Démarrer la journée</button>
+          <button class="btn bs" id="btn-live-stop" onclick="terminerTourneeAvecBilan()" style="display:none"><span>🏁</span> Terminer la tournée</button>
+          <button class="btn bs bsm" onclick="ouvrirEtatTournee()"><span>📊</span> État de la tournée</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()"><span>🗑️</span> Réinitialiser</button>
         </div>
 
@@ -561,26 +561,233 @@
           <div id="uber-next-patient" style="color:var(--m);font-size:13px">Démarrez la journée pour charger vos patients.</div>
         </div>
 
-      </div><!-- /.card Mode Uber Médical -->
-
-      <!-- ── Actions patient en cours ── -->
-      <div id="live-controls" style="display:none">
-        <div class="card" style="margin-top:16px">
-          <div class="ct">Actions patient</div>
-          <div class="ar-row">
-            <button class="btn bp" id="btn-done" onclick="liveAction('patient_done')"><span>✅</span> Patient terminé</button>
-            <button class="btn bs" id="btn-absent" onclick="liveAction('patient_absent')"><span>❌</span> Patient absent</button>
-            <button class="btn bv" onclick="liveStatus()"><span>📊</span> Actualiser</button>
-            <button class="btn bs bsm" onclick="recalculTournee()"><span>🔄</span> Recalculer</button>
-          </div>
-        </div>
-        <div id="live-next" class="res show" style="margin-top:16px"></div>
-        <!-- CA de la journée -->
-        <div class="card" id="live-ca-card" style="margin-top:16px;display:none">
+        <!-- CA de la journée (affiché après démarrage) -->
+        <div class="card" id="live-ca-card" style="margin-top:16px;display:none;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.2)">
           <div class="ct">💶 CA de la journée</div>
           <div id="live-ca-detail"></div>
         </div>
+
+      </div><!-- /.card Mode Uber Médical -->
+
+      <!-- ═══════════════════════════════════════════════════
+           MODALE — État de la tournée / Bilan
+           Ouverte par ouvrirEtatTournee() et terminerTourneeAvecBilan()
+           ═══════════════════════════════════════════════════ -->
+      <div id="modal-etat-tournee" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);padding:16px;overflow-y:auto">
+        <div style="max-width:560px;margin:0 auto;background:var(--bg);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+          <!-- Header modale -->
+          <div style="background:var(--s);padding:18px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b)">
+            <div>
+              <div style="font-family:var(--fs);font-size:18px;font-weight:700;color:var(--t)" id="modal-etat-titre">📋 État de la tournée</div>
+              <div style="font-size:12px;color:var(--m);margin-top:2px" id="modal-etat-sous-titre"></div>
+            </div>
+            <button onclick="fermerEtatTournee()" style="background:var(--b);border:none;width:32px;height:32px;border-radius:50%;font-size:16px;cursor:pointer;color:var(--t);display:flex;align-items:center;justify-content:center">✕</button>
+          </div>
+          <!-- Résumé stats -->
+          <div id="modal-etat-stats" style="display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--b);flex-wrap:wrap"></div>
+          <!-- Liste patients -->
+          <div id="modal-etat-liste" style="padding:16px 20px;display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto"></div>
+          <!-- Footer modale -->
+          <div style="padding:14px 20px;border-top:1px solid var(--b);display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn bp bsm" onclick="fermerEtatTournee()" style="flex:1">Fermer</button>
+          </div>
+        </div>
       </div>
+
+      <!-- IDs fantômes conservés pour compatibilité JS existant (live-controls, live-next, btn-done, btn-absent) -->
+      <div id="live-controls" style="display:none">
+        <div id="live-next"></div>
+        <button id="btn-done" onclick="liveAction('patient_done')" style="display:none"></button>
+        <button id="btn-absent" onclick="liveAction('patient_absent')" style="display:none"></button>
+      </div>
+
+      <!-- Script inline — fonctions pilotage unifié -->
+      <script>
+      /* ── Démarrage unifié : préserve startPoint de Tournée IA ── */
+      function startJourneeUnifiee() {
+        /* 1. Récupérer le startPoint déjà défini dans Tournée IA (t-lat / t-lng / APP) */
+        const savedLat = parseFloat(document.getElementById('t-lat')?.value) || APP.get('startPoint')?.lat;
+        const savedLng = parseFloat(document.getElementById('t-lng')?.value) || APP.get('startPoint')?.lng;
+
+        /* 2. Démarrer le GPS Uber sans écraser startPoint si déjà défini */
+        startLiveTracking();
+        loadUberPatients();
+
+        /* 3. Restaurer startPoint après startLiveTracking (qui peut l'écraser si GPS actif) */
+        if (savedLat && savedLng) {
+          APP.set('startPoint', { lat: savedLat, lng: savedLng });
+          if (document.getElementById('t-lat')) document.getElementById('t-lat').value = savedLat;
+          if (document.getElementById('t-lng')) document.getElementById('t-lng').value = savedLng;
+        }
+
+        /* 4. Démarrer le pilotage journée */
+        startDay();
+      }
+
+      /* ── Terminer la tournée + importer cotations dans le carnet ── */
+      async function terminerTourneeAvecBilan() {
+        if (!confirm('Terminer la tournée du jour ?\n\nLes cotations validées seront importées dans le carnet patient.')) return;
+
+        const patients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+        const snapshot = patients.map(p => ({ ...p }));
+
+        let importCount = 0;
+        const today = new Date().toISOString();
+
+        for (const p of snapshot) {
+          if (!p._cotation?.validated) continue;
+          try {
+            const rows = await _idbGetAll(PATIENTS_STORE);
+
+            /* Chercher la fiche existante par patient_id ou id */
+            let row = rows.find(r => r.id === p.patient_id || r.id === p.id);
+            let patientData;
+
+            if (row) {
+              /* Patient existant — décrypter la fiche */
+              patientData = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+            } else {
+              /* Patient inexistant — créer une nouvelle fiche */
+              const newId = p.patient_id || p.id || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
+              const nomComplet = (p.description || p.texte || p.label || '').split(' ');
+              patientData = {
+                id:          newId,
+                nom:         nomComplet.slice(-1)[0] || 'Patient',
+                prenom:      nomComplet.slice(0,-1).join(' ') || '',
+                adresse:     p.adresse || p.addressFull || p.address || '',
+                addressFull: p.adresse || p.addressFull || p.address || '',
+                lat:         p.lat || null,
+                lng:         p.lng || null,
+                created_at:  today,
+                updated_at:  today,
+                cotations:   [],
+              };
+            }
+
+            /* Ajouter la cotation dans le tableau cotations[] de la fiche */
+            if (!patientData.cotations) patientData.cotations = [];
+            patientData.cotations.push({
+              date:   today,
+              actes:  p._cotation.actes || [],
+              total:  parseFloat(p._cotation.total || 0),
+              soin:   p.description || p.texte || '',
+              source: 'tournee',
+            });
+            patientData.updated_at = today;
+
+            /* Sauvegarder dans IndexedDB */
+            const toStore = {
+              id:         patientData.id,
+              nom:        patientData.nom,
+              prenom:     patientData.prenom,
+              _data:      _enc(patientData),
+              updated_at: today,
+            };
+            await _idbPut(PATIENTS_STORE, toStore);
+            importCount++;
+          } catch (e) {
+            console.warn('[AMI] Import cotation carnet KO:', e.message);
+          }
+        }
+
+        /* Arrêter timer */
+        if (typeof stopDay === 'function') stopDay();
+
+        if (typeof showToast === 'function') {
+          showToast(importCount > 0
+            ? `✅ ${importCount} cotation(s) importée(s) dans le carnet patient`
+            : '🏁 Tournée terminée');
+        }
+
+        ouvrirEtatTournee(true, snapshot);
+      }
+
+      /* ── Ouvrir la modale état de la tournée ── */
+      function ouvrirEtatTournee(isBilan, snapshot) {
+        const modal = document.getElementById('modal-etat-tournee');
+        const titre = document.getElementById('modal-etat-titre');
+        const sousTitre = document.getElementById('modal-etat-sous-titre');
+        const statsEl = document.getElementById('modal-etat-stats');
+        const listeEl = document.getElementById('modal-etat-liste');
+        if (!modal) return;
+
+        /* Utiliser le snapshot passé en paramètre OU les patients Uber en cours
+           — Ne jamais fallback sur importedData (carnet) pour éviter les doublons */
+        const patients = snapshot || APP.get('uberPatients') || [];
+        const done    = patients.filter(p => p.done).length;
+        const absent  = patients.filter(p => p.absent).length;
+        const reste   = patients.filter(p => !p.done && !p.absent).length;
+        const total   = patients.length;
+
+        titre.textContent     = isBilan ? '🏁 Bilan de la tournée' : '📋 État de la tournée';
+        sousTitre.textContent = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+
+        /* Stats résumé */
+        const pill = (ico, val, label, color) =>
+          `<div style="flex:1;min-width:80px;text-align:center;padding:10px;background:${color};border-radius:10px">
+            <div style="font-size:20px">${ico}</div>
+            <div style="font-family:var(--fs);font-size:18px;font-weight:700;color:var(--t)">${val}</div>
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${label}</div>
+          </div>`;
+        statsEl.innerHTML =
+          pill('✅', done,   'Terminés',  'rgba(0,212,170,.08)')  +
+          pill('❌', absent, 'Absents',   'rgba(255,95,109,.08)') +
+          pill('⏳', reste,  'Restants',  'rgba(255,181,71,.08)') +
+          pill('👥', total,  'Total',     'var(--s)');
+
+        /* Liste patients */
+        if (!patients.length) {
+          listeEl.innerHTML = '<div class="ai wa" style="text-align:center;padding:24px">Aucun patient chargé dans cette tournée.</div>';
+        } else {
+          listeEl.innerHTML = patients.map((p, i) => {
+            const nom    = p.description || p.texte || p.label || p.summary || ('Patient ' + (i + 1));
+            const heure  = p.heure_soin || p.heure || p.time_str || '';
+            const statut = p.done ? '✅ Terminé' : p.absent ? '❌ Absent' : '⏳ En attente';
+            const couleur= p.done ? 'rgba(0,212,170,.1)' : p.absent ? 'rgba(255,95,109,.08)' : 'var(--s)';
+            const border = p.done ? '1px solid rgba(0,212,170,.25)' : p.absent ? '1px solid rgba(255,95,109,.2)' : '1px solid var(--b)';
+            return `<div style="background:${couleur};border:${border};border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:14px;color:var(--t);margin-bottom:2px">${nom}</div>
+                <div style="font-size:12px;color:var(--m);font-family:var(--fm)">${heure ? '⏰ ' + heure + ' · ' : ''}${statut}${p.urgence ? ' · 🚨 Urgent' : ''}</div>
+              </div>
+              <button class="btn bp bsm" onclick="ouvrirCotationDepuisEtat(${i})" style="flex-shrink:0;font-size:11px;padding:6px 12px">🩺 Cotation</button>
+            </div>`;
+          }).join('');
+        }
+
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+      }
+
+      /* ── Fermer la modale ── */
+      function fermerEtatTournee() {
+        const modal = document.getElementById('modal-etat-tournee');
+        if (modal) modal.style.display = 'none';
+        document.body.style.overflow = '';
+      }
+
+      /* ── Ouvrir la cotation d'un patient depuis la modale ── */
+      function ouvrirCotationDepuisEtat(idx) {
+        fermerEtatTournee();
+        if (typeof openCotationPatient === 'function') {
+          openCotationPatient(idx);
+        } else if (typeof navTo === 'function') {
+          /* Fallback : aller sur la vue cotation en pré-remplissant */
+          const patients = APP.get('uberPatients') || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+          const p = patients[idx];
+          if (p) {
+            const txt = document.getElementById('f-txt');
+            if (txt) txt.value = p.description || p.texte || p.acte || '';
+          }
+          navTo('cot', null);
+        }
+      }
+
+      /* Fermer modale en cliquant en dehors */
+      document.getElementById('modal-etat-tournee')?.addEventListener('click', function(e) {
+        if (e.target === this) fermerEtatTournee();
+      });
+      </script>
 
     </section>
 
