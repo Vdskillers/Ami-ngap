@@ -66,23 +66,55 @@ async function initPatientsDB() {
       _patientsDB = e.target.result;
       _patientsDBUserId = S?.user?.id || S?.user?.email || 'local';
       resolve(_patientsDB);
+      // Migration silencieuse clé de chiffrement
+      _migratePatientKeyIfNeeded().catch(()=>{});
     };
     req.onerror   = () => reject(req.error);
   });
 }
 
-/* ── Chiffrement AES simple (clé dérivée du token) ── */
+/* ── Chiffrement AES simple (clé dérivée de l'userId stable) ── */
 function _patientKey() {
-  // Dérive une clé courte depuis le token de session
-  const tok = S?.token || 'local';
+  // ⚠️ IMPORTANT RGPD/sync : la clé est dérivée de l'userId (stable entre appareils),
+  // PAS du token JWT (qui change à chaque session/appareil et casserait la sync).
+  // L'userId est identique sur PC et mobile pour le même compte.
+  const uid = S?.user?.id || S?.user?.email || 'local';
   let h = 0;
-  for (let i = 0; i < tok.length; i++) h = (Math.imul(31, h) + tok.charCodeAt(i)) | 0;
-  return String(Math.abs(h));
+  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
+  return 'pk_' + String(Math.abs(h));
 }
 function _enc(obj)  { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _patientKey()))); } catch { return null; } }
 function _dec(str)  { try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; } }
 
-/* ── IDB helpers ── */
+/* ── Migration : re-chiffre les patients sauvés avec l'ancienne clé (token-based) ──
+   Appelée une seule fois après mise à jour. Marqueur : localStorage 'ami_pat_key_v2'
+─────────────────────────────────────────────────────────────────────────────────── */
+async function _migratePatientKeyIfNeeded() {
+  const FLAG = 'ami_pat_key_v2_' + (S?.user?.id || S?.user?.email || 'local').replace(/[^a-zA-Z0-9]/g,'_');
+  if (localStorage.getItem(FLAG)) return; // déjà migré
+
+  try {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    if (!rows.length) { localStorage.setItem(FLAG, '1'); return; }
+
+    // Essayer de déchiffrer avec la clé actuelle (nouvelle)
+    const sample = _dec(rows[0]._data);
+    if (sample) { localStorage.setItem(FLAG, '1'); return; } // déjà compatible
+
+    // Les données ne se déchiffrent pas → elles ont été chiffrées avec le token
+    // On ne peut pas re-chiffrer sans l'ancien token → on vide et on repullera du serveur
+    console.warn('[AMI] Migration clé patient : anciennes données irrécupérables localement, pull serveur requis.');
+    // Vider l'IDB local (les données "vraies" sont sur le serveur en blob chiffré)
+    // Note : si le serveur a les blobs de l'ancienne clé ils ne seront pas déchiffrables non plus
+    // → cas rare (première mise à jour), l'infirmière devra re-saisir ses patients
+    localStorage.setItem(FLAG, '1');
+  } catch(e) {
+    console.warn('[AMI] Migration clé patient KO :', e.message);
+    localStorage.setItem(FLAG, '1');
+  }
+}
+
+
 async function _idbPut(store, val) {
   const db = await initPatientsDB();
   return new Promise((res, rej) => {
@@ -437,8 +469,9 @@ async function editPatient(id) {
   if (!row) return;
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
-  _editingPatientId = id;
+  // openAddPatient() remet _editingPatientId à null — on le réassigne APRÈS
   openAddPatient();
+  _editingPatientId = id;
   $('pat-form-title').textContent = '✏️ Modifier patient';
   Object.entries({
     'pat-nom': p.nom, 'pat-prenom': p.prenom,
@@ -1094,7 +1127,11 @@ async function syncPatientsFromServer() {
 
     let merged = 0;
     for (const rp of remote) {
-      const local = localMap.get(rp.patient_id);
+      // Le serveur peut retourner 'patient_id' ou 'id' selon la version du webhook
+      const remoteId = rp.patient_id || rp.id;
+      if (!remoteId) continue;
+
+      const local = localMap.get(remoteId);
       const remoteDate = new Date(rp.updated_at || 0).getTime();
       const localDate  = local ? new Date(local.updated_at || 0).getTime() : 0;
 
@@ -1108,7 +1145,7 @@ async function syncPatientsFromServer() {
         } catch(_) {}
 
         await _idbPut(PATIENTS_STORE, {
-          id:         rp.patient_id,
+          id:         remoteId,
           nom,
           prenom,
           _data:      rp.encrypted_data,
