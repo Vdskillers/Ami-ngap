@@ -329,7 +329,8 @@ function renderTourneeOSRM(data, patients, startLat, startLng){
   ordered.forEach((wp,i)=>{
     const p = patients[wp.waypoint_index-1] || patients[i] || {};
     const fs = fraudeScore(p);
-    const sd = encodeURIComponent(p.acte || p.description || 'Soin');
+    const sd  = encodeURIComponent(p.acte || p.texte || p.description || "");
+    const spn = encodeURIComponent(((p.prenom||"") + " " + (p.nom||"")).trim() || p.patient || "");
     html += `<div class="route-item">
       <div class="route-num">${i+1}</div>
       <div class="route-info">
@@ -338,7 +339,7 @@ function renderTourneeOSRM(data, patients, startLat, startLng){
       </div>
       ${p.distance_km||wp.distance ? `<div class="route-km">+${p.distance_km||(wp.distance/1000).toFixed(1)}km</div>` : ''}
       ${fs>40 ? `<div style="color:var(--d);font-size:11px;font-weight:600;margin-right:4px">⚠️ Fraude</div>` : ''}
-      <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
+      <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'),decodeURIComponent('${spn}'))">⚡ Coter</button>
     </div>`;
   });
 

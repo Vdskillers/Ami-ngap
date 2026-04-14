@@ -444,7 +444,10 @@ function clrCot() {
   $('res-cot').classList.remove('show');
 }
 
-function coterDepuisRoute(desc) {
+function coterDepuisRoute(desc, nomPatient) {
   navTo('cot', null);
-  setTimeout(() => { const el = $('f-txt'); if (el) { el.value = desc; el.focus(); } }, 150);
+  setTimeout(() => {
+    const elTxt = $('f-txt'); if (elTxt) { elTxt.value = desc; elTxt.focus(); }
+    const elPt  = $('f-pt');  if (elPt && nomPatient) elPt.value = nomPatient;
+  }, 150);
 }

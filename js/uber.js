@@ -179,15 +179,17 @@ function openNavigation(p) {
 
   const dest = `${p.lat},${p.lng}`;
 
-  // Priorité : GPS live > point de départ choisi manuellement
-  const origin = APP.get('userPos') || APP.get('startPoint');
+  /* Origin = startPoint défini dans Tournée IA (adresse fixe)
+     userPos (GPS temps réel) est utilisé pour le dispatch interne Uber
+     mais NE doit PAS être passé à Google Maps comme point de départ —
+     Google Maps utilisera la position de l'appareil si origin est absent */
+  const origin = APP.get('startPoint');
 
   let url;
   if (origin && origin.lat && origin.lng) {
-    // Inclure l'origine explicite → Google Maps part de ce point exact
     url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${dest}&travelmode=driving`;
   } else {
-    // Pas de point de départ défini → Google Maps utilisera la position de l'appareil
+    // Pas de startPoint défini → Google Maps part de la position de l'appareil
     url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`;
   }
 

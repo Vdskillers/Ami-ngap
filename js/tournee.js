@@ -306,7 +306,8 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
       <button class="btn bs bsm" style="margin-left:auto;color:var(--d);border-color:rgba(255,95,109,.3);font-size:11px" onclick="clearTournee()">🗑️ Vider</button>
     </div>
     ${route.map((p,i)=>{
-      const sd  = encodeURIComponent(p.description||'');
+      const sd  = encodeURIComponent(p.acte || p.texte || p.description || '');
+      const spn = encodeURIComponent(((p.prenom||'') + ' ' + (p.nom||'')).trim() || p.patient || '');
       const pId = encodeURIComponent(p.id || p.patient_id || String(i));
       const leg = osrm?.legs?.[i];
       const hasTime = p.start_str && p.start_str !== '—';
@@ -328,7 +329,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
         </div>
         ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km">~${p.travel_min}min</div>`:'')}
         ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
-        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
+        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'),decodeURIComponent('${spn}'))">⚡ Coter</button>
         <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
       </div>`;
     }).join('')}
