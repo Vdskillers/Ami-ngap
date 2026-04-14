@@ -343,6 +343,28 @@ async function openPatientDetail(id) {
       </div>
       ${p.notes ? `<div class="ai in">${p.notes}</div>` : ''}
     </div>
+    ${p.cotations?.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="ct">🧾 Historique des cotations</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${p.cotations.slice().reverse().map((c, ri) => {
+          const realIdx = p.cotations.length - 1 - ri;
+          const dateStr = new Date(c.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+          const actesList = (c.actes||[]).map(a => `<div style="font-size:12px;color:var(--m);padding:2px 0">• ${a.code||a.nom||''} — ${parseFloat(a.total||0).toFixed(2)} €</div>`).join('');
+          return `<div style="border:1px solid var(--b);border-radius:var(--r);padding:12px 14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+              <div style="font-family:var(--fm);font-size:11px;color:var(--m)">${dateStr}${c.soin?' · '+c.soin:''}</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editCotationPatient('${id}',${realIdx})">✏️ Modifier</button>
+                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteCotationPatient('${id}',${realIdx})">🗑️</button>
+              </div>
+            </div>
+            ${actesList}
+            <div style="font-size:13px;font-weight:600;color:var(--a);margin-top:6px">Total : ${parseFloat(c.total||0).toFixed(2)} €</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
     <div class="card">
       <div class="ct">📝 Notes de soins</div>
       <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
@@ -350,10 +372,23 @@ async function openPatientDetail(id) {
         <button class="btn bp bsm" style="align-self:flex-end" onclick="addSoinNote('${id}')">💾 Ajouter note</button>
       </div>
       <div id="notes-list">
-        ${notes.length ? notes.reverse().map(n => `
-          <div style="border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px">
-            <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:4px">${new Date(n.date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
-            <div style="font-size:13px;white-space:pre-wrap">${n.texte}</div>
+        ${notes.length ? notes.slice().reverse().map(n => `
+          <div data-note-id="${n.id}" style="border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:4px">
+              <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${new Date(n.date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editSoinNote(${n.id},'${id}')">✏️ Modifier</button>
+                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteSoinNote(${n.id},'${id}')">🗑️</button>
+              </div>
+            </div>
+            <div id="note-text-${n.id}" style="font-size:13px;white-space:pre-wrap">${n.texte}</div>
+            <div id="note-edit-${n.id}" style="display:none;margin-top:8px">
+              <textarea style="width:100%;min-height:60px;font-size:13px;box-sizing:border-box" maxlength="500">${n.texte}</textarea>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="btn bp bsm" style="font-size:11px" onclick="saveSoinNote(${n.id},'${id}')">💾 Enregistrer</button>
+                <button class="btn bs bsm" style="font-size:11px" onclick="cancelEditNote(${n.id})">Annuler</button>
+              </div>
+            </div>
           </div>`).join('')
         : '<div style="color:var(--m);font-size:13px">Aucune note. Ajoutez la première observation ci-dessus.</div>'}
       </div>
@@ -410,18 +445,99 @@ async function addSoinNote(patientId) {
   const note = { patient_id: patientId, texte: txt, date: new Date().toISOString() };
   await _idbPut(NOTES_STORE, note);
   $('new-note-txt').value = '';
-  // Recharger notes dans la vue
-  const notesList = $('notes-list');
-  if (notesList) {
-    const newDiv = document.createElement('div');
-    newDiv.style.cssText = 'border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px';
-    newDiv.innerHTML = `<div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:4px">${new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div><div style="font-size:13px;white-space:pre-wrap">${txt}</div>`;
-    notesList.prepend(newDiv);
-    const empty = notesList.querySelector('div[style*="Aucune note"]');
-    if (empty) empty.remove();
-  }
+  await openPatientDetail(patientId); // Recharger la fiche complète
   showToastSafe('📝 Note enregistrée.');
 }
+
+/* ── Éditer une note inline ── */
+function editSoinNote(noteId, patientId) {
+  const textEl = $(`note-text-${noteId}`);
+  const editEl = $(`note-edit-${noteId}`);
+  if (textEl) textEl.style.display = 'none';
+  if (editEl) editEl.style.display = 'block';
+}
+
+function cancelEditNote(noteId) {
+  const textEl = $(`note-text-${noteId}`);
+  const editEl = $(`note-edit-${noteId}`);
+  if (textEl) textEl.style.display = 'block';
+  if (editEl) editEl.style.display = 'none';
+}
+
+async function saveSoinNote(noteId, patientId) {
+  const editEl = $(`note-edit-${noteId}`);
+  const textarea = editEl?.querySelector('textarea');
+  const txt = (textarea?.value || '').trim();
+  if (!txt) { alert('La note ne peut pas être vide.'); return; }
+
+  const rows = await _idbGetAll(NOTES_STORE);
+  const existing = rows.find(n => n.id === noteId);
+  if (!existing) return;
+
+  await _idbPut(NOTES_STORE, { ...existing, texte: txt, date_edit: new Date().toISOString() });
+  await openPatientDetail(patientId);
+  showToastSafe('✅ Note modifiée.');
+}
+
+async function deleteSoinNote(noteId, patientId) {
+  if (!confirm('Supprimer cette note ?')) return;
+  await _idbDelete(NOTES_STORE, noteId);
+  await openPatientDetail(patientId);
+  showToastSafe('🗑️ Note supprimée.');
+}
+
+/* ── Éditer une cotation dans la fiche patient ── */
+async function editCotationPatient(patientId, cotationIdx) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  if (!p.cotations?.[cotationIdx]) return;
+
+  const c = p.cotations[cotationIdx];
+  const actesTxt = (c.actes||[]).map(a => `${a.code||a.nom} — ${parseFloat(a.total||0).toFixed(2)} €`).join('\n');
+
+  const newTxt = prompt(
+    `Modifier la cotation du ${new Date(c.date).toLocaleDateString('fr-FR')}\n\nActes (format libre) :`,
+    actesTxt
+  );
+  if (newTxt === null) return; // annulé
+
+  // Parser les actes modifiés ligne par ligne
+  const actes = newTxt.split('\n').map(line => {
+    const parts = line.split('—');
+    const nom   = (parts[0]||'').trim();
+    const total = parseFloat((parts[1]||'0').replace('€','').trim()) || 0;
+    return { nom, code: nom, total };
+  }).filter(a => a.nom);
+
+  p.cotations[cotationIdx] = {
+    ...c,
+    actes,
+    total: actes.reduce((s, a) => s + a.total, 0),
+    date_edit: new Date().toISOString(),
+  };
+
+  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+  await _idbPut(PATIENTS_STORE, toStore);
+  await openPatientDetail(patientId);
+  showToastSafe('✅ Cotation modifiée.');
+}
+
+async function deleteCotationPatient(patientId, cotationIdx) {
+  if (!confirm('Supprimer cette cotation de la fiche patient ?')) return;
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  if (!p.cotations) return;
+  p.cotations.splice(cotationIdx, 1);
+  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+  await _idbPut(PATIENTS_STORE, toStore);
+  await openPatientDetail(patientId);
+  showToastSafe('🗑️ Cotation supprimée.');
+}
+
 
 /* Vérification expiration ordonnances */
 async function checkOrdoExpiry() {

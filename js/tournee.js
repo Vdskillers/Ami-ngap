@@ -1288,6 +1288,16 @@ function resetTourneeJour() {
   // Arrêter GPS Uber si actif
   if (typeof stopLiveTracking === 'function') stopLiveTracking();
 
+  // Reset affichage Mode Uber Médical
+  const uberNext = $('uber-next-patient');
+  if (uberNext) uberNext.innerHTML = '<div style="color:var(--m);font-size:13px">Démarrez la journée pour charger vos patients.</div>';
+  const uberStatus = $('uber-tracking-status');
+  if (uberStatus) uberStatus.textContent = '⏸️ GPS non démarré — cliquez sur "Démarrer la journée"';
+  const uberProg = $('uber-progress');
+  if (uberProg) uberProg.textContent = '';
+  const uberRoute = $('uber-route-info');
+  if (uberRoute) uberRoute.textContent = '';
+
   LIVE_PATIENT_ID = null;
 
   if (typeof showToast === 'function') showToast('🗑️ Tournée du jour réinitialisée.');
