@@ -1095,15 +1095,15 @@ async function _forceRegeocode(id) {
 
 /* Pousse tous les patients locaux vers le serveur */
 async function syncPatientsToServer() {
-  if (!S?.token) return; // non connecté
+  if (!S?.token) return;
   try {
     const rows = await _idbGetAll(PATIENTS_STORE);
     if (!rows.length) return;
 
     const patients = rows.map(r => ({
       id:             r.id,
-      patient_id:     r.id,              // alias pour compatibilité webhook
-      encrypted_data: r._data,            // déjà chiffré par _enc()
+      patient_id:     r.id,
+      encrypted_data: r._data,
       nom_enc:        btoa(unescape(encodeURIComponent((r.nom||'') + ' ' + (r.prenom||'')))).slice(0, 64),
       updated_at:     r.updated_at || new Date().toISOString(),
     }));
@@ -1111,8 +1111,10 @@ async function syncPatientsToServer() {
     const res = await wpost('/webhook/patients-push', { patients });
     if (!res?.ok) throw new Error(res?.error || 'Erreur sync');
     console.info('[AMI] Sync push OK :', patients.length, 'patients');
+    showToastSafe(`☁️ ${patients.length} patient(s) synchronisé(s).`);
   } catch(e) {
     console.warn('[AMI] Sync push KO :', e.message);
+    showToastSafe('⚠️ Sync échouée : ' + e.message);
   }
 }
 
@@ -1121,28 +1123,30 @@ async function syncPatientsFromServer() {
   if (!S?.token) return;
   try {
     const res = await wpost('/webhook/patients-pull', {});
-    if (!res?.ok || !Array.isArray(res.patients)) return;
+    if (!res?.ok || !Array.isArray(res.patients)) {
+      console.warn('[AMI] Sync pull KO : réponse invalide', JSON.stringify(res));
+      return;
+    }
 
     const remote = res.patients;
-    if (!remote.length) return;
+    if (!remote.length) {
+      console.info('[AMI] Sync pull : aucun patient sur le serveur.');
+      return;
+    }
 
-    // Charger patients locaux pour comparaison
     const localRows = await _idbGetAll(PATIENTS_STORE);
     const localMap  = new Map(localRows.map(r => [r.id, r]));
 
     let merged = 0;
     for (const rp of remote) {
-      // Le serveur peut retourner 'patient_id' ou 'id' selon la version du webhook
       const remoteId = rp.patient_id || rp.id;
-      if (!remoteId) continue;
+      if (!remoteId || !rp.encrypted_data) continue;
 
       const local = localMap.get(remoteId);
       const remoteDate = new Date(rp.updated_at || 0).getTime();
       const localDate  = local ? new Date(local.updated_at || 0).getTime() : 0;
 
-      // Prendre la version la plus récente
       if (!local || remoteDate > localDate) {
-        // Décoder nom/prenom depuis encrypted_data pour les champs indexés
         let nom = '', prenom = '';
         try {
           const decoded = _dec(rp.encrypted_data);
@@ -1162,10 +1166,14 @@ async function syncPatientsFromServer() {
 
     if (merged > 0) {
       console.info('[AMI] Sync pull OK :', merged, 'patients fusionnés');
-      loadPatients(); // Rafraîchir l'affichage
+      showToastSafe(`📥 ${merged} patient(s) reçu(s) depuis le serveur.`);
+      loadPatients();
+    } else {
+      console.info('[AMI] Sync pull : déjà à jour (', remote.length, 'sur serveur).');
     }
   } catch(e) {
     console.warn('[AMI] Sync pull KO :', e.message);
+    showToastSafe('⚠️ Récupération échouée : ' + e.message);
   }
 }
 
