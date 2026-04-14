@@ -34,7 +34,9 @@ async function smartGeocode(address) {
   //    Précision housenumber garantie pour les adresses françaises
   for (const variant of variants) {
     try {
-      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(variant)}&limit=3`;
+      // L'API gouv.fr est limitée à la France — retirer le suffixe ", France" qui cause des 503
+      const variantFr = variant.replace(/,?\s*France\s*$/i, '').trim();
+      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(variantFr)}&limit=3`;
       if (postcode) url += `&postcode=${postcode}`;
 
       const res  = await fetch(url, {

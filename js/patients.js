@@ -702,9 +702,7 @@ const _geocodeCache = new Map();
 async function _geocodeAdresse(adresse, patient) {
   if (!adresse || !adresse.trim()) return null;
   try {
-    // Déléguer entièrement au pipeline geocode.js
-    // smartGeocode gère son propre cache IDB — pas de cache mémoire ici
-    // (évite de servir d'anciennes coordonnées erronées)
+    // 1. Pipeline geocode.js (API gouv.fr → Photon → Nominatim)
     if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
       const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
       const geo     = await smartGeocode(cleaned);
@@ -713,6 +711,32 @@ async function _geocodeAdresse(adresse, patient) {
         return { lat: geo.lat, lng: geo.lng, geoScore: score };
       }
     }
+
+    // 2. Fallback direct si geocode.js indisponible ou API en erreur :
+    //    Essai API gouv.fr sans le suffixe ", France" qui cause des 503
+    const addrClean = adresse.replace(/,?\s*France\s*$/i, '').trim();
+    const cpMatch   = addrClean.match(/\b(\d{5})\b/);
+    const postcode  = cpMatch ? cpMatch[1] : '';
+    try {
+      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(addrClean)}&limit=1`;
+      if (postcode) url += `&postcode=${postcode}`;
+      const r = await fetch(url, { headers: { 'User-Agent': 'AMI-NGAP/1.0' }, signal: AbortSignal.timeout(6000) });
+      const d = await r.json();
+      if (d.features?.length) {
+        const f = d.features[0];
+        const score = f.properties.type === 'housenumber' ? 90 : f.properties.type === 'street' ? 68 : 55;
+        return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], geoScore: score };
+      }
+    } catch (_) {}
+
+    // 3. Fallback Nominatim en dernier recours
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1&countrycodes=fr`,
+      { headers: { 'Accept-Language': 'fr' }, signal: AbortSignal.timeout(6000) }
+    );
+    const d = await r.json();
+    if (d.length) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 55 };
+
     return null;
   } catch { return null; }
 }
