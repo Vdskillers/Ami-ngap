@@ -231,6 +231,7 @@ async function savePatient() {
   await _idbPut(PATIENTS_STORE, toStore);
   closePatientForm();
   await loadPatients();
+  _syncAfterSave();
   showToastSafe('✅ Patient enregistré localement.');
   checkOrdoExpiry();
 }
@@ -435,6 +436,7 @@ async function deletePatient(id, name) {
   const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
   for (const n of notes) await _idbDelete(NOTES_STORE, n.id);
   await loadPatients();
+  _syncDeletePatient(id);
   showToastSafe('🗑️ Patient supprimé.');
 }
 
@@ -1015,14 +1017,114 @@ async function _forceRegeocode(id) {
 }
 
 /* ── Initialisation ── */
+/* ════════════════════════════════════════════════
+   SYNC CARNET PATIENTS — PC ↔ Mobile via Supabase
+   ────────────────────────────────────────────────
+   Les données sont chiffrées AVANT envoi au serveur.
+   Le serveur ne voit que des blobs opaques (RGPD).
+   La clé de chiffrement reste sur l'appareil.
+════════════════════════════════════════════════ */
+
+/* Pousse tous les patients locaux vers le serveur */
+async function syncPatientsToServer() {
+  if (!S?.token) return; // non connecté
+  try {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    if (!rows.length) return;
+
+    const patients = rows.map(r => ({
+      id:             r.id,
+      encrypted_data: r._data,            // déjà chiffré par _enc()
+      nom_enc:        btoa(unescape(encodeURIComponent((r.nom||'') + ' ' + (r.prenom||'')))).slice(0, 64),
+      updated_at:     r.updated_at || new Date().toISOString(),
+    }));
+
+    const res = await wpost('/webhook/patients-push', { patients });
+    if (!res?.ok) throw new Error(res?.error || 'Erreur sync');
+    console.info('[AMI] Sync push OK :', patients.length, 'patients');
+  } catch(e) {
+    console.warn('[AMI] Sync push KO :', e.message);
+  }
+}
+
+/* Tire les patients du serveur et fusionne avec l'IDB local */
+async function syncPatientsFromServer() {
+  if (!S?.token) return;
+  try {
+    const res = await wpost('/webhook/patients-pull', {});
+    if (!res?.ok || !Array.isArray(res.patients)) return;
+
+    const remote = res.patients;
+    if (!remote.length) return;
+
+    // Charger patients locaux pour comparaison
+    const localRows = await _idbGetAll(PATIENTS_STORE);
+    const localMap  = new Map(localRows.map(r => [r.id, r]));
+
+    let merged = 0;
+    for (const rp of remote) {
+      const local = localMap.get(rp.patient_id);
+      const remoteDate = new Date(rp.updated_at || 0).getTime();
+      const localDate  = local ? new Date(local.updated_at || 0).getTime() : 0;
+
+      // Prendre la version la plus récente
+      if (!local || remoteDate > localDate) {
+        // Décoder nom/prenom depuis encrypted_data pour les champs indexés
+        let nom = '', prenom = '';
+        try {
+          const decoded = _dec(rp.encrypted_data);
+          if (decoded) { nom = decoded.nom || ''; prenom = decoded.prenom || ''; }
+        } catch(_) {}
+
+        await _idbPut(PATIENTS_STORE, {
+          id:         rp.patient_id,
+          nom,
+          prenom,
+          _data:      rp.encrypted_data,
+          updated_at: rp.updated_at,
+        });
+        merged++;
+      }
+    }
+
+    if (merged > 0) {
+      console.info('[AMI] Sync pull OK :', merged, 'patients fusionnés');
+      loadPatients(); // Rafraîchir l'affichage
+    }
+  } catch(e) {
+    console.warn('[AMI] Sync pull KO :', e.message);
+  }
+}
+
+/* Supprime un patient du serveur (appelé dans deletePatient) */
+async function _syncDeletePatient(patientId) {
+  if (!S?.token) return;
+  try {
+    await wpost('/webhook/patients-delete', { patient_id: patientId });
+  } catch(_) {}
+}
+
+/* Sync automatique après chaque sauvegarde patient */
+async function _syncAfterSave() {
+  // Debounce : éviter les appels multiples rapides
+  clearTimeout(_syncAfterSave._t);
+  _syncAfterSave._t = setTimeout(syncPatientsToServer, 1500);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Charger patients quand on arrive sur la section
-  document.addEventListener('app:nav', e => {
+  // Écouter les deux events (ui.js dispatche 'ui:navigate', certains modules 'app:nav')
+  const _onPatNav = e => {
     if (e.detail?.view === 'patients') {
       loadPatients();
       checkOrdoExpiry();
     }
-  });
-  // Init DB au démarrage pour les alertes ordo
-  initPatientsDB().then(checkOrdoExpiry).catch(() => {});
+  };
+  document.addEventListener('app:nav',     _onPatNav);
+  document.addEventListener('ui:navigate', _onPatNav);
+  // Init DB au démarrage + sync depuis serveur
+  initPatientsDB().then(async () => {
+    checkOrdoExpiry();
+    // Sync depuis le serveur après init (récupère les patients créés sur d'autres appareils)
+    await syncPatientsFromServer();
+  }).catch(() => {});
 });
