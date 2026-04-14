@@ -678,16 +678,25 @@ function renderPatientsOnMap(patients) {
       }),
     });
 
+    // Construire les champs d'affichage proprement
+    const _name    = ((p.nom||'') + ' ' + (p.prenom||'')).trim()
+                   || p.name || p.patient || p.label || p.description || ('Patient ' + (idx+1));
+    const _addr    = (p.adresse || p.addressFull || p.address || '').replace(/🕐[^,]*/g,'').trim().replace(/,\s*$/, '');
+    const _heure   = p.heure_preferee || p.heure_soin || p.heure || '';
+    const _score   = typeof p.geoScore === 'number' ? p.geoScore : (p.geoScore ? parseInt(p.geoScore) : 0);
+    const _navData = JSON.stringify({
+      lat: p.lat, lng: p.lng,
+      address: _addr, addressFull: _addr, adresse: _addr,
+      geoScore: _score
+    }).replace(/"/g, '&quot;');
+
     marker.bindPopup(`
-      <strong>${p.name}</strong><br>
-      ${p.address || p.addressFull || ''}<br>
-      <small>Score géo : ${p.geoScore}/100</small><br>
-      <a href="#" onclick="openNavigation(${JSON.stringify(p).replace(/"/g,'&quot;')})">
-        Naviguer
-      </a> |
-      <a href="#" onclick="enableCorrectionMode(${p.lat}, ${p.lng})">
-        Corriger position
-      </a>
+      <strong>${_name}</strong><br>
+      ${_addr ? `<span style="font-size:12px">${_addr}</span><br>` : ''}
+      ${_heure ? `<span style="font-size:11px;color:#888">🕐 ${_heure}</span><br>` : ''}
+      <small style="color:${_score>=70?'#1D9E75':_score>=50?'#EF9F27':'#E24B4A'}">Score géo : ${_score}/100</small><br>
+      <a href="#" onclick="openNavigation(${_navData})">Naviguer</a> |
+      <a href="#" onclick="enableCorrectionMode(${p.lat}, ${p.lng})">Corriger position</a>
     `);
 
     marker.addTo(APP.map);

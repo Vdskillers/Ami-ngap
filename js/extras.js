@@ -202,6 +202,33 @@ function _rebindMapClick(map){
 }
 let _turMapClickHandler = null;
 
+/* ── Attend que _turMap soit prêt (initTurMap peut nécessiter quelques ms) ── */
+function _waitTurMap(cb, attempts) {
+  attempts = attempts || 0;
+  const map = _turMap
+    || (APP.map && typeof APP.map.invalidateSize === 'function' ? APP.map : null)
+    || (APP.map && APP.map.instance && typeof APP.map.instance.invalidateSize === 'function' ? APP.map.instance : null);
+  if (map) { _turMap = map; cb(map); return; }
+  if (attempts > 20) { console.warn('[AMI] _waitTurMap : carte non disponible'); return; }
+  setTimeout(() => _waitTurMap(cb, attempts + 1), 100);
+}
+
+function _placeDepMarker(map, lat, lng, label) {
+  if (_turMarker) { try { map.removeLayer(_turMarker); } catch(_) {} }
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="background:#00d4aa;border:3px solid #fff;border-radius:50%;width:18px;height:18px;box-shadow:0 0 12px rgba(0,212,170,.8)"></div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9]
+  });
+  _turMarker = L.marker([lat, lng], { icon })
+    .addTo(map)
+    .bindPopup(`<b>📍 Départ</b><br>${label}`)
+    .openPopup();
+  map.setView([lat, lng], 15);
+  setTimeout(() => { try { map.invalidateSize(); } catch(_) {} }, 50);
+  setTimeout(() => { try { map.invalidateSize(); } catch(_) {} }, 300);
+}
+
 function setDepartPoint(lat, lng, label){
   /* Mettre à jour les inputs et APP.startPoint */
   const tLat = $('t-lat'), tLng = $('t-lng');
@@ -209,38 +236,18 @@ function setDepartPoint(lat, lng, label){
   if(tLng) tLng.value = lng.toFixed(6);
   APP.set('startPoint', {lat, lng});
 
-  /* S'assurer que la carte est initialisée */
-  if(!_turMap) initTurMap();
-
-  /* Placer le marker de départ sur la carte — dans TOUS les cas
-     (setDepCoords n'existe pas dans map.js, on gère tout ici) */
-  if(_turMap){
-    // Supprimer l'ancien marker s'il existe
-    if(_turMarker){ try{ _turMap.removeLayer(_turMarker); }catch(_){} }
-
-    const icon = L.divIcon({
-      className:'',
-      html:`<div style="background:#00d4aa;border:3px solid #fff;border-radius:50%;width:18px;height:18px;box-shadow:0 0 12px rgba(0,212,170,.8)"></div>`,
-      iconSize:[18,18], iconAnchor:[9,9]
-    });
-    _turMarker = L.marker([lat, lng], { icon })
-      .addTo(_turMap)
-      .bindPopup(`<b>📍 Départ</b><br>${label}`)
-      .openPopup();
-
-    // Centrer + zoomer immédiatement sur le point trouvé
-    _turMap.setView([lat, lng], 15);
-    // Double invalidateSize pour forcer le rendu si la carte était cachée
-    setTimeout(() => { try{ _turMap.invalidateSize(); }catch(_){} }, 50);
-    setTimeout(() => { try{ _turMap.invalidateSize(); }catch(_){} }, 300);
-  }
-
-  /* Affichage coordonnées */
+  /* Affichage coordonnées — immédiat, pas besoin d'attendre la carte */
   const coordsEl = $('dep-coords') || $('tur-coords-txt');
   if(coordsEl) {
     coordsEl.textContent = `📌 Départ : ${label} — ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     coordsEl.style.display = 'block';
   }
+
+  /* Initialiser la carte si pas encore fait, puis attendre qu'elle soit prête */
+  if(!_turMap) initTurMap();
+  /* _waitTurMap retente toutes les 100ms jusqu'à ce que _turMap soit disponible
+     → le marker s'affiche même si initTurMap() est en cours d'initialisation */
+  _waitTurMap(map => _placeDepMarker(map, lat, lng, label));
 
   updateCAEstimate();
 }
