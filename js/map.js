@@ -240,3 +240,93 @@ function renderPatientsOnMap(patients) {
     APP.markers.push(marker);
   });
 }
+
+// ─────────────────────────────────────────────────────────────
+//  renderPatientsOnMap — VERSION TOURNÉE (remplace la précédente)
+//  Accepte (patients, startPoint?) — retourne une Promise
+//  Compatible avec tournee.js qui appelle .catch()
+// ─────────────────────────────────────────────────────────────
+(function() {
+  // Remplacement dynamique pour éviter les problèmes de redéclaration
+  window.renderPatientsOnMap = function(patients, startPoint) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!APP.map) { resolve(); return; }
+
+        // Supprimer layers existants
+        if (APP.markers) APP.markers.forEach(m => { try { APP.map.removeLayer(m); } catch(_){} });
+        APP.markers = [];
+        if (APP._routePolyline) { try { APP.map.removeLayer(APP._routePolyline); } catch(_){} APP._routePolyline = null; }
+        if (APP._startMarker)   { try { APP.map.removeLayer(APP._startMarker);   } catch(_){} APP._startMarker = null; }
+
+        const withCoords = patients.filter(p => p.lat && p.lng);
+        if (!withCoords.length) { resolve(); return; }
+
+        // Marker point de départ
+        if (startPoint && startPoint.lat && startPoint.lng) {
+          APP._startMarker = L.marker([startPoint.lat, startPoint.lng], {
+            icon: L.divIcon({
+              className: '',
+              html: '<div style="width:36px;height:36px;background:#00d4aa;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(0,212,170,0.5);">🏠</div>',
+              iconSize: [36,36], iconAnchor: [18,18],
+            }),
+          }).addTo(APP.map);
+          APP._startMarker.bindPopup('<strong>Point de départ</strong>');
+        }
+
+        const isAdmin = (typeof S !== 'undefined') && S && S.role === 'admin';
+
+        patients.forEach((p, idx) => {
+          if (!p.lat || !p.lng) return;
+          const isUrgent = !!(p.urgent || p.urgence);
+          const color = isUrgent ? '#E24B4A'
+                      : (p.geoScore >= 70) ? '#1D9E75'
+                      : (p.geoScore >= 50) ? '#EF9F27'
+                      : '#00d4aa';
+
+          const marker = L.marker([p.lat, p.lng], {
+            icon: L.divIcon({
+              className: '',
+              html: '<div style="width:32px;height:32px;background:' + color + ';border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;box-shadow:0 2px 8px rgba(0,0,0,0.3);">' + (idx+1) + '</div>',
+              iconSize: [32,32], iconAnchor: [16,16],
+            }),
+          });
+
+          const nomAff     = isAdmin ? ('Patient #' + (idx+1)) : (p.description || p.name || p.texte || ('Patient ' + (idx+1)));
+          const adresseAff = isAdmin ? '' : (p.adresse || p.address || p.addressFull || '');
+          const heure      = p.heure_soin || p.heure_preferee || p.heure || '';
+
+          var popupContent = '<strong style="font-size:13px">' + nomAff + '</strong>';
+          if (adresseAff) popupContent += '<br><span style="font-size:11px;color:#666">' + adresseAff + '</span>';
+          if (heure)      popupContent += '<br><span style="font-size:11px">🕐 ' + heure + '</span>';
+          if (isUrgent)   popupContent += '<br><span style="color:#E24B4A;font-size:11px">🚨 URGENT</span>';
+          if (p.geoScore != null) popupContent += '<br><small style="color:#999">Score géo : ' + p.geoScore + '/100</small>';
+          popupContent += '<br><a href="#" style="font-size:11px" onclick="enableCorrectionMode(' + p.lat + ',' + p.lng + ');return false;">Corriger position</a>';
+
+          marker.bindPopup(popupContent);
+          marker.addTo(APP.map);
+          APP.markers.push(marker);
+        });
+
+        // Polyline de la route
+        var allPts = [];
+        if (startPoint && startPoint.lat && startPoint.lng) allPts.push([startPoint.lat, startPoint.lng]);
+        withCoords.forEach(function(p) { allPts.push([p.lat, p.lng]); });
+        if (allPts.length >= 2) {
+          APP._routePolyline = L.polyline(allPts, { color:'#00d4aa', weight:3, opacity:0.7, dashArray:'6,8' }).addTo(APP.map);
+        }
+
+        // Ajuster la vue
+        APP.map.fitBounds(L.latLngBounds(allPts), { padding:[40,40], maxZoom:15 });
+
+        // Forcer recalcul taille Leaflet (évite la carte grise après navigation)
+        setTimeout(function() { try { APP.map.invalidateSize(); } catch(_){} }, 150);
+        setTimeout(function() { try { APP.map.invalidateSize(); } catch(_){} }, 400);
+
+        resolve();
+      } catch(e) {
+        reject(e);
+      }
+    });
+  };
+})();
