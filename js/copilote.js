@@ -59,23 +59,45 @@ function _createCopilotPanel() {
   fab.id = 'copilot-fab';
   fab.innerHTML = '🤖';
   fab.title = 'Copilote IA AMI';
-  fab.style.cssText = `
-    position:fixed;bottom:80px;right:76px;z-index:900;
-    width:52px;height:52px;border-radius:50%;
-    background:linear-gradient(135deg,var(--a),var(--a2));
-    border:none;cursor:pointer;font-size:22px;
-    box-shadow:0 4px 20px rgba(0,212,170,.4);
-    transition:all .2s;display:flex;align-items:center;justify-content:center`;
   fab.onclick = toggleCopilot;
-  fab.onmouseenter = () => fab.style.transform = 'scale(1.1)';
-  fab.onmouseleave = () => fab.style.transform = 'scale(1)';
-  // Mobile (≤768px) : dans le header pour s'intégrer au flux (CSS position:static)
-  // PC (>768px)  : dans body en position:fixed
-  // matchMedia est fiable dès le premier rendu, contrairement à window.innerWidth
-  const headerFabs = document.getElementById('mobile-header-fabs');
-  const isMobile   = window.matchMedia('(max-width: 768px)').matches;
-  if (headerFabs && isMobile) headerFabs.appendChild(fab);
-  else document.body.appendChild(fab);
+  fab.onmouseenter = () => { if (window.matchMedia('(max-width:768px)').matches) return; fab.style.opacity = '0.85'; };
+  fab.onmouseleave = () => { fab.style.opacity = '1'; };
+
+  const headerFabs  = document.getElementById('mobile-header-fabs');
+  const voiceTopBtn = document.getElementById('voice-topbtn');
+  const isMobile    = window.matchMedia('(max-width: 768px)').matches;
+
+  if (isMobile && headerFabs) {
+    // Mobile : bouton rond dans mobile-header-fabs
+    fab.style.cssText = `
+      width:38px;height:38px;border-radius:50%;
+      background:linear-gradient(135deg,var(--a),var(--a2));
+      border:none;cursor:pointer;font-size:18px;
+      box-shadow:0 2px 10px rgba(0,212,170,.35);
+      transition:opacity .15s;display:flex;align-items:center;justify-content:center;
+      flex-shrink:0`;
+    headerFabs.appendChild(fab);
+  } else if (voiceTopBtn && voiceTopBtn.parentNode) {
+    // Desktop : bouton style header, inséré juste avant le bouton vocal
+    fab.style.cssText = `
+      background:linear-gradient(135deg,rgba(0,212,170,.12),rgba(79,168,255,.08));
+      border:1px solid rgba(0,212,170,.35);color:var(--a);
+      font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px;
+      cursor:pointer;transition:opacity .15s;display:flex;align-items:center;gap:6px;
+      white-space:nowrap`;
+    fab.innerHTML = '🤖 Copilote';
+    voiceTopBtn.parentNode.insertBefore(fab, voiceTopBtn);
+  } else {
+    // Fallback : position fixe
+    fab.style.cssText = `
+      position:fixed;bottom:80px;right:76px;z-index:900;
+      width:52px;height:52px;border-radius:50%;
+      background:linear-gradient(135deg,var(--a),var(--a2));
+      border:none;cursor:pointer;font-size:22px;
+      box-shadow:0 4px 20px rgba(0,212,170,.4);
+      transition:all .2s;display:flex;align-items:center;justify-content:center`;
+    document.body.appendChild(fab);
+  }
 
   // Panel chat
   const panel = document.createElement('div');
