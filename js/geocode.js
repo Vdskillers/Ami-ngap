@@ -16,10 +16,11 @@
 async function smartGeocode(address) {
   const cacheKey = hashAddr(address);
 
-  // 1. Cache IndexedDB
+  // 1. Cache IndexedDB — seulement si résultat valide avec coordonnées
   try {
     const cached = await loadSecure('geocache', cacheKey);
-    if (cached) return { ...cached, source: 'cache' };
+    // Ignorer les entrées de cache invalides (null, sans lat/lng)
+    if (cached && cached.lat && cached.lng) return { ...cached, source: 'cache' };
   } catch (_) {}
 
   // Extraire le code postal si présent (améliore la précision)
@@ -31,12 +32,17 @@ async function smartGeocode(address) {
 
   // 2. ── API Adresse data.gouv.fr ──────────────────────────────────────────
   //    Données cadastrales officielles (IGN + La Poste) — 100% gratuit, sans clé
-  //    Précision housenumber garantie pour les adresses françaises
+  //    Priorité ABSOLUE — précision housenumber au numéro exact
   for (const variant of variants) {
     try {
-      // L'API gouv.fr est limitée à la France — retirer le suffixe ", France" qui cause des 503
+      // Retirer le suffixe ", France" — l'API gouv.fr est France-only, ça perturbe le matching
       const variantFr = variant.replace(/,?\s*France\s*$/i, '').trim();
-      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(variantFr)}&limit=3`;
+      // Retirer aussi la ville du query si on a le postcode (la ville peut être mal orthographiée)
+      // Ex: "667 Rue de la Libération, 83390 Puget Ville" → "667 Rue de la Libération" + postcode=83390
+      const variantCp = postcode
+        ? variantFr.replace(new RegExp(`,?\\s*${postcode}.*$`), '').trim()
+        : variantFr;
+      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(variantCp || variantFr)}&limit=3`;
       if (postcode) url += `&postcode=${postcode}`;
 
       const res  = await fetch(url, {
@@ -57,8 +63,11 @@ async function smartGeocode(address) {
         const apiScore = p.score || 0.5;
 
         // Confidence élevée pour housenumber (adresse exacte au bâtiment)
-        const confidence = p.type === 'housenumber' ? Math.min(0.98, 0.75 + apiScore * 0.23)
-                         : p.type === 'street'      ? 0.68
+        // Score API gouv.fr >= 0.9 = très fiable (données cadastrales IGN + La Poste)
+        const confidence = p.type === 'housenumber' && apiScore >= 0.9 ? 0.98
+                         : p.type === 'housenumber'                    ? Math.min(0.97, 0.75 + apiScore * 0.23)
+                         : p.type === 'street'                         ? 0.70
+                         : p.type === 'municipality'                   ? 0.45
                          : 0.55;
 
         const result = { lat: c[1], lng: c[0], confidence, source: 'gouv', type: p.type, label: p.label };
@@ -135,12 +144,20 @@ function _buildAddrVariants(address) {
   );
   if (withHyphen !== address) variants.push(withHyphen);
 
+  // Variante avec tirets ET sans "France" (meilleur pour l'API gouv.fr)
+  const cleanFr = withHyphen.replace(/,?\s*France\s*$/i, '').trim();
+  if (cleanFr !== withHyphen && cleanFr !== address) variants.push(cleanFr);
+
   // Sans numéro (OSM ne connaît pas tous les numéros)
   const withoutNum = address.replace(/^\d+\s+/, '');
   if (withoutNum !== address) variants.push(withoutNum);
 
   // "Rue de la" → "Route de la" (fréquent en rural)
   if (/rue de la/i.test(address)) variants.push(address.replace(/rue de la/i, 'Route de la'));
+
+  // Variante sans accents (certaines BAN ont les adresses sans accent)
+  const noAccent = address.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (noAccent !== address) variants.push(noAccent);
 
   return [...new Set(variants)];
 }

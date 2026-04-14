@@ -806,7 +806,8 @@ async function _geocodeAdresse(adresse, patient) {
       const d = await r.json();
       if (d.length) coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 60 };
     }
-    _geocodeCache.set(key, coords);
+    // Ne mettre en cache que les succès — jamais null (évite de bloquer les retentatives)
+    if (coords) _geocodeCache.set(key, coords);
     return coords;
   } catch { return null; }
 }
@@ -945,9 +946,18 @@ async function _importSinglePatient(id) {
 
   showToastSafe(`📡 Géocodage de ${p.prenom||''} ${p.nom}…`);
 
-  // Géocoder via le pipeline complet (Photon → Nominatim + normalisation)
+  // Géocoder via le pipeline complet (API gouv.fr → Photon → Nominatim)
   let lat = p.lat || null, lng = p.lng || null, resolvedGeoScore = p.geoScore || 0;
-  if (!lat || !lng) {
+  if (!lat || !lng || resolvedGeoScore === 0) {
+    // Vider le cache IDB pour cette adresse si geoScore=0 (ancien résultat raté)
+    if (resolvedGeoScore === 0 || !lat) {
+      const cacheKey = typeof hashAddr === 'function' ? hashAddr(adresseComplete) : null;
+      if (cacheKey && typeof saveSecure === 'function') {
+        try { await saveSecure('geocache', cacheKey, null); } catch(_) {}
+      }
+      // Vider aussi le cache mémoire
+      _geocodeCache.delete(adresseComplete.trim().toLowerCase());
+    }
     const coords = await _geocodeAdresse(adresseComplete, p);
     if (coords) { lat = coords.lat; lng = coords.lng; resolvedGeoScore = coords.geoScore || 70; }
   }
