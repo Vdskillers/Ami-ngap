@@ -225,7 +225,10 @@ async function optimiserTournee(){
 
     /* ── 1. Moteur IA local — VRPTW greedy + cache OSRM ── */
     _showOptimProgress('⚡ Optimisation VRPTW en cours…');
-    let route = await optimizeTour(rawPatients, startPoint, 480, optimMode);
+    /* Heure de départ = heure actuelle en minutes depuis minuit (pas 8h00 fixe) */
+    const _now = new Date();
+    const startTimeMin = _now.getHours() * 60 + _now.getMinutes();
+    let route = await optimizeTour(rawPatients, startPoint, startTimeMin, optimMode);
 
     /* ── 2. 2-opt — amélioration du chemin (sauf si contraintes strictes) ── */
     _showOptimProgress('🔁 Optimisation 2-opt…');
