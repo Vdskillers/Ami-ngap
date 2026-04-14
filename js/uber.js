@@ -169,10 +169,29 @@ function _updateUberProgress() {
   if (el) el.textContent = `${done} / ${total} patients · ${total - done} restant(s)`;
 }
 
-/* ── Navigation Google Maps ──────────────────── */
+/* ── Navigation Google Maps ──────────────────────────────────
+   Point de départ = startPoint choisi dans la tournée (ou position
+   GPS live si disponible). Si aucun point de départ n'est défini,
+   Google Maps utilise la position de l'appareil.
+─────────────────────────────────────────────────────────────── */
 function openNavigation(p) {
   if (!p?.lat || !p?.lng) { alert('Adresse GPS du patient non disponible.'); return; }
-  window.open(`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`, '_blank');
+
+  const dest = `${p.lat},${p.lng}`;
+
+  // Priorité : GPS live > point de départ choisi manuellement
+  const origin = APP.get('userPos') || APP.get('startPoint');
+
+  let url;
+  if (origin && origin.lat && origin.lng) {
+    // Inclure l'origine explicite → Google Maps part de ce point exact
+    url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${dest}&travelmode=driving`;
+  } else {
+    // Pas de point de départ défini → Google Maps utilisera la position de l'appareil
+    url = `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`;
+  }
+
+  window.open(url, '_blank');
 }
 
 /* ── Recalcul OSRM complet ───────────────────── */

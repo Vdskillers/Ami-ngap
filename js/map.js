@@ -162,7 +162,224 @@ function disableCorrectionMode() {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  MODE CORRECTION POINT DE DÉPART
+//  TAP-TO-CORRECT PATIENT — correction position dans la tournée
+//  Branché sur IDB patients.js ET APP.importedData (tournée live)
+//  Appelé depuis les popups markers de la carte tournée IA.
+// ─────────────────────────────────────────────────────────────
+
+let _patCorrectMode    = false;
+let _patCorrectMarker  = null;
+let _patCorrectData    = null; // { patientId, idx, originalLat, originalLng }
+
+/**
+ * Active le mode correction tactile pour un patient de la tournée.
+ * @param {string|number} patientId  - id du patient (IDB)
+ * @param {number}        idx        - index dans APP.importedData.patients
+ * @param {number}        lat
+ * @param {number}        lng
+ * @param {string}        nom        - nom affiché dans le toast
+ */
+function enablePatientCorrection(patientId, idx, lat, lng, nom) {
+  const _map = (APP.map && typeof APP.map.invalidateSize === 'function')
+    ? APP.map : APP.map?.instance;
+  if (!_map) { if (typeof showToast === 'function') showToast('Carte non disponible'); return; }
+
+  // Désactiver un mode précédent
+  _disablePatientCorrection();
+
+  _patCorrectMode = true;
+  _patCorrectData = { patientId, idx, originalLat: lat, originalLng: lng, nom: nom || 'Patient' };
+
+  // Bannière flottante sur la carte
+  _showCorrectBanner(nom || 'Patient', _map);
+
+  // Marker draggable rouge pulsant
+  _patCorrectMarker = L.marker([lat, lng], {
+    draggable: true,
+    zIndexOffset: 1000,
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="
+        width:38px;height:38px;
+        background:#ff5f6d;
+        border:3px solid white;
+        border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        font-size:16px;
+        box-shadow:0 0 0 0 rgba(255,95,109,0.6);
+        animation:pulse-red 1.5s infinite;">✎</div>
+      <style>
+        @keyframes pulse-red {
+          0%   { box-shadow: 0 0 0 0 rgba(255,95,109,0.6); }
+          70%  { box-shadow: 0 0 0 10px rgba(255,95,109,0); }
+          100% { box-shadow: 0 0 0 0 rgba(255,95,109,0); }
+        }
+      </style>`,
+      iconSize: [38, 38],
+      iconAnchor: [19, 19],
+    }),
+  }).addTo(_map);
+
+  _map.setView([lat, lng], Math.max(_map.getZoom(), 17));
+  _map.getContainer().style.cursor = 'crosshair';
+
+  // Tap sur carte → déplace le marker
+  _map.on('click', _onPatCorrectClick);
+
+  // Drag → feedback vibration
+  _patCorrectMarker.on('drag', e => {
+    const { lat: la, lng: lo } = e.target.getLatLng();
+    _updateCorrectBannerCoords(la, lo);
+    if (navigator.vibrate) navigator.vibrate(20);
+  });
+
+  _patCorrectMarker.on('dragend', e => {
+    const { lat: la, lng: lo } = e.target.getLatLng();
+    _updateCorrectBannerCoords(la, lo);
+    if (navigator.vibrate) navigator.vibrate(40);
+  });
+
+  if (typeof showToast === 'function')
+    showToast(`✏️ Tapez ou glissez pour corriger la position de ${nom || 'ce patient'}`);
+}
+
+function _onPatCorrectClick(e) {
+  if (!_patCorrectMode || !_patCorrectMarker) return;
+  const { lat, lng } = e.latlng;
+  _patCorrectMarker.setLatLng([lat, lng]);
+  _updateCorrectBannerCoords(lat, lng);
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+function _showCorrectBanner(nom, mapInstance) {
+  // Supprimer bannière existante
+  const old = document.getElementById('pat-correct-banner');
+  if (old) old.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'pat-correct-banner';
+  banner.style.cssText = `
+    position:absolute;bottom:70px;left:50%;transform:translateX(-50%);
+    background:rgba(20,20,30,0.92);color:#fff;border-radius:14px;
+    padding:10px 16px;font-size:13px;font-family:var(--fm,monospace);
+    z-index:9999;display:flex;flex-direction:column;align-items:center;gap:8px;
+    white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    border:1px solid rgba(255,95,109,0.4);min-width:220px;`;
+  banner.innerHTML = `
+    <div style="font-weight:600;color:#ff5f6d">✏️ Correction position : ${nom}</div>
+    <div id="pat-correct-coords" style="font-size:11px;color:rgba(255,255,255,0.6)">Tapez ou glissez le marqueur</div>
+    <div style="display:flex;gap:8px;margin-top:2px">
+      <button onclick="_confirmPatientCorrection()" style="
+        background:#00d4aa;color:#fff;border:none;border-radius:8px;
+        padding:7px 16px;font-size:13px;cursor:pointer;font-weight:600;">✅ Valider</button>
+      <button onclick="_disablePatientCorrection()" style="
+        background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);
+        border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Annuler</button>
+    </div>`;
+
+  // Insérer dans le container de la carte
+  const mapContainer = (APP.map && typeof APP.map.getContainer === 'function')
+    ? APP.map.getContainer()
+    : document.getElementById('dep-map');
+  if (mapContainer) {
+    mapContainer.style.position = 'relative';
+    mapContainer.appendChild(banner);
+  } else {
+    document.body.appendChild(banner);
+  }
+}
+
+function _updateCorrectBannerCoords(lat, lng) {
+  const el = document.getElementById('pat-correct-coords');
+  if (el) el.textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
+
+async function _confirmPatientCorrection() {
+  if (!_patCorrectMarker || !_patCorrectData) return;
+
+  const { lat, lng } = _patCorrectMarker.getLatLng();
+  const { patientId, idx, nom } = _patCorrectData;
+
+  // 1. Snap sur la route la plus proche (OSRM)
+  let finalLat = lat, finalLng = lng;
+  try {
+    const snapped = await snapToRoad(lat, lng);
+    if (snapped) { finalLat = snapped.lat; finalLng = snapped.lng; }
+  } catch (_) {}
+
+  // 2. Mettre à jour APP.importedData (tournée en cours)
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  if (idx != null && patients[idx]) {
+    patients[idx].lat      = finalLat;
+    patients[idx].lng      = finalLng;
+    patients[idx].geoScore = 95; // correction manuelle = très fiable
+    if (typeof storeImportedData === 'function') {
+      storeImportedData({ ...APP.importedData, patients });
+    }
+  }
+
+  // 3. Sauvegarder dans l'IDB patients (carnet) si patientId fourni
+  if (patientId && typeof _idbGetAll === 'function') {
+    try {
+      const rows = await _idbGetAll('ami_patients');
+      const row  = rows.find(r => r.id === patientId);
+      if (row) {
+        const p = { id: row.id, nom: row.nom, prenom: row.prenom,
+                    ...(typeof _dec === 'function' ? (_dec(row._data) || {}) : {}) };
+        p.lat      = finalLat;
+        p.lng      = finalLng;
+        p.geoScore = 95;
+        const toStore = {
+          id:         p.id,
+          nom:        p.nom,
+          prenom:     p.prenom,
+          _data:      typeof _enc === 'function' ? _enc(p) : row._data,
+          updated_at: new Date().toISOString(),
+        };
+        if (typeof _idbPut === 'function') await _idbPut('ami_patients', toStore);
+      }
+    } catch (_) {}
+  }
+
+  // 4. Vider le cache géo pour cette adresse (évite de recharger les mauvaises coords)
+  if (patients[idx]?.adresse && typeof saveSecure === 'function' && typeof hashAddr === 'function') {
+    try { await saveSecure('geocache', hashAddr(patients[idx].adresse), null); } catch (_) {}
+  }
+
+  // 5. Fermer le mode correction
+  _disablePatientCorrection();
+
+  // 6. Rafraîchir la carte avec les nouvelles positions
+  const startPoint = APP.get('startPoint');
+  if (typeof renderPatientsOnMap === 'function' && patients.length) {
+    renderPatientsOnMap(patients, startPoint).catch(() => {});
+  }
+
+  if (typeof showToast === 'function')
+    showToast(`✅ Position de ${nom} corrigée et sauvegardée`);
+}
+
+function _disablePatientCorrection() {
+  const _map = (APP.map && typeof APP.map.invalidateSize === 'function')
+    ? APP.map : APP.map?.instance;
+
+  _patCorrectMode = false;
+  _patCorrectData = null;
+
+  if (_patCorrectMarker && _map) {
+    try { _map.removeLayer(_patCorrectMarker); } catch (_) {}
+    _patCorrectMarker = null;
+  }
+  if (_map) {
+    _map.off('click', _onPatCorrectClick);
+    _map.getContainer().style.cursor = '';
+  }
+
+  const banner = document.getElementById('pat-correct-banner');
+  if (banner) banner.remove();
+}
+
+
 //  Utilisé dans Tournée IA et Pilotage Live
 //  Marker "maison" draggable sur dep-map ou live-dep-map
 // ─────────────────────────────────────────────────────────────
@@ -601,13 +818,17 @@ async function useLiveMyLocation() {
           const nomAff     = p.description || p.name || p.texte || ('Patient ' + (idx+1));
           const adresseAff = p.adresse || p.address || p.addressFull || '';
           const heure      = p.heure_soin || p.heure_preferee || p.heure || '';
+          const patId      = p.id || p.patient_id || '';
 
           var popupContent = '<strong style="font-size:13px">' + nomAff + '</strong>';
           if (adresseAff) popupContent += '<br><span style="font-size:11px;color:#666">' + adresseAff + '</span>';
           if (heure)      popupContent += '<br><span style="font-size:11px">🕐 ' + heure + '</span>';
           if (isUrgent)   popupContent += '<br><span style="color:#E24B4A;font-size:11px">🚨 URGENT</span>';
           if (p.geoScore != null) popupContent += '<br><small style="color:#999">Score géo : ' + p.geoScore + '/100</small>';
-          popupContent += '<br><a href="#" style="font-size:11px" onclick="enableCorrectionMode(' + p.lat + ',' + p.lng + ');return false;">Corriger position</a>';
+          popupContent += '<br><div style="display:flex;gap:6px;margin-top:6px">'
+            + '<a href="#" style="font-size:11px;background:#ff5f6d;color:#fff;padding:3px 8px;border-radius:6px;text-decoration:none" '
+            + 'onclick="enablePatientCorrection(\'' + patId + '\',' + idx + ',' + p.lat + ',' + p.lng + ',\'' + nomAff.replace(/'/g,'\\'+'\'') + '\');return false;">✏️ Corriger position</a>'
+            + '</div>';
 
           marker.bindPopup(popupContent);
           marker.addTo(APP.map);
