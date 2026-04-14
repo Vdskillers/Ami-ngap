@@ -1,0 +1,332 @@
+/* ─────────────────────────────────────────────────────────────
+   notes.css + patient-form.css
+   Styles pour : fiche patient, notes, suggestions adresse
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Notes : conteneur ─────────────────────────────────────── */
+.notes-section {
+  margin-top: 1rem;
+}
+
+.notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 10px;
+  color: var(--text-secondary, #666);
+}
+
+.notes-empty {
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* ── Bloc note individuel ───────────────────────────────────── */
+.note-block {
+  background: var(--bg-secondary, #f7f7f5);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.note-block:last-child {
+  margin-bottom: 0;
+}
+
+.note-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.note-cat {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+/* catégories */
+.cat-general { background: #E1F5EE; color: #085041; }
+.cat-acces   { background: #E6F1FB; color: #0C447C; }
+.cat-medical { background: #FCEBEB; color: #791F1F; }
+.cat-urgent  { background: #FAEEDA; color: #633806; }
+
+.note-date {
+  font-size: 10px;
+  color: var(--text-secondary, #888);
+  margin-left: auto;
+}
+
+.note-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-primary, #111);
+}
+
+/* ── Zone d'édition ─────────────────────────────────────────── */
+.note-edit-area {
+  margin-top: 6px;
+}
+
+.note-edit-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 0.5px solid #1D9E75;
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #111);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  outline: none;
+  line-height: 1.5;
+}
+
+.note-edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* ── Boutons note ───────────────────────────────────────────── */
+.note-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.btn-note {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 0.5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+
+.btn-note.edit {
+  color: #185FA5;
+  border-color: #85B7EB;
+}
+.btn-note.edit:hover   { background: #E6F1FB; }
+
+.btn-note.delete {
+  color: #A32D2D;
+  border-color: #F09595;
+}
+.btn-note.delete:hover { background: #FCEBEB; }
+
+.btn-note.save {
+  color: #085041;
+  border-color: #5DCAA5;
+  background: #E1F5EE;
+}
+.btn-note.save:hover   { background: #9FE1CB; }
+
+.btn-note.cancel {
+  color: var(--text-secondary, #666);
+  border-color: var(--border, #ddd);
+}
+.btn-note.cancel:hover { background: var(--bg-secondary, #f7f7f5); }
+
+/* ── Confirmation suppression ───────────────────────────────── */
+.note-confirm-delete {
+  background: #FCEBEB;
+  border: 0.5px solid #F09595;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 6px;
+}
+
+.confirm-msg {
+  font-size: 12px;
+  color: #791F1F;
+  margin-bottom: 8px;
+}
+
+.confirm-btns {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Formulaire d'ajout de note ─────────────────────────────── */
+.btn-add-note {
+  font-size: 12px;
+  color: #185FA5;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+.btn-add-note:hover { text-decoration: underline; }
+
+.add-note-form {
+  border: 0.5px dashed var(--border-secondary, #ccc);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  background: var(--bg-primary, #fff);
+}
+
+.add-note-form textarea {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 0.5px solid var(--border-secondary, #ccc);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f7f7f5);
+  color: var(--text-primary, #111);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 56px;
+  outline: none;
+  margin-bottom: 8px;
+}
+
+.add-note-form textarea:focus {
+  border-color: #1D9E75;
+  background: var(--bg-primary, #fff);
+}
+
+.add-note-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ── Sélecteur de catégorie ─────────────────────────────────── */
+.cat-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.cat-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 0.5px solid var(--border, #ccc);
+  background: transparent;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s;
+}
+
+.cat-btn.general.selected { background: #E1F5EE; border-color: #1D9E75; color: #085041; font-weight: 500; }
+.cat-btn.acces.selected   { background: #E6F1FB; border-color: #378ADD; color: #0C447C; font-weight: 500; }
+.cat-btn.medical.selected { background: #FCEBEB; border-color: #E24B4A; color: #791F1F; font-weight: 500; }
+.cat-btn.urgent.selected  { background: #FAEEDA; border-color: #EF9F27; color: #633806; font-weight: 500; }
+
+/* ── Formulaire adresse ─────────────────────────────────────── */
+.addr-full {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 10px;
+}
+
+.suggest-box {
+  position: relative;
+}
+
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-primary, #fff);
+  border: 0.5px solid var(--border-secondary, #ccc);
+  border-radius: 8px;
+  z-index: 200;
+  overflow: hidden;
+  margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.sug-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 0.5px solid var(--border-tertiary, #eee);
+  color: var(--text-primary, #111);
+}
+
+.sug-item:last-child { border-bottom: none; }
+.sug-item:hover      { background: var(--bg-secondary, #f7f7f5); }
+
+.sug-cp   { font-weight: 500; color: #185FA5; }
+.sug-ville { color: var(--text-secondary, #666); font-size: 12px; }
+
+/* ── Prévisualisation adresse ───────────────────────────────── */
+.addr-preview {
+  background: #E1F5EE;
+  border: 0.5px solid #5DCAA5;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #085041;
+  margin-top: 8px;
+}
+
+.addr-preview strong {
+  font-weight: 500;
+}
+
+.warn-addr {
+  background: #FAEEDA;
+  border: 0.5px solid #EF9F27;
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12px;
+  color: #633806;
+  margin-top: 6px;
+}
+
+/* ── Indicateur géo ─────────────────────────────────────────── */
+.geo-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-top: 8px;
+  color: var(--text-secondary, #666);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot.green  { background: #1D9E75; }
+.dot.orange { background: #EF9F27; }
+.dot.red    { background: #E24B4A; }
+
+/* ── Country badge ──────────────────────────────────────────── */
+.country-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  font-size: 14px;
+  border: 0.5px solid var(--border-tertiary, #eee);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f7f7f5);
+  color: var(--text-secondary, #666);
+  height: 36px;
+}
