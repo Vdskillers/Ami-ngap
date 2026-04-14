@@ -782,34 +782,126 @@ function _filterPickerList() {
 
 const _geocodeCache = new Map();
 
+/* ── Timeout compatible tous navigateurs (AbortSignal.timeout non dispo partout) ── */
+function _fetchGeo(url, opts, ms) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), ms || 7000);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
+}
+
+/* ── Géocodage avec API Adresse gouv.fr en priorité absolue ──────────────────────
+   1. API Adresse data.gouv.fr (IGN + La Poste) — données cadastrales, housenumber exact
+   2. geocode.js smartGeocode si chargé (Photon + Nominatim enrichis)
+   3. Nominatim direct — dernier recours
+   Score > 90 si housenumber trouvé par gouv.fr
+──────────────────────────────────────────────────────────────────────────────── */
 async function _geocodeAdresse(adresse, patient) {
   if (!adresse || !adresse.trim()) return null;
   const key = adresse.trim().toLowerCase();
   if (_geocodeCache.has(key)) return _geocodeCache.get(key);
+
+  // Vider le cache si résultat null ou geoScore=0 (ancien géocodage raté)
+  _geocodeCache.delete(key);
+
+  let coords = null;
+
   try {
-    let coords = null;
-    // Pipeline complet si geocode.js est chargé (Photon → Nominatim + normalisation)
-    if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
-      const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
-      const geo     = await smartGeocode(cleaned);
-      if (geo && geo.lat && geo.lng) {
-        const score = typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70;
-        coords = { lat: geo.lat, lng: geo.lng, geoScore: score };
+    // ── 1. API Adresse data.gouv.fr — TOUJOURS EN PREMIER ──────────────────
+    //    Données IGN + La Poste — précision numéro de rue exact
+    //    100% gratuit, sans clé, France uniquement
+    const cpMatch = adresse.match(/(\d{5})/);
+    const postcode = cpMatch ? cpMatch[1] : (patient?.zip || '');
+
+    // Normaliser l'adresse : tirets communes, sans France
+    let addrClean = adresse
+      .replace(/,?\s*France\s*$/i, '')
+      .replace(/(Puget|Saint|Sainte|Mont|Bois|Val|Puy|Pont|Port|Bourg|Vieux|Neuf|Grand|Petit)\s+([A-ZÀ-Ÿ][a-zà-ÿ]+)/g,
+               (_, a, b) => `${a}-${b}`)
+      .trim();
+
+    // Stratégie optimale : retirer la ville du query si on a le CP
+    // Ex: q="667 rue de la libération" + postcode=83390 → score 0.966 housenumber
+    const addrQuery = postcode
+      ? addrClean.replace(new RegExp(`,?\s*${postcode}[^,]*`), '').trim()
+      : addrClean;
+
+    const variants = [addrQuery, addrClean];
+    if (patient?.street) variants.unshift(
+      [patient.street, patient.zip, patient.city].filter(Boolean).join(' ')
+    );
+
+    for (const q of [...new Set(variants)]) {
+      if (!q || q === 'France') continue;
+      try {
+        let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=5`;
+        if (postcode) url += `&postcode=${postcode}`;
+
+        const res  = await _fetchGeo(url, { headers: { 'User-Agent': 'AMI-NGAP/1.0' } }, 7000);
+        const data = await res.json();
+        const feats = data.features || [];
+        if (!feats.length) continue;
+
+        const best = feats.find(f => f.properties?.type === 'housenumber')
+                  || feats.find(f => f.properties?.type === 'street')
+                  || feats[0];
+        const p = best.properties;
+        const c = best.geometry.coordinates;
+        const apiScore = p.score || 0.5;
+
+        // Score géo selon précision
+        let geoScore = 50;
+        if (p.type === 'housenumber' && apiScore >= 0.9) geoScore = 95;
+        else if (p.type === 'housenumber')               geoScore = Math.round(75 + apiScore * 20);
+        else if (p.type === 'street')                    geoScore = 70;
+        else                                             geoScore = 50;
+
+        coords = { lat: c[1], lng: c[0], geoScore, source: 'gouv', type: p.type, label: p.label };
+        console.info('[GEO] ✅ gouv.fr:', p.type, 'score', apiScore.toFixed(3), '→', p.label, 'geoScore:', geoScore);
+        break;
+      } catch(e) {
+        console.warn('[GEO] gouv.fr erreur:', e.message);
       }
     }
-    // Fallback Nominatim direct
-    if (!coords) {
-      const r = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1&countrycodes=fr`,
-        { headers: { 'Accept-Language': 'fr' } }
-      );
-      const d = await r.json();
-      if (d.length) coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 60 };
+
+    // ── 2. geocode.js smartGeocode si chargé et gouv.fr n'a pas trouvé ────
+    if (!coords && typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
+      try {
+        const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
+        const geo = await smartGeocode(cleaned);
+        if (geo && geo.lat && geo.lng) {
+          const score = typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70;
+          coords = { lat: geo.lat, lng: geo.lng, geoScore: score };
+        }
+      } catch(e) {
+        console.warn('[GEO] smartGeocode erreur:', e.message);
+      }
     }
-    // Ne mettre en cache que les succès — jamais null (évite de bloquer les retentatives)
-    if (coords) _geocodeCache.set(key, coords);
-    return coords;
-  } catch { return null; }
+
+    // ── 3. Nominatim — dernier recours ──────────────────────────────────────
+    if (!coords) {
+      try {
+        const res = await _fetchGeo(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=3&countrycodes=fr`,
+          { headers: { 'Accept-Language': 'fr' } }, 7000
+        );
+        const d = await res.json();
+        if (d.length) {
+          const best = d.find(r => r.type === 'house') || d[0];
+          const geoScore = best.type === 'house' ? 65 : /^\d/.test(adresse) ? 55 : 45;
+          coords = { lat: parseFloat(best.lat), lng: parseFloat(best.lon), geoScore, source: 'nominatim' };
+          console.info('[GEO] nominatim fallback:', best.type, 'geoScore:', geoScore);
+        }
+      } catch(e) {
+        console.warn('[GEO] nominatim erreur:', e.message);
+      }
+    }
+
+  } catch(e) {
+    console.warn('[GEO] _geocodeAdresse erreur générale:', e.message);
+  }
+
+  if (coords) _geocodeCache.set(key, coords);
+  return coords;
 }
 
 /* Géocoder un tableau de patients — retourne les patients enrichis avec lat/lng */
