@@ -710,17 +710,40 @@ function autoCotationLocale(texte) {
 /* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  if (!patients.length) {
+    if(typeof showToast==='function') showToast('⚠️ Importez des patients avant de démarrer la journée.');
+    return;
+  }
+  // Reset état des patients pour une nouvelle journée
+  patients.forEach(p => { p._done=false; p._absent=false; });
+
   startLiveTimer();
   const el=$('live-badge');
   if(el){el.textContent='EN COURS';el.style.background='var(--ad)';el.style.color='var(--a)';}
-  $('btn-live-start').style.display='none';
+  const btnStart=$('btn-live-start');
+  if(btnStart) btnStart.style.display='none';
   // Afficher bouton "Terminer la tournée"
   const btnStop = $('btn-live-stop');
   if (btnStop) btnStop.style.display = 'inline-flex';
   $('live-controls').style.display='block';
+
+  // Initialiser le premier patient actif
+  const firstP = patients[0];
+  if(firstP){
+    LIVE_PATIENT_ID = firstP.patient_id || firstP.id || null;
+    $('live-patient-name').textContent = firstP.description||firstP.texte||'Premier patient';
+    $('live-info').textContent = `Soin 1/${patients.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
+  }
+
   /* ── Démarrer le moteur IA temps réel ── */
   if(typeof startLiveOptimization==='function') startLiveOptimization();
-  await liveStatusCore();
+
+  // Afficher la liste des patients
+  renderLivePatientList();
+
+  // Tenter appel API, mais ne pas bloquer si indisponible
+  liveStatusCore().catch(()=>{});
 };
 
 /* liveStatusCore = contenu de liveStatus original */
@@ -748,22 +771,227 @@ async function liveStatusCore(){
   }catch(e){console.error(e);}
 }
 
-/* Patch liveAction pour auto-facturation */
+/* Patch liveAction pour auto-facturation + modale cotation */
 const _origLiveActionFn=window.liveAction;
 window.liveAction=async function(action){
-  if(action==='patient_done'&&LIVE_PATIENT_ID){
-    const patients=APP.importedData?.patients||APP.importedData?.entries||[];
-    const p=patients.find(x=>x.patient_id===LIVE_PATIENT_ID||(String(x.id)===String(LIVE_PATIENT_ID)));
-    if(p)await autoFacturation(p);
+  const patients=APP.importedData?.patients||APP.importedData?.entries||[];
+
+  if(action==='patient_done'){
+    /* ── Trouver le patient actif ── */
+    let activeP = null;
+    if(LIVE_PATIENT_ID){
+      activeP = patients.find(x=>x.patient_id===LIVE_PATIENT_ID||(String(x.id)===String(LIVE_PATIENT_ID)));
+    }
+    if(!activeP){
+      // Prendre le premier patient non-traité
+      activeP = patients.find(x => !x._done && !x._absent);
+    }
+    if(activeP){
+      // Marquer comme fait
+      activeP._done = true;
+      // Auto-facturation CA
+      const cot = await autoFacturation(activeP);
+      // Cotation locale en fallback si API indisponible
+      const cotLocal = autoCotationLocale(activeP.description||activeP.texte||'');
+      const cotAffichee = (cot && cot.actes?.length) ? cot : cotLocal;
+      // Afficher la modale de cotation
+      showCotationModal(activeP, cotAffichee);
+      // Avancer au patient suivant
+      const nextP = patients.find(x => !x._done && !x._absent);
+      if(nextP){
+        LIVE_PATIENT_ID = nextP.patient_id || nextP.id || null;
+        $('live-patient-name').textContent = nextP.description||nextP.texte||'Prochain patient';
+        $('live-info').textContent = `Prochain soin${nextP.heure_soin?' à '+nextP.heure_soin:''}`;
+      }else{
+        $('live-patient-name').textContent = 'Tournée terminée ✅';
+        $('live-info').textContent = 'Tous les patients ont été pris en charge';
+      }
+      renderLivePatientList();
+    }else{
+      if(typeof showToast==='function') showToast('ℹ️ Aucun patient actif.');
+    }
+    return;
   }
-  // appel original
-  if(!LIVE_PATIENT_ID&&action!=='get_status'){alert('Aucun patient actif.');return;}
+
+  if(action==='patient_absent'){
+    let activeP = patients.find(x=>x.patient_id===LIVE_PATIENT_ID||(String(x.id)===String(LIVE_PATIENT_ID)));
+    if(!activeP) activeP = patients.find(x => !x._done && !x._absent);
+    if(activeP){
+      activeP._absent = true;
+      const nextP = patients.find(x => !x._done && !x._absent);
+      if(nextP){
+        LIVE_PATIENT_ID = nextP.patient_id || nextP.id || null;
+        $('live-patient-name').textContent = nextP.description||nextP.texte||'Prochain patient';
+        $('live-info').textContent = `Prochain soin${nextP.heure_soin?' à '+nextP.heure_soin:''}`;
+      }
+      renderLivePatientList();
+      if(typeof showToast==='function') showToast('❌ Patient absent noté.');
+    }
+    return;
+  }
+
+  // Appel API pour autres actions (get_status, recalcul…)
   try{
     const d=await apiCall('/webhook/ami-live',{action,patient_id:LIVE_PATIENT_ID||''});
-    if(d.suggestion)alert('💡 '+d.suggestion);
+    if(d.suggestion)showToast?showToast('💡 '+d.suggestion):alert('💡 '+d.suggestion);
     await liveStatusCore();
-  }catch(e){alert('Erreur : '+e.message);}
+  }catch(e){
+    // Pas d'alert bloquant si API indisponible — afficher le statut local
+    renderLivePatientList();
+  }
 };
 
+/* ============================================================
+   LISTE PATIENTS PILOTAGE — Affichage local avec état
+   ============================================================ */
+function renderLivePatientList() {
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const el = $('live-next');
+  if (!el) return;
+
+  if (!patients.length) {
+    el.innerHTML = `<div class="card">
+      <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong> ou <strong>Tournée IA</strong> pour importer des patients.</div>
+      <button class="btn bp bsm" style="margin-top:10px" onclick="navTo('imp',null)"><span>📂</span> Importer des patients</button>
+    </div>`;
+    return;
+  }
+
+  const done   = patients.filter(p => p._done).length;
+  const absent = patients.filter(p => p._absent).length;
+  const reste  = patients.length - done - absent;
+
+  el.innerHTML = `<div class="card">
+    <div class="ct" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span>📋 Patients de la journée (${patients.length})</span>
+      <button class="btn bs bsm" onclick="removeAllImportedPatients()" style="font-size:11px;padding:4px 10px">🗑️ Tout supprimer</button>
+    </div>
+    <div style="display:flex;gap:8px;margin:10px 0 14px;flex-wrap:wrap">
+      <span class="dreb" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:#22c55e">✅ ${done} fait(s)</span>
+      <span class="dreb" style="background:rgba(255,95,109,.08);border-color:rgba(255,95,109,.2);color:var(--d)">❌ ${absent} absent(s)</span>
+      <span class="dreb">⏳ ${reste} restant(s)</span>
+    </div>
+    ${patients.map((p, i) => {
+      const desc = isAdmin ? `Patient #${i+1} <span style="font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;margin-left:6px">Admin — données masquées</span>` : (p.description || p.texte || `Patient ${i+1}`);
+      const statusIcon = p._done ? '✅' : p._absent ? '❌' : '⏳';
+      const statusColor = p._done ? 'rgba(34,197,94,.08)' : p._absent ? 'rgba(255,95,109,.05)' : 'var(--s)';
+      const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+      return `<div class="route-item" style="background:${statusColor};border:1px solid var(--b);border-radius:10px;margin-bottom:6px;padding:10px 12px;align-items:center">
+        <div class="route-num" style="font-size:16px">${statusIcon}</div>
+        <div class="route-info" style="flex:1;min-width:0">
+          <strong style="font-size:13px">${desc}</strong>
+          ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
+        </div>
+        <button class="btn bs bsm" onclick="removeImportedPatient(${i})" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--d);border-color:rgba(255,95,109,.2);background:rgba(255,95,109,.05)" title="Supprimer ce patient">✕</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function removeImportedPatient(index) {
+  if (!APP.importedData?.patients) return;
+  const p = APP.importedData.patients[index];
+  const desc = (p?.description || p?.texte || `Patient ${index+1}`).slice(0, 30);
+  if (!confirm(`Supprimer "${desc}" de la tournée ?`)) return;
+  APP.importedData.patients.splice(index, 1);
+  APP.importedData.total = APP.importedData.patients.length;
+  storeImportedData(APP.importedData);
+  renderLivePatientList();
+  if (typeof showToast === 'function') showToast(`🗑️ Patient supprimé de la tournée.`);
+}
+
+function removeAllImportedPatients() {
+  const n = APP.importedData?.patients?.length || 0;
+  if (!n) return;
+  if (!confirm(`Supprimer tous les ${n} patients de la tournée ?`)) return;
+  APP.importedData = null;
+  const banner = $('pla-import-banner');
+  if (banner) banner.style.display = 'none';
+  const caWrap = $('tur-ca-wrap');
+  if (caWrap) caWrap.style.display = 'none';
+  renderLivePatientList();
+  if (typeof showToast === 'function') showToast(`🗑️ Tous les patients supprimés.`);
+}
+
+/* ============================================================
+   MODALE COTATION — Affichage après "Patient terminé"
+   ============================================================ */
+function showCotationModal(patient, cotation) {
+  // Supprimer modale précédente
+  const existing = document.getElementById('cot-modal-live');
+  if (existing) existing.remove();
+
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+  if (isAdmin) return; // Les admins ne voient pas les données patients
+
+  const actes = cotation?.actes || [];
+  const total = cotation?.total || 0;
+
+  const modal = document.createElement('div');
+  modal.id = 'cot-modal-live';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.75);display:flex;align-items:flex-end;justify-content:center;padding:16px;box-sizing:border-box';
+
+  modal.innerHTML = `
+    <div style="background:var(--bg,#0b0f14);border:1px solid rgba(0,212,170,.25);border-radius:20px 20px 16px 16px;padding:24px;width:100%;max-width:520px;max-height:80vh;overflow-y:auto;box-shadow:0 -8px 40px rgba(0,0,0,.5)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:var(--fs);font-size:18px;color:var(--t)">⚡ Cotation automatique</div>
+        <button onclick="document.getElementById('cot-modal-live').remove()" style="background:none;border:none;color:var(--m);font-size:22px;cursor:pointer;line-height:1">✕</button>
+      </div>
+      <div style="font-size:13px;color:var(--m);margin-bottom:14px;padding:8px 12px;background:var(--s);border-radius:8px;font-family:var(--fm)">
+        📋 ${(patient.description || patient.texte || 'Soin infirmier').slice(0, 80)}
+      </div>
+
+      ${actes.length ? `
+      <div style="margin-bottom:14px">
+        <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Actes détectés</div>
+        ${actes.map(a => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.15);border-radius:8px;margin-bottom:6px">
+            <div>
+              <span style="font-family:var(--fm);font-size:12px;background:var(--ad);color:var(--a);padding:2px 8px;border-radius:20px;margin-right:8px">${a.code}</span>
+              <span style="font-size:13px;color:var(--t)">${a.nom}</span>
+            </div>
+            <span style="font-family:var(--fm);font-size:13px;color:var(--a);font-weight:700">${(a.total||0).toFixed(2)} €</span>
+          </div>
+        `).join('')}
+      </div>
+      ` : `<div class="ai wa" style="margin-bottom:14px">Aucun acte détecté automatiquement. Vous pouvez coter manuellement.</div>`}
+
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.25);border-radius:10px;margin-bottom:16px">
+        <span style="font-size:14px;color:var(--t);font-weight:600">Total estimé</span>
+        <span style="font-family:var(--fs);font-size:22px;color:var(--a)">${total.toFixed(2)} €</span>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn bp" style="flex:1" onclick="_validateCotationLive(${JSON.stringify(patient).replace(/'/g,"&apos;")})">
+          ✅ Valider
+        </button>
+        <button class="btn bv" style="flex:1" onclick="document.getElementById('cot-modal-live').remove();navTo('cot',null)">
+          ✏️ Modifier dans la cotation
+        </button>
+        <button class="btn bs" style="flex:none" onclick="document.getElementById('cot-modal-live').remove()">
+          Ignorer
+        </button>
+      </div>
+      <p style="font-size:11px;color:var(--m);margin-top:10px;font-family:var(--fm);text-align:center">
+        💡 Source locale · Basé sur la description du soin · Vérifiez avant facturation officielle
+      </p>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  // Fermer en cliquant hors de la modale
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+function _validateCotationLive(patient) {
+  const modal = document.getElementById('cot-modal-live');
+  if (modal) modal.remove();
+  if (typeof showToast === 'function') showToast('✅ Cotation validée — ajoutée au CA de la journée.');
+}
+
 /* Patch liveStatus global */
-window.liveStatus=liveStatusCore;
+window.liveStatus = function() {
+  renderLivePatientList();
+  liveStatusCore();
+};
