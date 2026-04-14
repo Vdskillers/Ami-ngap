@@ -7,84 +7,111 @@
 
 /**
  * Géocode une adresse propre.
- * Ordre : cache local → Photon → Nominatim
+ * Ordre : cache → API Adresse gouv.fr (officiel France) → Photon → Nominatim
  * Retourne { lat, lng, confidence, source }
+ *
+ * ✅ API Adresse data.gouv.fr = données cadastrales IGN + La Poste
+ *    → précision au numéro de rue, 100% gratuit, sans clé, France uniquement
  */
 async function smartGeocode(address) {
   const cacheKey = hashAddr(address);
 
-  // 1. cache local (IndexedDB)
+  // 1. Cache IndexedDB
   try {
     const cached = await loadSecure('geocache', cacheKey);
-    if (cached) {
-      console.info('[Geocode] Cache hit :', address);
-      return { ...cached, source: 'cache' };
-    }
+    if (cached) return { ...cached, source: 'cache' };
   } catch (_) {}
 
-  /* Générer des variantes de l'adresse pour améliorer la précision
-     Ex: "Puget Ville" → "Puget-Ville", "st " → "Saint " */
+  // Extraire le code postal si présent (améliore la précision)
+  const cpMatch = address.match(/\b(\d{5})\b/);
+  const postcode = cpMatch ? cpMatch[1] : '';
+
+  // Variantes d'adresse (tirets communes composées, sans numéro, Route vs Rue)
   const variants = _buildAddrVariants(address);
 
-  // 2. Photon (komoot) — essayer toutes les variantes, garder le meilleur résultat
-  let bestPhoton = null;
+  // 2. ── API Adresse data.gouv.fr ──────────────────────────────────────────
+  //    Données cadastrales officielles (IGN + La Poste) — 100% gratuit, sans clé
+  //    Précision housenumber garantie pour les adresses françaises
   for (const variant of variants) {
     try {
-      const res  = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(variant)}&limit=3&lang=fr`
-      );
+      let url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(variant)}&limit=3`;
+      if (postcode) url += `&postcode=${postcode}`;
+
+      const res  = await fetch(url, {
+        headers: { 'User-Agent': 'AMI-NGAP/1.0' },
+        signal:  AbortSignal.timeout(6000),
+      });
       const data = await res.json();
+      const feats = data.features || [];
 
-      if (data.features?.length) {
-        // Prendre le premier résultat de type house/street si disponible
-        const f = data.features.find(ft =>
-          ['house','street'].includes(ft.properties?.type)
-        ) || data.features[0];
+      if (feats.length) {
+        // Préférer housenumber > street > locality
+        const best = feats.find(f => f.properties?.type === 'housenumber')
+                  || feats.find(f => f.properties?.type === 'street')
+                  || feats[0];
 
-        const confidence = f.properties?.score || 0.7;
-        const result = {
-          lat:        f.geometry.coordinates[1],
-          lng:        f.geometry.coordinates[0],
-          confidence: confidence,
-          source:     'photon',
-        };
-        // Garder le résultat avec la meilleure confidence
-        if (!bestPhoton || confidence > bestPhoton.confidence) {
-          bestPhoton = result;
-        }
-        // Si on a un résultat de type house (adresse exacte), inutile de continuer
-        if (f.properties?.type === 'house') break;
+        const p = best.properties;
+        const c = best.geometry.coordinates;
+        const apiScore = p.score || 0.5;
+
+        // Confidence élevée pour housenumber (adresse exacte au bâtiment)
+        const confidence = p.type === 'housenumber' ? Math.min(0.98, 0.75 + apiScore * 0.23)
+                         : p.type === 'street'      ? 0.68
+                         : 0.55;
+
+        const result = { lat: c[1], lng: c[0], confidence, source: 'gouv', type: p.type, label: p.label };
+        await saveSecure('geocache', cacheKey, result);
+        return result;
       }
     } catch (_) {}
   }
 
-  if (bestPhoton) {
-    await saveSecure('geocache', cacheKey, bestPhoton);
-    return bestPhoton;
+  // 3. ── Photon (komoot) — fallback international ──────────────────────────
+  for (const variant of variants) {
+    try {
+      const res  = await fetch(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(variant)}&limit=3&lang=fr`,
+        { signal: AbortSignal.timeout(5000) }
+      );
+      const data = await res.json();
+
+      if (data.features?.length) {
+        const f = data.features.find(ft => ['house','street'].includes(ft.properties?.type))
+               || data.features[0];
+        const result = {
+          lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
+          confidence: f.properties?.score || 0.65, source: 'photon',
+        };
+        if (f.properties?.type === 'house') {
+          await saveSecure('geocache', cacheKey, result);
+          return result;
+        }
+        // Garder comme meilleur résultat Photon mais continuer pour housenumber
+        if (!result._photonBest || result.confidence > result._photonBest.confidence) {
+          result._photonBest = result;
+        }
+        await saveSecure('geocache', cacheKey, result);
+        return result;
+      }
+    } catch (_) {}
   }
 
-  // 3. Nominatim (fallback) — essayer les variantes aussi
+  // 4. ── Nominatim — dernier recours ──────────────────────────────────────
   for (const variant of variants) {
     try {
       const res  = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(variant)}&limit=3&countrycodes=fr&addressdetails=1`,
-        { headers: { 'Accept-Language': 'fr' } }
+        { headers: { 'Accept-Language': 'fr' }, signal: AbortSignal.timeout(5000) }
       );
       const data = await res.json();
 
       if (data.length) {
-        // Préférer les résultats de type house/building/road
-        const best = data.find(d => ['house','building','road'].includes(d.type)) || data[0];
-        // Confidence plus haute si on a trouvé un numéro de rue exact
-        const hasHouseNum = /^\d/.test(variant);
-        const confidence = (best.type === 'house' || best.type === 'building') ? 0.75
-          : hasHouseNum ? 0.65
-          : 0.55;
+        const best = data.find(r => ['house','building'].includes(r.type)) || data[0];
+        const hasNum = /^\d/.test(variant);
         const result = {
-          lat:        parseFloat(best.lat),
-          lng:        parseFloat(best.lon),
-          confidence: confidence,
-          source:     'nominatim',
+          lat: parseFloat(best.lat), lng: parseFloat(best.lon),
+          confidence: best.type === 'house' ? 0.72 : hasNum ? 0.62 : 0.52,
+          source: 'nominatim',
         };
         await saveSecure('geocache', cacheKey, result);
         return result;
@@ -95,28 +122,25 @@ async function smartGeocode(address) {
   throw new Error('Géocodage impossible pour : ' + address);
 }
 
-/* Génère des variantes d'une adresse pour maximiser les chances de géocodage précis */
+/* Génère des variantes d'une adresse pour maximiser les chances de géocodage */
 function _buildAddrVariants(address) {
   const variants = [address];
 
-  // Variante avec tirets dans les noms de communes composés
-  // Ex: "Puget Ville" → "Puget-Ville", "Saint Germain" → "Saint-Germain"
+  // Communes composées : "Puget Ville" → "Puget-Ville"
   const withHyphen = address.replace(
-    /\b(Saint|Sainte|Sur|Sous|En|Les|Le|La|Du|Des|De|Mont|Bois|Val|Puy|Puget|Pont|Port|Bourg|Ville|Roc|Grand|Vieux|Neuf)\s+([A-Z][a-zÀ-ÿ]+)/g,
+    /\b(Saint|Sainte|Sur|Sous|En|Les|Le|La|Du|Des|De|Mont|Bois|Val|Puy|Puget|Pont|Port|Bourg|Roc|Grand|Vieux|Neuf)\s+([A-ZÀ-Ÿ][a-zà-ÿ]+)/g,
     (_, a, b) => `${a}-${b}`
   );
   if (withHyphen !== address) variants.push(withHyphen);
 
-  // Variante sans le numéro (pour les adresses où le numéro est inconnu d'OSM)
+  // Sans numéro (OSM ne connaît pas tous les numéros)
   const withoutNum = address.replace(/^\d+\s+/, '');
   if (withoutNum !== address) variants.push(withoutNum);
 
-  // Variante avec "Rue de la" → "Route de la" (communes rurales)
-  if (/rue de la/i.test(address)) {
-    variants.push(address.replace(/rue de la/i, 'Route de la'));
-  }
+  // "Rue de la" → "Route de la" (fréquent en rural)
+  if (/rue de la/i.test(address)) variants.push(address.replace(/rue de la/i, 'Route de la'));
 
-  return [...new Set(variants)]; // dédoublonner
+  return [...new Set(variants)];
 }
 
 /**

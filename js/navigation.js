@@ -64,18 +64,22 @@ function buildNavigationAddress(patient) {
 function computeGeoScore(addr, geocodeResult) {
   let score = 50;
 
-  if (/\d/.test(addr))                                  score += 10; // numéro de rue
+  if (/\d/.test(addr))                                                      score += 10; // numéro rue
   if (/rue|avenue|boulevard|impasse|allée|route|chemin|passage|place/i.test(addr)) score += 10;
-  if (addr.length > 20)                                 score += 10;
-  if ((geocodeResult.confidence || 0) >= 0.75)          score += 20;
-  else if ((geocodeResult.confidence || 0) >= 0.65)     score += 10;
-  if (geocodeResult.source === 'photon')                score +=  5;
-  // Bonus si Nominatim a trouvé un type précis (house/building)
+  if (addr.length > 20)                                                     score +=  5;
+
+  // API Adresse gouv.fr = données cadastrales officielles France
+  if (geocodeResult.source === 'gouv' && geocodeResult.type === 'housenumber') score += 30;
+  else if (geocodeResult.source === 'gouv' && geocodeResult.type === 'street') score += 15;
+  else if ((geocodeResult.confidence || 0) >= 0.80)                           score += 20;
+  else if ((geocodeResult.confidence || 0) >= 0.65)                           score += 10;
+  if (geocodeResult.source === 'photon')                                    score +=  5;
   if (geocodeResult.source === 'nominatim' && (geocodeResult.confidence || 0) >= 0.65) score += 5;
 
-  // pénalités adresses imprécises
-  if (/chez |bat[i]?|appt?/i.test(addr))               score -= 15;
-  if (!geocodeResult.lat || !geocodeResult.lng)         score  =  0;
+  // pénalités
+  if (/chez |bat[i]?|appt?/i.test(addr))                                   score -= 15;
+  if (!geocodeResult.lat || !geocodeResult.lng)                             score  =  0;
 
   return Math.min(100, Math.max(0, score));
 }
+
