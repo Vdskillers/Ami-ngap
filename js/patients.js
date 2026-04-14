@@ -1053,12 +1053,15 @@ async function _forceRegeocode(id) {
 /* ── Initialisation ── */
 document.addEventListener('DOMContentLoaded', () => {
   // Charger patients quand on arrive sur la section
-  document.addEventListener('app:nav', e => {
+  // Écouter les deux events de navigation (ui.js dispatche 'ui:navigate')
+  const _onPatNav = e => {
     if (e.detail?.view === 'patients') {
       loadPatients();
       checkOrdoExpiry();
     }
-  });
+  };
+  document.addEventListener('app:nav',     _onPatNav);
+  document.addEventListener('ui:navigate', _onPatNav);
   // Init DB au démarrage pour les alertes ordo
   initPatientsDB().then(checkOrdoExpiry).catch(() => {});
 });

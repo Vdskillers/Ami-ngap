@@ -1161,8 +1161,38 @@ function _validateCotationLive() {
   // Ajouter au récap CA
   updateLiveCaCard(patient, { actes, total });
 
-  // Marquer la cotation sur le patient
+  // Marquer la cotation sur le patient en mémoire
   if (patient) patient._cotation = { actes, total, validated: true };
+
+  // Sauvegarder la cotation dans le carnet patient (IDB) si la fiche existe
+  (async () => {
+    try {
+      const pid = patient?.patient_id || patient?.id;
+      if (!pid || typeof _idbGetAll !== 'function') return;
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      const row  = rows.find(r => r.id === pid);
+      if (!row) return;
+      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+      if (!p.cotations) p.cotations = [];
+      p.cotations.push({
+        date:   new Date().toISOString(),
+        actes,
+        total,
+        soin:   patient.description || patient.texte || '',
+        source: 'tournee',
+      });
+      p.updated_at = new Date().toISOString();
+      await _idbPut(PATIENTS_STORE, {
+        id:         p.id,
+        nom:        p.nom,
+        prenom:     p.prenom,
+        _data:      _enc(p),
+        updated_at: p.updated_at,
+      });
+    } catch(e) {
+      console.warn('[AMI] Sauvegarde cotation IDB KO:', e.message);
+    }
+  })();
 
   // Callback optionnel
   if (typeof _cotModalState.onValidate === 'function') _cotModalState.onValidate(actes, total);

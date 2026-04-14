@@ -122,6 +122,40 @@ function initTurMap(){
   }
 }
 
+/* ── Restaure le marker de départ sur la carte si startPoint déjà défini ── */
+function _restoreStartPointMarker() {
+  const sp = APP.get('startPoint');
+  if (!sp || !sp.lat || !sp.lng) return;
+  const map = _turMap || APP.map;
+  if (!map || typeof map.setView !== 'function') return;
+
+  // Centrer sur le startPoint
+  map.setView([sp.lat, sp.lng], 15);
+
+  // Replacer le marker via les fonctions de map.js si dispo
+  if (typeof _setDepMarker === 'function') {
+    _setDepMarker(sp.lat, sp.lng);
+  }
+
+  // Mettre à jour le champ texte dep-coords
+  const depCoords = document.getElementById('dep-coords');
+  const depAddr   = document.getElementById('dep-addr');
+  if (depCoords && depCoords.textContent.startsWith('📌')) {
+    // Pas encore d'adresse affichée — faire un reverse geocoding discret
+    if (depAddr && !depAddr.value) {
+      if (typeof reverseGeocode === 'function') {
+        reverseGeocode(sp.lat, sp.lng).then(addr => {
+          if (depAddr) depAddr.value = addr;
+          if (depCoords) { depCoords.textContent = '✅ ' + addr; depCoords.style.display = 'block'; }
+        }).catch(() => {});
+      } else {
+        depCoords.textContent = `✅ Départ défini — ${sp.lat.toFixed(5)}, ${sp.lng.toFixed(5)}`;
+        depCoords.style.display = 'block';
+      }
+    }
+  }
+}
+
 /* ── initDepMap — alias pour compatibilité avec ui.js qui l'appelle ── */
 window.initDepMap = initTurMap;
 
@@ -646,7 +680,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
   /* Écouter l'event réel émis par ui.js (ui:navigate) */
   document.addEventListener('ui:navigate', e=>{
     if(e.detail?.view === 'tur'){
-      setTimeout(()=>{ initTurMap(); updateCAEstimate(); }, 150);
+      setTimeout(()=>{
+        initTurMap();
+        updateCAEstimate();
+        // Restaurer le marker startPoint sur la carte si déjà défini
+        _restoreStartPointMarker();
+      }, 300);
     }
     if(e.detail?.view === 'live'){
       startDayLocal();
