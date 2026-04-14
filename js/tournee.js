@@ -447,7 +447,7 @@ async function autoFacturation(patient){
       infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
       adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
       date_soin:new Date().toISOString().split('T')[0],
-      heure_soin:patient.heure_soin||patient.heure_preferee||'',
+      heure_soin:patient.heure_soin||patient.heure_preferee||new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
       _live_auto:true
     });
     return d;
