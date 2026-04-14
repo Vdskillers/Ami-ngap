@@ -926,9 +926,6 @@ function showCotationModal(patient, cotation) {
   const existing = document.getElementById('cot-modal-live');
   if (existing) existing.remove();
 
-  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
-  if (isAdmin) return; // Les admins ne voient pas les données patients
-
   const actes = cotation?.actes || [];
   const total = cotation?.total || 0;
 

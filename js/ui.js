@@ -52,31 +52,32 @@ document.addEventListener('ui:navigate', e => {
     setTimeout(initCopiloteSection, 80);
   }
 
-  /* Tournée → init carte tur-map + invalider taille */
+  /* Tournée → init carte + invalider taille — identique admin et infirmière */
   if (v === 'tur') {
     setTimeout(() => {
-      /* Essayer d'abord la nouvelle carte tur-map */
-      if (typeof initTurMap === 'function') {
-        initTurMap();
-      } else if (typeof initDepMap === 'function') {
-        initDepMap();
-      }
-      if (typeof showCaFromImport === 'function') showCaFromImport();
-      if (typeof updateCAEstimate  === 'function') updateCAEstimate();
-      /* Invalider les deux instances possibles */
-      const turMapEl = document.getElementById('tur-map');
-      if (_turMap && turMapEl) _turMap.invalidateSize();
-      const map = APP.map?.instance;
-      if (map) map.invalidateSize();
+      /* Init carte */
+      if (typeof initTurMap === 'function') initTurMap();
+      else if (typeof initDepMap === 'function') initDepMap();
 
-      /* Admin : afficher les marqueurs fictifs sur la carte dès l'ouverture */
-      const _isAdminNav = (typeof S !== 'undefined') && S?.role === 'admin';
-      if (_isAdminNav && APP.importedData?.patients?.length && typeof renderPatientsOnMap === 'function') {
+      if (typeof showCaFromImport === 'function') showCaFromImport();
+      if (typeof updateCAEstimate === 'function') updateCAEstimate();
+
+      /* Invalider la taille APRÈS que la vue est visible (évite la carte grise) */
+      setTimeout(() => {
+        const mapInst = APP.map?.instance || (typeof _turMap !== 'undefined' ? _turMap : null);
+        if (mapInst) { try { mapInst.invalidateSize(); } catch(_){} }
+      }, 300);
+
+      /* Si des données importées existent, afficher les marqueurs sur la carte
+         Fonctionne pour admin ET infirmière — chacun avec ses propres données */
+      if (APP.importedData?.patients?.length && typeof renderPatientsOnMap === 'function') {
+        const startPt = (typeof APP.get === 'function' ? APP.get('startPoint') : APP.startPoint) || null;
         const _retryMap = (n) => {
-          if (APP.map) {
-            renderPatientsOnMap(APP.importedData.patients, APP.startPoint || { lat: 48.8566, lng: 2.3522 }).catch(()=>{});
-            setTimeout(() => { try { APP.map.invalidateSize?.(); } catch(_){} }, 250);
-          } else if (n < 8) {
+          const mapInst = APP.map?.instance || (typeof _turMap !== 'undefined' ? _turMap : null);
+          if (mapInst) {
+            renderPatientsOnMap(APP.importedData.patients, startPt).catch(() => {});
+            setTimeout(() => { try { mapInst.invalidateSize(); } catch(_){} }, 250);
+          } else if (n < 10) {
             setTimeout(() => _retryMap(n + 1), 300);
           }
         };
