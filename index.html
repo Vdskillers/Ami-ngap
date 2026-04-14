@@ -485,39 +485,6 @@
       <h1 class="pt">Pilotage <em>de journée</em></h1>
       <p class="ps">Assistant temps réel · auto-facturation · détection retard · recalcul automatique</p>
 
-      <!-- Point de départ — Pilotage Live -->
-      <div class="card" style="margin-bottom:16px;border:1px solid rgba(79,168,255,.2);background:rgba(79,168,255,.03)">
-        <div class="ct" style="margin-bottom:6px">📍 Point de départ de la journée</div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:12px;font-family:var(--fm)">Votre position de départ pour l'optimisation des trajets. Ajustez le pointeur si votre adresse n'est pas précise.</p>
-
-        <!-- Barre de recherche point de départ live -->
-        <div class="map-search" style="margin-bottom:8px">
-          <input type="text" id="live-dep-addr" placeholder="🔍 Adresse de départ (ex: 12 rue de la Paix, Nice...)" onkeydown="if(event.key==='Enter')searchLiveStartPoint()" style="flex:1">
-          <button class="map-btn search" onclick="searchLiveStartPoint()">Rechercher</button>
-          <button class="map-btn gps" onclick="useLiveMyLocation()">📍 GPS</button>
-        </div>
-
-        <!-- Coords affichées -->
-        <div class="dep-coords" id="live-dep-coords" style="margin-bottom:8px">📌 Définissez votre point de départ avant de démarrer</div>
-
-        <!-- Bouton ajuster sur la carte -->
-        <button class="btn bs bsm" onclick="openStartPointEditor('live')"><span>🎯</span> Ajuster sur la carte</button>
-
-        <!-- Carte dédiée pour le pilotage live (cachée par défaut, s'affiche quand on clique Ajuster) -->
-        <div id="live-start-editor" style="display:none;margin-top:12px">
-          <div id="live-dep-map" style="height:240px;border-radius:var(--r);border:1px solid rgba(79,168,255,.25);margin-bottom:10px"></div>
-          <div style="font-size:12px;color:var(--a2);font-family:var(--fm);margin-bottom:8px;display:flex;align-items:center;gap:6px">
-            <span>🎯</span>
-            <strong>Mode ajustement actif</strong>
-            <span style="color:var(--m)">— Tapez sur la carte ou glissez le marqueur 🏠</span>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn bp bsm" onclick="confirmStartPointCorrection()"><span>✅</span> Confirmer ce point de départ</button>
-            <button class="btn bs bsm" onclick="disableStartPointCorrection();document.getElementById('start-editor').style.display='none';document.getElementById('live-start-editor').style.display='none'"><span>✕</span> Annuler</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Sélecteur mode optimisation tournée -->
       <div class="card" style="margin-bottom:16px;border:1px solid rgba(0,212,170,.2);background:rgba(0,212,170,.03)">
         <div class="ct" style="margin-bottom:4px">🧠 Comment voulez-vous organiser votre tournée ?</div>
@@ -1002,17 +969,17 @@
             <!-- Adresse structurée : rue + CP + ville -->
             <div class="f" style="grid-column:1/-1">
               <label for="pat-rue">Adresse <span style="font-size:10px;color:var(--a);font-family:var(--fm)">📍 pour la tournée IA</span></label>
-              <input type="text" id="pat-rue" placeholder="12 rue de la Paix" autocomplete="street-address" oninput="patRueInput(this.value)">
+              <input type="text" id="pat-rue" placeholder="12 rue de la Paix" autocomplete="street-address" oninput="updatePatAddrPreview()">
               <div id="pat-rue-sug" style="position:absolute;width:100%;z-index:300;margin-top:2px"></div>
             </div>
             <div class="f" style="position:relative">
               <label for="pat-cp">Code postal *</label>
-              <input type="text" id="pat-cp" placeholder="06000" maxlength="5" inputmode="numeric" oninput="patCpInput(this.value)" autocomplete="postal-code">
+              <input type="text" id="pat-cp" placeholder="06000" maxlength="5" inputmode="numeric" oninput="updatePatAddrPreview()" autocomplete="postal-code">
               <div id="pat-cp-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
             </div>
             <div class="f" style="position:relative">
               <label for="pat-ville">Ville *</label>
-              <input type="text" id="pat-ville" placeholder="Nice" autocomplete="address-level2" oninput="patVilleInput(this.value)">
+              <input type="text" id="pat-ville" placeholder="Nice" autocomplete="address-level2" oninput="updatePatAddrPreview()">
               <div id="pat-ville-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
             </div>
             <div id="pat-addr-preview" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);font-size:12px;font-family:var(--fm);color:var(--a)"></div>
