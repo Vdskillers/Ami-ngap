@@ -180,6 +180,15 @@ async function optimiserTournee(){
     return;
   }
 
+  // ── Mode admin : pré-remplir point de départ si absent (données démo) ──
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+  if (isAdmin && APP.importedData?._admin_demo) {
+    const tLat = $('t-lat'), tLng = $('t-lng');
+    if (tLat && !tLat.value) tLat.value = '48.8566';
+    if (tLng && !tLng.value) tLng.value = '2.3522';
+    if (!APP.startPoint) APP.startPoint = { lat: 48.8566, lng: 2.3522 };
+  }
+
   const startLat = parseFloat($('t-lat')?.value) || APP.get('startPoint')?.lat || null;
   const startLng = parseFloat($('t-lng')?.value) || APP.get('startPoint')?.lng || null;
   if(!startLat || !startLng){
@@ -294,6 +303,10 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     <div class="ct" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       🗺️ Tournée optimisée — ${total} patients ${modeBadge}
     </div>
+    ${(typeof S !== 'undefined' && S?.role === 'admin') ? `
+    <div class="ai in" style="margin-bottom:12px;font-size:12px">
+      ⚙️ <strong>Mode admin</strong> — Optimisation testée avec des patients fictifs. Les noms et données médicales réels ne sont jamais visibles depuis ce compte.
+    </div>` : ''}
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
       <div class="dreb">📍 ${total} patients</div>
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
@@ -748,9 +761,24 @@ window.startDay=async function(){
 
 /* liveStatusCore = contenu de liveStatus original */
 async function liveStatusCore(){
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
   try{
     const d=await apiCall('/webhook/ami-live',{action:'get_status'});
     if(!d.ok)return;
+    // ── Mode admin : réponse démo — affichage clair sans données patients réelles ──
+    if(d._admin_demo){
+      $('live-patient-name').textContent='[TEST] Vérification de l\'état de la tournée';
+      $('live-info').textContent='⚙️ Mode admin — données fictives, fonctionnement OK';
+      $('live-next').innerHTML=`<div class="card">
+        <div class="ai in" style="margin-bottom:10px">⚙️ <strong>Mode administrateur</strong> — Le pilotage temps réel fonctionne correctement.<br>
+        <span style="font-size:12px;color:var(--m);margin-top:4px;display:block">Les données patients réelles des infirmières ne sont pas accessibles depuis ce compte.</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="dreb" style="background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.25);color:var(--a)">✅ API /ami-live opérationnelle</span>
+          <span class="dreb">📍 ${d.patients_restants} patient(s) test</span>
+        </div>
+      </div>`;
+      return;
+    }
     if(d.prochain){
       let actes=[];try{actes=JSON.parse(d.prochain.actes||'[]');}catch{}
       const desc=actes[0]?.nom||'Soin';

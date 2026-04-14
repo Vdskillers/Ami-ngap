@@ -92,13 +92,50 @@ function showApp(){
     });
 
     // ── Rebrancher onclick pour copilote et stats (nurse-only mais accessibles admin) ──
-    ['dash','copilote','stats','ngap-ref','rapport','sig'].forEach(v => {
+    ['dash','copilote','stats','ngap-ref','rapport','sig','tur','live','imp','pla'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
         ni.classList.remove('nurse-only');
         ni.onclick = () => navTo(v, null);
       }
     });
+
+    // ── Données de test pour la tournée IA et la carte (RGPD : données fictives uniquement) ──
+    // Injecté seulement si aucune donnée n'est déjà présente (évite d'écraser un test en cours)
+    if (!APP.importedData) {
+      APP.importedData = {
+        _admin_demo: true,
+        patients: [
+          { id:'demo1', description:'[TEST] Injection insuline SC', heure_soin:'08:00', lat:48.8566, lng:2.3522, adresse:'Paris 1er — données fictives' },
+          { id:'demo2', description:'[TEST] Pansement complexe + IFD', heure_soin:'09:30', lat:48.8606, lng:2.3376, adresse:'Paris 2ème — données fictives' },
+          { id:'demo3', description:'[TEST] Prélèvement sanguin', heure_soin:'11:00', lat:48.8529, lng:2.3499, adresse:'Paris 4ème — données fictives' },
+          { id:'demo4', description:'[TEST] Toilette BSB domicile', heure_soin:'14:00', lat:48.8655, lng:2.3601, adresse:'Paris 3ème — données fictives' },
+        ],
+        total: 4,
+        source: '⚙️ Données de test — mode administrateur'
+      };
+      // Point de départ fictif (Paris centre) pour que la carte et l'optimisation fonctionnent
+      APP.startPoint = { lat: 48.8566, lng: 2.3522 };
+      setTimeout(() => {
+        const tLat = document.getElementById('t-lat');
+        const tLng = document.getElementById('t-lng');
+        if (tLat) tLat.value = '48.8566';
+        if (tLng) tLng.value = '2.3522';
+        // Afficher bannière import pour que l'admin voit les données chargées
+        const banner = document.getElementById('pla-import-banner');
+        const info   = document.getElementById('pla-import-info');
+        if (banner && info) {
+          info.innerHTML = '⚙️ <strong>Mode admin</strong> — 4 patients fictifs chargés pour tester la tournée IA. Aucune donnée patient réelle.';
+          banner.style.display = 'block';
+        }
+        // Rendre les patients sur la carte si elle est prête
+        if (typeof renderPatientsOnMap === 'function' && APP.map) {
+          renderPatientsOnMap(APP.importedData.patients, APP.startPoint).catch(()=>{});
+        }
+        // Invalider la taille Leaflet après affichage
+        if (typeof depMap !== 'undefined' && depMap) depMap.invalidateSize();
+      }, 400);
+    }
 
     // ── Initialiser le Copilote immédiatement (HTML déjà dans le DOM) ──
     setTimeout(() => {
@@ -151,8 +188,8 @@ function showApp(){
         if(btnQuitter) mobileGrid.insertBefore(btnAdminM, btnQuitter);
         else mobileGrid.appendChild(btnAdminM);
 
-        // Rendre nurse-only visibles pour l'admin (copilote, rapport, contact, sig…)
-        ['copilote','rapport','contact','sec'].forEach(v => {
+        // Rendre nurse-only visibles pour l'admin (copilote, rapport, contact, sig, tournée…)
+        ['copilote','rapport','contact','sec','tur','live','imp','pla'].forEach(v => {
           const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
           if(btn) btn.classList.remove('nurse-only');
         });
