@@ -1202,10 +1202,16 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   document.addEventListener('app:nav',     _onPatNav);
   document.addEventListener('ui:navigate', _onPatNav);
-  // Init DB au démarrage + sync depuis serveur
-  initPatientsDB().then(async () => {
+  // Init DB uniquement — PAS de sync ici, S.token est encore null à ce stade
+  initPatientsDB().then(() => {
     checkOrdoExpiry();
-    // Sync depuis le serveur après init (récupère les patients créés sur d'autres appareils)
+  }).catch(() => {});
+});
+
+// ⚠️ La sync doit attendre que la session soit chargée (S.token disponible).
+// auth.js dispatche 'ami:login' dans showApp() après hydratation complète de S.
+document.addEventListener('ami:login', () => {
+  initPatientsDB().then(async () => {
     await syncPatientsFromServer();
   }).catch(() => {});
 });

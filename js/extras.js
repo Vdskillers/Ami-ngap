@@ -209,25 +209,30 @@ function setDepartPoint(lat, lng, label){
   if(tLng) tLng.value = lng.toFixed(6);
   APP.set('startPoint', {lat, lng});
 
-  /* Déléguer à setDepCoords de map.js si disponible — met aussi à jour dep-addr/dep-coords */
-  if(typeof setDepCoords === 'function') setDepCoords(lat, lng);
+  /* S'assurer que la carte est initialisée */
+  if(!_turMap) initTurMap();
 
-  /* Marker de départ — affiché sur _turMap dans tous les cas
-     (même si _turMap === APP.map.instance, map.js place depMarker draggable via _setDepMarker)
-     On ajoute un second marker coloré d'extras.js uniquement si tur-map dédié */
-  if(_turMap && _turMap !== APP.map?.instance){
-    if(_turMarker) _turMap.removeLayer(_turMarker);
+  /* Placer le marker de départ sur la carte — dans TOUS les cas
+     (setDepCoords n'existe pas dans map.js, on gère tout ici) */
+  if(_turMap){
+    // Supprimer l'ancien marker s'il existe
+    if(_turMarker){ try{ _turMap.removeLayer(_turMarker); }catch(_){} }
+
     const icon = L.divIcon({
       className:'',
       html:`<div style="background:#00d4aa;border:3px solid #fff;border-radius:50%;width:18px;height:18px;box-shadow:0 0 12px rgba(0,212,170,.8)"></div>`,
       iconSize:[18,18], iconAnchor:[9,9]
     });
-    _turMarker = L.marker([lat,lng],{icon}).addTo(_turMap)
-      .bindPopup(`<b>📍 Départ</b><br>${label}`).openPopup();
-    _turMap.setView([lat,lng],14);
-  } else if(_turMap) {
-    // map.js gère le marker via _setDepMarker — juste zoomer
-    _turMap.setView([lat,lng],14);
+    _turMarker = L.marker([lat, lng], { icon })
+      .addTo(_turMap)
+      .bindPopup(`<b>📍 Départ</b><br>${label}`)
+      .openPopup();
+
+    // Centrer + zoomer immédiatement sur le point trouvé
+    _turMap.setView([lat, lng], 15);
+    // Double invalidateSize pour forcer le rendu si la carte était cachée
+    setTimeout(() => { try{ _turMap.invalidateSize(); }catch(_){} }, 50);
+    setTimeout(() => { try{ _turMap.invalidateSize(); }catch(_){} }, 300);
   }
 
   /* Affichage coordonnées */
