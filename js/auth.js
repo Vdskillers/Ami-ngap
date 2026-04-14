@@ -230,6 +230,19 @@ async function login(){
   try{
     const d=await wpost('/webhook/auth-login',{email:em,password:pw});
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
+
+    /* ── Isolation RGPD : vider les données de la session précédente avant de charger la nouvelle ── */
+    APP.importedData = null;
+    APP.uberPatients = [];
+    APP.startPoint   = null;
+    APP.nextPatient  = null;
+    /* Fermer la DB IndexedDB de l'utilisateur précédent (patients.js) */
+    if (typeof _patientsDB !== 'undefined' && _patientsDB) {
+      try { _patientsDB.close(); } catch(_) {}
+      _patientsDB = null;
+      if (typeof _patientsDBUserId !== 'undefined') _patientsDBUserId = null;
+    }
+
     ss.save(d.token,d.role,d.user);
     /* ── Sécurité RGPD : chiffrement + audit ── */
     if(typeof initSecurity==='function') initSecurity(d.token);

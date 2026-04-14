@@ -68,6 +68,20 @@ document.addEventListener('ui:navigate', e => {
       if (_turMap && turMapEl) _turMap.invalidateSize();
       const map = APP.map?.instance;
       if (map) map.invalidateSize();
+
+      /* Admin : afficher les marqueurs fictifs sur la carte dès l'ouverture */
+      const _isAdminNav = (typeof S !== 'undefined') && S?.role === 'admin';
+      if (_isAdminNav && APP.importedData?.patients?.length && typeof renderPatientsOnMap === 'function') {
+        const _retryMap = (n) => {
+          if (APP.map) {
+            renderPatientsOnMap(APP.importedData.patients, APP.startPoint || { lat: 48.8566, lng: 2.3522 }).catch(()=>{});
+            setTimeout(() => { try { APP.map.invalidateSize?.(); } catch(_){} }, 250);
+          } else if (n < 8) {
+            setTimeout(() => _retryMap(n + 1), 300);
+          }
+        };
+        _retryMap(0);
+      }
     }, 150);
   }
 

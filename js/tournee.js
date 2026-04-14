@@ -101,8 +101,17 @@ function showImportedPatients(){
   if(!APP.importedData){alert('Aucune donnée importée. Utilisez "Import calendrier" d\'abord.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
-  $('tbody').innerHTML=`<div class="card"><div class="ct">👥 Patients importés (${patients.length})</div>
-    ${patients.map((p,i)=>`<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info"><strong>${p.description||p.texte||p.summary||'Patient '+(i+1)}</strong><div style="font-size:11px;color:var(--m);margin-top:2px">${p.heure_soin||p.heure||''} ${p.patient_id?'· ID:'+p.patient_id:''}</div></div></div>`).join('')}
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+  $('tbody').innerHTML=`<div class="card">
+    <div class="ct">👥 ${isAdmin ? 'Patients de test (mode admin)' : 'Patients importés'} (${patients.length})</div>
+    ${isAdmin ? `<div class="ai in" style="margin-bottom:10px;font-size:12px">⚙️ <strong>Mode admin</strong> — Données fictives uniquement. Aucune information médicale réelle n'est visible depuis ce compte.</div>` : ''}
+    ${patients.map((p,i)=>`<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info">
+      <strong>${isAdmin
+        ? `Patient #${i+1} <span style="font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;margin-left:6px">Test</span>`
+        : (p.description||p.texte||p.summary||'Patient '+(i+1))
+      }</strong>
+      <div style="font-size:11px;color:var(--m);margin-top:2px">${isAdmin ? '' : `${p.heure_soin||p.heure||''} ${p.patient_id?'· ID:'+p.patient_id:''}`}</div>
+    </div></div>`).join('')}
   </div>`;
   $('res-tur').classList.add('show');
 }
@@ -299,11 +308,12 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.3);padding:2px 10px;border-radius:20px;letter-spacing:1px">⚡ Mode mixte</span>`
     : `<span style="font-family:var(--fm);font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.25);padding:2px 10px;border-radius:20px;letter-spacing:1px">🧠 IA VRPTW</span>`;
 
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
   return `<div class="card">
     <div class="ct" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       🗺️ Tournée optimisée — ${total} patients ${modeBadge}
     </div>
-    ${(typeof S !== 'undefined' && S?.role === 'admin') ? `
+    ${isAdmin ? `
     <div class="ai in" style="margin-bottom:12px;font-size:12px">
       ⚙️ <strong>Mode admin</strong> — Optimisation testée avec des patients fictifs. Les noms et données médicales réels ne sont jamais visibles depuis ce compte.
     </div>` : ''}
@@ -323,18 +333,21 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
         : heureAff
         ? `<span style="font-size:10px;background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;font-family:var(--fm)">⏰ ${heureAff}</span>`
         : '';
+      const descDisplay = isAdmin
+        ? `Patient #${i+1} <span style="font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;margin-left:4px;font-family:var(--fm)">Test</span>`
+        : (p.description||'Patient');
       return `<div class="route-item ${p.urgent?'route-urgent':''}">
         <div class="route-num">${i+1}</div>
         <div class="route-info">
-          <strong style="font-size:13px">${p.description||'Patient'}</strong>
+          <strong style="font-size:13px">${descDisplay}</strong>
           <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
-            ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
-            ${contrainteBadge}
+            ${!isAdmin && hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
+            ${!isAdmin && p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
+            ${!isAdmin ? contrainteBadge : ''}
           </div>
         </div>
         ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km">~${p.travel_min}min</div>`:'')}
-        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
+        ${!isAdmin ? `<button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>` : ''}
       </div>`;
     }).join('')}
   </div>`;
@@ -743,10 +756,11 @@ window.startDay=async function(){
 
   // Initialiser le premier patient actif
   const firstP = patients[0];
+  const _isAdminSD = (typeof S !== 'undefined') && S?.role === 'admin';
   if(firstP){
     LIVE_PATIENT_ID = firstP.patient_id || firstP.id || null;
-    $('live-patient-name').textContent = firstP.description||firstP.texte||'Premier patient';
-    $('live-info').textContent = `Soin 1/${patients.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
+    $('live-patient-name').textContent = _isAdminSD ? 'Patient #1 (test)' : (firstP.description||firstP.texte||'Premier patient');
+    $('live-info').textContent = _isAdminSD ? `⚙️ Mode admin — ${patients.length} patient(s) fictif(s)` : `Soin 1/${patients.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
   }
 
   /* ── Démarrer le moteur IA temps réel ── */
@@ -826,10 +840,12 @@ window.liveAction=async function(action){
       showCotationModal(activeP, cotAffichee);
       // Avancer au patient suivant
       const nextP = patients.find(x => !x._done && !x._absent);
+      const _isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
       if(nextP){
         LIVE_PATIENT_ID = nextP.patient_id || nextP.id || null;
-        $('live-patient-name').textContent = nextP.description||nextP.texte||'Prochain patient';
-        $('live-info').textContent = `Prochain soin${nextP.heure_soin?' à '+nextP.heure_soin:''}`;
+        const nextIdx = patients.indexOf(nextP);
+        $('live-patient-name').textContent = _isAdmin ? `Patient #${nextIdx+1} (test)` : (nextP.description||nextP.texte||'Prochain patient');
+        $('live-info').textContent = _isAdmin ? '⚙️ Mode admin — soin suivant' : `Prochain soin${nextP.heure_soin?' à '+nextP.heure_soin:''}`;
       }else{
         $('live-patient-name').textContent = 'Tournée terminée ✅';
         $('live-info').textContent = 'Tous les patients ont été pris en charge';
@@ -847,10 +863,12 @@ window.liveAction=async function(action){
     if(activeP){
       activeP._absent = true;
       const nextP = patients.find(x => !x._done && !x._absent);
+      const _isAdmin2 = (typeof S !== 'undefined') && S?.role === 'admin';
       if(nextP){
         LIVE_PATIENT_ID = nextP.patient_id || nextP.id || null;
-        $('live-patient-name').textContent = nextP.description||nextP.texte||'Prochain patient';
-        $('live-info').textContent = `Prochain soin${nextP.heure_soin?' à '+nextP.heure_soin:''}`;
+        const nextIdx = patients.indexOf(nextP);
+        $('live-patient-name').textContent = _isAdmin2 ? `Patient #${nextIdx+1} (test)` : (nextP.description||nextP.texte||'Prochain patient');
+        $('live-info').textContent = _isAdmin2 ? '⚙️ Mode admin — soin suivant' : `Prochain soin${nextP.heure_soin?' à '+nextP.heure_soin:''}`;
       }
       renderLivePatientList();
       if(typeof showToast==='function') showToast('❌ Patient absent noté.');

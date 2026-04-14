@@ -24,14 +24,33 @@ const NOTES_STORE    = 'ami_soin_notes';
 const DB_VERSION     = 1;
 
 let _patientsDB = null;
+let _patientsDBUserId = null; // Garde la trace du user ID actif
+
+/* ── Retourne le nom de la base IndexedDB isolée par utilisateur ──────
+   Chaque infirmière a sa propre base : ami_patients_db_<userId>.
+   Un admin voit uniquement sa propre base (données de test seulement).
+   Aucun accès croisé entre comptes n'est possible.
+───────────────────────────────────────────────────────────────────── */
+function _getDBName() {
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  return 'ami_patients_db_' + uid.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
 
 /* ════════════════════════════════════════════════
    INIT BASE INDEXEDDB
 ════════════════════════════════════════════════ */
 async function initPatientsDB() {
+  const currentUserId = S?.user?.id || S?.user?.email || 'local';
+  // Si la DB est ouverte pour un autre user (changement de session), la fermer
+  if (_patientsDB && _patientsDBUserId !== currentUserId) {
+    _patientsDB.close();
+    _patientsDB = null;
+    _patientsDBUserId = null;
+  }
   if (_patientsDB) return _patientsDB;
+  const dbName = _getDBName();
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('ami_patients_db', DB_VERSION);
+    const req = indexedDB.open(dbName, DB_VERSION);
     req.onupgradeneeded = e => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(PATIENTS_STORE)) {
@@ -43,7 +62,11 @@ async function initPatientsDB() {
         notes.createIndex('patient_id', 'patient_id', { unique: false });
       }
     };
-    req.onsuccess = e => { _patientsDB = e.target.result; resolve(_patientsDB); };
+    req.onsuccess = e => {
+      _patientsDB = e.target.result;
+      _patientsDBUserId = S?.user?.id || S?.user?.email || 'local';
+      resolve(_patientsDB);
+    };
     req.onerror   = () => reject(req.error);
   });
 }
