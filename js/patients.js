@@ -701,30 +701,19 @@ const _geocodeCache = new Map();
 
 async function _geocodeAdresse(adresse, patient) {
   if (!adresse || !adresse.trim()) return null;
-  const key = adresse.trim().toLowerCase();
-  if (_geocodeCache.has(key)) return _geocodeCache.get(key);
   try {
-    let coords = null;
-    // Pipeline complet si geocode.js est chargé (Photon → Nominatim + normalisation)
+    // Pipeline complet : processAddressBeforeGeocode → smartGeocode
+    // smartGeocode gère son propre cache IndexedDB (IDB) — pas de cache mémoire ici
+    // pour éviter de servir d'anciennes coordonnées erronées pendant la session
     if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
       const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
       const geo     = await smartGeocode(cleaned);
       if (geo && geo.lat && geo.lng) {
         const score = typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70;
-        coords = { lat: geo.lat, lng: geo.lng, geoScore: score };
+        return { lat: geo.lat, lng: geo.lng, geoScore: score };
       }
     }
-    // Fallback Nominatim direct
-    if (!coords) {
-      const r = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1&countrycodes=fr`,
-        { headers: { 'Accept-Language': 'fr' } }
-      );
-      const d = await r.json();
-      if (d.length) coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 60 };
-    }
-    _geocodeCache.set(key, coords);
-    return coords;
+    return null;
   } catch { return null; }
 }
 
@@ -966,9 +955,8 @@ async function _forceRegeocode(id) {
     return;
   }
 
-  // 1. Vider le cache mémoire pour cette adresse
-  const cacheKey = adresseGeo.trim().toLowerCase();
-  _geocodeCache.delete(cacheKey);
+  // 1. Vider le cache mémoire (Map local) — toutes variantes
+  _geocodeCache.clear(); // vider tout le cache mémoire pour forcer le re-géocodage propre
 
   // 2. Vider le cache IndexedDB (geocode.js)
   if (typeof saveSecure === 'function' && typeof hashAddr === 'function') {
