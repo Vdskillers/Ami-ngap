@@ -382,7 +382,8 @@ function detectDelay(currentPatient){
 }
 
 async function autoFacturation(patient){
-  // Cotation automatique en arrière-plan quand patient terminé
+  // Génère la cotation automatique — ne met plus à jour le CA directement
+  // (c'est la modale de vérification qui l'incrémente après validation)
   if(!patient?.description)return;
   try{
     const u=S?.user||{};
@@ -391,14 +392,9 @@ async function autoFacturation(patient){
       infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
       adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
       date_soin:new Date().toISOString().split('T')[0],
-      heure_soin:patient.heure_soin||'',
+      heure_soin:patient.heure_soin||patient.heure_preferee||'',
       _live_auto:true
     });
-    if(d.total){
-      LIVE_CA_TOTAL+=parseFloat(d.total)||0;
-      $('live-ca-total').textContent=`💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`;
-      updateLiveCaCard(patient,d);
-    }
     return d;
   }catch(e){console.warn('Auto-facturation: ',e.message);}
 }
@@ -886,7 +882,9 @@ function renderLivePatientList() {
         <div class="route-info" style="flex:1;min-width:0">
           <strong style="font-size:13px">${desc}</strong>
           ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
+          ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
         </div>
+        <button class="btn bp bsm" onclick="openCotationPatient(${i})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Voir / modifier la cotation">📋 Cotation</button>
         <button class="btn bs bsm" onclick="removeImportedPatient(${i})" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--d);border-color:rgba(255,95,109,.2);background:rgba(255,95,109,.05)" title="Supprimer ce patient">✕</button>
       </div>`;
     }).join('')}
@@ -919,76 +917,260 @@ function removeAllImportedPatients() {
 }
 
 /* ============================================================
-   MODALE COTATION — Affichage après "Patient terminé"
-   ============================================================ */
-function showCotationModal(patient, cotation) {
-  // Supprimer modale précédente
+   MODALE COTATION — Vérification / modification après soin
+   ============================================================
+   Appelée :
+   - automatiquement quand patient marqué "terminé"
+   - manuellement via bouton "📋 Cotation" dans la liste
+   Permet de voir, modifier et valider chaque acte.
+============================================================ */
+
+/* Stockage temporaire des actes en cours d'édition dans la modale */
+let _cotModalState = { actes: [], patient: null, onValidate: null };
+
+function showCotationModal(patient, cotation, onValidate) {
   const existing = document.getElementById('cot-modal-live');
   if (existing) existing.remove();
 
-  const actes = cotation?.actes || [];
-  const total = cotation?.total || 0;
+  _cotModalState = {
+    actes: (cotation?.actes || []).map((a, i) => ({ ...a, _idx: i })),
+    patient,
+    onValidate: onValidate || null,
+  };
+
+  _renderCotModal(patient, cotation);
+}
+
+/* Rendu (appelé aussi après modification d'un acte) */
+function _renderCotModal(patient, cotationOriginal) {
+  const existing = document.getElementById('cot-modal-live');
+  if (existing) existing.remove();
+
+  const actes = _cotModalState.actes;
+  const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
+  const heure = patient.heure_soin || patient.heure_preferee || patient.heure || '';
+  const desc  = (patient.description || patient.texte || 'Soin infirmier').slice(0, 100);
+
+  /* Catalogue d'actes courants pour ajout rapide */
+  const ACTES_RAPIDES = [
+    { code:'AMI1',  nom:'Soin infirmier',        total: 3.15 },
+    { code:'AMI2',  nom:'Acte infirmier ×2',     total: 6.30 },
+    { code:'AMI3',  nom:'Acte infirmier ×3',     total: 9.45 },
+    { code:'AMI4',  nom:'Pansement complexe',    total:12.60 },
+    { code:'BSA',   nom:'Bilan soins A',         total:13.00 },
+    { code:'BSB',   nom:'Bilan soins B',         total:18.20 },
+    { code:'BSC',   nom:'Bilan soins C',         total:28.70 },
+    { code:'IFD',   nom:'Indemnité déplacement', total: 2.75 },
+    { code:'IK5',   nom:'Indemnité km (5 km)',   total: 1.75 },
+    { code:'MAU',   nom:'Majoration urgence',    total: 9.15 },
+    { code:'MN',    nom:'Majoration nuit',       total: 9.15 },
+    { code:'MDD',   nom:'Majoration dim./férié', total: 9.15 },
+  ];
 
   const modal = document.createElement('div');
   modal.id = 'cot-modal-live';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.75);display:flex;align-items:flex-end;justify-content:center;padding:16px;box-sizing:border-box';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.8);display:flex;align-items:flex-end;justify-content:center;padding:0;box-sizing:border-box';
 
   modal.innerHTML = `
-    <div style="background:var(--bg,#0b0f14);border:1px solid rgba(0,212,170,.25);border-radius:20px 20px 16px 16px;padding:24px;width:100%;max-width:520px;max-height:80vh;overflow-y:auto;box-shadow:0 -8px 40px rgba(0,0,0,.5)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div style="font-family:var(--fs);font-size:18px;color:var(--t)">⚡ Cotation automatique</div>
-        <button onclick="document.getElementById('cot-modal-live').remove()" style="background:none;border:none;color:var(--m);font-size:22px;cursor:pointer;line-height:1">✕</button>
-      </div>
-      <div style="font-size:13px;color:var(--m);margin-bottom:14px;padding:8px 12px;background:var(--s);border-radius:8px;font-family:var(--fm)">
-        📋 ${(patient.description || patient.texte || 'Soin infirmier').slice(0, 80)}
+    <div id="cot-modal-inner" style="background:var(--bg,#0b0f14);border:1px solid rgba(0,212,170,.3);border-radius:20px 20px 0 0;padding:20px 20px 32px;width:100%;max-width:580px;max-height:90vh;overflow-y:auto;box-shadow:0 -12px 50px rgba(0,0,0,.6)">
+
+      <!-- En-tête -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
+        <div>
+          <div style="font-family:var(--fs);font-size:20px;color:var(--t)">📋 Cotation du soin</div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-top:2px">Vérifiez et corrigez avant validation</div>
+        </div>
+        <button onclick="document.getElementById('cot-modal-live').remove()" style="background:none;border:1px solid var(--b);border-radius:50%;width:32px;height:32px;color:var(--m);font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">✕</button>
       </div>
 
-      ${actes.length ? `
-      <div style="margin-bottom:14px">
-        <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Actes détectés</div>
-        ${actes.map(a => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.15);border-radius:8px;margin-bottom:6px">
-            <div>
-              <span style="font-family:var(--fm);font-size:12px;background:var(--ad);color:var(--a);padding:2px 8px;border-radius:20px;margin-right:8px">${a.code}</span>
-              <span style="font-size:13px;color:var(--t)">${a.nom}</span>
+      <!-- Résumé patient -->
+      <div style="padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:10px;margin-bottom:16px">
+        <div style="font-size:13px;color:var(--t);font-weight:600">${desc}</div>
+        ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:3px;font-family:var(--fm)">🕐 Heure de soin : ${heure}</div>` : ''}
+      </div>
+
+      <!-- Liste des actes modifiables -->
+      <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">Actes — cliquez pour modifier</div>
+      <div id="cot-actes-list">
+        ${actes.length ? actes.map((a, i) => `
+          <div id="cot-acte-${i}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:10px;margin-bottom:8px">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <input id="cot-code-${i}" value="${a.code||''}" oninput="_cotUpdateTotal()" style="font-family:var(--fm);font-size:11px;background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.3);border-radius:20px;padding:2px 10px;width:70px;text-align:center">
+                <input id="cot-nom-${i}" value="${(a.nom||'').replace(/"/g,'&quot;')}" oninput="_cotUpdateTotal()" style="font-size:12px;color:var(--t);background:transparent;border:none;border-bottom:1px solid var(--b);flex:1;min-width:80px;padding:2px 0" placeholder="Description acte">
+              </div>
             </div>
-            <span style="font-family:var(--fm);font-size:13px;color:var(--a);font-weight:700">${(a.total||0).toFixed(2)} €</span>
+            <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+              <input id="cot-total-${i}" type="number" step="0.01" value="${(parseFloat(a.total)||0).toFixed(2)}" oninput="_cotUpdateTotal()" style="font-family:var(--fm);font-size:13px;color:var(--a);font-weight:700;background:transparent;border:1px solid rgba(0,212,170,.2);border-radius:6px;padding:4px 6px;width:72px;text-align:right">
+              <span style="font-size:12px;color:var(--m)">€</span>
+            </div>
+            <button onclick="_cotRemoveActe(${i})" style="background:none;border:none;color:rgba(255,95,109,.6);font-size:16px;cursor:pointer;flex-shrink:0;padding:2px 4px" title="Supprimer cet acte">✕</button>
           </div>
-        `).join('')}
-      </div>
-      ` : `<div class="ai wa" style="margin-bottom:14px">Aucun acte détecté automatiquement. Vous pouvez coter manuellement.</div>`}
-
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.25);border-radius:10px;margin-bottom:16px">
-        <span style="font-size:14px;color:var(--t);font-weight:600">Total estimé</span>
-        <span style="font-family:var(--fs);font-size:22px;color:var(--a)">${total.toFixed(2)} €</span>
+        `).join('') : `<div class="ai wa" style="margin-bottom:12px">⚠️ Aucun acte détecté — ajoutez-en manuellement ci-dessous.</div>`}
       </div>
 
+      <!-- Ajout rapide d'acte -->
+      <div style="margin-bottom:16px">
+        <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Ajouter un acte</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          ${ACTES_RAPIDES.map(a => `
+            <button onclick="_cotAddActe('${a.code}','${a.nom.replace(/'/g,"\\'")}',${a.total})"
+              style="font-size:11px;font-family:var(--fm);background:var(--s);border:1px solid var(--b);border-radius:20px;padding:4px 10px;cursor:pointer;color:var(--t);white-space:nowrap">
+              ${a.code} <span style="color:var(--m)">${a.total.toFixed(2)}€</span>
+            </button>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:6px">
+          <input id="cot-add-code" placeholder="Code (ex: AMI1)" style="width:90px;font-size:12px;font-family:var(--fm)">
+          <input id="cot-add-nom" placeholder="Description" style="flex:1;font-size:12px">
+          <input id="cot-add-total" type="number" step="0.01" placeholder="€" style="width:70px;font-size:12px">
+          <button class="btn bp bsm" onclick="_cotAddCustomActe()">+ Ajouter</button>
+        </div>
+      </div>
+
+      <!-- Total -->
+      <div id="cot-total-display" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.3);border-radius:12px;margin-bottom:18px">
+        <span style="font-size:15px;color:var(--t);font-weight:600">Total</span>
+        <span id="cot-total-val" style="font-family:var(--fs);font-size:26px;color:var(--a)">${total.toFixed(2)} €</span>
+      </div>
+
+      <!-- Actions -->
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn bp" style="flex:1" onclick="_validateCotationLive(${JSON.stringify(patient).replace(/'/g,"&apos;")})">
-          ✅ Valider
+        <button class="btn bp" style="flex:2;min-width:160px" onclick="_validateCotationLive()">
+          ✅ Valider cette cotation
         </button>
-        <button class="btn bv" style="flex:1" onclick="document.getElementById('cot-modal-live').remove();navTo('cot',null)">
-          ✏️ Modifier dans la cotation
+        <button class="btn bv" style="flex:1;min-width:120px" onclick="_openCotationComplete()">
+          🖊️ Cotation complète
         </button>
         <button class="btn bs" style="flex:none" onclick="document.getElementById('cot-modal-live').remove()">
-          Ignorer
+          Plus tard
         </button>
       </div>
-      <p style="font-size:11px;color:var(--m);margin-top:10px;font-family:var(--fm);text-align:center">
-        💡 Source locale · Basé sur la description du soin · Vérifiez avant facturation officielle
+      <p style="font-size:11px;color:var(--m);margin-top:12px;font-family:var(--fm);text-align:center;line-height:1.5">
+        💡 Cotation basée sur la description du soin · Modifiez les actes si nécessaire avant de valider
       </p>
     </div>
   `;
 
   document.body.appendChild(modal);
-  // Fermer en cliquant hors de la modale
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
-function _validateCotationLive(patient) {
+/* Met à jour le total affiché en lisant tous les inputs */
+function _cotUpdateTotal() {
+  const actes = _cotModalState.actes;
+  let total = 0;
+  actes.forEach((a, i) => {
+    const codeEl  = document.getElementById(`cot-code-${i}`);
+    const nomEl   = document.getElementById(`cot-nom-${i}`);
+    const totalEl = document.getElementById(`cot-total-${i}`);
+    if (codeEl)  a.code  = codeEl.value;
+    if (nomEl)   a.nom   = nomEl.value;
+    if (totalEl) { a.total = parseFloat(totalEl.value) || 0; total += a.total; }
+  });
+  const display = document.getElementById('cot-total-val');
+  if (display) display.textContent = total.toFixed(2) + ' €';
+}
+
+/* Ajoute un acte rapide */
+function _cotAddActe(code, nom, montant) {
+  _cotUpdateTotal(); // sauvegarder l'état courant
+  _cotModalState.actes.push({ code, nom, total: montant, _idx: _cotModalState.actes.length });
+  _renderCotModal(_cotModalState.patient, null);
+}
+
+/* Ajoute un acte personnalisé */
+function _cotAddCustomActe() {
+  const code  = (document.getElementById('cot-add-code')?.value  || '').trim().toUpperCase();
+  const nom   = (document.getElementById('cot-add-nom')?.value   || '').trim();
+  const total = parseFloat(document.getElementById('cot-add-total')?.value) || 0;
+  if (!code && !nom) { if (typeof showToast === 'function') showToast('Remplissez au moins le code ou la description'); return; }
+  _cotUpdateTotal();
+  _cotModalState.actes.push({ code: code || 'AMI', nom: nom || 'Acte infirmier', total });
+  _renderCotModal(_cotModalState.patient, null);
+}
+
+/* Supprime un acte par index */
+function _cotRemoveActe(idx) {
+  _cotUpdateTotal();
+  _cotModalState.actes.splice(idx, 1);
+  _renderCotModal(_cotModalState.patient, null);
+}
+
+/* Valide la cotation et met à jour le CA */
+function _validateCotationLive() {
+  _cotUpdateTotal();
+  const actes  = _cotModalState.actes;
+  const total  = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
+  const patient = _cotModalState.patient;
+
+  // Mettre à jour le CA de la journée
+  LIVE_CA_TOTAL += total;
+  const caEl = $('live-ca-total');
+  if (caEl) { caEl.textContent = `💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`; caEl.style.display = 'block'; }
+
+  // Ajouter au récap CA
+  updateLiveCaCard(patient, { actes, total });
+
+  // Marquer la cotation sur le patient
+  if (patient) patient._cotation = { actes, total, validated: true };
+
+  // Callback optionnel
+  if (typeof _cotModalState.onValidate === 'function') _cotModalState.onValidate(actes, total);
+
   const modal = document.getElementById('cot-modal-live');
   if (modal) modal.remove();
-  if (typeof showToast === 'function') showToast('✅ Cotation validée — ajoutée au CA de la journée.');
+
+  if (typeof showToast === 'function') showToast(`✅ Cotation validée — ${total.toFixed(2)} € ajoutés au CA`);
+  renderLivePatientList();
+}
+
+/* Ouvre la section cotation complète en pré-remplissant le texte */
+function _openCotationComplete() {
+  const patient = _cotModalState.patient;
+  const modal   = document.getElementById('cot-modal-live');
+  if (modal) modal.remove();
+
+  // Pré-remplir le textarea de cotation si disponible
+  const textarea = document.getElementById('f-txt');
+  if (textarea && patient) textarea.value = patient.texte || patient.description || '';
+
+  if (typeof navTo === 'function') navTo('cot', null);
+  if (typeof showToast === 'function') showToast('💡 Description pré-remplie — ajustez et cotez');
+}
+
+/* Ouvre la modale de cotation pour un patient spécifique depuis la liste tournée */
+async function openCotationPatient(patientIndex) {
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const patient  = patients[patientIndex];
+  if (!patient) return;
+
+  // Si cotation déjà validée, proposer de la re-consulter
+  if (patient._cotation?.validated) {
+    showCotationModal(patient, patient._cotation, null);
+    return;
+  }
+
+  // Sinon générer une cotation automatique via API ou fallback local
+  if (typeof showToast === 'function') showToast('⚡ Génération de la cotation…');
+  let cotation = null;
+  try {
+    const u = S?.user || {};
+    const d = await apiCall('/webhook/ami-calcul', {
+      mode: 'ngap',
+      texte: patient.texte || patient.description || '',
+      infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
+      adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
+      date_soin: new Date().toISOString().split('T')[0],
+      heure_soin: patient.heure_soin || patient.heure_preferee || '',
+      _live_auto: true
+    });
+    cotation = d;
+  } catch (_) {
+    if (typeof autoCotationLocale === 'function') cotation = autoCotationLocale(patient.description || patient.texte || '');
+  }
+
+  showCotationModal(patient, cotation || { actes: [], total: 0 }, null);
 }
 
 /* Patch liveStatus global */

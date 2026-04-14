@@ -304,16 +304,26 @@ async function confirmStartPointCorrection() {
   if (typeof stored.onConfirm === 'function') stored.onConfirm(coords.lat, coords.lng, coords.addr);
 
   disableStartPointCorrection();
+
+  // Fermer les panneaux d'édition (Tournée IA + Pilotage Live)
+  const editorTur  = document.getElementById('start-editor');
+  const editorLive = document.getElementById('live-start-editor');
+  if (editorTur)  editorTur.style.display  = 'none';
+  if (editorLive) editorLive.style.display = 'none';
+
   showToast('🏠 Point de départ enregistré ✓');
 }
 
 function disableStartPointCorrection() {
   _startPtMode = false;
   if (_startPtMapInst) {
-    _startPtMapInst.off('click', _onStartPtClick);
-    _startPtMapInst.getContainer().style.cursor = '';
+    try { _startPtMapInst.off('click', _onStartPtClick); } catch(_) {}
+    try { _startPtMapInst.getContainer().style.cursor = ''; } catch(_) {}
+    if (_startPtMarker) {
+      try { _startPtMapInst.removeLayer(_startPtMarker); } catch(_) {}
+      _startPtMarker = null;
+    }
   }
-  // Ne pas supprimer le marker — il reste visible comme repère visuel
   _startPtMapInst = null;
 }
 

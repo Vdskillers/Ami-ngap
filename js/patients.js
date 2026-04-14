@@ -550,18 +550,28 @@ function _filterPickerList() {
 
 const _geocodeCache = new Map();
 
-async function _geocodeAdresse(adresse) {
+async function _geocodeAdresse(adresse, patient) {
   if (!adresse || !adresse.trim()) return null;
   const key = adresse.trim().toLowerCase();
   if (_geocodeCache.has(key)) return _geocodeCache.get(key);
   try {
-    const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1`,
-      { headers: { 'Accept-Language': 'fr' } }
-    );
-    const d = await r.json();
-    if (!d.length) { _geocodeCache.set(key, null); return null; }
-    const coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    // Utiliser le pipeline complet geocode.js si disponible (normalisation + correction apprise + Photon → Nominatim)
+    let coords = null;
+    if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
+      const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
+      const geo = await smartGeocode(cleaned);
+      if (geo && geo.lat && geo.lng) {
+        coords = { lat: geo.lat, lng: geo.lng, geoScore: typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70 };
+      }
+    } else {
+      // Fallback Nominatim direct si geocode.js non disponible
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1`,
+        { headers: { 'Accept-Language': 'fr' } }
+      );
+      const d = await r.json();
+      if (d.length) coords = { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), geoScore: 60 };
+    }
     _geocodeCache.set(key, coords);
     return coords;
   } catch { return null; }
@@ -575,11 +585,11 @@ async function _geocodePatients(patients, onProgress) {
     const p = patients[i];
     if (onProgress) onProgress(i + 1, patients.length, p.description || p.nom || '');
     if (p.adresse) {
-      const coords = await _geocodeAdresse(p.adresse);
-      if (coords) { geocoded++; results.push({ ...p, lat: coords.lat, lng: coords.lng }); }
+      const coords = await _geocodeAdresse(p.adresse, p);
+      if (coords) { geocoded++; results.push({ ...p, lat: coords.lat, lng: coords.lng, geoScore: coords.geoScore || 70 }); }
       else { failed++; results.push(p); }
-      // Respecter le rate-limit Nominatim (1 req/s)
-      if (i < patients.length - 1) await new Promise(r => setTimeout(r, 1100));
+      // Petit délai pour éviter le rate-limit si fallback Nominatim
+      if (i < patients.length - 1) await new Promise(r => setTimeout(r, 300));
     } else {
       failed++;
       results.push(p);
@@ -596,16 +606,27 @@ async function _importPickerPatients() {
     .filter(r => _selectedPatientIds.has(r.id))
     .map(r => {
       const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
+      const adresseComplete = p.addressFull || p.address ||
+        [p.street, p.extra, (p.zip||'') + ' ' + (p.city||''), 'France']
+          .map(s => (s||'').trim()).filter(Boolean).join(', ')
+        || p.adresse || '';
       return {
         id:                p.id,
         description:       `${p.prenom||''} ${p.nom}`.trim(),
-        texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
-        adresse:           p.adresse || '',
+        texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.soin||p.pathologies||'Soin infirmier'}`,
+        adresse:           adresseComplete,
+        address:           p.address || adresseComplete,
+        addressFull:       p.addressFull || adresseComplete,
+        street:            p.street || '',
+        zip:               p.zip || '',
+        city:              p.city || '',
         medecin:           p.medecin || '',
         pathologies:       p.pathologies || '',
-        heure_soin:        p.heure_preferee || '',
-        heure_preferee:    p.heure_preferee || '',
-        respecter_horaire: !!p.respecter_horaire,
+        soin:              p.soin || '',
+        heure_soin:        p.preferredTime || p.heure_preferee || '',
+        heure_preferee:    p.preferredTime || p.heure_preferee || '',
+        respecter_horaire: !!(p.locked || p.respecter_horaire),
+        urgent:            !!(p.urgent || p.priority === 'Urgente'),
         source:            'carnet_patients',
       };
     });
@@ -668,25 +689,38 @@ async function _importSinglePatient(id) {
 
   showToastSafe(`📡 Géocodage de ${p.prenom||''} ${p.nom}…`);
 
+  // Résoudre l'adresse depuis les différents champs possibles (street/address/addressFull)
+  const adresseComplete = p.addressFull || p.address ||
+    [p.street, p.extra, (p.zip||'') + ' ' + (p.city||''), 'France']
+      .map(s => (s||'').trim()).filter(Boolean).join(', ')
+    || p.adresse || '';
+
   // Géocoder l'adresse si disponible
-  let lat = null, lng = null;
-  if (p.adresse) {
-    const coords = await _geocodeAdresse(p.adresse);
-    if (coords) { lat = coords.lat; lng = coords.lng; }
+  let lat = null, lng = null, resolvedGeoScore = 0;
+  if (adresseComplete) {
+    const coords = await _geocodeAdresse(adresseComplete, p);
+    if (coords) { lat = coords.lat; lng = coords.lng; resolvedGeoScore = coords.geoScore || 70; }
   }
 
   const entry = {
     id:                p.id,
     description:       `${p.prenom||''} ${p.nom}`.trim(),
-    texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.pathologies||'Soin infirmier'}`,
-    adresse:           p.adresse || '',
+    texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.soin||p.pathologies||'Soin infirmier'}`,
+    adresse:           adresseComplete,
+    address:           p.address || adresseComplete,
+    addressFull:       p.addressFull || adresseComplete,
+    street:            p.street || '',
+    zip:               p.zip || '',
+    city:              p.city || '',
     medecin:           p.medecin || '',
     pathologies:       p.pathologies || '',
-    heure_soin:        p.heure_preferee || '',
-    heure_preferee:    p.heure_preferee || '',
-    respecter_horaire: !!p.respecter_horaire,
+    soin:              p.soin || '',
+    heure_soin:        p.preferredTime || p.heure_preferee || '',
+    heure_preferee:    p.preferredTime || p.heure_preferee || '',
+    respecter_horaire: !!(p.locked || p.respecter_horaire),
+    urgent:            !!(p.urgent || p.priority === 'Urgente'),
     source:            'carnet_patients',
-    ...(lat !== null ? { lat, lng } : {}),
+    ...(lat !== null ? { lat, lng, geoScore: resolvedGeoScore } : {}),
   };
 
   // Fusionner avec les patients déjà importés
