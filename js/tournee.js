@@ -49,27 +49,42 @@ function getOptimMode() {
 /* ── Style réactif des radio buttons du sélecteur de mode ── */
 function _bindOptimModeUI() {
   document.querySelectorAll('input[name="live-optim-mode"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const labels = { ia: 'live-mode-ia-lbl', heure: 'live-mode-heure-lbl', mixte: 'live-mode-mixte-lbl' };
-      Object.entries(labels).forEach(([val, lblId]) => {
-        const lbl = $(lblId);
-        if (!lbl) return;
-        if (radio.value === val && radio.checked) {
-          lbl.style.border = '2px solid var(--a)';
-          lbl.style.background = 'rgba(0,212,170,.06)';
-        } else {
-          lbl.style.border = '1px solid var(--b)';
-          lbl.style.background = 'var(--s)';
-        }
-      });
-    });
+    // Supprimer les anciens listeners pour éviter les doublons
+    radio.removeEventListener('change', _onOptimModeChange);
+    radio.addEventListener('change', _onOptimModeChange);
+  });
+  // Appliquer l'état visuel immédiatement au chargement
+  _applyOptimModeStyle();
+}
+
+function _onOptimModeChange() {
+  _applyOptimModeStyle();
+}
+
+function _applyOptimModeStyle() {
+  const labels = { ia: 'live-mode-ia-lbl', heure: 'live-mode-heure-lbl', mixte: 'live-mode-mixte-lbl' };
+  // Trouver le radio coché parmi tous les radios
+  const checked = document.querySelector('input[name="live-optim-mode"]:checked');
+  const checkedVal = checked ? checked.value : 'ia';
+  Object.entries(labels).forEach(([val, lblId]) => {
+    const lbl = $(lblId);
+    if (!lbl) return;
+    if (val === checkedVal) {
+      lbl.style.border = '2px solid var(--a)';
+      lbl.style.background = 'rgba(0,212,170,.06)';
+    } else {
+      lbl.style.border = '1px solid var(--b)';
+      lbl.style.background = 'var(--s)';
+    }
   });
 }
 
-/* Initialiser le binding UI au chargement de la section live */
-document.addEventListener('app:nav', e => {
+/* Écouter les deux events de navigation */
+const _onNavLive = e => {
   if (e.detail?.view === 'live') setTimeout(_bindOptimModeUI, 100);
-});
+};
+document.addEventListener('app:nav',     _onNavLive);
+document.addEventListener('ui:navigate', _onNavLive);
 
 function showCaFromImport(){
   if(!APP.importedData)return;

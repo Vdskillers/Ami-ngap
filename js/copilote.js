@@ -69,9 +69,12 @@ function _createCopilotPanel() {
   fab.onclick = toggleCopilot;
   fab.onmouseenter = () => fab.style.transform = 'scale(1.1)';
   fab.onmouseleave = () => fab.style.transform = 'scale(1)';
-  // Sur mobile (≤768px) : insérer dans le wrapper header, sinon body flottant
+  // Mobile (≤768px) : dans le header pour s'intégrer au flux (CSS position:static)
+  // PC (>768px)  : dans body en position:fixed
+  // matchMedia est fiable dès le premier rendu, contrairement à window.innerWidth
   const headerFabs = document.getElementById('mobile-header-fabs');
-  if (headerFabs && window.innerWidth <= 768) headerFabs.appendChild(fab);
+  const isMobile   = window.matchMedia('(max-width: 768px)').matches;
+  if (headerFabs && isMobile) headerFabs.appendChild(fab);
   else document.body.appendChild(fab);
 
   // Panel chat
