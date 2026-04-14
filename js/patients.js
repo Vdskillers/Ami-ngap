@@ -220,9 +220,10 @@ async function savePatient() {
 
   // Récupérer les coordonnées GPS existantes si on édite (ne pas les écraser)
   let existingLat = null, existingLng = null;
-  if (_editingPatientId) {
+  const editId = _editingPatientId; // capturer ici avant tout await qui pourrait interférer
+  if (editId) {
     const rows = await _idbGetAll(PATIENTS_STORE);
-    const row  = rows.find(r => r.id === _editingPatientId);
+    const row  = rows.find(r => r.id === editId);
     if (row) {
       const prev = _dec(row._data) || {};
       existingLat = prev.lat || null;
@@ -238,7 +239,7 @@ async function savePatient() {
     .map(s => s.trim()).filter(Boolean).join(', ');
 
   const patient = {
-    id:             _editingPatientId || ('pat_' + Date.now()),
+    id:             editId || ('pat_' + Date.now()),
     nom,
     prenom,
     // Champs adresse structurés
@@ -263,7 +264,7 @@ async function savePatient() {
     exo:            gv('pat-exo')        || '',
     heure_preferee:    gv('pat-heure-preferee') || '',
     respecter_horaire: !!($('pat-respecter-horaire')?.checked),
-    created_at:     _editingPatientId ? undefined : new Date().toISOString(),
+    created_at:     editId ? undefined : new Date().toISOString(),
     updated_at:     new Date().toISOString(),
     _enc:           true,
     // Conserver les coordonnées GPS précédentes sauf si l'adresse a changé
@@ -271,10 +272,10 @@ async function savePatient() {
   };
 
   // Si l'adresse a été modifiée, on invalide les coordonnées GPS pour forcer un re-géocodage
-  if (_editingPatientId && existingLat !== null) {
-    const rows = await _idbGetAll(PATIENTS_STORE);
-    const row  = rows.find(r => r.id === _editingPatientId);
-    const prev = row ? (_dec(row._data) || {}) : {};
+  if (editId && existingLat !== null) {
+    const rows2 = await _idbGetAll(PATIENTS_STORE);
+    const row2  = rows2.find(r => r.id === editId);
+    const prev = row2 ? (_dec(row2._data) || {}) : {};
     if (prev.adresse && prev.adresse !== patient.adresse) {
       delete patient.lat;
       delete patient.lng;
@@ -463,17 +464,19 @@ async function openPatientDetail(id) {
 }
 
 /* Modifier un patient */
-async function editPatient(id) {
+async function editPatient(patId) {
   const rows = await _idbGetAll(PATIENTS_STORE);
-  const row  = rows.find(r => r.id === id);
+  const row  = rows.find(r => r.id === patId);
   if (!row) return;
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
-  // openAddPatient() remet _editingPatientId à null — on le réassigne APRÈS
+  // ⚠️ openAddPatient() remet _editingPatientId = null — on DOIT l'assigner APRÈS
   openAddPatient();
-  _editingPatientId = id;
+  _editingPatientId = patId;   // assigner APRÈS openAddPatient
   $('pat-form-title').textContent = '✏️ Modifier patient';
-  Object.entries({
+
+  // ⚠️ Ne pas nommer la variable de destructuring "id" — ça écraserait patId dans le scope
+  const fields = {
     'pat-nom': p.nom, 'pat-prenom': p.prenom,
     'pat-rue':   p.street || (p.adresse||'').split(',')[0]?.trim() || '',
     'pat-cp':    p.zip    || '',
@@ -485,8 +488,9 @@ async function editPatient(id) {
     'pat-contact-nom': p.contact_nom, 'pat-contact-tel': p.contact_tel,
     'pat-notes': p.notes, 'pat-ordo-date': p.ordo_date,
     'pat-heure-preferee': p.heure_preferee || '',
-  }).forEach(([id, val]) => { const el=$(id); if(el) el.value = val||''; });
-  // Mettre à jour la prévisualisation adresse
+  };
+  Object.entries(fields).forEach(([fieldId, val]) => { const el=$(fieldId); if(el) el.value = val||''; });
+
   if (typeof updatePatAddrPreview === 'function') updatePatAddrPreview();
   const sel = $('pat-exo'); if(sel && p.exo) sel.value = p.exo;
   const chk = $('pat-respecter-horaire'); if(chk) chk.checked = !!p.respecter_horaire;
@@ -1098,6 +1102,7 @@ async function syncPatientsToServer() {
 
     const patients = rows.map(r => ({
       id:             r.id,
+      patient_id:     r.id,              // alias pour compatibilité webhook
       encrypted_data: r._data,            // déjà chiffré par _enc()
       nom_enc:        btoa(unescape(encodeURIComponent((r.nom||'') + ' ' + (r.prenom||'')))).slice(0, 64),
       updated_at:     r.updated_at || new Date().toISOString(),
