@@ -147,6 +147,39 @@ function _openPatientForm() {
   const chk = $('pat-respecter-horaire'); if(chk) chk.checked = false;
 }
 
+/* Prévisualisation adresse dans le formulaire carnet patient */
+function updatePatAddrPreview() {
+  const rue   = (document.getElementById('pat-rue')?.value   || '').trim();
+  const cp    = (document.getElementById('pat-cp')?.value    || '').trim();
+  const ville = (document.getElementById('pat-ville')?.value || '').trim();
+
+  const preview = document.getElementById('pat-addr-preview');
+  const warn    = document.getElementById('pat-addr-warn');
+
+  if (!rue && !cp && !ville) {
+    if (preview) preview.style.display = 'none';
+    if (warn)    warn.style.display    = 'none';
+    return;
+  }
+
+  // Prévisualisation adresse complète
+  if (preview) {
+    const parts = [rue, [cp, ville].filter(Boolean).join(' '), 'France'].filter(Boolean);
+    preview.textContent  = '📍 ' + parts.join(', ');
+    preview.style.display = 'block';
+  }
+
+  // Avertissement si adresse incomplète
+  if (warn) {
+    if (rue && (!cp || cp.length < 5 || !ville)) {
+      warn.textContent  = '⚠️ Ajoutez le code postal et la ville pour un géocodage précis.';
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+}
+
 /* Ferme le formulaire */
 function closePatientForm() {
   const form = $('patient-form');
