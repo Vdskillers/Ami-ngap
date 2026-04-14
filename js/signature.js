@@ -20,19 +20,41 @@
 const SIG_STORE = 'ami_signatures';
 let _sigCanvas = null, _sigCtx = null, _sigDrawing = false;
 let _currentInvoiceId = null, _sigDB = null;
+let _sigDBUserId = null; // Garde la trace du user actif pour la DB signatures
+
+/* ── Retourne le nom de la base IndexedDB signatures isolée par user ──
+   Chaque infirmière a sa propre base : ami_sig_db_<userId>.
+   Un admin voit uniquement ses propres signatures de test.
+───────────────────────────────────────────────────────────────────── */
+function _getSigDBName() {
+  const uid = (typeof S !== 'undefined') ? (S?.user?.id || S?.user?.email || 'local') : 'local';
+  return 'ami_sig_db_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
 
 /* ── IndexedDB ── */
 async function _initSigDB() {
+  const currentUserId = (typeof S !== 'undefined') ? (S?.user?.id || S?.user?.email || 'local') : 'local';
+  // Fermer si l'utilisateur a changé
+  if (_sigDB && _sigDBUserId !== currentUserId) {
+    _sigDB.close();
+    _sigDB = null;
+    _sigDBUserId = null;
+  }
   if (_sigDB) return _sigDB;
+  const dbName = _getSigDBName();
   return new Promise((res, rej) => {
-    const req = indexedDB.open('ami_sig_db', 1);
+    const req = indexedDB.open(dbName, 1);
     req.onupgradeneeded = e => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(SIG_STORE)) {
         db.createObjectStore(SIG_STORE, { keyPath: 'invoice_id' });
       }
     };
-    req.onsuccess = e => { _sigDB = e.target.result; res(_sigDB); };
+    req.onsuccess = e => {
+      _sigDB = e.target.result;
+      _sigDBUserId = currentUserId;
+      res(_sigDB);
+    };
     req.onerror   = () => rej(req.error);
   });
 }

@@ -21,7 +21,9 @@
 /* Cache 5 minutes avec fallback hors-ligne */
 function loadDashCache(maxAge = 5 * 60 * 1000) {
   try {
-    const raw = localStorage.getItem(DASH_CACHE_KEY);
+    // Utiliser la clé segmentée par user (définie dans voice.js) si disponible
+    const key = (typeof _dashCacheKey === 'function') ? _dashCacheKey() : DASH_CACHE_KEY;
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const p = JSON.parse(raw);
     const expired = Date.now() - p.t > maxAge;

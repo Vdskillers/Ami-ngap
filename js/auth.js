@@ -231,16 +231,27 @@ async function login(){
     const d=await wpost('/webhook/auth-login',{email:em,password:pw});
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
 
-    /* ── Isolation RGPD : vider les données de la session précédente avant de charger la nouvelle ── */
+    /* ── Isolation RGPD : fermer la session précédente en mémoire ──
+       APP.importedData et uberPatients sont des données de session (tournée du jour),
+       pas des données persistantes — elles sont remises à zéro à chaque login.
+       Les données patients IndexedDB (carnet, signatures) restent intactes sur l'appareil.
+       On ferme juste la connexion à la DB de l'utilisateur précédent pour
+       forcer l'ouverture de la bonne base (ami_patients_db_<userId>) au prochain accès.
+    ───────────────────────────────────────────────────────────────────────────────────── */
     APP.importedData = null;
     APP.uberPatients = [];
     APP.startPoint   = null;
     APP.nextPatient  = null;
-    /* Fermer la DB IndexedDB de l'utilisateur précédent (patients.js) */
+    /* Fermer (sans supprimer) la connexion IDB de l'utilisateur précédent */
     if (typeof _patientsDB !== 'undefined' && _patientsDB) {
       try { _patientsDB.close(); } catch(_) {}
       _patientsDB = null;
       if (typeof _patientsDBUserId !== 'undefined') _patientsDBUserId = null;
+    }
+    if (typeof _sigDB !== 'undefined' && _sigDB) {
+      try { _sigDB.close(); } catch(_) {}
+      _sigDB = null;
+      if (typeof _sigDBUserId !== 'undefined') _sigDBUserId = null;
     }
 
     ss.save(d.token,d.role,d.user);
@@ -271,6 +282,20 @@ function logout(){
   APP.importedData=null;
   APP.uberPatients=[];
   if(typeof stopVoice==='function') stopVoice();
+  /* ── Fermer les connexions IndexedDB ouvertes (sans supprimer les données) ──
+     Les données patients/signatures restent intactes sur l'appareil.
+     La prochaine connexion ouvrira la base correspondant au nouveau user.
+  ─────────────────────────────────────────────────────────────────────────── */
+  if (typeof _patientsDB !== 'undefined' && _patientsDB) {
+    try { _patientsDB.close(); } catch(_) {}
+    _patientsDB = null;
+    if (typeof _patientsDBUserId !== 'undefined') _patientsDBUserId = null;
+  }
+  if (typeof _sigDB !== 'undefined' && _sigDB) {
+    try { _sigDB.close(); } catch(_) {}
+    _sigDB = null;
+    if (typeof _sigDBUserId !== 'undefined') _sigDBUserId = null;
+  }
   showAuthOv();
   switchTab('l');
   const pw=$('l-pw');if(pw)pw.value='';

@@ -80,9 +80,17 @@ function stopVoice(){
    fetchAPI est défini dans utils.js (source unique de vérité)
    ============================================================ */
 
-/* Cache local 5 minutes — DASH_CACHE_KEY défini ici (une seule fois) */
+/* Cache local 5 minutes — clé segmentée par userId pour isolation RGPD ──
+   Chaque infirmière a son propre cache : ami_dash_cache_<userId>
+   Un admin ne voit jamais le cache d'une infirmière.
+─────────────────────────────────────────────────────────────────────── */
+function _dashCacheKey() {
+  const uid = (typeof S !== 'undefined') ? (S?.user?.id || S?.user?.email || 'local') : 'local';
+  return 'ami_dash_cache_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+// Rétrocompatibilité — la constante reste définie pour les guards défensifs dans dashboard.js
 const DASH_CACHE_KEY = 'ami_dash_cache';
 
 function saveDashCache(data) {
-  try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({t:Date.now(),data})); } catch{}
+  try { localStorage.setItem(_dashCacheKey(), JSON.stringify({t:Date.now(),data})); } catch{}
 }
