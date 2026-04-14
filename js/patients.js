@@ -784,3 +784,40 @@ document.addEventListener('DOMContentLoaded', () => {
   // Init DB au démarrage pour les alertes ordo
   initPatientsDB().then(checkOrdoExpiry).catch(() => {});
 });
+
+/* ────────────────────────────────────────────────
+   Preview adresse en temps réel — formulaire patient (pat-rue/cp/ville)
+   Appelée par oninput sur les champs d'adresse dans index.html
+──────────────────────────────────────────────── */
+function updatePatAddrPreview() {
+  const rue   = (document.getElementById('pat-rue')?.value   || '').trim();
+  const cp    = (document.getElementById('pat-cp')?.value    || '').trim();
+  const ville = (document.getElementById('pat-ville')?.value || '').trim();
+
+  const preview = document.getElementById('pat-addr-preview');
+  const warn    = document.getElementById('pat-addr-warn');
+
+  const parts = [rue, [cp, ville].filter(Boolean).join(' '), 'France']
+    .map(s => s.trim()).filter(Boolean);
+
+  if (!parts.length || !rue) {
+    if (preview) preview.style.display = 'none';
+    if (warn)    warn.style.display    = 'none';
+    return;
+  }
+
+  if (preview) {
+    preview.textContent  = '📍 ' + parts.join(', ');
+    preview.style.display = 'block';
+  }
+
+  // Avertissement si CP ou ville manquant (géocodage moins précis)
+  if (warn) {
+    if (!cp || !ville) {
+      warn.textContent  = '⚠️ Ajoutez le code postal et la ville pour un géocodage précis.';
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+}

@@ -303,9 +303,11 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
       <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
       ${rentab?`<div class="ca-pill" style="background:rgba(79,168,255,.1);border-color:rgba(79,168,255,.3);color:var(--a2)">📊 ${rentab.euro_heure}€/h</div>`:''}
+      <button class="btn bs bsm" style="margin-left:auto;color:var(--d);border-color:rgba(255,95,109,.3);font-size:11px" onclick="clearTournee()">🗑️ Vider</button>
     </div>
     ${route.map((p,i)=>{
       const sd  = encodeURIComponent(p.description||'');
+      const pId = encodeURIComponent(p.id || p.patient_id || String(i));
       const leg = osrm?.legs?.[i];
       const hasTime = p.start_str && p.start_str !== '—';
       const heureAff = p.heure_preferee || p.heure_soin || '';
@@ -325,10 +327,43 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
           </div>
         </div>
         ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km">~${p.travel_min}min</div>`:'')}
+        ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
         <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'))">⚡ Coter</button>
+        <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
       </div>`;
     }).join('')}
   </div>`;
+}
+
+/* Retirer un patient de la tournée optimisée */
+function removeFromTournee(encodedId, fallbackIndex) {
+  const id = decodeURIComponent(encodedId);
+  const data = APP.get('importedData') || APP.importedData;
+  if (!data) return;
+  const patients = data.patients || data.entries || [];
+  const idx = patients.findIndex((p, i2) =>
+    String(p.id || p.patient_id) === String(id) || i2 === Number(fallbackIndex)
+  );
+  if (idx === -1) return;
+  patients.splice(idx, 1);
+  data.total = patients.length;
+  if (typeof storeImportedData === 'function') storeImportedData(data);
+  else APP.importedData = data;
+  if (typeof showToast === 'function') showToast('Patient retiré de la tournée');
+  optimiserTournee();
+}
+
+/* Vider entièrement la tournée */
+function clearTournee() {
+  if (!confirm('Vider la tournée ? Tous les patients importés seront retirés.')) return;
+  APP.importedData = null;
+  APP.uberPatients = [];
+  if (typeof storeImportedData === 'function') storeImportedData(null);
+  const tbody = $('tbody');
+  if (tbody) tbody.innerHTML = '';
+  const resTur = $('res-tur');
+  if (resTur) resTur.classList.remove('show');
+  if (typeof showToast === 'function') showToast('🗑️ Tournée vidée');
 }
 
 /* Fallback API backend (ancien comportement) */
@@ -884,7 +919,8 @@ function renderLivePatientList() {
           ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
           ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
         </div>
-        <button class="btn bp bsm" onclick="openCotationPatient(${i})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Voir / modifier la cotation">📋 Cotation</button>
+        ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat,lng:p.lng,address:p.adresse||p.addressFull||p.address||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Naviguer vers ce patient">🗺️</button>` : ''}
+        <button class="btn bp bsm" onclick="openCotationPatient(${i})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Voir / modifier la cotation">📋</button>
         <button class="btn bs bsm" onclick="removeImportedPatient(${i})" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--d);border-color:rgba(255,95,109,.2);background:rgba(255,95,109,.05)" title="Supprimer ce patient">✕</button>
       </div>`;
     }).join('')}
