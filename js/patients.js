@@ -127,9 +127,15 @@ async function _idbGetByIndex(store, indexName, val) {
 
 let _editingPatientId = null;
 
-/* Ouvre le formulaire d'ajout */
+/* Ouvre le formulaire pour un NOUVEAU patient */
 function openAddPatient() {
-  _editingPatientId = null;
+  _editingPatientId = null; // reset uniquement pour nouveau patient
+  _openPatientForm();
+  $('pat-form-title').textContent = '➕ Nouveau patient';
+}
+
+/* Ouvre le formulaire (interne — ne touche pas à _editingPatientId) */
+function _openPatientForm() {
   const form = $('patient-form');
   if (form) form.style.display = 'block';
   ['pat-nom','pat-prenom','pat-rue','pat-cp','pat-ville','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee']
@@ -139,7 +145,6 @@ function openAddPatient() {
   const warnEl=$('pat-addr-warn');    if(warnEl) warnEl.style.display='none';
   const sel = $('pat-exo'); if(sel) sel.selectedIndex=0;
   const chk = $('pat-respecter-horaire'); if(chk) chk.checked = false;
-  $('pat-form-title').textContent = '➕ Nouveau patient';
 }
 
 /* Ferme le formulaire */
@@ -406,7 +411,7 @@ async function editPatient(id) {
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
   _editingPatientId = id;
-  openAddPatient();
+  _openPatientForm();
   $('pat-form-title').textContent = '✏️ Modifier patient';
   Object.entries({
     'pat-nom': p.nom, 'pat-prenom': p.prenom,
