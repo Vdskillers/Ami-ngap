@@ -274,8 +274,6 @@ function renderPatientsOnMap(patients) {
           APP._startMarker.bindPopup('<strong>Point de départ</strong>');
         }
 
-        const isAdmin = (typeof S !== 'undefined') && S && S.role === 'admin';
-
         patients.forEach((p, idx) => {
           if (!p.lat || !p.lng) return;
           const isUrgent = !!(p.urgent || p.urgence);
@@ -292,8 +290,8 @@ function renderPatientsOnMap(patients) {
             }),
           });
 
-          const nomAff     = isAdmin ? ('Patient #' + (idx+1)) : (p.description || p.name || p.texte || ('Patient ' + (idx+1)));
-          const adresseAff = isAdmin ? '' : (p.adresse || p.address || p.addressFull || '');
+          const nomAff     = p.description || p.name || p.texte || ('Patient ' + (idx+1));
+          const adresseAff = p.adresse || p.address || p.addressFull || '';
           const heure      = p.heure_soin || p.heure_preferee || p.heure || '';
 
           var popupContent = '<strong style="font-size:13px">' + nomAff + '</strong>';

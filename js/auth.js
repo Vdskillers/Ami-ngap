@@ -71,20 +71,18 @@ function showApp(){
     if(topBar) topBar.classList.add('admin-active');
     $('admin-cot-notice').style.display='flex';
     $('priv-cot').style.display='none';
-    $('btn-profil').style.display='none';
     document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
-    // Masquage strict des champs patient (RGPD)
-    ['f-pt','f-ddn','f-sec','f-amo','f-amc'].forEach(id=>{
-      const el=$(id); if(el){ el.value=''; el.placeholder='— masqué (admin) —'; el.readOnly=true; }
-    });
-    // Masquer section prescripteur en mode admin
-    const prescSec=$('prescripteur-section');
-    if(prescSec) prescSec.style.display='none';
-    // Masquer numéro de facture en mode admin
-    const invSec=$('invoice-number-section');
-    if(invSec) invSec.style.display='none';
+    /* ── MODE ADMIN : accès fonctionnel complet pour tester l'application ──
+       L'admin ne voit QUE ses propres données (base IndexedDB isolée par userId).
+       Les données des infirmières sont physiquement inaccessibles (bases séparées).
+       L'admin peut saisir ses propres patients de test, utiliser toutes les fonctions
+       exactement comme une infirmière, pour valider et démontrer l'application.
+       Isolation garantie par _getDBName() → ami_patients_db_<userId>.
+    ────────────────────────────────────────────────────────────────────────── */
     // Pré-remplir date pour test fonctionnel
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
+    // Charger les prescripteurs (fonctionnel en mode admin)
+    loadPrescripteurs();
 
     // ── Notices admin pour toutes les sections accessibles ──
     ['dash-admin-notice','copilote-admin-notice','ver-admin-notice','stats-admin-notice','sig-admin-notice'].forEach(id => {
@@ -99,43 +97,6 @@ function showApp(){
         ni.onclick = () => navTo(v, null);
       }
     });
-
-    // ── Données de test pour la tournée IA et la carte (RGPD : données fictives uniquement) ──
-    // Injecté seulement si aucune donnée n'est déjà présente (évite d'écraser un test en cours)
-    if (!APP.importedData) {
-      APP.importedData = {
-        _admin_demo: true,
-        patients: [
-          { id:'demo1', description:'[TEST] Injection insuline SC', heure_soin:'08:00', lat:48.8566, lng:2.3522, adresse:'Paris 1er — données fictives' },
-          { id:'demo2', description:'[TEST] Pansement complexe + IFD', heure_soin:'09:30', lat:48.8606, lng:2.3376, adresse:'Paris 2ème — données fictives' },
-          { id:'demo3', description:'[TEST] Prélèvement sanguin', heure_soin:'11:00', lat:48.8529, lng:2.3499, adresse:'Paris 4ème — données fictives' },
-          { id:'demo4', description:'[TEST] Toilette BSB domicile', heure_soin:'14:00', lat:48.8655, lng:2.3601, adresse:'Paris 3ème — données fictives' },
-        ],
-        total: 4,
-        source: '⚙️ Données de test — mode administrateur'
-      };
-      // Point de départ fictif (Paris centre) pour que la carte et l'optimisation fonctionnent
-      APP.startPoint = { lat: 48.8566, lng: 2.3522 };
-      setTimeout(() => {
-        const tLat = document.getElementById('t-lat');
-        const tLng = document.getElementById('t-lng');
-        if (tLat) tLat.value = '48.8566';
-        if (tLng) tLng.value = '2.3522';
-        // Afficher bannière import pour que l'admin voit les données chargées
-        const banner = document.getElementById('pla-import-banner');
-        const info   = document.getElementById('pla-import-info');
-        if (banner && info) {
-          info.innerHTML = '⚙️ <strong>Mode admin</strong> — 4 patients fictifs chargés pour tester la tournée IA. Aucune donnée patient réelle.';
-          banner.style.display = 'block';
-        }
-        // Rendre les patients sur la carte si elle est prête
-        if (typeof renderPatientsOnMap === 'function' && APP.map) {
-          renderPatientsOnMap(APP.importedData.patients, APP.startPoint).catch(()=>{});
-        }
-        // Invalider la taille Leaflet après affichage
-        if (typeof depMap !== 'undefined' && depMap) depMap.invalidateSize();
-      }, 400);
-    }
 
     // ── Initialiser le Copilote immédiatement (HTML déjà dans le DOM) ──
     setTimeout(() => {
