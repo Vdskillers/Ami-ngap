@@ -251,7 +251,14 @@ function renderPatientsOnMap(patients) {
   window.renderPatientsOnMap = function(patients, startPoint) {
     return new Promise((resolve, reject) => {
       try {
-        if (!APP.map) { resolve(); return; }
+        // Résoudre l'instance Leaflet réelle — APP.map peut être l'instance directe
+        // (assignée par extras.js) ou APP.map.instance (namespace utils.js)
+        const _map = (APP.map && typeof APP.map.invalidateSize === 'function')
+          ? APP.map
+          : APP.map?.instance;
+        if (!_map || typeof _map.invalidateSize !== 'function') { resolve(); return; }
+        // Réassigner APP.map à l'instance pour que le reste du code fonctionne
+        APP.map = _map;
 
         // Supprimer layers existants
         if (APP.markers) APP.markers.forEach(m => { try { APP.map.removeLayer(m); } catch(_){} });

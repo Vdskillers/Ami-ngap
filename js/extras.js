@@ -44,48 +44,86 @@
 let _turMap=null, _turMarker=null, _turRouteLine=null, _turLiveMarker=null;
 
 function initTurMap(){
-  // Si dep-map existe et que map.js l'a déjà initialisé → l'utiliser comme _turMap
   const depMapEl = document.getElementById('dep-map');
-  const turMapEl = document.getElementById('tur-map');
 
-  if(_turMap) {
-    // Déjà initialisé — juste invalider la taille + s'assurer que le click est bien branché
-    setTimeout(() => { try { _turMap.invalidateSize(); } catch {} }, 100);
+  // ── Cas 1 : carte déjà créée — juste invalider + rebind ──
+  if (_turMap) {
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 100);
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 400);
     _rebindMapClick(_turMap);
     return;
   }
 
-  // Utiliser dep-map si APP.map.instance existe déjà (géré par map.js)
-  if(APP.map?.instance && depMapEl) {
+  // ── Cas 2 : APP.map est déjà une instance Leaflet (a une méthode invalidateSize) ──
+  // map.js assigne directement à APP.map, pas APP.map.instance
+  if (APP.map && typeof APP.map.invalidateSize === 'function') {
+    _turMap = APP.map;
+    APP.map.instance = _turMap; // synchroniser le namespace aussi
+    window._tourMap  = _turMap;
+    _rebindMapClick(_turMap);
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 150);
+    return;
+  }
+
+  // ── Cas 3 : APP.map.instance est une instance Leaflet valide ──
+  if (APP.map?.instance && typeof APP.map.instance.invalidateSize === 'function') {
     _turMap = APP.map.instance;
     window._tourMap = _turMap;
     _rebindMapClick(_turMap);
-    setTimeout(() => { try { _turMap.invalidateSize(); } catch {} }, 100);
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 150);
     return;
   }
 
-  // Aucune carte disponible — fallback sur dep-map via initDepMap
-  if(depMapEl && typeof initDepMap === 'function') {
-    initDepMap();
-    if(APP.map?.instance) {
-      _turMap = APP.map.instance;
-      window._tourMap = _turMap;
+  // ── Cas 4 : rien n'existe encore — créer la carte sur dep-map ──
+  if (!depMapEl) return;
+
+  // Vérifier que Leaflet est chargé
+  if (typeof L === 'undefined') {
+    setTimeout(initTurMap, 200);
+    return;
+  }
+
+  // Vérifier que dep-map n'a pas déjà été initialisé par Leaflet
+  if (depMapEl._leaflet_id) {
+    // Leaflet a déjà un ID sur cet élément mais APP.map n'a pas été enregistré
+    // Récupérer via le registre Leaflet interne
+    const existingMap = Object.values(L.map._instances || {}).find(m => m.getContainer() === depMapEl);
+    if (existingMap) {
+      _turMap = existingMap;
+      APP.map = _turMap;
+      APP.map.instance = _turMap;
+      window._tourMap  = _turMap;
       _rebindMapClick(_turMap);
+      setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 150);
+      return;
     }
-    return;
   }
 
-  // Tur-map dédié en dernier recours
-  if(!turMapEl) return;
-  _turMap = L.map('tur-map').setView([46.603354, 1.888334], 6);
-  window._tourMap = _turMap;
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© <a href="https://www.openstreetmap.org">OpenStreetMap</a>',
-    maxZoom:19
-  }).addTo(_turMap);
-  _rebindMapClick(_turMap);
-  setTimeout(() => _turMap.invalidateSize(), 300);
+  // Créer une instance Leaflet fraîche sur dep-map
+  try {
+    _turMap = L.map('dep-map', { zoomControl: true, attributionControl: true })
+               .setView([46.603354, 1.888334], 6);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(_turMap);
+
+    // Enregistrer dans APP.map des deux façons (compatibilité map.js ET ui.js)
+    APP.map          = _turMap;       // map.js utilise APP.map directement
+    APP.map.instance = _turMap;       // ui.js / extras.js utilisent APP.map.instance
+    window._tourMap  = _turMap;
+
+    _rebindMapClick(_turMap);
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 150);
+    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 500);
+  } catch(e) {
+    console.warn('[AMI] initTurMap : erreur création carte :', e.message);
+  }
 }
+
+/* ── initDepMap — alias pour compatibilité avec ui.js qui l'appelle ── */
+window.initDepMap = initTurMap;
 
 /* ─── Branche le handler de clic carte pour le point de départ ───────
    Conserve TOUS les comportements de map.js (_setDepMarker, setDepCoords,

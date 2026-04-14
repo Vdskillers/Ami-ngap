@@ -64,7 +64,9 @@ document.addEventListener('ui:navigate', e => {
 
       /* Invalider la taille APRÈS que la vue est visible (évite la carte grise) */
       setTimeout(() => {
-        const mapInst = APP.map?.instance || (typeof _turMap !== 'undefined' ? _turMap : null);
+        const mapInst = (APP.map && typeof APP.map.invalidateSize === 'function')
+          ? APP.map
+          : APP.map?.instance;
         if (mapInst) { try { mapInst.invalidateSize(); } catch(_){} }
       }, 300);
 
@@ -73,7 +75,9 @@ document.addEventListener('ui:navigate', e => {
       if (APP.importedData?.patients?.length && typeof renderPatientsOnMap === 'function') {
         const startPt = (typeof APP.get === 'function' ? APP.get('startPoint') : APP.startPoint) || null;
         const _retryMap = (n) => {
-          const mapInst = APP.map?.instance || (typeof _turMap !== 'undefined' ? _turMap : null);
+          const mapInst = (APP.map && typeof APP.map.invalidateSize === 'function')
+            ? APP.map
+            : APP.map?.instance;
           if (mapInst) {
             renderPatientsOnMap(APP.importedData.patients, startPt).catch(() => {});
             setTimeout(() => { try { mapInst.invalidateSize(); } catch(_){} }, 250);
