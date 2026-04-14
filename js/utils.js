@@ -101,7 +101,7 @@ let S=null, LIVE_PATIENT_ID=null;
 const ss={
   save(t,r,u){ S={token:t,role:r,user:u}; APP.token=t; APP.role=r; APP.user=u; sessionStorage.setItem('ami',JSON.stringify(S)); },
   clear(){ S=null; APP.token=null; APP.role=null; APP.user=null; sessionStorage.removeItem('ami'); },
-  load(){ try{ const x=sessionStorage.getItem('ami'); if(x){ S=JSON.parse(x); APP.token=S.token; APP.role=S.role; APP.user=S.user; return true; } }catch{} return false; },
+  load(){ try{ const x=sessionStorage.getItem('ami'); if(x){ S=JSON.parse(x); APP.token=S.token; APP.role=S.role; APP.user=S.user; return S; } }catch{} return null; },
   tok(){ return S?.token||''; }
 };
 
@@ -199,6 +199,8 @@ async function fetchAPI(url, options = {}) {
 
 /* ── 9. GUARD SESSION ────────────────────────── */
 function requireAuth(){
+  // Si S n'est pas hydraté en mémoire, tenter de le recharger depuis sessionStorage
+  if(!S) ss.load();
   if(!ss.tok()){ ss.clear(); if(typeof showAuthOv==='function') showAuthOv(); return false; }
   return true;
 }
