@@ -26,10 +26,12 @@ function openNavigation(patient) {
     ? `&origin=${origin.lat},${origin.lng}` : '';
 
   if (addr) {
-    const url = `https://www.google.com/maps/dir/?api=1`
-      + originParam
-      + `&destination=${encodeURIComponent(addr)}`
-      + `&travelmode=driving`;
+    /* Utiliser l'adresse texte en destination — Google Maps géocode avec sa base
+       Si origin défini : itinéraire direct
+       Si pas d'origin : ouvrir via maps?q= pour forcer la recherche textuelle exacte */
+    const url = originParam
+      ? `https://www.google.com/maps/dir/?api=1${originParam}&destination=${encodeURIComponent(addr)}&travelmode=driving`
+      : `https://maps.google.com/?q=${encodeURIComponent(addr)}`;
     window.open(url, '_blank');
   } else if (patient.lat && patient.lng) {
     const url = `https://www.google.com/maps/dir/?api=1`
