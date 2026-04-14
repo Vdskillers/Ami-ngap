@@ -762,8 +762,10 @@ async function _importPickerPatients() {
         p.adresse || '';
       return {
         id:                p.id,
-        description:       `${p.prenom||''} ${p.nom}`.trim(),
-        texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.notes||p.pathologies||'Soin infirmier'}`,
+        nom:               p.nom    || '',
+        prenom:            p.prenom || '',
+        description:       p.notes || p.pathologies || 'Soin infirmier',
+        texte:             p.notes || p.pathologies || 'Soin infirmier',
         adresse:           adresseComplete,
         address:           adresseComplete,
         addressFull:       adresseComplete,
@@ -864,8 +866,10 @@ async function _importSinglePatient(id) {
 
   const entry = {
     id:                p.id,
-    description:       `${p.prenom||''} ${p.nom}`.trim(),
-    texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.notes||p.pathologies||'Soin infirmier'}`,
+    nom:               p.nom    || '',
+    prenom:            p.prenom || '',
+    description:       p.notes || p.pathologies || 'Soin infirmier',
+    texte:             p.notes || p.pathologies || 'Soin infirmier',
     // Adresse — tous les champs pour que openNavigation fonctionne
     adresse:           adresseComplete,
     address:           adresseComplete,

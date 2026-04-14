@@ -80,11 +80,14 @@ function _renderNextPatient() {
   const p = APP.get('nextPatient');
   if (!p) { el.innerHTML = '<div class="ai su">✅ Tous les patients ont été vus !</div>'; return; }
   const userPos = APP.get('userPos');
-  const dist = userPos && p.lat ? (_dist(userPos, p) * 111).toFixed(1) + 'km' : '—';
+  const rawDist = userPos && p.lat ? _dist(userPos, p) * 111 : null;
+  /* Afficher la distance seulement si GPS actif et distance plausible (<150km) */
+  const dist = (rawDist !== null && rawDist < 150) ? rawDist.toFixed(1) + ' km' : (userPos ? rawDist.toFixed(1) + ' km' : '—');
+  const nomAff = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient';
   el.innerHTML = `
-    <div style="font-size:15px;font-weight:600;margin-bottom:6px">${p.description||p.label||'Patient'}</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px">${nomAff}</div>
     <div style="font-size:12px;color:var(--m);margin-bottom:10px">
-      ${p.heure_soin ? '⏰ '+p.heure_soin : ''} ${p.urgence ? '🚨 URGENT' : ''} · 📍 ~${dist}
+      ${p.heure_soin ? '⏰ '+p.heure_soin : ''} ${p.urgence ? '🚨 URGENT' : ''}${dist !== '—' ? ' · 📍 ~'+dist : ''}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn bp bsm" onclick="markUberDone()"><span>✅</span> Terminé</button>

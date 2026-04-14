@@ -307,7 +307,8 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     </div>
     ${route.map((p,i)=>{
       const sd  = encodeURIComponent(p.acte || p.texte || p.description || '');
-      const spn = encodeURIComponent(((p.prenom||'') + ' ' + (p.nom||'')).trim() || p.patient || '');
+      const spn = encodeURIComponent(((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.patient || '');
+      const nomAff = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient ' + (i+1);
       const pId = encodeURIComponent(p.id || p.patient_id || String(i));
       const leg = osrm?.legs?.[i];
       const hasTime = p.start_str && p.start_str !== '—';
@@ -320,7 +321,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
       return `<div class="route-item ${p.urgent?'route-urgent':''}">
         <div class="route-num">${i+1}</div>
         <div class="route-info">
-          <strong style="font-size:13px">${p.description||'Patient'}</strong>
+          <strong style="font-size:13px">${nomAff}</strong>
           <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
             ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
@@ -792,10 +793,18 @@ async function liveStatusCore(){
       let actes=[];try{actes=JSON.parse(d.prochain.actes||'[]');}catch{}
       const desc=actes[0]?.nom||'Soin';
       LIVE_PATIENT_ID=d.prochain.patient_id;
-      $('live-patient-name').textContent=desc;
-      $('live-info').textContent=`Prochain patient · ${d.prochain.heure_soin||'horaire non défini'}`;
+
+      /* Chercher l'heure dans les données locales si l'API ne la retourne pas
+         (cas migration SQL incomplète — colonne heure_soin absente en base) */
+      const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+      const localP = patients.find(p => p.patient_id === d.prochain.patient_id || p.id === d.prochain.patient_id);
+      const heure = d.prochain.heure_soin || localP?.heure_soin || localP?.heure_preferee || localP?.heure || '';
+      const nomPatient = ((localP?.nom||'') + ' ' + (localP?.prenom||'')).trim() || localP?.description || desc;
+
+      $('live-patient-name').textContent = nomPatient;
+      $('live-info').textContent = heure ? `Prochain patient · ⏰ ${heure}` : 'Prochain patient';
       $('live-next').innerHTML=`<div class="card"><div class="ct">📋 Patients restants</div><div class="ai in">📍 ${d.patients_restants} patient(s) restant(s) aujourd'hui</div></div>`;
-      detectDelay(d.prochain);
+      detectDelay({...d.prochain, heure_soin: heure});
     }else{
       $('live-patient-name').textContent='Tournée terminée ✅';
       $('live-info').textContent='Tous les patients ont été vus';
@@ -909,7 +918,7 @@ function renderLivePatientList() {
       <span class="dreb">⏳ ${reste} restant(s)</span>
     </div>
     ${patients.map((p, i) => {
-      const desc = p.description || p.texte || `Patient ${i+1}`;
+      const desc = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.texte || `Patient ${i+1}`;
       const statusIcon = p._done ? '✅' : p._absent ? '❌' : '⏳';
       const statusColor = p._done ? 'rgba(34,197,94,.08)' : p._absent ? 'rgba(255,95,109,.05)' : 'var(--s)';
       const heure = p.heure_soin || p.heure_preferee || p.heure || '';
