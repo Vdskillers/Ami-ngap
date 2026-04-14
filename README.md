@@ -1,251 +1,419 @@
-# App Infirmière — Guide d'intégration
+# AMI NGAP — Documentation Architecture
 
-## Fichiers générés
-
-| Fichier | Rôle |
-|---|---|
-| `navigation.js` | Navigation GPS vers les patients |
-| `geocode.js` | Géocodage multi-source + cache + corrections apprises |
-| `patient-form.js` | Fiche patient avec adresse structurée + suggestions CP |
-| `notes.js` | CRUD notes par patient (ajout / modification / suppression) |
-| `map.js` | Carte Leaflet + tap-to-correct + drag marker |
-| `ai-layer.js` | Couche IA silencieuse sur les 3 modes de tournée |
-| `notes.css` | Styles pour notes, formulaire adresse, suggestions |
+> Application web progressive (PWA) pour infirmières libérales.  
+> Gestion de tournée, cotation NGAP, carnet patients chiffré, signatures électroniques, copilote IA.
 
 ---
 
-## Ordre d'inclusion dans votre HTML
+## Modèle de sécurité & isolation des données
+
+### Rôles utilisateurs
+
+| Rôle | Accès données patients | Accès fonctionnalités |
+|---|---|---|
+| **Infirmière** | Ses propres patients uniquement (isolés par `infirmiere_id`) | Toutes les vues métier |
+| **Admin** | Ses propres patients de test uniquement — jamais ceux des infirmières | Toutes les vues en mode démo, panneau admin |
+
+### Règles d'isolation strictes
+
+- Chaque infirmière ne voit **que ses propres données** — isolation par `infirmiere_id` côté backend (`worker.js`)
+- Les admins peuvent tester toutes les fonctionnalités avec **leurs propres patients de test** sans voir les données des infirmières
+- Les admins sont **invisibles entre eux** — le panneau admin n'affiche que les comptes infirmières
+- Le panneau admin affiche les statistiques globales, noms et prénoms des infirmières uniquement (pas des admins)
+- La vue Signatures en mode admin masque les `invoiceId` réels et désactive la suppression
+
+### Architecture Privacy by Design
+
+```
+Données de santé → chiffrées AES-256 → stockage local (IndexedDB)
+                                        jamais transmises aux serveurs
+
+Serveur (Cloudflare Worker) → métadonnées & cotations uniquement
+Supabase → données non-sensibles + cotations chiffrées côté champ
+```
+
+---
+
+## Checklist RGPD / HDS
+
+### A. Gouvernance
+- ✅ Registre des traitements
+- ✅ Responsable de traitement défini
+- ✅ DPO si applicable
+
+### B. Sécurité
+- ✅ HTTPS partout (Cloudflare Worker + GitHub Pages)
+- ✅ Chiffrement données AES-256-GCM (`security.js` + `worker.js`)
+- ✅ Mots de passe hashés bcrypt (côté Supabase Auth)
+- ✅ JWT sécurisé avec vérification de session
+- ✅ Firewall VPS / WAF Cloudflare
+
+### C. Données de santé
+- ✅ Accès restreint par rôle et par `infirmiere_id`
+- ✅ Logs d'accès (`audit_logs` + `system_logs`)
+- ✅ Chiffrement de champ sur les données sensibles (`encryptField` / `decryptField`)
+- ✅ Anonymisation pour la vue admin (`anonymizePatient()`, `toAdminView()`, `sanitizeForAdmin()`)
+
+### D. Accès utilisateur
+- ✅ Authentification forte (JWT + PIN local)
+- ✅ Gestion de sessions avec `getSession()`
+- ✅ Déconnexion automatique + verrouillage par PIN (`lockApp()` / `unlockApp()`)
+- ✅ Système de permissions granulaires (`PERMISSIONS` dans `worker.js`)
+
+### E. Données
+- ✅ Minimisation : seules les données nécessaires sont transmises
+- ✅ Anonymisation partielle pour les admins (`sanitizeForAdmin()`)
+- ✅ Séparation logique infirmière / admin
+
+### F. Stockage
+- ✅ Données patients chiffrées localement (IndexedDB, `patients.js`)
+- ✅ Signatures électroniques chiffrées localement (`signature.js`)
+- ✅ Backups via sync PC ↔ mobile (`patients-push` / `patients-pull`)
+- ✅ Purge automatique des vieux logs (`cleanOldLogs()`)
+
+### G. Droits utilisateurs
+- ✅ Export données (`exportPatientData()`, `exportMyData()`, `exportComptable()`)
+- ✅ Suppression compte (`/webhook/delete-account`)
+- ✅ Modification profil (`/webhook/profil-save`)
+
+### H. Consentement
+- ✅ CGU + politique RGPD
+- ✅ Consentement explicite au premier lancement (`checkConsent()`)
+- ✅ Révocation du consentement (`revokeConsent()`)
+- ✅ Traçabilité (`hasConsent()`)
+
+### I. Audit & logs
+- ✅ Logs d'accès dans `audit_logs` (`auditLocal()`)
+- ✅ Logs système dans `system_logs` (`writeSystemLog()`)
+- ✅ Surveillance anti-fraude (`fraudeScore()`, `watchFraudScore()`)
+- ✅ Score qualité IA (`scoreAIQuality()`)
+
+### J. Incident
+- ✅ Plan de réponse incidents
+- ✅ Notification CNIL < 72h (procédure documentée)
+- ✅ Alertes fraude automatiques (`reportFraudAlert()`)
+
+---
+
+## Architecture des fichiers
+
+### Backend
+
+| Fichier | Rôle |
+|---|---|
+| `worker.js` | Cloudflare Worker v6.1 — toutes les routes API, auth, isolation des données, chiffrement côté serveur, logs |
+| `sw.js` | Service Worker PWA v3.6 — cache statique, stratégie tiles, offline |
+
+### Authentification & Sécurité
+
+| Fichier | Rôle |
+|---|---|
+| `auth.js` | Login / register / logout, gestion de session, navigation par rôle, injection dynamique du menu mobile admin |
+| `security.js` | Chiffrement AES-256-GCM (Web Crypto), PIN local, consentement RGPD, export/purge données, audit logs, détection fraude |
+
+### Navigation & UI
+
+| Fichier | Rôle |
+|---|---|
+| `ui.js` | Orchestrateur UI — `navTo()`, navigation mobile/desktop, menu mobile, FAQ |
+| `navigation.js` | Navigation GPS vers les patients — stratégie GPS direct ou adresse texte |
+| `utils.js` | Store global `APP`, helpers (`debounce`, `throttle`, `sanitize`), `apiFetch`, `wpost`, `apiCall` |
+
+### Patients & Données de santé
+
+| Fichier | Rôle |
+|---|---|
+| `patients.js` | Carnet patients chiffré AES-256 (IndexedDB local) — CRUD, notes soins, cotations patient, ordonnances, export |
+| `patient-form.js` | Formulaire nouveau/édition patient — adresse structurée, suggestions CP/ville, géocodage, sauvegarde |
+| `notes.js` | Notes par patient (général / accès / médical / urgent) — CRUD avec confirmation |
+| `signature.js` | Signatures électroniques — canvas tactile/souris/stylet, stockage chiffré local, liste admin masquée |
+
+### Cotation & Finances
+
+| Fichier | Rôle |
+|---|---|
+| `cotation.js` | Cotation NGAP — appel API calcul, rendu résultat, vérification IA, impression facture, modale infos pro |
+| `tresorerie.js` | Suivi trésorerie — statut paiements, statistiques remboursements, export comptable, checklist CPAM |
+| `offline-queue.js` | File d'attente cotations hors-ligne — sync automatique au retour en ligne, badge compteur |
+
+### Tournée & Cartographie
+
+| Fichier | Rôle |
+|---|---|
+| `tournee.js` | Tournée IA + import calendrier ICS/CSV — planning, pilotage live, auto-facturation, rentabilité |
+| `ai-tournee.js` | Moteur IA de tournée v5 — optimisation TSP, OSRM, lookahead, tournée live, ajout/annulation urgent |
+| `ai-layer.js` | Couche IA silencieuse — enrichissement habitScore/geoScore, clustering, warnings tournée |
+| `uber.js` | Mode Uber Médical — sélection dynamique patient suivant, tracking GPS temps réel |
+| `extras.js` | Carte départ, point de départ OSRM, tracé route, score fraude front, optimisation CA |
+| `map.js` | Carte Leaflet — correction position tap/drag, reverse geocoding, marqueur départ |
+| `geocode.js` | Pipeline géocodage multi-source (Photon → Nominatim → cache IndexedDB) — corrections apprises |
+
+### IA & Copilote
+
+| Fichier | Rôle |
+|---|---|
+| `copilote.js` | Interface chat Copilote IA — historique, suggestions, contexte patient, mode plein écran |
+| `ai-assistant.js` | Assistant vocal IA — NLP avancé, détection d'intention, LLM, commandes vocales, mode mains-libres |
+| `voice.js` | Dictée médicale vocale — normalisation texte médical, toggle, cache dashboard |
+
+### Rapports & Administration
+
+| Fichier | Rôle |
+|---|---|
+| `rapport.js` | Rapport mensuel PDF — génération HTML, prévisualisation, santé système, nomenclature NGAP |
+| `dashboard.js` | Dashboard & statistiques — cache, détection anomalies, IA explicative, prévisions revenus, pertes estimées |
+| `admin.js` | Panneau administration — liste comptes infirmières, stats globales, logs, actions (bloquer/débloquer/supprimer), messagerie admin→infirmière |
+| `contact.js` | Messagerie infirmière → admin — envoi message, consultation historique |
+
+### Profil & PWA
+
+| Fichier | Rôle |
+|---|---|
+| `profil.js` | Modale profil — modification infos, changement mot de passe, suppression compte |
+| `pwa.js` | PWA — install prompt, banner offline, sync patients hors-ligne, téléchargement tiles carte, estimation route offline |
+
+### Styles
+
+| Fichier | Rôle |
+|---|---|
+| `style.css` | Styles principaux de l'application |
+| `notes.css` | Styles notes patient, formulaire adresse, suggestions CP |
+
+---
+
+## Routes API (Cloudflare Worker)
+
+### Authentification
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/auth-login` | Connexion, retourne JWT + rôle | Public |
+| `POST /webhook/infirmiere-register` | Inscription infirmière | Public |
+| `POST /webhook/change-password` | Changement mot de passe | `change_password` |
+| `POST /webhook/delete-account` | Suppression compte | `delete_account` |
+
+### Profil
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/profil-get` | Récupération profil | Auth |
+| `POST /webhook/profil-save` | Sauvegarde profil | Auth |
+
+### Cotations & Historique
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/ami-calcul` | Calcul cotation NGAP via N8N (+ fallback) | `create_invoice` — infirmières uniquement |
+| `POST /webhook/ami-historique` | Historique cotations de l'infirmière connectée | `view_own_data` |
+| `POST /webhook/ami-supprimer` | Suppression d'une cotation | `view_own_data` |
+| `POST /webhook/ami-live` | Cotation en direct (mode live tournée) | Auth |
+
+### Tournée & Calendrier
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/ami-tournee-ia` | Optimisation tournée IA — retourne route + alertes + adresses GPS | `manage_tournee` |
+| `POST /webhook/import-calendar` | Import calendrier ICS/CSV avec géocodage | `import_calendar` — infirmières uniquement |
+
+### Patients (sync)
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/patients-push` | Sync patients local → serveur (sauvegarde chiffrée) | Auth |
+| `POST /webhook/patients-pull` | Sync patients serveur → local (restauration) | Auth |
+| `POST /webhook/patients-delete` | Suppression patient | Auth |
+
+### Prescripteurs
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/prescripteur-get` | Récupération liste prescripteurs | `manage_prescripteurs` — infirmières |
+| `POST /webhook/prescripteur-liste` | Liste prescripteurs | `manage_prescripteurs` — infirmières |
+| `POST /webhook/prescripteur-add` | Ajout prescripteur | `manage_prescripteurs` — infirmières |
+
+### Messagerie
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/contact-send` | Infirmière → envoi message admin | Auth |
+| `POST /webhook/contact-mes-messages` | Infirmière → consultation de ses messages | Auth |
+| `POST /webhook/admin-messages` | Admin → lecture messages entrants | `view_users_list` |
+| `POST /webhook/admin-message-read` | Admin → marquer message lu | `view_users_list` |
+| `POST /webhook/admin-message-reply` | Admin → répondre à un message | `view_users_list` |
+
+### Administration
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/admin-liste` | Liste des comptes infirmières (admins exclus) | `view_users_list` |
+| `POST /webhook/admin-stats` | Statistiques globales tous utilisateurs | `view_stats` |
+| `POST /webhook/admin-logs` | Logs audit + système | `view_stats` |
+| `POST /webhook/admin-security-stats` | Statistiques sécurité (fraudes, anomalies) | `view_stats` |
+| `POST /webhook/admin-bloquer` | Blocage d'un compte infirmière | `view_users_list` |
+| `POST /webhook/admin-debloquer` | Déblocage d'un compte infirmière | `view_users_list` |
+| `POST /webhook/admin-supprimer` | Suppression d'un compte infirmière | `view_users_list` |
+| `POST /webhook/admin-system-reset` | Reset logs système | `view_stats` |
+
+### IA & Analytics
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/ami-copilot` | Copilote IA conversationnel | Auth |
+| `POST /webhook/ami-week-analytics` | Analyse hebdomadaire IA | Auth |
+
+### Monitoring
+| Route | Rôle | Permissions |
+|---|---|---|
+| `POST /webhook/log` | Log frontend → `system_logs` | Sans auth requise |
+
+---
+
+## Matrice des permissions
+
+```javascript
+// worker.js — PERMISSIONS
+nurse:  ['view_own_data', 'create_invoice', 'manage_tournee', 'import_calendar',
+         'manage_prescripteurs', 'change_password', 'delete_account']
+
+admin:  ['view_users_list', 'view_stats', 'manage_tournee',
+         'change_password', 'delete_account']
+```
+
+---
+
+## Ordre d'inclusion dans le HTML
 
 ```html
-<!-- Leaflet (déjà présent) -->
+<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <!-- Styles -->
+<link rel="stylesheet" href="style.css" />
 <link rel="stylesheet" href="notes.css" />
 
-<!-- Modules app (ordre important) -->
-<script src="geocode.js"></script>       <!-- 1. géocodage, pipeline adresse -->
-<script src="navigation.js"></script>    <!-- 2. navigation GPS -->
-<script src="patient-form.js"></script>  <!-- 3. formulaire patient -->
-<script src="notes.js"></script>         <!-- 4. gestion notes -->
-<script src="map.js"></script>           <!-- 5. carte + correction position -->
-<script src="ai-tournee.js"></script>    <!-- 6. votre fichier IA existant -->
-<script src="ai-layer.js"></script>      <!-- 7. couche IA silencieuse (APRÈS ai-tournee.js) -->
+<!-- Couche de base -->
+<script src="utils.js"></script>         <!-- 1. Store APP + helpers -->
+<script src="security.js"></script>      <!-- 2. Crypto + consentement + PIN -->
+
+<!-- Auth & UI -->
+<script src="auth.js"></script>          <!-- 3. Login / register / session -->
+<script src="ui.js"></script>            <!-- 4. Navigation + layout -->
+
+<!-- Patients & données santé -->
+<script src="geocode.js"></script>       <!-- 5. Géocodage pipeline -->
+<script src="patient-form.js"></script>  <!-- 6. Formulaire patient -->
+<script src="patients.js"></script>      <!-- 7. CRUD patients chiffré -->
+<script src="notes.js"></script>         <!-- 8. Notes par patient -->
+<script src="signature.js"></script>     <!-- 9. Signatures électroniques -->
+
+<!-- Cartographie -->
+<script src="map.js"></script>           <!-- 10. Carte Leaflet + corrections -->
+<script src="navigation.js"></script>    <!-- 11. GPS navigation -->
+
+<!-- Tournée IA -->
+<script src="ai-tournee.js"></script>    <!-- 12. Moteur optimisation tournée -->
+<script src="ai-layer.js"></script>      <!-- 13. Couche IA silencieuse (APRÈS ai-tournee.js) -->
+<script src="uber.js"></script>          <!-- 14. Mode Uber médical -->
+<script src="extras.js"></script>        <!-- 15. Helpers carte départ + scoring -->
+<script src="tournee.js"></script>       <!-- 16. Tournée UI + import calendrier -->
+
+<!-- Cotation & Finances -->
+<script src="cotation.js"></script>      <!-- 17. Cotation NGAP -->
+<script src="tresorerie.js"></script>    <!-- 18. Trésorerie + comptabilité -->
+<script src="offline-queue.js"></script> <!-- 19. File attente offline + onboarding -->
+
+<!-- IA & Vocal -->
+<script src="voice.js"></script>         <!-- 20. Dictée vocale médicale -->
+<script src="ai-assistant.js"></script>  <!-- 21. Assistant vocal IA + NLP -->
+<script src="copilote.js"></script>      <!-- 22. Copilote IA chat -->
+
+<!-- Rapports & Admin -->
+<script src="rapport.js"></script>       <!-- 23. Rapport mensuel PDF + NGAP -->
+<script src="dashboard.js"></script>     <!-- 24. Dashboard + statistiques -->
+<script src="admin.js"></script>         <!-- 25. Panneau administration -->
+<script src="contact.js"></script>       <!-- 26. Messagerie infirmière→admin -->
+<script src="profil.js"></script>        <!-- 27. Profil utilisateur -->
+
+<!-- PWA -->
+<script src="pwa.js"></script>           <!-- 28. Install + offline + tiles -->
 ```
 
 ---
 
-## Intégration fiche nouveau patient
-
-### HTML du formulaire
-
-```html
-<div class="card">
-  <div class="section-title">Identité</div>
-  <div class="row2">
-    <div class="field">
-      <label>Nom</label>
-      <input type="text" id="f-nom" placeholder="Dupont" />
-    </div>
-    <div class="field">
-      <label>Prénom</label>
-      <input type="text" id="f-prenom" placeholder="Marie" />
-    </div>
-  </div>
-  <div class="row2">
-    <div class="field">
-      <label>Date de naissance</label>
-      <input type="date" id="f-dob" />
-    </div>
-    <div class="field">
-      <label>Téléphone</label>
-      <input type="tel" id="f-tel" placeholder="06 00 00 00 00" />
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="section-title">Adresse</div>
-
-  <!-- Ligne 1 : numéro + rue -->
-  <div class="field">
-    <label>Numéro et nom de rue</label>
-    <input type="text" id="f-rue" placeholder="12 Rue Victor Hugo"
-           autocomplete="street-address" />
-  </div>
-
-  <!-- Ligne 2 : complément -->
-  <div class="field">
-    <label>Complément</label>
-    <input type="text" id="f-comp"
-           placeholder="Bâtiment B, Appartement 14, Résidence Les Pins…" />
-  </div>
-
-  <!-- Ligne 3 : CP + ville + pays -->
-  <div class="addr-full">
-    <div class="field suggest-box">
-      <label>Ville</label>
-      <input type="text" id="f-ville" placeholder="Lyon"
-             autocomplete="address-level2" />
-      <div class="suggestions" id="sug-ville" style="display:none"></div>
-    </div>
-
-    <div class="field suggest-box">
-      <label>Code postal</label>
-      <input type="text" id="f-cp" placeholder="69003" maxlength="5"
-             inputmode="numeric" autocomplete="postal-code" />
-      <div class="suggestions" id="sug-cp" style="display:none"></div>
-    </div>
-
-    <div class="field">
-      <label>Pays</label>
-      <div class="country-badge">🇫🇷 France</div>
-    </div>
-  </div>
-
-  <div class="warn-addr" id="warn-addr" style="display:none"></div>
-
-  <div class="addr-preview" id="addr-preview" style="display:none">
-    <strong>Adresse complète :</strong>
-    <span id="preview-text"></span>
-  </div>
-
-  <div class="geo-status" id="geo-status" style="display:none">
-    <div class="dot" id="geo-dot"></div>
-    <span id="geo-label"></span>
-  </div>
-</div>
-
-<!-- Champs cachés coordonnées GPS (correction manuelle) -->
-<input type="hidden" id="t-lat" />
-<input type="hidden" id="t-lng" />
-
-<!-- Boutons correction position -->
-<button onclick="enableCorrectionMode(
-  parseFloat(document.getElementById('t-lat').value) || 48.8566,
-  parseFloat(document.getElementById('t-lng').value) || 2.3522
-)">
-  Corriger position sur la carte
-</button>
-<button id="btn-confirm-pos" onclick="confirmCorrectedPosition(null)" style="display:none">
-  Valider la position
-</button>
-
-<!-- Bouton save -->
-<button id="btn-save-patient" disabled onclick="savePatient()">
-  Enregistrer le patient
-</button>
-```
-
-### Initialisation (dans votre DOMContentLoaded)
-
-```javascript
-document.addEventListener('DOMContentLoaded', () => {
-  initPatientForm();           // active les suggestions CP/ville
-});
-```
-
----
-
-## Intégration notes dans la fiche patient
-
-### Dans la fiche patient existante, injecter :
-
-```javascript
-// après avoir chargé le patient
-const notesHTML = getNoteFormHTML(patient.id);
-document.getElementById('notes-wrapper').innerHTML = notesHTML;
-
-// charger et afficher les notes existantes
-renderNotes(patient, 'notes-container');
-
-// mettre à jour le compteur
-updateNotesCount(patient.id, patient.notes.length);
-```
-
----
-
-## Intégration navigation GPS
-
-### Remplacer votre openNavigation() existant :
-
-```javascript
-// Dans votre bouton "Naviguer" sur la carte ou la liste patients :
-openNavigation(patient);
-// → utilise coordonnées GPS si geoScore >= 70
-// → sinon adresse texte complète vers Google Maps (0€)
-```
-
----
-
-## Intégration couche IA dans la tournée
-
-### Dans votre ai-tournee.js, remplacer l'appel à l'optimiseur :
-
-```javascript
-// AVANT (appel existant)
-const sorted = optimiseTournee(patients, mode);
-
-// APRÈS (avec couche IA)
-const { patients: sorted, warnings, clusters } = await prepareSmartTournee(
-  patients,
-  mode,        // 'auto' | 'horaire' | 'mixte'
-  context      // { distanceTo: fn, now: Date.now() }
-);
-
-// afficher les warnings si nécessaire
-if (warnings.length) {
-  warnings.forEach(w => console.warn('[IA]', w.message));
-  // ou afficher dans votre UI
-}
-```
-
-### Après chaque visite terminée :
-
-```javascript
-// appeler pour mémoriser les habitudes
-await updateHabitScore(patient.id, Date.now());
-```
-
----
-
-## Flux adresse complet (du formulaire à la navigation)
+## Flux données patient (du formulaire à la navigation)
 
 ```
-Saisie utilisateur
+Saisie formulaire (patient-form.js)
+    ↓ buildPatientObject()
+    → patient.street / .extra / .zip / .city / .addressFull
     ↓
-patient-form.js → buildPatientObject()
-    → patient.street / .extra / .zip / .city
-    → patient.addressFull  ("12 Rue Victor Hugo, 69003 Lyon, France")
-    ↓
-geocode.js → processAddressBeforeGeocode()
-    → vérifie corrections apprises
-    → normalise les abréviations
-    → enrichit avec CP + ville + pays
-    ↓
-geocode.js → smartGeocode()
-    → Photon → Nominatim → cache IndexedDB
+Géocodage (geocode.js)
+    → processAddressBeforeGeocode() — corrections apprises
+    → smartGeocode() : Photon → Nominatim → cache IndexedDB
     → patient.lat / .lng / .geoScore
     ↓
-navigation.js → openNavigation()
-    → si geoScore >= 70 : coordonnées GPS directes
+Chiffrement local (security.js)
+    → encryptData() → stockage IndexedDB (patients.js)
+    ↓
+Sync optionnelle (pwa.js / patients-push)
+    → données chiffrées envoyées au serveur pour backup
+    ↓
+Navigation (navigation.js)
+    → geoScore ≥ 70 : coordonnées GPS directes
     → sinon : addressFull → Google Maps géocode
 ```
 
 ---
 
+## Flux cotation NGAP
+
+```
+Saisie actes + texte libre (cotation.js)
+    ↓ cotation()
+    → /webhook/ami-calcul (worker.js)
+    → N8N IA → calcul NGAP
+    → fallback local si N8N KO (IK + majorations auto)
+    ↓
+Résultat affiché → vérification IA optionnelle (openVerify)
+    ↓
+Impression facture → printInv()
+    → displayInvoiceNumber() — numéro séquentiel par infirmière
+    ↓
+Signature électronique → openSignatureModal(invoiceId)
+    → canvas → saveSignature() → IndexedDB chiffré local
+    ↓
+Si hors-ligne → queueCotation() → syncOfflineQueue() au retour en ligne
+```
+
+---
+
+## Sécurité du stockage local
+
+| Données | Stockage | Chiffrement |
+|---|---|---|
+| Patients | IndexedDB (`patientsDB`) | AES-256 — clé dérivée du token JWT |
+| Signatures | IndexedDB (`signaturesDB`) | AES-256 — même clé de session |
+| Corrections GPS apprises | IndexedDB (`geocodeDB`) | Non chiffré (données non-sensibles) |
+| Historique cotations | Supabase | Chiffrement de champ AES-256-GCM côté worker |
+| Logs audit locaux | IndexedDB | Non chiffré (métadonnées uniquement) |
+| Historique copilote | localStorage | Non chiffré (conversations IA sans données patient) |
+
+---
+
 ## Codes postaux — étendre la base
 
-Le fichier `patient-form.js` contient `CP_DATA`. Pour ajouter votre département :
+Le fichier `patient-form.js` contient `CP_DATA`. Pour ajouter un département :
 
 ```javascript
-// Exemple ajout département 01 (Ain)
-{cp:"01000",ville:"Bourg-en-Bresse"},
-{cp:"01100",ville:"Oyonnax"},
-{cp:"01200",ville:"Bellegarde-sur-Valserine"},
+{cp:"01000", ville:"Bourg-en-Bresse"},
+{cp:"01100", ville:"Oyonnax"},
 // ...
 ```
 
-Pour une base complète, la liste officielle La Poste est disponible gratuitement :
+Base complète La Poste (gratuite) :
 https://datanova.laposte.fr/datasets/laposte-hexasmal
+
+---
+
+## Versions
+
+| Composant | Version |
+|---|---|
+| Worker backend | v6.1 |
+| Moteur tournée IA | v5.0 |
+| Assistant vocal IA | v1.0 |
+| PWA / Service Worker | v3.6 |
+| Sécurité RGPD | v2.0 |
+| Admin panel | v4.0 |
