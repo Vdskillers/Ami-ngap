@@ -702,9 +702,9 @@ const _geocodeCache = new Map();
 async function _geocodeAdresse(adresse, patient) {
   if (!adresse || !adresse.trim()) return null;
   try {
-    // Pipeline complet : processAddressBeforeGeocode → smartGeocode
-    // smartGeocode gère son propre cache IndexedDB (IDB) — pas de cache mémoire ici
-    // pour éviter de servir d'anciennes coordonnées erronées pendant la session
+    // Déléguer entièrement au pipeline geocode.js
+    // smartGeocode gère son propre cache IDB — pas de cache mémoire ici
+    // (évite de servir d'anciennes coordonnées erronées)
     if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
       const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
       const geo     = await smartGeocode(cleaned);
@@ -955,8 +955,9 @@ async function _forceRegeocode(id) {
     return;
   }
 
-  // 1. Vider le cache mémoire (Map local) — toutes variantes
-  _geocodeCache.clear(); // vider tout le cache mémoire pour forcer le re-géocodage propre
+  // 1. Vider le cache mémoire pour cette adresse
+  const cacheKey = adresseGeo.trim().toLowerCase();
+  _geocodeCache.delete(cacheKey);
 
   // 2. Vider le cache IndexedDB (geocode.js)
   if (typeof saveSecure === 'function' && typeof hashAddr === 'function') {
