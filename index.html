@@ -441,6 +441,19 @@
         <!-- Carte principale — dep-map géré par map.js (toujours présent) -->
         <div id="dep-map"></div>
 
+        <!-- Panneau correction point de départ (Tournée IA) -->
+        <div id="start-editor" style="display:none;margin-top:10px;padding:12px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.25);border-radius:var(--r)">
+          <div style="font-size:12px;color:var(--a);font-family:var(--fm);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <span>🎯</span>
+            <strong>Mode ajustement actif</strong>
+            <span style="color:var(--m)">— Tapez sur la carte ou glissez le marqueur 🏠</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn bp bsm" onclick="confirmStartPointCorrection()"><span>✅</span> Confirmer ce point de départ</button>
+            <button class="btn bs bsm" onclick="disableStartPointCorrection();document.getElementById('start-editor').style.display='none'"><span>✕</span> Annuler</button>
+          </div>
+        </div>
+
         <!-- Champs lat/lng cachés -->
         <input type="hidden" id="t-lat" value="">
         <input type="hidden" id="t-lng" value="">
@@ -453,6 +466,7 @@
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bs bsm" onclick="openStartPointEditor('tur')"><span>🎯</span> Ajuster sur la carte</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
         </div>
       </div>
@@ -470,6 +484,39 @@
     <section class="view" id="view-live">
       <h1 class="pt">Pilotage <em>de journée</em></h1>
       <p class="ps">Assistant temps réel · auto-facturation · détection retard · recalcul automatique</p>
+
+      <!-- Point de départ — Pilotage Live -->
+      <div class="card" style="margin-bottom:16px;border:1px solid rgba(79,168,255,.2);background:rgba(79,168,255,.03)">
+        <div class="ct" style="margin-bottom:6px">📍 Point de départ de la journée</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:12px;font-family:var(--fm)">Votre position de départ pour l'optimisation des trajets. Ajustez le pointeur si votre adresse n'est pas précise.</p>
+
+        <!-- Barre de recherche point de départ live -->
+        <div class="map-search" style="margin-bottom:8px">
+          <input type="text" id="live-dep-addr" placeholder="🔍 Adresse de départ (ex: 12 rue de la Paix, Nice...)" onkeydown="if(event.key==='Enter')searchLiveStartPoint()" style="flex:1">
+          <button class="map-btn search" onclick="searchLiveStartPoint()">Rechercher</button>
+          <button class="map-btn gps" onclick="useLiveMyLocation()">📍 GPS</button>
+        </div>
+
+        <!-- Coords affichées -->
+        <div class="dep-coords" id="live-dep-coords" style="margin-bottom:8px">📌 Définissez votre point de départ avant de démarrer</div>
+
+        <!-- Bouton ajuster sur la carte -->
+        <button class="btn bs bsm" onclick="openStartPointEditor('live')"><span>🎯</span> Ajuster sur la carte</button>
+
+        <!-- Carte dédiée pour le pilotage live (cachée par défaut, s'affiche quand on clique Ajuster) -->
+        <div id="live-start-editor" style="display:none;margin-top:12px">
+          <div id="live-dep-map" style="height:240px;border-radius:var(--r);border:1px solid rgba(79,168,255,.25);margin-bottom:10px"></div>
+          <div style="font-size:12px;color:var(--a2);font-family:var(--fm);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <span>🎯</span>
+            <strong>Mode ajustement actif</strong>
+            <span style="color:var(--m)">— Tapez sur la carte ou glissez le marqueur 🏠</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn bp bsm" onclick="confirmStartPointCorrection()"><span>✅</span> Confirmer ce point de départ</button>
+            <button class="btn bs bsm" onclick="disableStartPointCorrection();document.getElementById('live-start-editor').style.display='none'"><span>✕</span> Annuler</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Sélecteur mode optimisation tournée -->
       <div class="card" style="margin-bottom:16px;border:1px solid rgba(0,212,170,.2);background:rgba(0,212,170,.03)">
