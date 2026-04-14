@@ -132,8 +132,11 @@ function openAddPatient() {
   _editingPatientId = null;
   const form = $('patient-form');
   if (form) form.style.display = 'block';
-  ['pat-nom','pat-prenom','pat-adresse','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee']
+  ['pat-nom','pat-prenom','pat-rue','pat-cp','pat-ville','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee']
     .forEach(id => { const el=$(id); if(el) el.value=''; });
+  // Réinitialiser prévisualisation adresse
+  const prevEl=$('pat-addr-preview'); if(prevEl) prevEl.style.display='none';
+  const warnEl=$('pat-addr-warn');    if(warnEl) warnEl.style.display='none';
   const sel = $('pat-exo'); if(sel) sel.selectedIndex=0;
   const chk = $('pat-respecter-horaire'); if(chk) chk.checked = false;
   $('pat-form-title').textContent = '➕ Nouveau patient';
@@ -164,11 +167,24 @@ async function savePatient() {
     }
   }
 
+  // Construire l'adresse depuis les champs structurés
+  const rue    = (gv('pat-rue')   || '').trim();
+  const cp     = (gv('pat-cp')    || '').trim();
+  const ville  = (gv('pat-ville') || '').trim();
+  const adresseComplete = [rue, [cp, ville].filter(Boolean).join(' '), 'France']
+    .map(s => s.trim()).filter(Boolean).join(', ');
+
   const patient = {
     id:             _editingPatientId || ('pat_' + Date.now()),
     nom,
     prenom,
-    adresse:        gv('pat-adresse')    || '',
+    // Champs adresse structurés
+    street:         rue,
+    zip:            cp,
+    city:           ville,
+    address:        [rue, [cp, ville].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+    addressFull:    adresseComplete,
+    adresse:        adresseComplete,   // alias rétrocompatibilité
     ddn:            gv('pat-ddn')        || '',
     secu:           gv('pat-secu')       || '',
     amo:            gv('pat-amo')        || '',
@@ -247,7 +263,9 @@ async function loadPatients() {
     const ordoDate = p.ordo_date ? new Date(p.ordo_date) : null;
     const ordoAlert= ordoDate && ordoDate <= in30;
     const exoBadge = p.exo ? `<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:1px 7px;border-radius:20px;font-family:var(--fm)">${p.exo}</span>` : '';
-    const adresseTxt = p.adresse ? `<div style="font-size:11px;color:var(--a);margin-top:2px">📍 ${p.adresse}</div>` : '';
+    const adresseAff  = p.addressFull || p.adresse ||
+      [p.street, [p.zip, p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '';
+    const adresseTxt = adresseAff ? `<div style="font-size:11px;color:var(--a);margin-top:2px">📍 ${adresseAff}</div>` : '';
     return `<div class="acc" style="cursor:pointer" onclick="openPatientDetail('${p.id}')">
       <div class="avat">${ini}</div>
       <div class="acc-name">${fullName}</div>
@@ -351,7 +369,10 @@ async function editPatient(id) {
   openAddPatient();
   $('pat-form-title').textContent = '✏️ Modifier patient';
   Object.entries({
-    'pat-nom': p.nom, 'pat-prenom': p.prenom, 'pat-adresse': p.adresse,
+    'pat-nom': p.nom, 'pat-prenom': p.prenom,
+    'pat-rue':   p.street || (p.adresse||'').split(',')[0]?.trim() || '',
+    'pat-cp':    p.zip    || '',
+    'pat-ville': p.city   || '',
     'pat-ddn': p.ddn,
     'pat-secu': p.secu, 'pat-amo': p.amo, 'pat-amc': p.amc,
     'pat-medecin': p.medecin, 'pat-allergies': p.allergies,
@@ -360,6 +381,8 @@ async function editPatient(id) {
     'pat-notes': p.notes, 'pat-ordo-date': p.ordo_date,
     'pat-heure-preferee': p.heure_preferee || '',
   }).forEach(([id, val]) => { const el=$(id); if(el) el.value = val||''; });
+  // Mettre à jour la prévisualisation adresse
+  if (typeof updatePatAddrPreview === 'function') updatePatAddrPreview();
   const sel = $('pat-exo'); if(sel && p.exo) sel.value = p.exo;
   const chk = $('pat-respecter-horaire'); if(chk) chk.checked = !!p.respecter_horaire;
 }
@@ -555,18 +578,20 @@ async function _geocodeAdresse(adresse, patient) {
   const key = adresse.trim().toLowerCase();
   if (_geocodeCache.has(key)) return _geocodeCache.get(key);
   try {
-    // Utiliser le pipeline complet geocode.js si disponible (normalisation + correction apprise + Photon → Nominatim)
     let coords = null;
+    // Pipeline complet si geocode.js est chargé (Photon → Nominatim + normalisation)
     if (typeof processAddressBeforeGeocode === 'function' && typeof smartGeocode === 'function') {
       const cleaned = await processAddressBeforeGeocode(adresse, patient || null);
-      const geo = await smartGeocode(cleaned);
+      const geo     = await smartGeocode(cleaned);
       if (geo && geo.lat && geo.lng) {
-        coords = { lat: geo.lat, lng: geo.lng, geoScore: typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70 };
+        const score = typeof computeGeoScore === 'function' ? computeGeoScore(cleaned, geo) : 70;
+        coords = { lat: geo.lat, lng: geo.lng, geoScore: score };
       }
-    } else {
-      // Fallback Nominatim direct si geocode.js non disponible
+    }
+    // Fallback Nominatim direct
+    if (!coords) {
       const r = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(adresse)}&format=json&limit=1&countrycodes=fr`,
         { headers: { 'Accept-Language': 'fr' } }
       );
       const d = await r.json();
@@ -585,10 +610,10 @@ async function _geocodePatients(patients, onProgress) {
     const p = patients[i];
     if (onProgress) onProgress(i + 1, patients.length, p.description || p.nom || '');
     if (p.adresse) {
-      const coords = await _geocodeAdresse(p.adresse, p);
+      const coords = await _geocodeAdresse(p.adresse);
       if (coords) { geocoded++; results.push({ ...p, lat: coords.lat, lng: coords.lng, geoScore: coords.geoScore || 70 }); }
       else { failed++; results.push(p); }
-      // Petit délai pour éviter le rate-limit si fallback Nominatim
+      // Délai léger pour éviter le rate-limit si fallback Nominatim
       if (i < patients.length - 1) await new Promise(r => setTimeout(r, 300));
     } else {
       failed++;
@@ -606,35 +631,39 @@ async function _importPickerPatients() {
     .filter(r => _selectedPatientIds.has(r.id))
     .map(r => {
       const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
+      const street = p.street || '';
+      const zip    = p.zip    || '';
+      const city   = p.city   || '';
       const adresseComplete = p.addressFull || p.address ||
-        [p.street, p.extra, (p.zip||'') + ' ' + (p.city||''), 'France']
-          .map(s => (s||'').trim()).filter(Boolean).join(', ')
-        || p.adresse || '';
+        [street, [zip, city].filter(Boolean).join(' '), 'France'].map(s=>s.trim()).filter(Boolean).join(', ') ||
+        p.adresse || '';
       return {
         id:                p.id,
         description:       `${p.prenom||''} ${p.nom}`.trim(),
-        texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.soin||p.pathologies||'Soin infirmier'}`,
+        texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.notes||p.pathologies||'Soin infirmier'}`,
         adresse:           adresseComplete,
-        address:           p.address || adresseComplete,
-        addressFull:       p.addressFull || adresseComplete,
-        street:            p.street || '',
-        zip:               p.zip || '',
-        city:              p.city || '',
+        address:           adresseComplete,
+        addressFull:       adresseComplete,
+        street,
+        zip,
+        city,
         medecin:           p.medecin || '',
         pathologies:       p.pathologies || '',
-        soin:              p.soin || '',
-        heure_soin:        p.preferredTime || p.heure_preferee || '',
-        heure_preferee:    p.preferredTime || p.heure_preferee || '',
-        respecter_horaire: !!(p.locked || p.respecter_horaire),
-        urgent:            !!(p.urgent || p.priority === 'Urgente'),
+        notes:             p.notes || '',
+        heure_soin:        p.heure_preferee || '',
+        heure_preferee:    p.heure_preferee || '',
+        respecter_horaire: !!p.respecter_horaire,
+        urgent:            !!(p.urgent),
         source:            'carnet_patients',
+        // Conserver GPS déjà calculé si disponible
+        ...(p.lat ? { lat: p.lat, lng: p.lng, geoScore: p.geoScore || 70 } : {}),
       };
     });
 
   // Afficher progression géocodage dans la modale
   const btn = document.getElementById('btn-picker-import');
   const cnt = document.getElementById('picker-count');
-  const withAddr = selected.filter(p => p.adresse).length;
+  const withAddr = selected.filter(p => p.adresse && p.adresse !== 'France').length;
 
   if (withAddr > 0) {
     if (btn) { btn.disabled = true; btn.textContent = '📡 Géocodage…'; }
@@ -687,17 +716,25 @@ async function _importSinglePatient(id) {
   if (!row) return;
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
+  // Reconstruire l'adresse complète depuis les champs structurés
+  const street  = p.street || '';
+  const zip     = p.zip    || '';
+  const city    = p.city   || '';
+  const adresseComplete = p.addressFull || p.address ||
+    [street, [zip, city].filter(Boolean).join(' '), 'France'].map(s=>s.trim()).filter(Boolean).join(', ') ||
+    p.adresse || '';
+
+  if (!adresseComplete || adresseComplete === 'France') {
+    showToastSafe(`⚠️ ${p.prenom||''} ${p.nom} : adresse manquante — renseignez la rue, CP et ville dans la fiche patient.`);
+    if (typeof navTo === 'function') navTo('patients', null);
+    return;
+  }
+
   showToastSafe(`📡 Géocodage de ${p.prenom||''} ${p.nom}…`);
 
-  // Résoudre l'adresse depuis les différents champs possibles (street/address/addressFull)
-  const adresseComplete = p.addressFull || p.address ||
-    [p.street, p.extra, (p.zip||'') + ' ' + (p.city||''), 'France']
-      .map(s => (s||'').trim()).filter(Boolean).join(', ')
-    || p.adresse || '';
-
-  // Géocoder l'adresse si disponible
-  let lat = null, lng = null, resolvedGeoScore = 0;
-  if (adresseComplete) {
+  // Géocoder via le pipeline complet (Photon → Nominatim + normalisation)
+  let lat = p.lat || null, lng = p.lng || null, resolvedGeoScore = p.geoScore || 0;
+  if (!lat || !lng) {
     const coords = await _geocodeAdresse(adresseComplete, p);
     if (coords) { lat = coords.lat; lng = coords.lng; resolvedGeoScore = coords.geoScore || 70; }
   }
@@ -705,22 +742,26 @@ async function _importSinglePatient(id) {
   const entry = {
     id:                p.id,
     description:       `${p.prenom||''} ${p.nom}`.trim(),
-    texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.soin||p.pathologies||'Soin infirmier'}`,
+    texte:             `Patient : ${p.prenom||''} ${p.nom} — ${p.notes||p.pathologies||'Soin infirmier'}`,
+    // Adresse — tous les champs pour que openNavigation fonctionne
     adresse:           adresseComplete,
-    address:           p.address || adresseComplete,
-    addressFull:       p.addressFull || adresseComplete,
-    street:            p.street || '',
-    zip:               p.zip || '',
-    city:              p.city || '',
+    address:           adresseComplete,
+    addressFull:       adresseComplete,
+    street,
+    zip,
+    city,
     medecin:           p.medecin || '',
     pathologies:       p.pathologies || '',
-    soin:              p.soin || '',
-    heure_soin:        p.preferredTime || p.heure_preferee || '',
-    heure_preferee:    p.preferredTime || p.heure_preferee || '',
-    respecter_horaire: !!(p.locked || p.respecter_horaire),
-    urgent:            !!(p.urgent || p.priority === 'Urgente'),
+    notes:             p.notes || '',
+    heure_soin:        p.heure_preferee || '',
+    heure_preferee:    p.heure_preferee || '',
+    respecter_horaire: !!p.respecter_horaire,
+    urgent:            !!(p.urgent),
     source:            'carnet_patients',
-    ...(lat !== null ? { lat, lng, geoScore: resolvedGeoScore } : {}),
+    // GPS — utilisé par openNavigation + tournée IA
+    lat,
+    lng,
+    geoScore: resolvedGeoScore,
   };
 
   // Fusionner avec les patients déjà importés
@@ -735,8 +776,10 @@ async function _importSinglePatient(id) {
     APP.importedData = { patients: merged, total: merged.length, source: 'Carnet patients' };
   }
 
-  const gpsMsg = lat ? ` (📍 GPS résolu)` : p.adresse ? ` (⚠️ adresse non géocodée)` : ` (⚠️ sans adresse)`;
+  const gpsMsg = lat ? ` (📍 GPS résolu)` : ` (⚠️ adresse sans coordonnées GPS — tournée moins précise)`;
   showToastSafe(`🗺️ ${(p.prenom||'')} ${p.nom} ajouté(e) à la tournée${gpsMsg}.`);
+  // Naviguer vers la tournée
+  if (typeof navTo === 'function') navTo('tur', null);
 }
 
 /* Géocoder l'adresse d'un patient et sauvegarder lat/lng dans l'IDB */
@@ -746,10 +789,13 @@ async function _geocodeAndSaveSingle(id) {
   if (!row) return;
   const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
-  if (!p.adresse) { showToastSafe('⚠️ Aucune adresse renseignée pour ce patient.'); return; }
+  const adresseGeo = p.addressFull || p.address ||
+    [p.street, [p.zip, p.city].filter(Boolean).join(' '), 'France'].map(s=>(s||'').trim()).filter(Boolean).join(', ') ||
+    p.adresse || '';
+  if (!adresseGeo || adresseGeo === 'France') { showToastSafe('⚠️ Aucune adresse renseignée pour ce patient.'); return; }
 
-  showToastSafe(`📡 Géocodage de "${p.adresse}"…`);
-  const coords = await _geocodeAdresse(p.adresse);
+  showToastSafe(`📡 Géocodage de "${adresseGeo}"…`);
+  const coords = await _geocodeAdresse(adresseGeo, p);
 
   if (!coords) {
     showToastSafe('❌ Adresse non trouvée — vérifiez l\'adresse dans la fiche patient.');
@@ -784,40 +830,3 @@ document.addEventListener('DOMContentLoaded', () => {
   // Init DB au démarrage pour les alertes ordo
   initPatientsDB().then(checkOrdoExpiry).catch(() => {});
 });
-
-/* ────────────────────────────────────────────────
-   Preview adresse en temps réel — formulaire patient (pat-rue/cp/ville)
-   Appelée par oninput sur les champs d'adresse dans index.html
-──────────────────────────────────────────────── */
-function updatePatAddrPreview() {
-  const rue   = (document.getElementById('pat-rue')?.value   || '').trim();
-  const cp    = (document.getElementById('pat-cp')?.value    || '').trim();
-  const ville = (document.getElementById('pat-ville')?.value || '').trim();
-
-  const preview = document.getElementById('pat-addr-preview');
-  const warn    = document.getElementById('pat-addr-warn');
-
-  const parts = [rue, [cp, ville].filter(Boolean).join(' '), 'France']
-    .map(s => s.trim()).filter(Boolean);
-
-  if (!parts.length || !rue) {
-    if (preview) preview.style.display = 'none';
-    if (warn)    warn.style.display    = 'none';
-    return;
-  }
-
-  if (preview) {
-    preview.textContent  = '📍 ' + parts.join(', ');
-    preview.style.display = 'block';
-  }
-
-  // Avertissement si CP ou ville manquant (géocodage moins précis)
-  if (warn) {
-    if (!cp || !ville) {
-      warn.textContent  = '⚠️ Ajoutez le code postal et la ville pour un géocodage précis.';
-      warn.style.display = 'block';
-    } else {
-      warn.style.display = 'none';
-    }
-  }
-}
