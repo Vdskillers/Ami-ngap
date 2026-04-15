@@ -238,7 +238,7 @@ function refreshPlanning() {
   }
 }
 
-
+async function generatePlanningFromImport(){
   if(!APP.importedData){alert('Aucune donnée importée.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
