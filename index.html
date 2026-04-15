@@ -851,7 +851,7 @@
           || snapshot.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
 
         /* ── Arrêter le timer live (sans confirm, sans reset immédiat) ── */
-        if (typeof _stopDayInternal === 'function') _stopDayInternal();
+        if (typeof _stopDayInternal === 'function') _stopDayInternal(caJournee);
         else if (typeof stopDay === 'function') stopDay();
 
         /* ── Toast récap ── */
