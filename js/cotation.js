@@ -79,6 +79,27 @@ async function cotation() {
     _clearSlowTimers();
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
+    // ── Déclencher la signature après cotation ──────────────────────────────
+    // Dispatch ami:cotation_done pour signature.js + injection directe du bouton
+    const _invoiceId = d.invoice_number || null;
+    if (_invoiceId) {  // admin inclus — peut tester et démontrer la signature
+      // Injection directe du bouton de signature dans la card résultat
+      const _cbody = $('cbody');
+      if (_cbody && !_cbody.querySelector('.sig-btn-wrap')) {
+        const _wrap = document.createElement('div');
+        _wrap.className = 'sig-btn-wrap';
+        _wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+        _wrap.innerHTML = `
+          <button class="btn bv bsm" id="sig-btn-${_invoiceId}" data-sig="${_invoiceId}"
+            onclick="openSignatureModal('${_invoiceId}')">
+            ✍️ Faire signer le patient
+          </button>
+          <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>`;
+        _cbody.querySelector('.card')?.appendChild(_wrap);
+      }
+      // Dispatch pour tout listener externe
+      document.dispatchEvent(new CustomEvent('ami:cotation_done', { detail: { invoice_number: _invoiceId } }));
+    }
   } catch (e) {
     _clearSlowTimers();
     $('cerr').style.display = 'flex';

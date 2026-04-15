@@ -304,24 +304,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Ajouter le bouton signature dans les résultats de cotation
+  // ami:cotation_done — géré directement dans cotation.js (injection immédiate)
+  // Ce listener reste en fallback pour d'autres contextes (tournée, etc.)
   document.addEventListener('ami:cotation_done', async (e) => {
     const invoiceId = e.detail?.invoice_number;
     if (!invoiceId) return;
     const cbody = document.getElementById('cbody');
     if (!cbody) return;
-    const existing = cbody.querySelector('.sig-btn-wrap');
-    if (existing) return;
+    if (cbody.querySelector('.sig-btn-wrap')) return;
     const wrap = document.createElement('div');
     wrap.className = 'sig-btn-wrap';
-    wrap.style.cssText = 'margin-top:12px;padding-top:12px;border-top:1px solid var(--b)';
+    wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
     wrap.innerHTML = `
       <button class="btn bv bsm" data-sig="${invoiceId}"
         onclick="openSignatureModal('${invoiceId}')">
         ✍️ Faire signer le patient
       </button>
-      <span style="font-size:11px;color:var(--m);margin-left:10px">
-        Signature électronique optionnelle — stockée localement
-      </span>`;
+      <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>`;
     cbody.querySelector('.card')?.appendChild(wrap);
   });
 });
@@ -334,7 +333,6 @@ async function loadSignatureList() {
   if (!el) return;
   el.innerHTML = '<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Chargement…</p>';
   try {
-    await _initSigDB();
     const db = await _initSigDB();
     const tx = db.transaction(SIG_STORE, 'readonly');
     const store = tx.objectStore(SIG_STORE);
@@ -352,11 +350,13 @@ async function loadSignatureList() {
     }
 
     el.innerHTML = all.map(sig => {
-      const date = sig.created_at ? new Date(sig.created_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+      const _dateRaw = sig.signed_at || sig.created_at || null;
+      const date = _dateRaw ? new Date(_dateRaw).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
       const invoiceId = sig.invoice_id || '—';
+      const _previewSrc = sig.png || sig.data_url || null;
       return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b)">
         <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
-          ${sig.data_url ? `<img src="${sig.data_url}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
+          ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
         </div>
         <div style="flex:1">
           <div style="font-size:13px;font-weight:500;font-family:var(--fm)">${invoiceId}</div>
