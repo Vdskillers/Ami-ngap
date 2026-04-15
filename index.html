@@ -832,7 +832,10 @@
 
           const nbVisites = snapshot.filter(p => p.done || p._done).length;
           if (kmTotal > 0) {
-            const KM_KEY = 'ami_km_journal';
+            // Clé isolée par userId — sync navigateur ↔ mobile
+            let _kmUidT = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+            if (!_kmUidT) { try { _kmUidT = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+            const KM_KEY = 'ami_km_journal_' + String(_kmUidT || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
             let journal = [];
             try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
             journal.push({
@@ -845,6 +848,8 @@
               _source: 'tournee_auto',
             });
             localStorage.setItem(KM_KEY, JSON.stringify(journal));
+            // Sync silencieux vers le serveur (navigateur ↔ mobile)
+            if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
             APP.set('tourneeKmJour', 0);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
           }
