@@ -101,15 +101,12 @@ async function loadStatsAvancees() {
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div></div>';
 
-  const period = document.getElementById('stats-period')?.value || 'month';
-  // Construire les 3 périodes à partir du select
-  const periodPrev = period === 'month' ? 'lastmonth' : (period === 'lastmonth' ? '3month' : '3month');
-
   try {
+    // Charger 3 mois pour comparatif
     const [m3, m2, m1] = await Promise.all([
       fetchAPI('/webhook/ami-historique?period=3month').catch(()=>({data:[]})),
-      fetchAPI(`/webhook/ami-historique?period=${periodPrev}`).catch(()=>({data:[]})),
-      fetchAPI(`/webhook/ami-historique?period=${period}`).catch(()=>({data:[]})),
+      fetchAPI('/webhook/ami-historique?period=lastmonth').catch(()=>({data:[]})),
+      fetchAPI('/webhook/ami-historique?period=month').catch(()=>({data:[]})),
     ]);
 
     const arr3 = Array.isArray(m3?.data) ? m3.data : [];
@@ -134,7 +131,7 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   const evoColor = evo >= 0 ? 'var(--a)' : 'var(--d)';
   const evoArrow = evo >= 0 ? '↑' : '↓';
 
-  // Actes par fréquence
+  // Actes par fréquence — mois actuel vs précédent
   const freqActes = (arr) => {
     const f = {};
     arr.forEach(r => {
@@ -146,34 +143,15 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   const freq2 = freqActes(moisPrecedent);
   const allCodes = [...new Set([...Object.keys(freq1), ...Object.keys(freq2)])].sort();
 
-  // Jours travaillés
+  // Calcul jours travaillés
   const joursSet = new Set(moisActuel.map(r => (r.date_soin||'').slice(0,10)).filter(Boolean));
   const joursTravailles = joursSet.size;
   const caParJour = joursTravailles > 0 ? ca1 / joursTravailles : 0;
 
-  // ── Km depuis le journal kilométrique (3 mois) ────────────────────────
-  let kmMois = 0, kmMoisPrec = 0, km3Mois = 0;
-  try {
-    const kmEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
-    const now = new Date();
-    const debut1    = new Date(now.getFullYear(), now.getMonth(), 1);
-    const debut2    = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const fin2      = new Date(now.getFullYear(), now.getMonth(), 0);
-    const debut3    = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-    kmEntries.forEach(e => {
-      const d = new Date(e.date);
-      const km = parseFloat(e.km || 0);
-      if (d >= debut1)            kmMois     += km;
-      if (d >= debut2 && d<=fin2) kmMoisPrec += km;
-      if (d >= debut3)            km3Mois    += km;
-    });
-    kmMois = Math.round(kmMois*10)/10;
-    kmMoisPrec = Math.round(kmMoisPrec*10)/10;
-    km3Mois = Math.round(km3Mois*10)/10;
-  } catch {}
-
-  const km3Ded = Math.round(km3Mois * 0.636 * 100) / 100;
-  const kmEvo  = kmMoisPrec > 0 ? ((kmMois - kmMoisPrec) / kmMoisPrec * 100) : 0;
+  // Top patient (par fréquence de passage — anonymisé)
+  const patFreq = {};
+  moisActuel.forEach(r => { const pid = r.patient_id||'?'; patFreq[pid]=(patFreq[pid]||0)+1; });
+  const topPatient = Object.entries(patFreq).sort((a,b)=>b[1]-a[1])[0];
 
   el.innerHTML = `
     <!-- Comparatif mois/mois -->
@@ -182,33 +160,14 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
         <div class="sc g"><div class="si">📅</div><div class="sv">${ca1.toFixed(0)}€</div><div class="sn">Mois actuel</div></div>
         <div class="sc b"><div class="si">🗓️</div><div class="sv">${ca2.toFixed(0)}€</div><div class="sn">Mois précédent</div></div>
-        <div class="sc ${evo>=0?'g':'r'}"><div class="si">${evoArrow}</div><div class="sv" style="color:${evoColor}">${evo>=0?'+':''}${evo.toFixed(1)}%</div><div class="sn">Évolution CA</div></div>
+        <div class="sc ${evo>=0?'g':'r'}"><div class="si">${evoArrow}</div><div class="sv" style="color:${evoColor}">${evo>=0?'+':''}${evo.toFixed(1)}%</div><div class="sn">Évolution</div></div>
         <div class="sc o"><div class="si">📆</div><div class="sv">${joursTravailles}j</div><div class="sn">Jours travaillés</div></div>
         <div class="sc b"><div class="si">💹</div><div class="sv">${caParJour.toFixed(0)}€</div><div class="sn">CA/jour moyen</div></div>
         <div class="sc g"><div class="si">📈</div><div class="sv">${ca3.toFixed(0)}€</div><div class="sn">3 mois cumulés</div></div>
       </div>
       ${evo < -10 ? `<div class="ai wa">📉 Baisse de CA de ${Math.abs(evo).toFixed(0)}% vs mois précédent — vérifiez vos cotations manquées</div>` : ''}
-      ${evo > 15  ? `<div class="ai su">🚀 Excellente progression +${evo.toFixed(0)}% ce mois !</div>` : ''}
+      ${evo > 15 ? `<div class="ai su">🚀 Excellente progression +${evo.toFixed(0)}% ce mois !</div>` : ''}
     </div>
-
-    <!-- Kilométrique -->
-    ${km3Mois > 0 ? `
-    <div class="card" style="margin-bottom:16px">
-      <div class="ct">🚗 Kilométrique & Déductions fiscales</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:12px">
-        <div class="sc b"><div class="si">🚗</div><div class="sv">${kmMois} km</div><div class="sn">Km ce mois</div></div>
-        <div class="sc o"><div class="si">🗓️</div><div class="sv">${kmMoisPrec} km</div><div class="sn">Km mois précédent</div></div>
-        <div class="sc ${kmEvo>=0?'g':'r'}"><div class="si">${kmEvo>=0?'↑':'↓'}</div><div class="sv" style="color:${kmEvo>=0?'var(--a)':'var(--d)'}">${kmEvo>=0?'+':''}${kmEvo.toFixed(1)}%</div><div class="sn">Évolution km</div></div>
-        <div class="sc g"><div class="si">📈</div><div class="sv">${km3Mois} km</div><div class="sn">3 mois cumulés</div></div>
-        <div class="sc g"><div class="si">💸</div><div class="sv">${km3Ded} €</div><div class="sn">Déd. fiscale 3 mois</div></div>
-        <div class="sc b"><div class="si">📏</div><div class="sv">${joursTravailles>0?(kmMois/joursTravailles).toFixed(1):0} km</div><div class="sn">Km/jour moyen</div></div>
-      </div>
-      <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Barème 5 CV 2025 : 0,636 €/km · <a href="#" onclick="if(typeof navTo==='function')navTo('outils-km',null)" style="color:var(--a);text-decoration:none">Voir le journal complet →</a></div>
-    </div>` : `
-    <div class="card" style="margin-bottom:16px">
-      <div class="ct">🚗 Kilométrique</div>
-      <div class="ai in">Aucun trajet enregistré sur les 3 derniers mois. <a href="#" onclick="if(typeof navTo==='function')navTo('outils-km',null)" style="color:var(--a);text-decoration:none">→ Ouvrir le Journal kilométrique</a></div>
-    </div>`}
 
     <!-- Évolution des actes -->
     <div class="card" style="margin-bottom:16px">
@@ -230,7 +189,7 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
       </div>` : '<div class="ai in">Pas encore assez de données pour comparer.</div>'}
     </div>
 
-    <!-- Analyse horaire -->
+    <!-- Meilleure heure de travail -->
     <div class="card">
       <div class="ct">⏰ Analyse horaire</div>
       ${_renderHeureStats(moisActuel)}
@@ -456,9 +415,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Badge file d'attente offline
   _updateQueueBadge();
 
-  // Stats avancées quand on navigue
+  // Stats avancées quand on navigue vers le dashboard (vue fusionnée)
   document.addEventListener('app:nav', e => {
-    if (e.detail?.view === 'stats') loadStatsAvancees();
+    if (e.detail?.view === 'dash' || e.detail?.view === 'stats') loadStatsAvancees();
   });
 
   // Patch cotation() pour gérer l'offline

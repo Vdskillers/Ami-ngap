@@ -702,8 +702,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(e.detail?.view === 'live'){
       startDayLocal();
     }
-    if(e.detail?.view === 'stats' && typeof loadStatsAvancees === 'function'){
-      loadStatsAvancees();
+    if((e.detail?.view === 'dash' || e.detail?.view === 'stats') && typeof loadStatsAvancees === 'function'){
+      setTimeout(loadStatsAvancees, 300);
     }
   });
 

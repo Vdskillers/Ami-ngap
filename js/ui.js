@@ -44,8 +44,11 @@ function navTo(v, triggerEl) {
 document.addEventListener('ui:navigate', e => {
   const v = e.detail.view;
 
-  /* Dashboard → charger données */
-  if (v === 'dash' && typeof loadDash === 'function') loadDash();
+  /* Dashboard & Stats → charger données */
+  if (v === 'dash') {
+    if (typeof loadDash === 'function') loadDash();
+    if (typeof loadStatsAvancees === 'function') setTimeout(loadStatsAvancees, 300);
+  }
 
   /* Copilote IA → monter l'interface */
   if (v === 'copilote' && typeof initCopiloteSection === 'function') {

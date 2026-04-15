@@ -90,7 +90,7 @@ function showApp(){
     });
 
     // ── Rebrancher onclick pour copilote et stats (nurse-only mais accessibles admin) ──
-    ['dash','copilote','stats','ngap-ref','rapport','sig','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km'].forEach(v => {
+    ['dash','copilote','ngap-ref','rapport','sig','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
         ni.classList.remove('nurse-only');
@@ -150,7 +150,7 @@ function showApp(){
         else mobileGrid.appendChild(btnAdminM);
 
         // Rendre nurse-only visibles pour l'admin (copilote, rapport, contact, sig, tournée…)
-        ['copilote','rapport','contact','sec','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km'].forEach(v => {
+        ['copilote','rapport','contact','sec','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','dash'].forEach(v => {
           const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
           if(btn) btn.classList.remove('nurse-only');
         });
