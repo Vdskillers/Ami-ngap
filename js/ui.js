@@ -70,23 +70,12 @@ document.addEventListener('ui:navigate', e => {
         if (mapInst) { try { mapInst.invalidateSize(); } catch(_){} }
       }, 300);
 
-      /* Si des données importées existent, afficher les marqueurs sur la carte
-         Fonctionne pour admin ET infirmière — chacun avec ses propres données */
-      if (APP.importedData?.patients?.length && typeof renderPatientsOnMap === 'function') {
-        const startPt = (typeof APP.get === 'function' ? APP.get('startPoint') : APP.startPoint) || null;
-        const _retryMap = (n) => {
-          const mapInst = (APP.map && typeof APP.map.invalidateSize === 'function')
-            ? APP.map
-            : APP.map?.instance;
-          if (mapInst) {
-            renderPatientsOnMap(APP.importedData.patients, startPt).catch(() => {});
-            setTimeout(() => { try { mapInst.invalidateSize(); } catch(_){} }, 250);
-          } else if (n < 10) {
-            setTimeout(() => _retryMap(n + 1), 300);
-          }
-        };
-        _retryMap(0);
+      /* Restaurer le marker du point de départ si déjà défini — sans appeler
+         renderPatientsOnMap qui peut écraser APP.map et casser le handler de clic */
+      if (typeof _restoreStartPointMarker === 'function') {
+        setTimeout(() => _restoreStartPointMarker(), 350);
       }
+
     }, 150);
   }
 
