@@ -572,7 +572,7 @@ function generatePlanningLocal(){
     const pts = days[day];
     /* CA estimé par jour */
     const ca = pts.reduce((s,p)=>{
-      const a=(p.acte||p.description||'').toLowerCase();
+      const a=(p.actes_recurrents||p.acte||p.description||'').toLowerCase();
       if(a.includes('insuline')) return s+26.35;
       if(a.includes('pansement complexe')) return s+22;
       if(a.includes('pansement')) return s+19;
@@ -585,10 +585,15 @@ function generatePlanningLocal(){
     html += `<div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px">
       <div style="font-weight:600;text-transform:capitalize;margin-bottom:4px;font-size:14px">${day}</div>
       <div style="font-size:11px;color:var(--a);margin-bottom:10px">${pts.length} patient(s) · ~${ca.toFixed(0)} €</div>
-      ${pts.map(p=>`<div class="route-item" style="padding:6px 0;border-bottom:1px solid var(--b)">
-        <div class="route-info" style="font-size:12px">${p.patient||p.acte||p.description||'Patient'}</div>
-        ${p.time||p.heure?`<div class="route-time" style="font-size:11px">${p.time||p.heure}</div>`:''}
-      </div>`).join('')}
+      ${pts.map(p=>{
+        const soinAff = p.actes_recurrents || p.acte || p.description || 'Patient';
+        const isActes = !!p.actes_recurrents;
+        return `<div class="route-item" style="padding:6px 0;border-bottom:1px solid var(--b)">
+          <div class="route-info" style="font-size:12px">${p.patient||[p.prenom,p.nom].filter(Boolean).join(' ')||'Patient'}</div>
+          ${isActes ? `<div style="font-size:11px;color:var(--a);font-family:var(--fm);margin-top:2px">💊 ${soinAff.slice(0,60)}</div>` : (soinAff !== 'Patient' ? `<div style="font-size:11px;color:var(--m);margin-top:2px">${soinAff.slice(0,60)}</div>` : '')}
+          ${p.time||p.heure?`<div class="route-time" style="font-size:11px">⏰ ${p.time||p.heure}</div>`:''}
+        </div>`;
+      }).join('')}
     </div>`;
   });
 
@@ -746,9 +751,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
         /* Auto-cotation */
         try{
           const u=S?.user||{};
+          const texteForCot = (p.actes_recurrents || p.acte || p.description || 'soin infirmier')
+            + (p.time||p.heure?' à '+(p.time||p.heure):'');
           await apiCall('/webhook/ami-calcul',{
             mode:'ngap',
-            texte:(p.acte||p.description||'soin infirmier')+(p.time||p.heure?' à '+(p.time||p.heure):''),
+            texte: texteForCot,
             heure_soin:p.time||p.heure||'',
             infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
             adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',

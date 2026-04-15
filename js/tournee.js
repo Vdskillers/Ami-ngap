@@ -113,10 +113,10 @@ function showCaFromImport(){
 }
 
 function estimateRevenue(patients){
-  // Estimation CA par patient selon type de soin détecté dans description
+  // Estimation CA par patient selon type de soin — actes_recurrents en priorité
   const RATES={injection:3.15*2,pansement:3.15*3,toilette:3.15*4,bsa:13,bsb:18.20,bsc:28.70,prelevement:3.15*1.5,perfusion:3.15*5,defaut:3.15*2};
   return patients.reduce((sum,p)=>{
-    const d=(p.description||p.texte||p.summary||'').toLowerCase();
+    const d=(p.actes_recurrents||p.description||p.texte||p.summary||'').toLowerCase();
     let v=RATES.defaut;
     if(/toilette|bain/.test(d))v=RATES.toilette;
     else if(/perfusion/.test(d))v=RATES.perfusion;
@@ -398,10 +398,12 @@ async function renderPlanning(d){
 
     return {
       ...p,
-      nom:       (fiche.nom    || p.nom    || uber.nom    || '').trim(),
-      prenom:    (fiche.prenom || p.prenom || uber.prenom || '').trim(),
-      _nomAff:   nom || 'Patient',
+      nom:              (fiche.nom    || p.nom    || uber.nom    || '').trim(),
+      prenom:           (fiche.prenom || p.prenom || uber.prenom || '').trim(),
+      _nomAff:          nom || 'Patient',
       date,
+      // actes_recurrents : fiche IDB > déjà présent dans p (import depuis carnet)
+      actes_recurrents: fiche.actes_recurrents || p.actes_recurrents || '',
       _cotation: p._cotation || uber._cotation,
       done:      p.done  || p._done  || uber.done  || false,
       absent:    p.absent || p._absent || uber.absent || false,
