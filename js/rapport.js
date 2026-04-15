@@ -66,6 +66,25 @@ function _buildRapportHTML(arr, u, period) {
   const avg     = arr.length ? total/arr.length : 0;
   const best    = Math.max(...arr.map(r=>parseFloat(r.total||0)), 0);
 
+  // ── Données kilométriques depuis le journal local ──────────────────────
+  let kmTotal = 0, kmDeduction = 0, kmEntries = [];
+  try {
+    const allEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    // Filtrer selon la période sélectionnée
+    const now = new Date();
+    let since = new Date(now.getFullYear(), now.getMonth(), 1); // défaut : mois courant
+    if (period === 'lastmonth') since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    else if (period === '3month') since = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    else if (period === 'year') since = new Date(now.getFullYear(), 0, 1);
+    kmEntries = allEntries.filter(e => new Date(e.date) >= since);
+    kmTotal = Math.round(kmEntries.reduce((s, e) => s + parseFloat(e.km||0), 0) * 10) / 10;
+    // Barème kilométrique 5CV 2025 (≤5000 km/an : ×0,636)
+    const kmAnnuel = allEntries.filter(e => new Date(e.date).getFullYear() === now.getFullYear())
+      .reduce((s, e) => s + parseFloat(e.km||0), 0);
+    const taux = kmAnnuel <= 5000 ? 0.636 : kmAnnuel <= 20000 ? (0.319 + 1587/kmAnnuel) : 0.370;
+    kmDeduction = Math.round(kmTotal * taux * 100) / 100;
+  } catch {}
+
   // Top actes
   const freq = {};
   arr.forEach(r => { try { JSON.parse(r.actes||'[]').forEach(a=>{ if(a.code&&a.code!=='IMPORT') freq[a.code]=(freq[a.code]||0)+1; }); } catch{} });
@@ -152,7 +171,27 @@ function _buildRapportHTML(arr, u, period) {
   <div class="kpi"><div class="kpi-v">${pat.toFixed(2)} €</div><div class="kpi-l">Part patients</div></div>
   <div class="kpi"><div class="kpi-v">${best.toFixed(2)} €</div><div class="kpi-l">Meilleure facture</div></div>
   <div class="kpi ${dre>0?'orange':'green'}"><div class="kpi-v">${dre}</div><div class="kpi-l">DRE requises</div></div>
+  ${kmTotal > 0 ? `<div class="kpi blue"><div class="kpi-v">${kmTotal} km</div><div class="kpi-l">Km parcourus</div></div>` : ''}
+  ${kmDeduction > 0 ? `<div class="kpi green"><div class="kpi-v">${kmDeduction} €</div><div class="kpi-l">Déd. fiscale km</div></div>` : ''}
 </div>
+
+${kmTotal > 0 ? `<h2>🚗 Journal kilométrique (${kmEntries.length} trajet${kmEntries.length>1?'s':''})</h2>
+<table>
+  <thead><tr><th>Date</th><th>Départ</th><th>Arrivée</th><th style="text-align:right">Km</th><th>Motif</th></tr></thead>
+  <tbody>${kmEntries.slice(0, 100).map(e => `<tr>
+    <td>${e.date ? new Date(e.date).toLocaleDateString('fr-FR') : '—'}</td>
+    <td>${e.depart||'—'}</td>
+    <td>${e.arrivee||'—'}</td>
+    <td style="text-align:right;font-weight:600">${parseFloat(e.km||0).toFixed(1)} km</td>
+    <td style="color:#6b7a99">${e.motif||''}</td>
+  </tr>`).join('')}</tbody>
+  <tfoot><tr>
+    <td colspan="3"><strong>TOTAL</strong></td>
+    <td style="text-align:right"><strong>${kmTotal} km</strong></td>
+    <td style="color:#059669"><strong>Déduction fiscale estimée : ${kmDeduction} €</strong></td>
+  </tr></tfoot>
+</table>
+<p style="font-size:11px;color:#6b7a99;margin-top:-12px;margin-bottom:20px">Barème kilométrique 2025 (5CV) · Les déductions fiscales sont indicatives, consultez votre comptable.</p>` : ''}
 
 ${topActes.length ? `<h2>🩺 Actes les plus fréquents</h2>
 <table>

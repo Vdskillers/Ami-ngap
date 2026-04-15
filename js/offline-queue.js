@@ -131,6 +131,19 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   const evoColor = evo >= 0 ? 'var(--a)' : 'var(--d)';
   const evoArrow = evo >= 0 ? '↑' : '↓';
 
+  // ── Km du mois depuis le journal local ───────────────────────────────────
+  let kmMois = 0, kmDeduction = 0;
+  try {
+    const kmEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    const since = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const filtered = kmEntries.filter(e => new Date(e.date) >= since);
+    kmMois = Math.round(filtered.reduce((s, e) => s + parseFloat(e.km||0), 0) * 10) / 10;
+    const kmAnnuel = kmEntries.filter(e => new Date(e.date).getFullYear() === new Date().getFullYear())
+      .reduce((s, e) => s + parseFloat(e.km||0), 0);
+    const taux = kmAnnuel <= 5000 ? 0.636 : kmAnnuel <= 20000 ? (0.319 + 1587/kmAnnuel) : 0.370;
+    kmDeduction = Math.round(kmMois * taux * 100) / 100;
+  } catch {}
+
   // Actes par fréquence — mois actuel vs précédent
   const freqActes = (arr) => {
     const f = {};
@@ -164,6 +177,8 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
         <div class="sc o"><div class="si">📆</div><div class="sv">${joursTravailles}j</div><div class="sn">Jours travaillés</div></div>
         <div class="sc b"><div class="si">💹</div><div class="sv">${caParJour.toFixed(0)}€</div><div class="sn">CA/jour moyen</div></div>
         <div class="sc g"><div class="si">📈</div><div class="sv">${ca3.toFixed(0)}€</div><div class="sn">3 mois cumulés</div></div>
+        ${kmMois > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${kmMois} km</div><div class="sn">Km ce mois</div></div>` : ''}
+        ${kmDeduction > 0 ? `<div class="sc g"><div class="si">💸</div><div class="sv">${kmDeduction} €</div><div class="sn">Déd. fiscale km</div></div>` : ''}
       </div>
       ${evo < -10 ? `<div class="ai wa">📉 Baisse de CA de ${Math.abs(evo).toFixed(0)}% vs mois précédent — vérifiez vos cotations manquées</div>` : ''}
       ${evo > 15 ? `<div class="ai su">🚀 Excellente progression +${evo.toFixed(0)}% ce mois !</div>` : ''}
