@@ -30,6 +30,21 @@ function loadDashCache(maxAge = 30 * 60 * 1000) {
   } catch { return null; }
 }
 
+/* ── Badge cache UI ──────────────────────────── */
+function _showCacheInfo(cache) {
+  const el = $('dash-cache-info');
+  if (!el) return;
+  const min = Math.floor((cache.age || 0) / 60000);
+  el.innerHTML = cache.expired
+    ? `🔴 Mode hors ligne — données en cache (${min} min)`
+    : `🟡 Données en cache (${min} min)`;
+  el.style.display = 'block';
+}
+function _hideCacheInfo() {
+  const el = $('dash-cache-info');
+  if (el) el.style.display = 'none';
+}
+
 /* ── 3. loadDash robuste + fallback cache ─────── */
 async function loadDash() {
   if(!requireAuth()) return;
