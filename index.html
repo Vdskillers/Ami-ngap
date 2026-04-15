@@ -649,132 +649,232 @@
       }
 
       /* ── Terminer la tournée + importer cotations dans le carnet ── */
+      /* ════════════════════════════════════════════════════════════════
+         TERMINER LA TOURNÉE — Bilan complet
+         ─────────────────────────────────────────────────────────────
+         1. Génère automatiquement toutes les cotations manquantes
+            (API en parallèle par batch, fallback local immédiat)
+            → sans bloquer, sans confirmation préalable par patient
+         2. Importe toutes les cotations dans le carnet patient (IDB)
+         3. Exporte les km de la journée dans le Journal kilométrique
+         4. Affiche le bilan avec option de correction par patient
+         ════════════════════════════════════════════════════════════════ */
       async function terminerTourneeAvecBilan() {
-        if (!confirm('Terminer la tournée du jour ?\n\nLes cotations validées seront importées dans le carnet patient.')) return;
+        if (!confirm(
+          'Terminer la tournée du jour ?\n\n' +
+          '• Les cotations seront générées automatiquement pour tous les patients visités\n' +
+          '• Vous pourrez corriger chaque cotation depuis le bilan\n' +
+          '• Les km du jour seront enregistrés dans le Journal kilométrique'
+        )) return;
 
-        const patients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
-        const snapshot = patients.map(p => ({ ...p }));
+        const patients  = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+        const snapshot  = patients.map(p => ({ ...p }));
+        const today     = new Date().toISOString();
+        const todayStr  = today.split('T')[0];
+        const u         = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
+        /* ── Afficher un toast de progression ── */
+        if (typeof showToast === 'function') showToast('⚙️ Génération des cotations en cours…');
+
+        /* ═══════════════════════════════════════════════════════
+           1. AUTO-COTER tous les patients visités sans cotation
+              — Parallèle par batch de 4, fallback local immédiat
+           ═══════════════════════════════════════════════════════ */
+        const toCoter = snapshot.filter(p =>
+          !p._cotation?.validated && (p.done || p._done)
+        );
+
+        const _autoCoterOne = async (p) => {
+          const texte = p.description || p.texte || p.texte_soin || p.acte || '';
+          if (!texte) return;
+          /* Fallback local immédiat — appliqué d'abord pour ne pas bloquer */
+          let cot = (typeof autoCotationLocale === 'function')
+            ? autoCotationLocale(texte)
+            : { actes: [], total: 0 };
+          /* Tenter l'API en arrière-plan (meilleur résultat si réseau dispo) */
+          try {
+            const d = await (typeof apiCall === 'function' ? apiCall('/webhook/ami-calcul', {
+              mode: 'ngap', texte,
+              infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
+              adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
+              date_soin: todayStr,
+              heure_soin: p.heure_soin || p.heure_preferee || '',
+              _live_auto: true,
+            }) : Promise.reject('no apiCall'));
+            if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
+          } catch { /* silencieux — le fallback local est déjà prêt */ }
+          p._cotation = { actes: cot.actes || [], total: parseFloat(cot.total || 0), auto: true, validated: true };
+        };
+
+        /* Lancer par batch de 4 simultanées */
+        const BATCH = 4;
+        for (let i = 0; i < toCoter.length; i += BATCH) {
+          await Promise.allSettled(toCoter.slice(i, i + BATCH).map(_autoCoterOne));
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           2. IMPORTER TOUTES LES COTATIONS DANS LE CARNET (IDB)
+           ═══════════════════════════════════════════════════════ */
         let importCount = 0;
-        const today = new Date().toISOString();
-
         for (const p of snapshot) {
           if (!p._cotation?.validated) continue;
           try {
             const rows = await _idbGetAll(PATIENTS_STORE);
-
-            /* Chercher la fiche existante par patient_id ou id */
-            let row = rows.find(r => r.id === p.patient_id || r.id === p.id);
-            let patientData;
+            let row    = rows.find(r => r.id === p.patient_id || r.id === p.id);
+            let pat;
 
             if (row) {
-              /* Patient existant — décrypter la fiche */
-              patientData = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+              pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
             } else {
-              /* Patient inexistant — créer une nouvelle fiche */
-              const newId = p.patient_id || p.id || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
-              const nomComplet = (p.description || p.texte || p.label || '').split(' ');
-              patientData = {
-                id:          newId,
-                nom:         nomComplet.slice(-1)[0] || 'Patient',
-                prenom:      nomComplet.slice(0,-1).join(' ') || '',
-                adresse:     p.adresse || p.addressFull || p.address || '',
-                addressFull: p.adresse || p.addressFull || p.address || '',
-                lat:         p.lat || null,
-                lng:         p.lng || null,
-                created_at:  today,
-                updated_at:  today,
-                cotations:   [],
+              const newId  = p.patient_id || p.id || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
+              const parts  = (p.nom ? [p.prenom||'', p.nom] : (p.description || p.texte || 'Patient').split(' '));
+              pat = {
+                id: newId,
+                nom:    p.nom    || parts.slice(-1)[0]       || 'Patient',
+                prenom: p.prenom || parts.slice(0,-1).join(' ') || '',
+                adresse: p.adresse || p.addressFull || '',
+                lat: p.lat || null, lng: p.lng || null,
+                created_at: today, updated_at: today, cotations: [],
               };
             }
 
-            /* Ajouter la cotation dans le tableau cotations[] de la fiche */
-            if (!patientData.cotations) patientData.cotations = [];
-            patientData.cotations.push({
+            if (!pat.cotations) pat.cotations = [];
+            pat.cotations.push({
               date:   today,
               actes:  p._cotation.actes || [],
               total:  parseFloat(p._cotation.total || 0),
-              soin:   p.description || p.texte || '',
-              source: 'tournee',
+              soin:   (p.description || p.texte || '').slice(0, 120),
+              source: p._cotation.auto ? 'tournee_auto' : 'tournee',
             });
-            patientData.updated_at = today;
+            pat.updated_at = today;
 
-            /* Sauvegarder dans IndexedDB */
-            const toStore = {
-              id:         patientData.id,
-              nom:        patientData.nom,
-              prenom:     patientData.prenom,
-              _data:      _enc(patientData),
-              updated_at: today,
-            };
-            await _idbPut(PATIENTS_STORE, toStore);
+            await _idbPut(PATIENTS_STORE, {
+              id: pat.id, nom: pat.nom, prenom: pat.prenom,
+              _data: _enc(pat), updated_at: today,
+            });
             importCount++;
-          } catch (e) {
-            console.warn('[AMI] Import cotation carnet KO:', e.message);
-          }
+          } catch (e) { console.warn('[AMI] Import cotation IDB KO:', e.message); }
         }
 
-        /* Arrêter timer */
+        /* ═══════════════════════════════════════════════════════
+           3. EXPORTER LES KM DU JOUR → Journal kilométrique
+           ═══════════════════════════════════════════════════════ */
+        try {
+          /* Total km : somme des distance_km sur chaque patient de la route */
+          let kmTotal = snapshot.reduce((s, p) => s + parseFloat(p.distance_km || p.km || 0), 0);
+
+          /* Fallback : lire dans l'affichage OSRM rendu (badge "X km") */
+          if (!kmTotal) {
+            const kmBadge = document.querySelector('#tbody .dreb, #res-tur .dreb');
+            if (kmBadge) {
+              const m = kmBadge.textContent.match(/([\d.,]+)\s*km/);
+              if (m) kmTotal = parseFloat(m[1].replace(',', '.'));
+            }
+          }
+
+          if (kmTotal > 0) {
+            const KM_KEY = 'ami_km_journal';
+            let journal = [];
+            try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
+            const nbVisites = snapshot.filter(p => p.done || p._done).length;
+            journal.push({
+              id:      Date.now(),
+              date:    todayStr,
+              depart:  'Cabinet',
+              arrivee: 'Tournée patients',
+              km:      Math.round(kmTotal * 10) / 10,
+              motif:   `Tournée du ${new Date().toLocaleDateString('fr-FR')} — ${nbVisites} visite(s)`,
+              _source: 'tournee_auto',
+            });
+            localStorage.setItem(KM_KEY, JSON.stringify(journal));
+          }
+        } catch (e) { console.warn('[AMI] Import km KO:', e.message); }
+
+        /* ── Arrêter le timer live ── */
         if (typeof stopDay === 'function') stopDay();
 
+        /* ── Toast récap ── */
         if (typeof showToast === 'function') {
-          showToast(importCount > 0
-            ? `✅ ${importCount} cotation(s) importée(s) dans le carnet patient`
-            : '🏁 Tournée terminée');
+          const cotAuto = snapshot.filter(p => p._cotation?.auto).length;
+          const cotManu = snapshot.filter(p => p._cotation?.validated && !p._cotation?.auto).length;
+          showToast(
+            `🏁 Tournée terminée · ${importCount} cotation(s) importée(s)` +
+            (cotAuto  ? ` (${cotAuto} auto)` : '') +
+            (cotManu  ? ` (${cotManu} manuelle${cotManu>1?'s':''})` : '')
+          );
         }
 
+        /* ── Afficher le bilan ── */
         ouvrirEtatTournee(true, snapshot);
       }
 
-      /* ── Ouvrir la modale état de la tournée ── */
+      /* ── Ouvrir la modale état / bilan de la tournée ── */
       function ouvrirEtatTournee(isBilan, snapshot) {
-        const modal = document.getElementById('modal-etat-tournee');
-        const titre = document.getElementById('modal-etat-titre');
+        const modal   = document.getElementById('modal-etat-tournee');
+        const titre   = document.getElementById('modal-etat-titre');
         const sousTitre = document.getElementById('modal-etat-sous-titre');
         const statsEl = document.getElementById('modal-etat-stats');
         const listeEl = document.getElementById('modal-etat-liste');
         if (!modal) return;
 
-        /* Utiliser le snapshot passé en paramètre OU les patients Uber en cours
-           — Ne jamais fallback sur importedData (carnet) pour éviter les doublons */
         const patients = snapshot || APP.get('uberPatients') || [];
-        const done    = patients.filter(p => p.done).length;
-        const absent  = patients.filter(p => p.absent).length;
-        const reste   = patients.filter(p => !p.done && !p.absent).length;
-        const total   = patients.length;
+        const done    = patients.filter(p => p.done  || p._done).length;
+        const absent  = patients.filter(p => p.absent|| p._absent).length;
+        const reste   = patients.filter(p => !p.done && !p._done && !p.absent && !p._absent).length;
+        const caTot   = patients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+        const nbCotAuto = patients.filter(p => p._cotation?.auto).length;
+        const nbCotManu = patients.filter(p => p._cotation?.validated && !p._cotation?.auto).length;
 
         titre.textContent     = isBilan ? '🏁 Bilan de la tournée' : '📋 État de la tournée';
         sousTitre.textContent = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
 
-        /* Stats résumé */
         const pill = (ico, val, label, color) =>
           `<div style="flex:1;min-width:80px;text-align:center;padding:10px;background:${color};border-radius:10px">
             <div style="font-size:20px">${ico}</div>
             <div style="font-family:var(--fs);font-size:18px;font-weight:700;color:var(--t)">${val}</div>
             <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${label}</div>
           </div>`;
+
         statsEl.innerHTML =
-          pill('✅', done,   'Terminés',  'rgba(0,212,170,.08)')  +
-          pill('❌', absent, 'Absents',   'rgba(255,95,109,.08)') +
-          pill('⏳', reste,  'Restants',  'rgba(255,181,71,.08)') +
-          pill('👥', total,  'Total',     'var(--s)');
+          pill('✅', done,              'Visités',    'rgba(0,212,170,.08)')  +
+          pill('❌', absent,            'Absents',    'rgba(255,95,109,.08)') +
+          pill('⏳', reste,             'Restants',   'rgba(255,181,71,.08)') +
+          pill('💶', caTot.toFixed(0)+'€','CA total', 'rgba(34,197,94,.07)');
+
+        /* Bandeau récap cotations si bilan */
+        const bilanBand = isBilan ? `
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 6px">
+            ${nbCotManu ? `<span style="font-size:11px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:3px 10px">✍️ ${nbCotManu} manuelle${nbCotManu>1?'s':''}</span>` : ''}
+            ${nbCotAuto ? `<span style="font-size:11px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border-radius:20px;padding:3px 10px">⚡ ${nbCotAuto} auto-générée${nbCotAuto>1?'s':''}</span>` : ''}
+          </div>
+          ${nbCotAuto ? `<div style="font-size:12px;color:var(--m);background:rgba(79,168,255,.05);border:1px solid rgba(79,168,255,.15);border-radius:8px;padding:10px;margin-bottom:10px">
+            💡 Les cotations <strong>⚡ auto</strong> ont été générées automatiquement. Cliquez sur <strong>🩺 Corriger</strong> pour les vérifier avant envoi CPAM.
+          </div>` : ''}` : '';
 
         /* Liste patients */
         if (!patients.length) {
-          listeEl.innerHTML = '<div class="ai wa" style="text-align:center;padding:24px">Aucun patient chargé dans cette tournée.</div>';
+          listeEl.innerHTML = bilanBand + '<div class="ai wa" style="text-align:center;padding:24px">Aucun patient chargé.</div>';
         } else {
-          listeEl.innerHTML = patients.map((p, i) => {
-            const nom    = p.description || p.texte || p.label || p.summary || ('Patient ' + (i + 1));
-            const heure  = p.heure_soin || p.heure || p.time_str || '';
-            const statut = p.done ? '✅ Terminé' : p.absent ? '❌ Absent' : '⏳ En attente';
-            const couleur= p.done ? 'rgba(0,212,170,.1)' : p.absent ? 'rgba(255,95,109,.08)' : 'var(--s)';
-            const border = p.done ? '1px solid rgba(0,212,170,.25)' : p.absent ? '1px solid rgba(255,95,109,.2)' : '1px solid var(--b)';
-            return `<div style="background:${couleur};border:${border};border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          listeEl.innerHTML = bilanBand + patients.map((p, i) => {
+            const nom     = [p.prenom, p.nom].filter(Boolean).join(' ') ||
+                            p.description || p.texte || p.label || ('Patient ' + (i+1));
+            const heure   = p.heure_soin || p.heure || p.time_str || '';
+            const isDone  = p.done || p._done;
+            const isAbs   = p.absent || p._absent;
+            const statut  = isDone ? '✅ Visité' : isAbs ? '❌ Absent' : '⏳ En attente';
+            const bg      = isDone ? 'rgba(0,212,170,.06)' : isAbs ? 'rgba(255,95,109,.06)' : 'var(--s)';
+            const border  = isDone ? '1px solid rgba(0,212,170,.2)' : isAbs ? '1px solid rgba(255,95,109,.15)' : '1px solid var(--b)';
+            const hasCot  = p._cotation?.validated;
+            const cotBadge = hasCot
+              ? `<span style="font-size:10px;font-family:var(--fm);background:${p._cotation.auto?'rgba(79,168,255,.12)':'rgba(0,212,170,.12)'};color:${p._cotation.auto?'var(--a2)':'var(--a)'};border-radius:20px;padding:1px 7px;margin-left:5px">${p._cotation.auto?'⚡':' ✍️'} ${parseFloat(p._cotation.total||0).toFixed(2)} €</span>`
+              : '';
+            const btnLabel = hasCot ? '🩺 Corriger' : '🩺 Coter';
+            return `<div style="background:${bg};border:${border};border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
               <div style="flex:1;min-width:0">
-                <div style="font-weight:600;font-size:14px;color:var(--t);margin-bottom:2px">${nom}</div>
-                <div style="font-size:12px;color:var(--m);font-family:var(--fm)">${heure ? '⏰ ' + heure + ' · ' : ''}${statut}${p.urgence ? ' · 🚨 Urgent' : ''}</div>
+                <div style="font-weight:600;font-size:13px;color:var(--t);margin-bottom:2px">${nom}${cotBadge}</div>
+                <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${heure?'⏰ '+heure+' · ':''}${statut}${p.urgence?' · 🚨 Urgent':''}</div>
               </div>
-              <button class="btn bp bsm" onclick="ouvrirCotationDepuisEtat(${i})" style="flex-shrink:0;font-size:11px;padding:6px 12px">🩺 Cotation</button>
+              <button class="btn bp bsm" onclick="ouvrirCotationDepuisEtat(${i})" style="flex-shrink:0;font-size:11px;padding:6px 12px">${btnLabel}</button>
             </div>`;
           }).join('');
         }
@@ -793,17 +893,17 @@
       /* ── Ouvrir la cotation d'un patient depuis la modale ── */
       function ouvrirCotationDepuisEtat(idx) {
         fermerEtatTournee();
+        /* Utiliser le snapshot stocké dans la modale (data attr) */
+        const patients = APP.get('uberPatients') || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
         if (typeof openCotationPatient === 'function') {
           openCotationPatient(idx);
-        } else if (typeof navTo === 'function') {
-          /* Fallback : aller sur la vue cotation en pré-remplissant */
-          const patients = APP.get('uberPatients') || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+        } else {
           const p = patients[idx];
           if (p) {
             const txt = document.getElementById('f-txt');
-            if (txt) txt.value = p.description || p.texte || p.acte || '';
+            if (txt) txt.value = p.description || p.texte || '';
           }
-          navTo('cot', null);
+          if (typeof navTo === 'function') navTo('cot', null);
         }
       }
 
