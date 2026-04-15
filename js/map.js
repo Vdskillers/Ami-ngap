@@ -844,16 +844,56 @@ async function useLiveMyLocation() {
           APP.markers.push(marker);
         });
 
-        // Polyline de la route
+        // ── Tracé de la route sur route réelle (OSRM) ──────────────────────
         var allPts = [];
         if (startPoint && startPoint.lat && startPoint.lng) allPts.push([startPoint.lat, startPoint.lng]);
         withCoords.forEach(function(p) { allPts.push([p.lat, p.lng]); });
-        if (allPts.length >= 2) {
-          APP._routePolyline = L.polyline(allPts, { color:'#00d4aa', weight:3, opacity:0.7, dashArray:'6,8' }).addTo(APP.map);
-        }
 
-        // Ajuster la vue
-        APP.map.fitBounds(L.latLngBounds(allPts), { padding:[40,40], maxZoom:15 });
+        if (allPts.length >= 2) {
+          // Toujours afficher une polyline droite immédiatement (fallback visible)
+          APP._routePolyline = L.polyline(allPts, {
+            color: '#00d4aa', weight: 2.5, opacity: 0.35, dashArray: '5,7'
+          }).addTo(APP.map);
+
+          // Ajuster la vue dès maintenant avec les points connus
+          APP.map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 });
+
+          // Puis charger la géométrie routière réelle depuis OSRM en arrière-plan
+          (async function() {
+            try {
+              const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
+              const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
+                + '?overview=full&geometries=geojson&steps=false';
+              const res  = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+              const data = await res.json();
+
+              if (data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+
+              const geojson = data.routes[0].geometry; // GeoJSON LineString
+              // Convertir [lng, lat] → [lat, lng] pour Leaflet
+              const latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
+
+              // Supprimer la polyline droite temporaire
+              if (APP._routePolyline) {
+                try { APP.map.removeLayer(APP._routePolyline); } catch(_) {}
+                APP._routePolyline = null;
+              }
+
+              // Dessiner la vraie route sur les routes
+              APP._routePolyline = L.polyline(latlngs, {
+                color:   '#00d4aa',
+                weight:  4,
+                opacity: 0.85,
+              }).addTo(APP.map);
+
+              // Ré-ajuster la vue sur la vraie géométrie
+              APP.map.fitBounds(APP._routePolyline.getBounds(), { padding: [40, 40], maxZoom: 15 });
+
+            } catch(e) {
+              // Silencieux — la polyline droite reste en fallback
+            }
+          })();
+        }
 
         // Forcer recalcul taille Leaflet (évite la carte grise après navigation)
         setTimeout(function() { try { APP.map.invalidateSize(); } catch(_){} }, 150);
