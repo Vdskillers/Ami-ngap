@@ -96,6 +96,51 @@ window.addEventListener('offline', () => { _updateQueueBadge(); showToast('📡 
    STATISTIQUES AVANCÉES
    ═══════════════════════════════════════════════ */
 
+/* ─────────────────────────────────────────────────────────────────────────
+   _buildHeureIndex() — construit un index { "YYYY-MM-DD": "HH:MM" }
+   depuis les données locales de l'utilisateur connecté (planning + tournée).
+   ⚠️  Isolation garantie : la clé localStorage est ami_planning_<userId>
+       → chaque utilisateur (infirmière OU admin) ne lit que ses propres heures.
+       Pour les admins, heure_soin est retiré de la réponse API (RGPD/HDS),
+       mais ils voient leurs propres heures de test via ce mécanisme local.
+───────────────────────────────────────────────────────────────────────── */
+function _buildHeureIndex() {
+  const idx = {};
+
+  // ── Source 1 : planning sauvegardé en localStorage (ami_planning_<userId>) ──
+  // Clé isolée par utilisateur — aucun risque de croiser les données entre comptes.
+  try {
+    let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : 'local';
+    const planKey = 'ami_planning_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const raw = localStorage.getItem(planKey);
+    if (raw) {
+      const data = JSON.parse(raw);
+      const patients = Array.isArray(data.patients) ? data.patients
+                     : Array.isArray(data)           ? data
+                     : [];
+      patients.forEach(p => {
+        const heure = (p.heure_soin || p.heure_preferee || p.heure || '').trim().slice(0, 5);
+        const date  = (p.date_soin  || p.date || '').slice(0, 10);
+        if (date && heure && /^\d{1,2}:\d{2}/.test(heure)) idx[date] = heure;
+      });
+    }
+  } catch {}
+
+  // ── Source 2 : APP.importedData en mémoire (tournée du jour) ──────────────
+  try {
+    const pts = (typeof APP !== 'undefined')
+      ? (APP.importedData?.patients || APP.importedData?.entries || [])
+      : [];
+    pts.forEach(p => {
+      const heure = (p.heure_soin || p.heure_preferee || p.heure || '').trim().slice(0, 5);
+      const date  = (p.date_soin  || p.date || '').slice(0, 10);
+      if (date && heure && /^\d{1,2}:\d{2}/.test(heure)) idx[date] = heure;
+    });
+  } catch {}
+
+  return idx;
+}
+
 async function loadStatsAvancees() {
   const el = $('stats-avancees-body');
   if (!el) return;
@@ -111,7 +156,24 @@ async function loadStatsAvancees() {
 
     const arr3 = Array.isArray(m3?.data) ? m3.data : [];
     const arr2 = Array.isArray(m2?.data) ? m2.data : [];
-    const arr1 = Array.isArray(m1?.data) ? m1.data : [];
+    let   arr1 = Array.isArray(m1?.data) ? m1.data : [];
+
+    // ── Enrichissement horaire depuis le planning local de l'utilisateur ──────
+    // Pour les admins : heure_soin est retiré de la réponse API (RGPD/HDS — worker.js:734).
+    // On récupère les heures depuis le planning local isolé par userId (ami_planning_<uid>).
+    // Pour les infirmières : complète les cotations où heure_soin est null (ex: import ICS).
+    // Dans les deux cas, l'isolation est garantie — chacun ne lit que sa propre clé.
+    try {
+      const heureIdx = _buildHeureIndex();
+      if (Object.keys(heureIdx).length) {
+        arr1 = arr1.map(r => {
+          if (r.heure_soin) return r; // déjà renseigné, on ne touche pas
+          const date = (r.date_soin || '').slice(0, 10);
+          if (date && heureIdx[date]) return { ...r, heure_soin: heureIdx[date] };
+          return r;
+        });
+      }
+    } catch {}
 
     renderStatsAvancees(arr1, arr2, arr3);
   } catch(e) {
@@ -213,35 +275,47 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
 
 function _renderHeureStats(arr) {
   const byHour = {};
+
+  // Pré-charger l'index horaire local (planning isolé par userId)
+  // Sert de source de repli quand heure_soin n'est pas dans la réponse API
+  // (ex : admin dont heure_soin est retiré côté worker pour RGPD,
+  //  ou infirmière dont les cotations ICS n'ont pas d'heure explicite).
+  const heureIdx = _buildHeureIndex();
+
   arr.forEach(r => {
     let h = '';
 
-    // Priorité 1 : heure_soin ("HH:MM" ou "HH:MM:SS")
+    // Priorité 1 : heure_soin retournée par l'API ("HH:MM" ou "HH:MM:SS")
     const hSoin = (r.heure_soin || '').trim().slice(0, 2);
     if (hSoin && !isNaN(parseInt(hSoin))) h = hSoin;
 
-    // Priorité 2 : extraire l'heure depuis date_soin si c'est un timestamp ISO
-    // ex : "2024-01-15T14:30:00" ou "2024-01-15T14:30:00.000Z"
+    // Priorité 2 : croiser avec le planning local (ami_planning_<userId>)
+    // Garantit que l'admin voit ses heures de test même si heure_soin est masqué par l'API.
+    if (!h) {
+      const date = (r.date_soin || '').slice(0, 10);
+      if (date && heureIdx[date]) {
+        const hLocal = heureIdx[date].trim().slice(0, 2);
+        if (!isNaN(parseInt(hLocal))) h = hLocal;
+      }
+    }
+
+    // Priorité 3 : timestamp ISO dans date_soin ("2024-01-15T14:30:00")
     if (!h && r.date_soin && r.date_soin.includes('T')) {
       const timePart = r.date_soin.split('T')[1] || '';
       const hIso = timePart.slice(0, 2);
-      if (hIso && !isNaN(parseInt(hIso))) h = hIso;
+      if (hIso && !isNaN(parseInt(hIso)) && parseInt(hIso) < 24) h = hIso;
     }
 
-    // Priorité 3 : extraire l'heure depuis notes/description
-    // ex : "14h30", "14:30", "14H", "à 9h", "09h00", "matin" → 9, "après-midi" → 14, "soir" → 19
+    // Priorité 4 : texte libre (notes, description)
+    // "14h30", "à 9h", "matin", "après-midi", "soir"
     if (!h) {
       const txt = (r.notes || r.description || r.texte || '').toLowerCase();
       const matchH = txt.match(/\b(\d{1,2})[h:]\d{0,2}\b/);
       if (matchH) {
         h = String(parseInt(matchH[1])).padStart(2, '0');
-      } else if (/matin\b|morning/.test(txt)) {
-        h = '09';
-      } else if (/apr[eè]s.?midi\b|afternoon/.test(txt)) {
-        h = '14';
-      } else if (/\bsoir\b|evening/.test(txt)) {
-        h = '19';
-      }
+      } else if (/matin\b|morning/.test(txt))          h = '09';
+      else if (/apr[eè]s.?midi\b|afternoon/.test(txt)) h = '14';
+      else if (/\bsoir\b|evening/.test(txt))           h = '19';
     }
 
     if (h && !isNaN(parseInt(h))) {
@@ -249,7 +323,16 @@ function _renderHeureStats(arr) {
       if (k >= 0 && k <= 23) byHour[k] = (byHour[k] || 0) + 1;
     }
   });
-  if (!Object.keys(byHour).length) return '<div class="ai in">Renseignez l\'heure des soins pour voir l\'analyse horaire.</div>';
+
+  if (!Object.keys(byHour).length) {
+    return `<div class="ai in" style="display:flex;flex-direction:column;gap:6px;padding:12px 0">
+      <span>Aucune heure de soin détectée sur cette période.</span>
+      <span style="font-size:11px;color:var(--m);font-family:var(--fm);line-height:1.5">
+        💡 Renseignez le champ <strong>Heure du soin</strong> lors de la cotation,
+        ou importez un planning avec des créneaux horaires — le graphique apparaîtra automatiquement.
+      </span>
+    </div>`;
+  }
 
   const max = Math.max(...Object.values(byHour), 1);
   const hours = Array.from({length:24},(_,i)=>i);
