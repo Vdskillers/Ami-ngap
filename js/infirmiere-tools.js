@@ -606,7 +606,6 @@ function _saveOrdos(ordos) {
 async function _loadOrdosFromCarnet() {
   try {
     if (typeof _idbGetAll !== 'function' || typeof _dec !== 'function') return [];
-    // Chercher le nom de la store patients (défini dans patients.js)
     const STORE = (typeof PATIENTS_STORE !== 'undefined') ? PATIENTS_STORE : 'patients';
     const rows  = await _idbGetAll(STORE);
     const ordos = [];
@@ -614,32 +613,34 @@ async function _loadOrdosFromCarnet() {
       const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
       const nomAff = [p.prenom, p.nom].filter(Boolean).join(' ') || p.nom || 'Patient';
 
-      // Lire le champ ordonnance/ordonnances de la fiche
-      const ordoData = p.ordonnance || p.ordonnances || p.ordo;
-      if (!ordoData) continue;
+      // Lire le tableau ordonnances[] (nouveau format)
+      const list = Array.isArray(p.ordonnances) ? p.ordonnances : [];
 
-      const list = Array.isArray(ordoData) ? ordoData : [ordoData];
+      // Rétrocompatibilité : migrer ordo_date ancien format
+      if (!list.length && p.ordo_date) {
+        list.push({
+          id:              'legacy_' + row.id,
+          date_expiration: p.ordo_date,
+          actes:           '',
+          medecin:         p.medecin || '',
+          duree:           30,
+        });
+      }
+
       for (const o of list) {
-        if (!o) continue;
-        const dateDebut = o.date || o.date_debut || o.date_prescription || '';
-        const duree     = parseInt(o.duree || o.duree_validite || 30);
-        const actes     = o.actes || o.acte || o.description || o.texte || '';
-        const medecin   = o.medecin || o.prescripteur || '';
-
-        if (!dateDebut) continue;
-        const dateExpir = new Date(dateDebut);
-        dateExpir.setDate(dateExpir.getDate() + duree);
-
+        if (!o.date_expiration) continue;
         ordos.push({
-          id:             `carnet_${row.id}_${dateDebut}`,
+          id:             `carnet_${row.id}_${o.id || o.date_expiration}`,
           patient:        nomAff,
           patient_id:     row.id,
-          medecin,
-          actes:          typeof actes === 'string' ? actes : JSON.stringify(actes),
-          duree,
-          dateDebut,
-          dateExpiration: dateExpir.toISOString().split('T')[0],
+          medecin:        o.medecin || '',
+          actes:          typeof o.actes === 'string' ? o.actes : JSON.stringify(o.actes || ''),
+          duree:          o.duree || 30,
+          dateDebut:      o.date_prescription || '',
+          dateExpiration: o.date_expiration,
+          notes:          o.notes || '',
           _source:        'carnet',
+          _ordo_id:       o.id,
         });
       }
     }
@@ -671,13 +672,46 @@ async function addOrdonnance() {
 
   const dateExpir = new Date(date);
   dateExpir.setDate(dateExpir.getDate() + duree);
+  const dateExpStr = dateExpir.toISOString().split('T')[0];
 
+  const ordo = {
+    id:               'ordo_' + Date.now(),
+    date_prescription: date,
+    date_expiration:   dateExpStr,
+    duree, actes, medecin, notes: '',
+    created_at: new Date().toISOString(),
+  };
+
+  /* ── Tenter d'écrire dans le carnet patient si le patient existe ── */
+  let savedToCarnet = false;
+  try {
+    if (typeof _idbGetAll === 'function' && typeof _dec === 'function' && typeof _enc === 'function' && typeof _idbPut === 'function') {
+      const STORE = (typeof PATIENTS_STORE !== 'undefined') ? PATIENTS_STORE : 'patients';
+      const rows  = await _idbGetAll(STORE);
+      const patientNorm = patient.toLowerCase().replace(/\s+/g,' ').trim();
+      const row = rows.find(r => {
+        const nom = `${r.prenom||''} ${r.nom}`.toLowerCase().trim();
+        const nom2 = `${r.nom} ${r.prenom||''}`.toLowerCase().trim();
+        return nom.includes(patientNorm) || nom2.includes(patientNorm) || patientNorm.includes((r.nom||'').toLowerCase());
+      });
+      if (row) {
+        const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+        if (!pat.ordonnances) pat.ordonnances = [];
+        pat.ordonnances.push(ordo);
+        pat.updated_at = new Date().toISOString();
+        await _idbPut(STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+        savedToCarnet = true;
+      }
+    }
+  } catch (e) { console.warn('[AMI] Écriture ordo carnet KO:', e.message); }
+
+  /* ── Toujours sauvegarder aussi en localStorage (vue unifiée) ── */
   const ordos = _loadOrdos();
   ordos.push({
-    id: Date.now(), patient, medecin, actes, duree,
-    dateDebut: date,
-    dateExpiration: dateExpir.toISOString().split('T')[0],
-    _source: 'manuel',
+    id: ordo.id, patient, medecin, actes, duree,
+    dateDebut: date, dateExpiration: dateExpStr,
+    _source: savedToCarnet ? 'carnet' : 'manuel',
+    _patient_id: null,
   });
   _saveOrdos(ordos);
 
@@ -688,7 +722,10 @@ async function addOrdonnance() {
   if (msgEl)   msgEl.style.display = 'none';
 
   await renderOrdonnances();
-  if (typeof showToast === 'function') showToast('✅ Ordonnance enregistrée.');
+  const msg = savedToCarnet
+    ? `✅ Ordonnance enregistrée et ajoutée dans la fiche de ${patient}.`
+    : `✅ Ordonnance enregistrée. (Patient non trouvé dans le carnet — saisie manuelle)`;
+  if (typeof showToast === 'function') showToast(msg);
 }
 
 function deleteOrdonnance(id) {

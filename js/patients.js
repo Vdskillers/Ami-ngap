@@ -271,6 +271,17 @@ async function savePatient() {
     ...(existingLat !== null ? { lat: existingLat, lng: existingLng } : {}),
   };
 
+  // Conserver le tableau ordonnances[] existant lors d'une modification
+  if (editId) {
+    const rows0 = await _idbGetAll(PATIENTS_STORE);
+    const row0  = rows0.find(r => r.id === editId);
+    if (row0) {
+      const prev0 = _dec(row0._data) || {};
+      if (prev0.ordonnances) patient.ordonnances = prev0.ordonnances;
+      if (prev0.cotations)   patient.cotations   = prev0.cotations;
+    }
+  }
+
   // Si l'adresse a été modifiée, on invalide les coordonnées GPS pour forcer un re-géocodage
   if (editId && existingLat !== null) {
     const rows2 = await _idbGetAll(PATIENTS_STORE);
@@ -362,11 +373,35 @@ async function openPatientDetail(id) {
   const el = $('patient-detail');
   if (!el) return;
 
-  const ordoAlert = p.ordo_date && new Date(p.ordo_date) <= new Date(Date.now() + 30*24*3600000);
+  // Migrer ordo_date → ordonnances[] si nécessaire
+  if (p.ordo_date && !p.ordonnances?.length) {
+    p.ordonnances = [{
+      id: 'legacy_' + p.id,
+      actes:          '',
+      medecin:        p.medecin || '',
+      date_prescription: '',
+      date_expiration: p.ordo_date,
+      duree:          30,
+      notes:          '',
+      created_at:     new Date().toISOString(),
+    }];
+  }
+  if (!p.ordonnances) p.ordonnances = [];
+
+  const ordoAlert = p.ordonnances.some(o => {
+    const exp = new Date(o.date_expiration || o.ordo_date || '');
+    return !isNaN(exp) && exp <= new Date(Date.now() + 30*24*3600000);
+  });
+
+  // ── Render onglets ──────────────────────────────────────────────────────
+  const tabStyle = (active) => active
+    ? 'padding:8px 16px;font-size:12px;font-family:var(--fm);background:var(--a);color:#000;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;font-weight:600'
+    : 'padding:8px 16px;font-size:12px;font-family:var(--fm);background:var(--s);color:var(--m);border:1px solid var(--b);border-radius:20px;cursor:pointer;white-space:nowrap';
 
   el.innerHTML = `
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <!-- En-tête patient -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:12px">
         <div style="display:flex;align-items:center;gap:12px">
           <div class="avat" style="width:52px;height:52px;font-size:20px;flex-shrink:0">${((p.prenom||'?')[0]+(p.nom||'?')[0]).toUpperCase()}</div>
           <div>
@@ -377,100 +412,296 @@ async function openPatientDetail(id) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn bp bsm" onclick="coterDepuisPatient('${id}')">⚡ Coter</button>
           <button class="btn bs bsm" onclick="editPatient('${id}')">✏️ Modifier</button>
-          <button class="btn bs bsm" onclick="$('patient-detail').innerHTML='';$('patients-list').style.display='block'">← Retour</button>
+          <button class="btn bs bsm" onclick="$('patient-detail').innerHTML='';$('patient-detail').style.display='none';$('patients-list').style.display='block'">← Retour</button>
         </div>
       </div>
-      ${ordoAlert ? '<div class="ai wa" style="margin-bottom:14px">⚠️ Ordonnance à renouveler avant le '+p.ordo_date+'</div>' : ''}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;flex-wrap:wrap">
-        ${p.adresse ? `<div style="grid-column:1/-1"><div class="lbl" style="margin-bottom:6px">📍 Adresse</div>
-          <div style="font-size:13px;color:var(--t)">${p.adresse}</div>
-          ${p.lat
-            ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                ✅ GPS : ${parseFloat(p.lat).toFixed(5)}, ${parseFloat(p.lng).toFixed(5)}
-                <button class="btn bs bsm" style="font-size:10px;padding:2px 8px;color:var(--w);border-color:rgba(255,181,71,.3)" onclick="_forceRegeocode('${id}')" title="Recalculer les coordonnées GPS (si adresse incorrecte dans la tournée)">🔄 Corriger GPS</button>
-              </div>`
-            : `<button class="btn bv bsm" style="margin-top:6px;font-size:11px;padding:4px 10px" onclick="_geocodeAndSaveSingle('${id}')">📡 Géocoder l'adresse</button>`}
-        </div>` : ''}
-        <div><div class="lbl" style="margin-bottom:6px">Couverture</div>
-          <div style="font-size:13px;color:var(--m)">${p.amo||'—'} <span style="color:var(--a2)">${p.amc||''}</span></div></div>
-        <div><div class="lbl" style="margin-bottom:6px">Médecin</div>
-          <div style="font-size:13px">${p.medecin||'—'}</div></div>
-        ${p.allergies ? `<div><div class="lbl" style="margin-bottom:6px;color:var(--d)">Allergies</div><div style="font-size:13px;color:var(--d)">${p.allergies}</div></div>` : ''}
-        ${p.pathologies ? `<div><div class="lbl" style="margin-bottom:6px">Pathologies</div><div style="font-size:13px">${p.pathologies}</div></div>` : ''}
-        ${p.traitements ? `<div><div class="lbl" style="margin-bottom:6px">Traitements</div><div style="font-size:13px">${p.traitements}</div></div>` : ''}
-        ${p.contact_nom ? `<div><div class="lbl" style="margin-bottom:6px">Contact urgence</div><div style="font-size:13px">${p.contact_nom} ${p.contact_tel?'— '+p.contact_tel:''}</div></div>` : ''}
-        ${p.heure_preferee ? `<div style="grid-column:1/-1"><div class="lbl" style="margin-bottom:6px;color:var(--a)">🕐 Heure de passage préférée</div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="font-size:18px;font-family:var(--fm);color:var(--a);font-weight:600">${p.heure_preferee}</div>
-            ${p.respecter_horaire ? `<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 10px;border-radius:20px;font-family:var(--fm)">🔒 CONTRAINTE ACTIVE — tournée mixte</span>` : `<span style="font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.25);padding:2px 10px;border-radius:20px;font-family:var(--fm)">⏰ Indicatif — mode IA</span>`}
-          </div>
-        </div>` : ''}
+      ${ordoAlert ? '<div class="ai wa" style="margin-bottom:8px">⚠️ Une ou plusieurs ordonnances arrivent à expiration dans moins de 30 jours.</div>' : ''}
+
+      <!-- Barre d'onglets -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px" id="pat-tabs">
+        <button id="tab-infos"   style="${tabStyle(true)}"  onclick="_patTab('infos','${id}')">📋 Infos</button>
+        <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
+        <button id="tab-cotations" style="${tabStyle(false)}" onclick="_patTab('cotations','${id}')">🧾 Cotations ${p.cotations?.length ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.cotations.length+'</span>' : ''}</button>
+        <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
       </div>
-      ${p.notes ? `<div class="ai in">${p.notes}</div>` : ''}
     </div>
-    ${p.cotations?.length ? `
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-        <div class="ct" style="margin-bottom:0">🧾 Historique des cotations</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${p.cotations.slice().reverse().map((c, ri) => {
-          const realIdx = p.cotations.length - 1 - ri;
-          const dateObj = new Date(c.date);
-          const dateStr = dateObj.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
-          const heureStr = c.heure || dateObj.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-          const actesList = (c.actes||[]).map(a => `<div style="font-size:12px;color:var(--m);padding:2px 0">• ${a.code||a.nom||''} — ${parseFloat(a.total||0).toFixed(2)} €</div>`).join('');
-          return `<div style="border:1px solid var(--b);border-radius:var(--r);padding:12px 14px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
-              <div style="font-family:var(--fm);font-size:11px;color:var(--m)">${dateStr} à ${heureStr}${c.soin?' · '+c.soin:''}</div>
-              <div style="display:flex;gap:6px">
-                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editCotationPatient('${id}',${realIdx})">✏️</button>
-                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteCotationPatient('${id}',${realIdx})">🗑️</button>
-              </div>
-            </div>
-            ${actesList}
-            <div style="font-size:13px;font-weight:600;color:var(--a);margin-top:6px">Total : ${parseFloat(c.total||0).toFixed(2)} €</div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>` : ''}
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-        <div class="ct" style="margin-bottom:0">📝 Historique des soins</div>
-        ${notes.length ? `<button class="btn bs bsm" style="font-size:11px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteAllSoinNotes('${id}')">🗑️ Tout supprimer</button>` : ''}
-      </div>
-      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-        <textarea id="new-note-txt" placeholder="Observation, soin réalisé aujourd'hui..." style="flex:1;min-height:70px;min-width:200px" maxlength="500"></textarea>
-        <button class="btn bp bsm" style="align-self:flex-end" onclick="addSoinNote('${id}')">💾 Ajouter</button>
-      </div>
-      <div id="notes-list">
-        ${notes.length ? notes.slice().reverse().map(n => `
-          <div data-note-id="${n.id}" style="border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:4px">
-              <div style="font-size:11px;color:var(--m);font-family:var(--fm)">
-                ${new Date(n.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})}
-                <span style="color:var(--a);font-weight:600"> à ${n.heure || new Date(n.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
-              </div>
-              <div style="display:flex;gap:6px">
-                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editSoinNote(${n.id},'${id}')">✏️</button>
-                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteSoinNote(${n.id},'${id}')">🗑️</button>
-              </div>
-            </div>
-            <div id="note-text-${n.id}" style="font-size:13px;white-space:pre-wrap">${n.texte}</div>
-            <div id="note-edit-${n.id}" style="display:none;margin-top:8px">
-              <textarea style="width:100%;min-height:60px;font-size:13px;box-sizing:border-box" maxlength="500">${n.texte}</textarea>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <button class="btn bp bsm" style="font-size:11px" onclick="saveSoinNote(${n.id},'${id}')">💾 Enregistrer</button>
-                <button class="btn bs bsm" style="font-size:11px" onclick="cancelEditNote(${n.id})">Annuler</button>
-              </div>
-            </div>
-          </div>`).join('')
-        : '<div style="color:var(--m);font-size:13px">Aucune note. Ajoutez la première observation ci-dessus.</div>'}
-      </div>
-    </div>`;
+
+    <!-- Contenu onglets -->
+    <div id="pat-tab-content"></div>`;
+
+  // Rendre l'onglet par défaut
+  _patTabRender('infos', id, p, notes);
 
   $('patients-list').style.display = 'none';
   el.style.display = 'block';
+}
+
+/* ── Sélecteur d'onglet ── */
+function _patTab(tab, id) {
+  ['infos','ordos','cotations','notes'].forEach(t => {
+    const btn = $('tab-'+t);
+    if (!btn) return;
+    if (t === tab) {
+      btn.style.background = 'var(--a)'; btn.style.color = '#000';
+      btn.style.border = 'none'; btn.style.fontWeight = '600';
+    } else {
+      btn.style.background = 'var(--s)'; btn.style.color = 'var(--m)';
+      btn.style.border = '1px solid var(--b)'; btn.style.fontWeight = '';
+    }
+  });
+  // Recharger les données fraîches pour l'onglet
+  (async () => {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === id);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    if (!p.ordonnances) p.ordonnances = [];
+    const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
+    _patTabRender(tab, id, p, notes);
+  })();
+}
+
+/* ── Rendu de contenu par onglet ── */
+function _patTabRender(tab, id, p, notes) {
+  const el = $('pat-tab-content');
+  if (!el) return;
+
+  if (tab === 'infos') {
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex-wrap:wrap">
+          ${p.adresse ? `<div style="grid-column:1/-1">
+            <div class="lbl" style="margin-bottom:6px">📍 Adresse</div>
+            <div style="font-size:13px">${p.adresse}</div>
+            ${p.lat
+              ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  ✅ GPS : ${parseFloat(p.lat).toFixed(5)}, ${parseFloat(p.lng).toFixed(5)}
+                  <button class="btn bs bsm" style="font-size:10px;padding:2px 8px;color:var(--w);border-color:rgba(255,181,71,.3)" onclick="_forceRegeocode('${id}')">🔄 Corriger GPS</button>
+                </div>`
+              : `<button class="btn bv bsm" style="margin-top:6px;font-size:11px;padding:4px 10px" onclick="_geocodeAndSaveSingle('${id}')">📡 Géocoder</button>`}
+          </div>` : ''}
+          <div><div class="lbl" style="margin-bottom:4px">Couverture</div><div style="font-size:13px;color:var(--m)">${p.amo||'—'} <span style="color:var(--a2)">${p.amc||''}</span></div></div>
+          <div><div class="lbl" style="margin-bottom:4px">Médecin</div><div style="font-size:13px">${p.medecin||'—'}</div></div>
+          ${p.allergies ? `<div><div class="lbl" style="margin-bottom:4px;color:var(--d)">Allergies ⚠️</div><div style="font-size:13px;color:var(--d)">${p.allergies}</div></div>` : ''}
+          ${p.pathologies ? `<div><div class="lbl" style="margin-bottom:4px">Pathologies</div><div style="font-size:13px">${p.pathologies}</div></div>` : ''}
+          ${p.traitements ? `<div style="grid-column:1/-1"><div class="lbl" style="margin-bottom:4px">Traitements</div><div style="font-size:13px">${p.traitements}</div></div>` : ''}
+          ${p.contact_nom ? `<div><div class="lbl" style="margin-bottom:4px">Contact urgence</div><div style="font-size:13px">${p.contact_nom} ${p.contact_tel?'— '+p.contact_tel:''}</div></div>` : ''}
+          ${p.heure_preferee ? `<div><div class="lbl" style="margin-bottom:4px;color:var(--a)">🕐 Heure préférée</div>
+            <div style="font-size:16px;font-family:var(--fm);color:var(--a);font-weight:600">${p.heure_preferee}</div></div>` : ''}
+        </div>
+        ${p.notes ? `<div class="ai in" style="margin-top:12px">${p.notes}</div>` : ''}
+      </div>`;
+    return;
+  }
+
+  if (tab === 'ordos') {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const ordos = (p.ordonnances || []).slice().reverse();
+    el.innerHTML = `
+      <div class="card" style="margin-bottom:12px">
+        <div class="ct" style="margin-bottom:12px">💊 Ordonnances</div>
+        ${ordos.length ? ordos.map((o, ri) => {
+          const realIdx = (p.ordonnances.length - 1 - ri);
+          const exp = o.date_expiration ? new Date(o.date_expiration) : null;
+          const diffDays = exp ? Math.ceil((exp - today) / 86400000) : null;
+          const statut = diffDays === null ? '' : diffDays < 0 ? '🔴 Expirée' : diffDays <= 7 ? '🟠 Urgente' : diffDays <= 30 ? '🟡 Bientôt' : '🟢 Valide';
+          const statColor = diffDays === null ? 'var(--b)' : diffDays < 0 ? 'rgba(255,95,109,.2)' : diffDays <= 30 ? 'rgba(255,181,71,.2)' : 'rgba(0,212,170,.15)';
+          return `<div style="border:1px solid ${statColor};border-radius:10px;padding:12px 14px;margin-bottom:8px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+              <div>
+                ${o.medecin ? `<div style="font-size:12px;color:var(--m)">Dr ${o.medecin}</div>` : ''}
+                ${o.actes ? `<div style="font-size:13px;color:var(--t);margin-top:2px">${o.actes}</div>` : ''}
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                ${statut ? `<span style="font-size:10px;font-family:var(--fm);color:var(--t)">${statut}</span>` : ''}
+                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="_editOrdo('${id}',${realIdx})">✏️</button>
+                <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="_deleteOrdo('${id}',${realIdx})">🗑️</button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm)">
+              ${o.date_prescription ? 'Prescrite le '+new Date(o.date_prescription).toLocaleDateString('fr-FR')+' · ' : ''}
+              ${exp ? 'Expire le '+exp.toLocaleDateString('fr-FR')+(diffDays!==null?' ('+Math.abs(diffDays)+' j)':'') : ''}
+            </div>
+            ${o.notes ? `<div style="font-size:11px;color:var(--m);margin-top:4px">${o.notes}</div>` : ''}
+          </div>`;
+        }).join('') : '<div style="color:var(--m);font-size:13px;margin-bottom:12px">Aucune ordonnance enregistrée.</div>'}
+
+        <!-- Formulaire ajout/édition ordonnance -->
+        <div id="ordo-form-inline" style="background:var(--s);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:14px;margin-top:12px">
+          <div style="font-family:var(--fm);font-size:10px;color:var(--a);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px" id="ordo-form-title">➕ Ajouter une ordonnance</div>
+          <input type="hidden" id="ordo-edit-idx" value="-1">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
+            <div class="f"><label style="font-size:11px;color:var(--m)">Médecin prescripteur</label><input type="text" id="oi-medecin" placeholder="Dr. Martin"></div>
+            <div class="f"><label style="font-size:11px;color:var(--m)">Date de prescription</label><input type="date" id="oi-date-pres"></div>
+            <div class="f"><label style="font-size:11px;color:var(--m)">Date d'expiration</label><input type="date" id="oi-date-exp"></div>
+            <div class="f"><label style="font-size:11px;color:var(--m)">Durée (jours)</label><input type="number" id="oi-duree" placeholder="30" min="1" oninput="_calcOrdoExp()"></div>
+          </div>
+          <div class="f" style="margin-bottom:10px"><label style="font-size:11px;color:var(--m)">Actes prescrits</label><input type="text" id="oi-actes" placeholder="Injections SC 2x/jour, pansement..."></div>
+          <div class="f" style="margin-bottom:12px"><label style="font-size:11px;color:var(--m)">Notes</label><input type="text" id="oi-notes" placeholder="Observations..."></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn bp bsm" onclick="_saveOrdo('${id}')">💾 Enregistrer</button>
+            <button class="btn bs bsm" onclick="_cancelOrdoEdit()">Annuler</button>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (tab === 'cotations') {
+    el.innerHTML = `
+      <div class="card">
+        <div class="ct" style="margin-bottom:12px">🧾 Historique des cotations</div>
+        ${p.cotations?.length ? `
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${p.cotations.slice().reverse().map((c, ri) => {
+            const realIdx = p.cotations.length - 1 - ri;
+            const dateObj = new Date(c.date);
+            const dateStr = dateObj.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+            const heureStr = c.heure || dateObj.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+            const actesList = (c.actes||[]).map(a => `<div style="font-size:12px;color:var(--m);padding:2px 0">• ${a.code||a.nom||''} — ${parseFloat(a.total||0).toFixed(2)} €</div>`).join('');
+            const sourceBadge = c.source === 'tournee_auto'
+              ? `<span style="font-size:9px;background:rgba(79,168,255,.1);color:var(--a2);border-radius:20px;padding:1px 6px;margin-left:4px">⚡ Auto</span>`
+              : c.source === 'tournee'
+              ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;margin-left:4px">🚗 Tournée</span>`
+              : '';
+            return `<div style="border:1px solid var(--b);border-radius:var(--r);padding:12px 14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+                <div style="font-family:var(--fm);font-size:11px;color:var(--m)">${dateStr} à ${heureStr}${sourceBadge}${c.soin?' · '+c.soin.slice(0,40):''}</div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editCotationPatient('${id}',${realIdx})">✏️</button>
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteCotationPatient('${id}',${realIdx})">🗑️</button>
+                </div>
+              </div>
+              ${actesList}
+              <div style="font-size:13px;font-weight:600;color:var(--a);margin-top:6px">Total : ${parseFloat(c.total||0).toFixed(2)} €</div>
+            </div>`;
+          }).join('')}
+        </div>` : '<div style="color:var(--m);font-size:13px">Aucune cotation enregistrée pour ce patient.</div>'}
+      </div>`;
+    return;
+  }
+
+  if (tab === 'notes') {
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="ct" style="margin-bottom:0">📝 Notes de soins</div>
+          ${notes.length ? `<button class="btn bs bsm" style="font-size:11px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteAllSoinNotes('${id}')">🗑️ Tout supprimer</button>` : ''}
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <textarea id="new-note-txt" placeholder="Observation, soin réalisé aujourd'hui..." style="flex:1;min-height:70px;min-width:200px" maxlength="500"></textarea>
+          <button class="btn bp bsm" style="align-self:flex-end" onclick="addSoinNote('${id}')">💾 Ajouter</button>
+        </div>
+        <div id="notes-list">
+          ${notes.length ? notes.slice().reverse().map(n => `
+            <div data-note-id="${n.id}" style="border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:4px">
+                <div style="font-size:11px;color:var(--m);font-family:var(--fm)">
+                  ${new Date(n.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})}
+                  <span style="color:var(--a);font-weight:600"> à ${n.heure || new Date(n.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editSoinNote(${n.id},'${id}')">✏️</button>
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteSoinNote(${n.id},'${id}')">🗑️</button>
+                </div>
+              </div>
+              <div id="note-text-${n.id}" style="font-size:13px;white-space:pre-wrap">${n.texte}</div>
+              <div id="note-edit-${n.id}" style="display:none;margin-top:8px">
+                <textarea style="width:100%;min-height:60px;font-size:13px;box-sizing:border-box" maxlength="500">${n.texte}</textarea>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button class="btn bp bsm" style="font-size:11px" onclick="saveSoinNote(${n.id},'${id}')">💾 Enregistrer</button>
+                  <button class="btn bs bsm" style="font-size:11px" onclick="cancelEditNote(${n.id})">Annuler</button>
+                </div>
+              </div>
+            </div>`).join('')
+          : '<div style="color:var(--m);font-size:13px">Aucune note. Ajoutez la première observation ci-dessus.</div>'}
+        </div>
+      </div>`;
+  }
+}
+
+/* ── Calcul auto date expiration depuis durée ── */
+function _calcOrdoExp() {
+  const dateEl = $('oi-date-pres');
+  const durEl  = $('oi-duree');
+  const expEl  = $('oi-date-exp');
+  if (!dateEl?.value || !durEl?.value || !expEl) return;
+  const d = new Date(dateEl.value);
+  d.setDate(d.getDate() + parseInt(durEl.value));
+  expEl.value = d.toISOString().split('T')[0];
+}
+
+/* ── CRUD ordonnances dans la fiche patient ── */
+async function _saveOrdo(patientId) {
+  const medecin  = $('oi-medecin')?.value?.trim() || '';
+  const datePres = $('oi-date-pres')?.value || '';
+  const dateExp  = $('oi-date-exp')?.value || '';
+  const duree    = parseInt($('oi-duree')?.value) || 30;
+  const actes    = $('oi-actes')?.value?.trim() || '';
+  const notes    = $('oi-notes')?.value?.trim() || '';
+  const editIdx  = parseInt($('ordo-edit-idx')?.value ?? '-1');
+
+  if (!dateExp) { showToastSafe('⚠️ Indiquez au moins la date d\'expiration.'); return; }
+
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  if (!pat.ordonnances) pat.ordonnances = [];
+
+  const ordo = { id: editIdx >= 0 ? pat.ordonnances[editIdx].id : ('ordo_' + Date.now()), medecin, date_prescription: datePres, date_expiration: dateExp, duree, actes, notes, created_at: new Date().toISOString() };
+
+  if (editIdx >= 0) pat.ordonnances[editIdx] = ordo;
+  else pat.ordonnances.push(ordo);
+
+  pat.updated_at = new Date().toISOString();
+  await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+
+  showToastSafe('✅ Ordonnance enregistrée.');
+  checkOrdoExpiry();
+  // Rafraîchir l'onglet
+  _patTab('ordos', patientId);
+}
+
+function _editOrdo(patientId, idx) {
+  (async () => {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const o = p.ordonnances?.[idx];
+    if (!o) return;
+    const editIdxEl = $('ordo-edit-idx');  if (editIdxEl) editIdxEl.value = idx;
+    const titleEl   = $('ordo-form-title'); if (titleEl) titleEl.textContent = '✏️ Modifier l\'ordonnance';
+    if ($('oi-medecin'))   $('oi-medecin').value   = o.medecin || '';
+    if ($('oi-date-pres')) $('oi-date-pres').value = o.date_prescription || '';
+    if ($('oi-date-exp'))  $('oi-date-exp').value  = o.date_expiration || '';
+    if ($('oi-duree'))     $('oi-duree').value     = o.duree || 30;
+    if ($('oi-actes'))     $('oi-actes').value     = o.actes || '';
+    if ($('oi-notes'))     $('oi-notes').value     = o.notes || '';
+    $('ordo-form-inline')?.scrollIntoView({ behavior: 'smooth' });
+  })();
+}
+
+function _cancelOrdoEdit() {
+  const editIdxEl = $('ordo-edit-idx');  if (editIdxEl) editIdxEl.value = '-1';
+  const titleEl   = $('ordo-form-title'); if (titleEl) titleEl.textContent = '➕ Ajouter une ordonnance';
+  ['oi-medecin','oi-date-pres','oi-date-exp','oi-duree','oi-actes','oi-notes'].forEach(id => { const el=$(id); if(el) el.value=''; });
+}
+
+async function _deleteOrdo(patientId, idx) {
+  if (!confirm('Supprimer cette ordonnance ?')) return;
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  if (!pat.ordonnances) return;
+  pat.ordonnances.splice(idx, 1);
+  pat.updated_at = new Date().toISOString();
+  await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+  showToastSafe('🗑️ Ordonnance supprimée.');
+  checkOrdoExpiry();
+  _patTab('ordos', patientId);
 }
 
 /* Modifier un patient */
@@ -650,6 +881,43 @@ async function deleteCotationPatient(patientId, cotationIdx) {
 
 /* Vérification expiration ordonnances */
 async function checkOrdoExpiry() {
+  try {
+    await initPatientsDB();
+    const rows  = await _idbGetAll(PATIENTS_STORE);
+    const in30  = new Date(Date.now() + 30*24*3600000);
+    const alerts = [];
+
+    for (const r of rows) {
+      const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
+      const nomAff = `${p.prenom||''} ${p.nom}`.trim();
+
+      // Nouveau tableau ordonnances[]
+      if (p.ordonnances?.length) {
+        for (const o of p.ordonnances) {
+          const exp = new Date(o.date_expiration || '');
+          if (!isNaN(exp) && exp <= in30) {
+            alerts.push(`${nomAff} — ordonnance expire le ${exp.toLocaleDateString('fr-FR')}`);
+          }
+        }
+      }
+      // Rétrocompatibilité ordo_date
+      else if (p.ordo_date && new Date(p.ordo_date) <= in30) {
+        alerts.push(`${nomAff} — ordonnance avant le ${p.ordo_date}`);
+      }
+    }
+
+    const badge = $('patients-ordo-badge');
+    if (badge) {
+      badge.textContent = alerts.length > 0 ? `${alerts.length} ⚠️` : '';
+      badge.style.display = alerts.length > 0 ? 'inline' : 'none';
+    }
+    if (alerts.length > 0) {
+      showToastSafe(`📋 ${alerts.length} ordonnance(s) à renouveler prochainement.`);
+    }
+  } catch(e) {
+    console.warn('[AMI] checkOrdoExpiry KO:', e.message);
+  }
+}
   const rows = await _idbGetAll(PATIENTS_STORE);
   const in30 = new Date(); in30.setDate(in30.getDate() + 30);
   let alerts = [];
