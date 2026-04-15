@@ -101,12 +101,15 @@ async function loadStatsAvancees() {
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div></div>';
 
+  const period = document.getElementById('stats-period')?.value || 'month';
+  // Construire les 3 périodes à partir du select
+  const periodPrev = period === 'month' ? 'lastmonth' : (period === 'lastmonth' ? '3month' : '3month');
+
   try {
-    // Charger 3 mois pour comparatif
     const [m3, m2, m1] = await Promise.all([
       fetchAPI('/webhook/ami-historique?period=3month').catch(()=>({data:[]})),
-      fetchAPI('/webhook/ami-historique?period=lastmonth').catch(()=>({data:[]})),
-      fetchAPI('/webhook/ami-historique?period=month').catch(()=>({data:[]})),
+      fetchAPI(`/webhook/ami-historique?period=${periodPrev}`).catch(()=>({data:[]})),
+      fetchAPI(`/webhook/ami-historique?period=${period}`).catch(()=>({data:[]})),
     ]);
 
     const arr3 = Array.isArray(m3?.data) ? m3.data : [];

@@ -53,9 +53,9 @@ async function loadDash() {
   $('dash-body').style.display='none';
   $('dash-empty').style.display='none';
 
+  const period = document.getElementById('dash-period')?.value || 'month';
   const cache = loadDashCache();
 
-  // ✅ Affichage instantané du cache si disponible
   if (cache?.data?.length) {
     renderDashboard(cache.data);
     _showCacheInfo(cache);
@@ -64,7 +64,7 @@ async function loadDash() {
   }
 
   try {
-    const data = await fetchAPI('/webhook/ami-historique?period=month');
+    const data = await fetchAPI(`/webhook/ami-historique?period=${period}`);
     const arr  = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     if (!arr.length) {
       if (!cache?.data?.length) {

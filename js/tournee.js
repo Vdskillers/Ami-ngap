@@ -191,19 +191,36 @@ document.addEventListener('app:update', e => {
 
 /* Restauration du planning au login (après hydratation de S = bonne clé userId) */
 document.addEventListener('ami:login', () => {
-  // Attendre un tick pour que S.user.id soit disponible
   setTimeout(() => {
     _restorePlanningIfNeeded();
-  }, 100);
+  }, 200);
 });
 
 /* Restaurer APP.importedData depuis le planning sauvegardé si vide */
 function _restorePlanningIfNeeded() {
-  if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) return;
+  if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) {
+    _renderPlanningIfVisible();
+    return;
+  }
   const saved = _loadPlanning();
   if (saved?.length) {
-    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    // Assigner directement dans le state sans déclencher app:update (évite les effets de bord sur la carte)
+    if (APP.state) {
+      APP.state.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    } else {
+      APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    }
+    _renderPlanningIfVisible();
   }
+}
+
+/* Rendre le planning uniquement si la vue pla est actuellement visible */
+function _renderPlanningIfVisible() {
+  const view = document.getElementById('view-pla');
+  if (!view || view.style.display === 'none') return;
+  const patients = APP.importedData?.patients || APP.state?.importedData?.patients || [];
+  if (!patients.length) return;
+  renderPlanning({}).catch(() => {});
 }
 async function generatePlanningFromImport(){
   if(!APP.importedData){alert('Aucune donnée importée.');return;}
