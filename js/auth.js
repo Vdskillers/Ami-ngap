@@ -46,7 +46,7 @@ function checkAuth(){
   }
 }
 function showAuthOv(){$('auth-ov').classList.remove('hide');$('adm').classList.remove('show');$('app').style.display='none';}
-function showAdm(){$('auth-ov').classList.add('hide');$('adm').classList.add('show');$('app').style.display='none';loadAdm();loadAdmStats();}
+function showAdm(){$('auth-ov').classList.add('hide');$('adm').classList.add('show');$('app').style.display='none';loadAdm();if(typeof loadSystemHealth==='function')loadSystemHealth();}
 function goToApp(){$('adm').classList.remove('show');$('app').style.display='grid';updateNavMode();}
 function showApp(){
   if(!S?.token){ const session = ss.load(); if(session) S = session; }
@@ -111,7 +111,7 @@ function showApp(){
       liAdmin.className='ni';liAdmin.id='btn-goto-admin';
       liAdmin.innerHTML='<span class="nic">⚙️</span> Panneau admin';
       liAdmin.style.cssText='color:var(--d);background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);margin:4px 14px 8px;border-radius:var(--r);';
-      liAdmin.onclick=()=>{$('app').style.display='none';$('adm').classList.add('show');loadAdm();loadAdmStats();};
+      liAdmin.onclick=()=>{$('app').style.display='none';$('adm').classList.add('show');loadAdm();if(typeof loadSystemHealth==='function')loadSystemHealth();};
 
       // Bouton "Mon compte" (au-dessus du panneau admin)
       const liCompte=document.createElement('div');
@@ -142,7 +142,7 @@ function showApp(){
           document.getElementById('app').style.display='none';
           document.getElementById('adm').classList.add('show');
           if(typeof loadAdm==='function') loadAdm();
-          if(typeof loadAdmStats==='function') loadAdmStats();
+          if(typeof loadSystemHealth==='function') loadSystemHealth();
           if(typeof toggleMobileMenu==='function') toggleMobileMenu();
         };
         const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
