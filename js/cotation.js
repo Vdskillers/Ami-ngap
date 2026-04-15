@@ -46,6 +46,21 @@ async function cotation() {
     if (d.invoice_number && typeof displayInvoiceNumber === 'function') {
       displayInvoiceNumber(d.invoice_number);
     }
+    // ── Mémoriser l'heure de soin dans le cache persistant (analyse horaire Dashboard) ──
+    // Permet à l'analyse horaire de fonctionner même sans recharger l'historique API.
+    try {
+      if (typeof _updateHeureCache === 'function') {
+        const heure = gv('f-hs');
+        const date  = gv('f-ds') || new Date().toISOString().slice(0,10);
+        if (heure) {
+          _updateHeureCache([{
+            id:         d.invoice_number || ('local_' + Date.now()),
+            date_soin:  date,
+            heure_soin: heure,
+          }]);
+        }
+      }
+    } catch {}
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
   } catch (e) {

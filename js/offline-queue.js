@@ -104,6 +104,42 @@ window.addEventListener('offline', () => { _updateQueueBadge(); showToast('📡 
        Pour les admins, heure_soin est retiré de la réponse API (RGPD/HDS),
        mais ils voient leurs propres heures de test via ce mécanisme local.
 ───────────────────────────────────────────────────────────────────────── */
+/* ── Clé localStorage cache des heures — isolée par userId ──────────────────
+   Persiste les heure_soin entre sessions pour l'analyse horaire.
+   Structure : { "id_cotation": "HH:MM", "YYYY-MM-DD": "HH:MM", ... }
+   Alimenté à chaque réponse API avec heure_soin non null.
+────────────────────────────────────────────────────────────────────────── */
+function _heureCacheKey() {
+  let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  if (!uid) {
+    try { uid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {}
+  }
+  return 'ami_heure_cache_' + String(uid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function _loadHeureCache() {
+  try { return JSON.parse(localStorage.getItem(_heureCacheKey()) || '{}'); } catch { return {}; }
+}
+
+function _saveHeureCache(cache) {
+  try { localStorage.setItem(_heureCacheKey(), JSON.stringify(cache)); } catch {}
+}
+
+/* Mémorise les heures depuis un tableau de cotations retourné par l'API */
+function _updateHeureCache(rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const cache = _loadHeureCache();
+  let changed = false;
+  rows.forEach(r => {
+    const heure = (r.heure_soin || '').trim().slice(0, 5);
+    if (!heure || !/^\d{1,2}:\d{2}/.test(heure)) return;
+    // Indexer par id (clé stable) ET par date (fallback)
+    if (r.id)       { cache[String(r.id)]                         = heure; changed = true; }
+    if (r.date_soin){ cache[(r.date_soin||'').slice(0,10)]        = heure; changed = true; }
+  });
+  if (changed) _saveHeureCache(cache);
+}
+
 function _buildHeureIndex() {
   const idx = {};
 
@@ -143,6 +179,17 @@ function _buildHeureIndex() {
     });
   } catch {}
 
+  // ── Source 3 : cache persistant localStorage (ami_heure_cache_<userId>) ───
+  // Mémorise les heure_soin vus lors des sessions précédentes.
+  // Permet l'analyse horaire même pour des cotations anciennes sans planning actif.
+  try {
+    const cache = _loadHeureCache();
+    Object.entries(cache).forEach(([k, v]) => {
+      // Ne garder que les clés au format date YYYY-MM-DD (pas les ids numériques)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v && !idx[k]) idx[k] = v;
+    });
+  } catch {}
+
   return idx;
 }
 
@@ -163,16 +210,31 @@ async function loadStatsAvancees() {
     const arr2 = Array.isArray(m2?.data) ? m2.data : [];
     let   arr1 = Array.isArray(m1?.data) ? m1.data : [];
 
+    // ── Mémoriser les heures reçues de l'API dans le cache persistant ─────────
+    // Chaque fois qu'une cotation arrive avec heure_soin non null, on la mémorise
+    // pour qu'elle soit disponible lors des prochaines sessions (analyse horaire).
+    _updateHeureCache([...arr1, ...arr2, ...arr3]);
+
     // ── Enrichissement horaire depuis le planning local de l'utilisateur ──────
     // Pour les admins : heure_soin est retiré de la réponse API (RGPD/HDS — worker.js:734).
     // On récupère les heures depuis le planning local isolé par userId (ami_planning_<uid>).
     // Pour les infirmières : complète les cotations où heure_soin est null (ex: import ICS).
     // Dans les deux cas, l'isolation est garantie — chacun ne lit que sa propre clé.
     try {
+      // Source A : cache persistant par id (plus précis — évite les collisions de date)
+      const heureCache = _loadHeureCache();
+      arr1 = arr1.map(r => {
+        if (r.heure_soin) return r;
+        const cached = r.id ? heureCache[String(r.id)] : null;
+        if (cached) return { ...r, heure_soin: cached };
+        return r;
+      });
+
+      // Source B : index planning local par date (fallback)
       const heureIdx = _buildHeureIndex();
       if (Object.keys(heureIdx).length) {
         arr1 = arr1.map(r => {
-          if (r.heure_soin) return r; // déjà renseigné, on ne touche pas
+          if (r.heure_soin) return r;
           const date = (r.date_soin || '').slice(0, 10);
           if (date && heureIdx[date]) return { ...r, heure_soin: heureIdx[date] };
           return r;
