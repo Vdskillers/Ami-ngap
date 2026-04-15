@@ -2354,9 +2354,14 @@ async function hist() {
     tbody.innerHTML = rows.map(r => {
       const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR') : '—';
       let actesTxt = '—';
-      try { actesTxt = JSON.parse(r.actes||'[]').map(a=>a.code||'').filter(Boolean).join(', ') || '—'; } catch {}
+      try {
+        // r.actes peut être un Array déjà parsé (JSONB) ou une chaîne JSON (TEXT)
+        const actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
+        actesTxt = actesArr.map(a => a.code || '').filter(Boolean).join(', ') || '—';
+      } catch {}
       const alertes = (() => { try { const a = JSON.parse(r.alerts||'[]'); return a.length ? `<span style="color:var(--d);font-size:11px">⚠️ ${a.length}</span>` : ''; } catch { return ''; } })();
-      const canDel  = !isAdmin; // l'admin ne peut pas supprimer les cotations des infirmières
+      // Admin ET infirmière peuvent supprimer leurs propres cotations
+      // Isolation garantie côté worker : infirmiere_id = user.id
       return `<tr>
         <td style="font-family:var(--fm);font-size:11px;color:var(--m)">#${r.id}</td>
         <td>${date}</td>
@@ -2364,7 +2369,7 @@ async function hist() {
         <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
         <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
         <td>${alertes}</td>
-        <td>${canDel ? `<button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id})">🗑️</button>` : ''}</td>
+        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id})" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
 
