@@ -385,6 +385,10 @@ async function openPatientDetail(id) {
       notes:          '',
       created_at:     new Date().toISOString(),
     }];
+    // Persister la migration en IDB pour que tous les accès futurs trouvent le bon format
+    try {
+      await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    } catch(e) { console.warn('[Migration ordo openPatient]', e.message); }
   }
   if (!p.ordonnances) p.ordonnances = [];
 
@@ -455,7 +459,26 @@ function _patTab(tab, id) {
     const row  = rows.find(r => r.id === id);
     if (!row) return;
     const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+    // Migration rétrocompatibilité : ordo_date (ancien champ) → ordonnances[] (nouveau tableau)
+    if (p.ordo_date && !p.ordonnances?.length) {
+      p.ordonnances = [{
+        id:                'legacy_' + p.id,
+        actes:             '',
+        medecin:           p.medecin || '',
+        date_prescription: '',
+        date_expiration:   p.ordo_date,
+        duree:             30,
+        notes:             '',
+        created_at:        new Date().toISOString(),
+      }];
+      // Persister la migration en IDB pour que les prochains accès trouvent le bon format
+      try {
+        await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+      } catch(e) { console.warn('[Migration ordo]', e.message); }
+    }
     if (!p.ordonnances) p.ordonnances = [];
+
     const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
     _patTabRender(tab, id, p, notes);
   })();

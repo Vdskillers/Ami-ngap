@@ -820,7 +820,7 @@ async function renderOrdonnances() {
       ${o.actes ? `<div style="font-size:12px;color:var(--m);margin-bottom:6px">Actes : ${o.actes}</div>` : ''}
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="font-size:11px;font-family:var(--fm);color:${st.color}">
-          ${diffLabel} · ${new Date(o.dateDebut).toLocaleDateString('fr-FR')} → ${new Date(o.dateExpiration).toLocaleDateString('fr-FR')}
+          ${diffLabel}${o.dateDebut && !isNaN(new Date(o.dateDebut)) ? ' · ' + new Date(o.dateDebut).toLocaleDateString('fr-FR') : ''} → ${new Date(o.dateExpiration).toLocaleDateString('fr-FR')}
         </div>
         ${o._source !== 'carnet' ? `
         <button onclick="deleteOrdonnance(${o.id})"
