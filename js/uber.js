@@ -241,17 +241,23 @@ function loadUberPatients() {
     return;
   }
   const raw = data?.patients || data?.entries || [];
-  APP.set('uberPatients', raw.map((p, i) => ({
-    ...p,
-    id:      p.patient_id || p.id || i,
-    label:   p.description || p.texte || p.summary || 'Patient ' + (i+1),
-    done:    false, absent: false, late: false,
-    urgence: !!(p.urgence || p.priorite === 'urgent'),
-    time:    p.heure_soin ? _parseTime(p.heure_soin) : null,
-    amount:  parseFloat(p.total || p.montant || 0) || 0,
-    lat:     parseFloat(p.lat || p.latitude) || null,
-    lng:     parseFloat(p.lng || p.longitude || p.lon) || null,
-  })));
+  APP.set('uberPatients', raw.map((p, i) => {
+    const amountBase = parseFloat(p.total || p.montant || p.amount || 0);
+    // estimateRevenue si pas de montant réel
+    const amount = amountBase > 0 ? amountBase
+      : (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30);
+    return {
+      ...p,
+      id:      p.patient_id || p.id || i,
+      label:   p.description || p.texte || p.summary || 'Patient ' + (i+1),
+      done:    false, absent: false, late: false,
+      urgence: !!(p.urgence || p.priorite === 'urgent'),
+      time:    p.heure_soin ? _parseTime(p.heure_soin) : null,
+      amount,
+      lat:     parseFloat(p.lat || p.latitude) || null,
+      lng:     parseFloat(p.lng || p.longitude || p.lon) || null,
+    };
+  }));
   _updateUberProgress();
   selectBestPatient();
 }

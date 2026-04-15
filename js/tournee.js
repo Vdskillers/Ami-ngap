@@ -1268,6 +1268,7 @@ window.startDay=async function(){
   try { sessionStorage.removeItem('ami_ca_journee'); } catch {}
 
   startLiveTimer();
+  // live-controls reste caché (IDs fantômes — live-next géré via uber-next-patient)
   const el=$('live-badge');
   if(el){el.textContent='EN COURS';el.style.background='var(--ad)';el.style.color='var(--a)';}
   const btnStart=$('btn-live-start');
@@ -1275,7 +1276,7 @@ window.startDay=async function(){
   // Afficher bouton "Terminer la tournée"
   const btnStop = $('btn-live-stop');
   if (btnStop) btnStop.style.display = 'inline-flex';
-  $('live-controls').style.display='block';
+  // live-controls reste caché — live-next géré uniquement via uber-next-patient
 
   // Initialiser le premier patient actif
   const firstP = patients[0];
@@ -1428,18 +1429,15 @@ function renderLivePatientList() {
     };
   });
 
-  // Écrire dans uber-next-patient (visible dans le DOM) + live-next (compat)
-  const el = $('uber-next-patient') || $('live-next');
-  const elLive = $('live-next');
+  // Écrire uniquement dans uber-next-patient (visible) — live-next reste caché (compat fantôme)
+  const el = $('uber-next-patient');
   if (!el) return;
 
   if (!patients.length) {
-    const msg = `<div class="card">
+    el.innerHTML = `<div class="card">
       <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong> ou <strong>Tournée IA</strong> pour importer des patients.</div>
       <button class="btn bp bsm" style="margin-top:10px" onclick="navTo('imp',null)"><span>📂</span> Importer des patients</button>
     </div>`;
-    el.innerHTML = msg;
-    if (elLive && elLive !== el) elLive.innerHTML = msg;
     return;
   }
 
@@ -1484,9 +1482,7 @@ function renderLivePatientList() {
   </div>`;
 
   el.innerHTML = html;
-  // Synchroniser live-next si différent (compat code existant)
-  if (elLive && elLive !== el) elLive.innerHTML = html;
-  // Masquer uber-progress (doublon — les stats sont dans le rendu ci-dessus)
+  // Masquer uber-progress (doublon)
   const uberProg = $('uber-progress');
   if (uberProg) uberProg.style.display = 'none';
   // Mettre à jour le bandeau CA en continu
