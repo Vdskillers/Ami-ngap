@@ -751,6 +751,28 @@ let LIVE_TIMER_ID=null;
 /* Exposer pour terminerTourneeAvecBilan (index.html) */
 Object.defineProperty(window, '_LIVE_CA_TOTAL', { get: () => LIVE_CA_TOTAL });
 
+/* ── Mise à jour du bandeau CA en continu ─────────────────────────────────
+   Calcule le CA depuis toutes les sources disponibles :
+   1. LIVE_CA_TOTAL (cotations manuelles validées)
+   2. p._cotation.total (cotations validées sur les patients)
+   3. p.amount (CA estimé des patients marqués done/absent)
+──────────────────────────────────────────────────────────────────────────── */
+function _updateLiveCADisplay() {
+  const all = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+  const caFromCotations = all.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+  const caFromAmount    = all.filter(p => p.done || p._done).reduce((s, p) => {
+    // Utiliser amount seulement si pas de cotation (évite double-comptage)
+    return s + (p._cotation?.validated ? 0 : parseFloat(p.amount || 0));
+  }, 0);
+  const ca = Math.max(LIVE_CA_TOTAL, caFromCotations + caFromAmount);
+  const caEl = document.getElementById('live-ca-total');
+  if (caEl && ca > 0) {
+    caEl.textContent = `💶 CA du jour : ${ca.toFixed(2)} €`;
+    caEl.style.display = 'block';
+  }
+  return ca;
+}
+
 /* ══════════════════════════════════════════════════════════════
    SYNC COTATIONS LOCALES → SUPABASE
    Envoie les cotations créées localement (mode live, auto-fin tournée)
@@ -1468,6 +1490,8 @@ function renderLivePatientList() {
   // Masquer uber-progress (doublon — les stats sont dans le rendu ci-dessus)
   const uberProg = $('uber-progress');
   if (uberProg) uberProg.style.display = 'none';
+  // Mettre à jour le bandeau CA en continu
+  _updateLiveCADisplay();
 }
 
 function removeImportedPatient(index) {

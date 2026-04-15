@@ -156,12 +156,14 @@ function markUberDone() {
   p.done = true;
   selectBestPatient();
   _updateUberProgress();
+  if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
 }
 function markUberAbsent() {
   const p = APP.get('nextPatient'); if (!p) return;
   p.absent = true;
   selectBestPatient();
   _updateUberProgress();
+  if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
 }
 
 function _updateUberProgress() {
