@@ -760,22 +760,53 @@
            3. EXPORTER LES KM DU JOUR → Journal kilométrique
            ═══════════════════════════════════════════════════════ */
         try {
-          /* Source 1 (fiable) : km OSRM stockés au moment de l'optimisation */
+          /* Source 1 : km OSRM stockés au moment de l'optimisation (fiable) */
           let kmTotal = parseFloat(APP.get('tourneeKmJour') || 0);
+          let kmSource = 'osrm';
 
-          /* Source 2 : somme des distance_km par patient (mode Uber ou backend) */
+          /* Source 2 : somme des legs OSRM par patient (route détaillée) */
           if (!kmTotal) {
-            kmTotal = snapshot.reduce((s, p) => s + parseFloat(p.distance_km || p.km || 0), 0);
+            const sumLegs = snapshot.reduce((s, p) => s + parseFloat(p.distance_km || 0), 0);
+            if (sumLegs > 0) { kmTotal = sumLegs; kmSource = 'legs'; }
           }
 
-          /* Source 3 : badge affiché dans le rendu OSRM (ex: "🚗 38.4 km") */
+          /* Source 3 : badge "🚗 X km" dans le rendu HTML tournée */
           if (!kmTotal) {
-            const kmBadge = document.querySelector('#tbody .dreb');
-            if (kmBadge) {
-              const m = kmBadge.textContent.match(/([\d.,]+)\s*km/);
-              if (m) kmTotal = parseFloat(m[1].replace(',', '.'));
+            const badge = document.querySelector('#tbody .dreb');
+            if (badge) {
+              const m = badge.textContent.match(/([\d.,]+)\s*km/i);
+              if (m) { kmTotal = parseFloat(m[1].replace(',','.')); kmSource = 'badge'; }
             }
           }
+
+          /* Source 4 : haversine sur les coordonnées GPS des patients
+             Toujours disponible si les patients ont lat/lng */
+          if (!kmTotal) {
+            const _hav = (la1, lo1, la2, lo2) => {
+              const R = 6371, dLat = (la2-la1)*Math.PI/180, dLon = (lo2-lo1)*Math.PI/180;
+              const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
+              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            };
+            const start = APP.get('startPoint');
+            const withGPS = [
+              ...(start?.lat ? [start] : []),
+              ...snapshot.filter(p => p.lat && p.lng),
+            ];
+            if (withGPS.length >= 2) {
+              let dist = 0;
+              for (let i = 0; i < withGPS.length - 1; i++) {
+                dist += _hav(withGPS[i].lat, withGPS[i].lng, withGPS[i+1].lat, withGPS[i+1].lng);
+              }
+              /* Ajouter retour au départ */
+              if (start?.lat && withGPS.length > 1) {
+                const last = withGPS[withGPS.length - 1];
+                dist += _hav(last.lat, last.lng, start.lat, start.lng);
+              }
+              if (dist > 0) { kmTotal = dist; kmSource = 'haversine'; }
+            }
+          }
+
+          console.info('[AMI] Km tournée — source:', kmSource, '— total:', kmTotal);
 
           if (kmTotal > 0) {
             const KM_KEY = 'ami_km_journal';
@@ -788,12 +819,14 @@
               depart:  'Cabinet',
               arrivee: 'Tournée patients',
               km:      Math.round(kmTotal * 10) / 10,
-              motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} visite(s)`,
+              motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} visite(s) (${kmSource})`,
               _source: 'tournee_auto',
             });
             localStorage.setItem(KM_KEY, JSON.stringify(journal));
-            /* Réinitialiser pour la prochaine tournée */
             APP.set('tourneeKmJour', 0);
+            if (typeof showToast === 'function') showToast(`🚗 ${Math.round(kmTotal * 10) / 10} km enregistrés dans le Journal kilométrique`);
+          } else {
+            console.warn('[AMI] Km tournée : aucune source disponible (pas de GPS sur les patients ?)');
           }
         } catch (e) { console.warn('[AMI] Import km KO:', e.message); }
 
