@@ -442,12 +442,14 @@ async function renderPlanning(d){
     } catch {}
 
     const heure = p.heure_soin || p.heure_preferee || p.heure || '';
-    // Soin : retirer le nom si extrait
-    let soin = (p.description || p.texte || '').trim();
-    if (nom !== 'Patient' && soin.toLowerCase().startsWith(nom.toLowerCase())) {
+    // Soin : actes_recurrents en priorité, sinon description importée
+    const actes = (p.actes_recurrents || '').trim();
+    let soin = actes || (p.description || p.texte || '').trim();
+    if (!actes && nom !== 'Patient' && soin.toLowerCase().startsWith(nom.toLowerCase())) {
       soin = soin.slice(nom.length).replace(/^\s*[—\-:]\s*/, '').trim();
     }
-    soin = soin.slice(0, 60);
+    soin = soin.slice(0, 80);
+    const hasActes = !!actes;
 
     const cot = p._cotation?.validated;
     const idx = p._planIdx;
@@ -461,7 +463,7 @@ async function renderPlanning(d){
           ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px">✅</span>` : ''}
         </div>
       </div>
-      ${soin ? `<div style="font-size:11px;color:var(--m);margin-bottom:6px;line-height:1.4">${soin}</div>` : ''}
+      ${soin ? `<div style="font-size:11px;color:${hasActes ? 'var(--a)' : 'var(--m)'};margin-bottom:6px;line-height:1.4">${hasActes ? '💊 ' : ''}${soin}</div>` : ''}
       ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
         <button onclick="openCotationPatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">${cot ? '✏️ Modifier' : '⚡ Coter'}</button>
@@ -1981,12 +1983,32 @@ async function openCotationPatient(patientIndex) {
 
   // Sinon générer une cotation automatique via API ou fallback local
   if (typeof showToast === 'function') showToast('⚡ Génération de la cotation…');
+
+  /* ── Récupérer actes_recurrents depuis la fiche IDB ── */
+  let actesRecurrents = '';
+  try {
+    if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      const row  = rows.find(r => r.id === patient.patient_id || r.id === patient.id);
+      if (row && typeof _dec === 'function') {
+        const pat = _dec(row._data) || {};
+        if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
+      }
+    }
+  } catch (_) {}
+
+  /* Priorité : actes_recurrents > texte importé > pathologies */
+  const texteImport = (patient.texte || patient.description || '').trim();
+  const texteForCot = actesRecurrents
+    ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
+    : (texteImport || patient.pathologies || '');
+
   let cotation = null;
   try {
     const u = S?.user || {};
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap',
-      texte: patient.texte || patient.description || '',
+      texte: texteForCot,
       infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
       adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
       date_soin: new Date().toISOString().split('T')[0],
@@ -1995,7 +2017,7 @@ async function openCotationPatient(patientIndex) {
     });
     cotation = d;
   } catch (_) {
-    if (typeof autoCotationLocale === 'function') cotation = autoCotationLocale(patient.description || patient.texte || '');
+    if (typeof autoCotationLocale === 'function') cotation = autoCotationLocale(texteForCot);
   }
 
   showCotationModal(patient, cotation || { actes: [], total: 0 }, null);

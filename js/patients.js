@@ -164,7 +164,7 @@ function openAddPatient() {
   _editingPatientId = null;
   const form = $('patient-form');
   if (form) form.style.display = 'block';
-  ['pat-nom','pat-prenom','pat-rue','pat-cp','pat-ville','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee']
+  ['pat-nom','pat-prenom','pat-rue','pat-cp','pat-ville','pat-ddn','pat-secu','pat-amo','pat-amc','pat-medecin','pat-allergies','pat-pathologies','pat-traitements','pat-contact-nom','pat-contact-tel','pat-notes','pat-ordo-date','pat-exo','pat-heure-preferee','pat-actes-recurrents']
     .forEach(id => { const el=$(id); if(el) el.value=''; });
   // Réinitialiser prévisualisation adresse
   const prevEl=$('pat-addr-preview'); if(prevEl) prevEl.style.display='none';
@@ -264,6 +264,7 @@ async function savePatient() {
     exo:            gv('pat-exo')        || '',
     heure_preferee:    gv('pat-heure-preferee') || '',
     respecter_horaire: !!($('pat-respecter-horaire')?.checked),
+    actes_recurrents:  gv('pat-actes-recurrents') || '',
     created_at:     editId ? undefined : new Date().toISOString(),
     updated_at:     new Date().toISOString(),
     _enc:           true,
@@ -512,6 +513,14 @@ function _patTabRender(tab, id, p, notes) {
           ${p.heure_preferee ? `<div><div class="lbl" style="margin-bottom:4px;color:var(--a)">🕐 Heure préférée</div>
             <div style="font-size:16px;font-family:var(--fm);color:var(--a);font-weight:600">${p.heure_preferee}</div></div>` : ''}
         </div>
+        ${p.actes_recurrents ? `
+          <div style="margin-top:14px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);padding:12px 14px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <div class="lbl" style="margin-bottom:0;color:var(--a)">💊 Actes Récurrents à Réaliser</div>
+              <span style="font-size:9px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.25);padding:1px 7px;border-radius:20px;font-family:var(--fm)">⚡ Cotation automatique</span>
+            </div>
+            <div style="font-size:13px;color:var(--t);white-space:pre-wrap;line-height:1.6">${p.actes_recurrents}</div>
+          </div>` : ''}
         ${p.notes ? `<div class="ai in" style="margin-top:12px">${p.notes}</div>` : ''}
       </div>`;
     return;
@@ -752,6 +761,7 @@ async function editPatient(patId) {
     'pat-contact-nom': p.contact_nom, 'pat-contact-tel': p.contact_tel,
     'pat-notes': p.notes, 'pat-ordo-date': p.ordo_date,
     'pat-heure-preferee': p.heure_preferee || '',
+    'pat-actes-recurrents': p.actes_recurrents || '',
   };
   Object.entries(fields).forEach(([fieldId, val]) => { const el=$(fieldId); if(el) el.value = val||''; });
 
@@ -948,7 +958,6 @@ async function coterDepuisPatient(id) {
   if (!row) return;
   const p = { ...(_dec(row._data)||{}), nom: row.nom, prenom: row.prenom };
 
-  // Pré-remplir le formulaire de cotation
   navTo('cot', null);
   setTimeout(() => {
     const fPt = $('f-pt'); if(fPt) fPt.value = (p.prenom+' '+p.nom).trim();
@@ -956,10 +965,17 @@ async function coterDepuisPatient(id) {
     const fAmo= $('f-amo'); if(fAmo && p.amo) fAmo.value = p.amo;
     const fAmc= $('f-amc'); if(fAmc && p.amc) fAmc.value = p.amc;
     const fExo= $('f-exo'); if(fExo && p.exo) fExo.value = p.exo;
-    const fTxt= $('f-txt'); if(fTxt) fTxt.focus();
-    // Médecin prescripteur
     const fPr = $('f-pr'); if(fPr && p.medecin) fPr.value = p.medecin;
-    showToastSafe(`👤 Fiche de ${p.prenom||''} ${p.nom} chargée.`);
+    // Pré-remplir la description avec les actes récurrents si définis
+    const fTxt = $('f-txt');
+    if (fTxt) {
+      if (p.actes_recurrents) {
+        fTxt.value = p.actes_recurrents;
+        if (typeof renderLiveReco === 'function') renderLiveReco(p.actes_recurrents);
+      }
+      fTxt.focus();
+    }
+    showToastSafe(`👤 Fiche de ${p.prenom||''} ${p.nom} chargée${p.actes_recurrents ? ' — actes récurrents pré-remplis' : ''}.`);
   }, 200);
 }
 
@@ -1239,8 +1255,9 @@ async function _importPickerPatients() {
         id:                p.id,
         nom:               p.nom    || '',
         prenom:            p.prenom || '',
-        description:       p.notes || p.pathologies || 'Soin infirmier',
-        texte:             p.notes || p.pathologies || 'Soin infirmier',
+        actes_recurrents:  p.actes_recurrents || '',
+        description:       p.actes_recurrents || p.notes || p.pathologies || 'Soin infirmier',
+        texte:             p.actes_recurrents || p.notes || p.pathologies || 'Soin infirmier',
         adresse:           adresseComplete,
         address:           adresseComplete,
         addressFull:       adresseComplete,
@@ -1352,8 +1369,10 @@ async function _importSinglePatient(id) {
     id:                p.id,
     nom:               p.nom    || '',
     prenom:            p.prenom || '',
-    description:       p.notes || p.pathologies || 'Soin infirmier',
-    texte:             p.notes || p.pathologies || 'Soin infirmier',
+    // actes_recurrents en priorité pour la cotation auto, sinon fallback sur notes/pathologies
+    actes_recurrents:  p.actes_recurrents || '',
+    description:       p.actes_recurrents || p.notes || p.pathologies || 'Soin infirmier',
+    texte:             p.actes_recurrents || p.notes || p.pathologies || 'Soin infirmier',
     // Adresse — tous les champs pour que openNavigation fonctionne
     adresse:           adresseComplete,
     address:           adresseComplete,
