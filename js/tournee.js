@@ -219,12 +219,8 @@ function _restorePlanningIfNeeded() {
   }
   const saved = _loadPlanning();
   if (saved?.length) {
-    // Assigner directement dans le state sans déclencher app:update (évite les effets de bord sur la carte)
-    if (APP.state) {
-      APP.state.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
-    } else {
-      APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
-    }
+    // Utiliser le setter réactif pour déclencher app:update correctement
+    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
     _renderPlanningIfVisible();
   }
 }
@@ -249,6 +245,8 @@ function refreshPlanning() {
   } else {
     const pbody = document.getElementById('pbody');
     if (pbody) pbody.innerHTML = '<div class="ai in" style="margin-top:12px">Aucune donnée disponible. Importez un planning depuis "Import calendrier" ou saisissez manuellement.</div>';
+    const resPla = document.getElementById('res-pla');
+    if (resPla) resPla.classList.add('show');
     if (typeof showToast === 'function') showToast('ℹ️ Aucune donnée à charger.', 'ok');
   }
 }
@@ -443,6 +441,10 @@ async function renderPlanning(d){
         `).join('')}
       </div>
     </div>`;
+
+  // Rendre res-pla visible (contient pbody)
+  const resPla = document.getElementById('res-pla');
+  if (resPla) resPla.classList.add('show');
 }
 
 /* Supprimer la cotation d'un patient du planning sans le retirer */
@@ -1098,21 +1100,31 @@ function stopDay() {
   _stopDayInternal();
 }
 
-/* Version interne sans confirm — appelée par terminerTourneeAvecBilan */
-function _stopDayInternal() {
+/* Version interne sans confirm — appelée par terminerTourneeAvecBilan
+   caOverride : CA déjà calculé par terminerTourneeAvecBilan (évite le double-calcul à 0) */
+function _stopDayInternal(caOverride) {
   // Arrêter le timer
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
 
-  // CA réel = LIVE_CA_TOTAL (cotations validées manuellement pendant la tournée)
-  //         + cotations auto-générées sur les patients visités (_cotation.validated)
-  //         + fallback : CA estimé (amount) des patients marqués done si aucune cotation
-  const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
-  const caFromCotations = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
-  // Si aucune cotation manuelle : utiliser le CA estimé des patients visités (done)
-  const caFromAmounts   = caFromCotations === 0
-    ? allPatients.filter(p => p.done).reduce((s, p) => s + parseFloat(p.amount || 0), 0)
-    : 0;
-  const caFinal = Math.max(LIVE_CA_TOTAL, caFromCotations, caFromAmounts);
+  let caFinal = 0;
+
+  if (caOverride != null && parseFloat(caOverride) > 0) {
+    // CA fourni par terminerTourneeAvecBilan — cotations déjà calculées, on l'utilise directement
+    caFinal = parseFloat(caOverride);
+  } else {
+    // Calcul autonome (stopDay simple sans bilan)
+    const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+    const caFromCotations = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+    // Fallback : CA estimé des patients marqués done (p.done) OU _done (mode live pilotage)
+    const caFromAmounts = caFromCotations === 0
+      ? allPatients.filter(p => p.done || p._done).reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+      : 0;
+    // Fallback ultime : tous les patients (aucun marqué done) — cas d'arrêt prématuré
+    const caFromAll = (caFromCotations === 0 && caFromAmounts === 0)
+      ? allPatients.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+      : 0;
+    caFinal = Math.max(LIVE_CA_TOTAL, caFromCotations, caFromAmounts, caFromAll);
+  }
 
   // Synchroniser toutes les cotations non encore envoyées à Supabase
   _syncCotationsToSupabase(allPatients).catch(() => {});
