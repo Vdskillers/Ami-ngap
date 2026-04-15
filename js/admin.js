@@ -36,19 +36,17 @@ let _ADM_ACTIVE_TAB = 'comptes';
 
 function admTab(tab) {
   _ADM_ACTIVE_TAB = tab;
-  // Mettre à jour les onglets visuels
   document.querySelectorAll('.adm-tab-btn').forEach(btn => {
     btn.classList.toggle('on', btn.dataset.tab === tab);
   });
-  // Afficher/masquer les sections
   document.querySelectorAll('.adm-tab-section').forEach(sec => {
     sec.style.display = sec.dataset.tab === tab ? 'block' : 'none';
   });
-  // Charger le contenu selon l'onglet actif
-  if (tab === 'comptes')   { loadAdmComptes(); }
-  if (tab === 'stats')     { loadAdmStats(); }
-  if (tab === 'logs')      { loadAdmLogs(); }
-  if (tab === 'messages')  { loadAdmMessages(); }
+  if (tab === 'comptes')  { loadAdmComptes(); }
+  if (tab === 'stats')    { loadAdmStats(); }
+  if (tab === 'logs')     { loadAdmLogs(); }
+  if (tab === 'sante')    { loadSystemHealth(); }
+  if (tab === 'messages') { loadAdmMessages(); }
 }
 
 /* ════════════════════════════════════════════════
@@ -58,9 +56,7 @@ let ACCS = [];
 
 async function loadAdm() {
   if (!requireAuth()) return;
-  // Premier chargement : aller sur l'onglet Comptes
   admTab(_ADM_ACTIVE_TAB || 'comptes');
-  loadAdmSecurityStats();
 }
 
 /* ── Onglet 1 : Gestion des comptes ─────────── */
@@ -99,49 +95,7 @@ async function loadAdmStats() {
           ${s.top_actes.map(a => `<span style="background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:4px 12px;border-radius:20px;font-family:var(--fm);font-size:12px">${a.code} <span style="opacity:.6">(${a.count})</span></span>`).join('')}
         </div>`;
     }
-    // Charger aussi les stats par utilisateur (anonymisées)
-    await loadAdmUserStats();
   } catch {}
-}
-
-async function loadAdmUserStats() {
-  const el = $('adm-user-stats');
-  if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></div>';
-  try {
-    // On réutilise admin-liste qui ne retourne que nurses (id, nom, prenom, is_blocked)
-    const dl = await wpost('/webhook/admin-liste', {});
-    const comptes = (dl.comptes || []).filter(a => a.role !== 'admin');
-    if (!comptes.length) {
-      el.innerHTML = '<div class="ai in">Aucun compte infirmier enregistré.</div>';
-      return;
-    }
-    // Rendu : tableau des utilisateurs avec statut (sans aucune donnée patient)
-    el.innerHTML = `
-      <div class="lbl" style="margin-bottom:12px">
-        👥 Comptes infirmiers enregistrés
-        <span style="font-size:11px;color:var(--m);font-family:var(--fm);font-weight:400;margin-left:8px">(${comptes.length} compte${comptes.length>1?'s':''})</span>
-      </div>
-      <div style="display:grid;gap:8px">
-        ${comptes.map(u => {
-          const ini  = ((u.prenom||'?')[0] + (u.nom||'?')[0]).toUpperCase();
-          const name = ((u.prenom || '') + ' ' + (u.nom || '')).trim() || '—';
-          return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:10px">
-            <div style="width:34px;height:34px;border-radius:50%;background:var(--ad);color:var(--a);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0">${ini}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:13px">${_escAdm(name)}</div>
-              <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Infirmier(ère) · Données exclusivement locales (RGPD)</div>
-            </div>
-            <div style="font-size:11px;padding:3px 10px;border-radius:20px;font-family:var(--fm);${u.is_blocked ? 'background:rgba(239,68,68,.1);color:#ef4444' : 'background:rgba(0,212,170,.08);color:var(--a)'}">${u.is_blocked ? '⏸ Suspendu' : '● Actif'}</div>
-          </div>`;
-        }).join('')}
-      </div>
-      <div class="ai in" style="margin-top:12px;font-size:11px">
-        🔒 Conformité RGPD/HDS : les données de santé (patients, soins, signatures) sont stockées exclusivement sur le terminal de chaque infirmière et ne transitent jamais par nos serveurs non chiffrés.
-      </div>`;
-  } catch (e) {
-    el.innerHTML = `<div class="ai er">⚠️ ${e.message}</div>`;
-  }
 }
 
 /* ════════════════════════════════════════════════
