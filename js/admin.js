@@ -45,7 +45,7 @@ function admTab(tab) {
   if (tab === 'comptes')  { loadAdmComptes(); }
   if (tab === 'stats')    { loadAdmStats(); }
   if (tab === 'logs')     { loadAdmLogs(); }
-  if (tab === 'sante')    { loadSystemHealth(); }
+  if (tab === 'sante')    { loadSystemHealth(); loadSystemLogs(); }
   if (tab === 'messages') { loadAdmMessages(); }
 }
 
@@ -357,7 +357,11 @@ function resetAuditFilters() {
 /* ── System logs (onglet secondaire dans Logs) ── */
 function _renderSystemLogs(systemLogs) {
   const el = $('adm-system-logs-body');
-  if (!el || !systemLogs.length) return;
+  if (!el) return;
+  if (!systemLogs.length) {
+    el.innerHTML = '<div class="ai in">Aucun log système disponible.</div>';
+    return;
+  }
   el.innerHTML = systemLogs.slice(0, 50).map(l => {
     const dt    = new Date(l.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     const color = l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : 'var(--m)';
@@ -368,6 +372,20 @@ function _renderSystemLogs(systemLogs) {
       <span style="color:var(--m);flex-shrink:0;font-family:var(--fm)">${dt}</span>
     </div>`;
   }).join('');
+}
+
+/* ── Chargement autonome des system logs (onglet Santé système) ── */
+async function loadSystemLogs() {
+  const el = $('adm-system-logs-body');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:22px;height:22px;margin:0 auto"></div></div>';
+  try {
+    const d = await wpost('/webhook/admin-logs', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    _renderSystemLogs(d.system_logs || []);
+  } catch (e) {
+    el.innerHTML = `<div class="ai er">⚠️ ${e.message}</div>`;
+  }
 }
 
 
