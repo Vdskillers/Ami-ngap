@@ -192,7 +192,70 @@ function _clearPlanning() {
 /* Sauvegarder le planning chaque fois qu'importedData change */
 function _syncPlanningStorage() {
   const patients = APP.importedData?.patients || APP.importedData?.entries || [];
-  if (patients.length) _savePlanning(patients);
+  if (patients.length) {
+    _savePlanning(patients);
+    _syncPlanningToServer(patients).catch(() => {}); // sync serveur silencieux
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SYNC PLANNING HEBDOMADAIRE — navigateur ↔ mobile
+   Blob AES-256 chiffré côté client — le worker stocke sans déchiffrer.
+   Table weekly_planning : 1 ligne / infirmiere_id (upsert).
+════════════════════════════════════════════════════════════════════════ */
+async function _syncPlanningToServer(patients) {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    let encrypted_data;
+    if (typeof _enc === 'function') {
+      try { encrypted_data = _enc({ __weekly_planning: patients }); } catch { encrypted_data = JSON.stringify(patients); }
+    } else {
+      encrypted_data = JSON.stringify(patients);
+    }
+    await wpost('/webhook/planning-push', { encrypted_data, updated_at: new Date().toISOString() });
+  } catch (e) { console.warn('[AMI] Planning push KO (silencieux):', e.message); }
+}
+
+async function _syncPlanningFromServer() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    const res = await wpost('/webhook/planning-pull', {});
+    if (!res?.ok || !res.data?.encrypted_data) return;
+
+    let remote = null;
+    try {
+      if (typeof _dec === 'function') {
+        const d = _dec(res.data.encrypted_data);
+        remote = d?.__weekly_planning || null;
+      }
+      if (!remote) remote = JSON.parse(res.data.encrypted_data);
+    } catch {}
+    if (!Array.isArray(remote) || !remote.length) return;
+
+    // Utiliser les données distantes seulement si le local est vide
+    // (la version locale fait foi si elle existe — évite d'écraser un travail en cours)
+    const localSaved = _loadPlanning();
+    if (!localSaved || !localSaved.length) {
+      _savePlanning(remote);
+      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur' };
+      _renderPlanningIfVisible();
+      console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
+    } else {
+      // Fusion : ajouter les entrées distantes absentes localement (par id)
+      const localIds = new Set(localSaved.map(p => p.id || p.patient_id || ''));
+      const toAdd = remote.filter(p => {
+        const pid = p.id || p.patient_id || '';
+        return pid && !localIds.has(pid);
+      });
+      if (toAdd.length) {
+        const merged = [...localSaved, ...toAdd];
+        _savePlanning(merged);
+        APP.importedData = { patients: merged, total: merged.length, source: 'planning_fusionné' };
+        _renderPlanningIfVisible();
+        console.info('[AMI] Planning fusion :', toAdd.length, 'patient(s) ajouté(s) depuis le serveur');
+      }
+    }
+  } catch (e) { console.warn('[AMI] Planning pull KO:', e.message); }
 }
 
 /* Écoute réactive : sauvegarde automatique quand APP.importedData change */
@@ -208,6 +271,8 @@ document.addEventListener('app:update', e => {
 document.addEventListener('ami:login', () => {
   setTimeout(() => {
     _restorePlanningIfNeeded();
+    // Sync depuis le serveur après restauration locale (navigateur ↔ mobile)
+    setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
   }, 200);
 });
 
@@ -1005,6 +1070,12 @@ function _processImportData(content, source) {
 
   storeImportedData({ patients, total: patients.length, source });
 
+  // ── Auto-ajout dans le Carnet patients ────────────────────────────────────
+  // Chaque patient importé avec un nom/prénom identifiable est ajouté au carnet
+  // s'il n'y est pas déjà (déduplication par nom + prénom normalisés).
+  // Ceci assure que Planning ↔ Carnet restent cohérents sans doublon.
+  _autoAddImportedToCarnet(patients).catch(() => {});
+
   // Compter les patients avec adresse pour proposer le géocodage
   const withAddr = patients.filter(p => p.adresse && p.adresse.trim()).length;
   const missingGPS = patients.filter(p => (!p.lat || !p.lng) && p.adresse && p.adresse.trim()).length;
@@ -1028,6 +1099,119 @@ function _processImportData(content, source) {
       <span style="font-size:11px;color:var(--m);margin-left:8px">Recommandé pour optimiser la tournée</span>
     </div>` : ''}`;
   result.classList.add('show');
+}
+
+/* ============================================================
+   AUTO-AJOUT AU CARNET PATIENTS — depuis Import calendrier
+   ─────────────────────────────────────────────────────────
+   Après chaque import, les patients identifiables (ayant un
+   nom/prénom ou une description exploitable) sont ajoutés
+   silencieusement dans le carnet local (IndexedDB) s'ils
+   n'y sont pas déjà.
+   Déduplication : normalisation nom+prénom en minuscules.
+   RGPD : stockage local chiffré AES-256 — aucune transmision.
+   ============================================================ */
+async function _autoAddImportedToCarnet(patients) {
+  // Prérequis : fonctions IDB disponibles (patients.js chargé)
+  if (typeof _idbGetAll !== 'function' || typeof _idbPut !== 'function' ||
+      typeof _enc !== 'function' || typeof PATIENTS_STORE === 'undefined') return;
+
+  try {
+    // Charger le carnet existant pour déduplication
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    // Index de normalisation : "prénom nom" → true
+    const existIndex = new Set(
+      rows.map(r => {
+        const d = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
+        return _normalizePatientKey(r.nom, r.prenom, d);
+      }).filter(Boolean)
+    );
+
+    let added = 0;
+    for (const p of patients) {
+      // Extraire nom / prénom depuis les différents formats possibles
+      let nom    = p.nom    || '';
+      let prenom = p.prenom || '';
+
+      // Fallback : essayer de décomposer la description (ex: "Marie DUPONT — soins")
+      if (!nom && !prenom && (p.description || p.texte)) {
+        const raw = (p.description || p.texte || '').split(/[—\-–:,]/)[0].trim();
+        const parts = raw.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+          // Convention : MAJUSCULE = nom de famille, première lettre maj = prénom
+          const uppercaseIdx = parts.findIndex(w => w === w.toUpperCase() && w.length > 1);
+          if (uppercaseIdx > 0) {
+            nom    = parts.slice(uppercaseIdx).join(' ');
+            prenom = parts.slice(0, uppercaseIdx).join(' ');
+          } else {
+            prenom = parts[0];
+            nom    = parts.slice(1).join(' ');
+          }
+        }
+      }
+
+      // Ne pas créer de fiche sans nom exploitable
+      if (!nom.trim() && !prenom.trim()) continue;
+
+      const key = _normalizePatientKey(nom, prenom, p);
+      if (!key || existIndex.has(key)) continue; // déjà dans le carnet
+
+      // Construire la fiche minimale avec toutes les données disponibles
+      const fiche = {
+        nom:         nom.trim(),
+        prenom:      prenom.trim(),
+        ddn:         p.ddn || p.date_naissance || '',
+        adresse:     p.adresse || p.address || p.addressFull || '',
+        street:      p.street || '',
+        zip:         p.zip || '',
+        city:        p.city || '',
+        lat:         p.lat || null,
+        lng:         p.lng || null,
+        telephone:   p.telephone || p.tel || '',
+        medecin:     p.medecin || '',
+        amo:         p.amo || '',
+        amc:         p.amc || '',
+        exo:         p.exo || '',
+        notes:       p.notes || p.description || '',
+        ordonnances: [],
+        cotations:   [],
+        _source:     'import_calendrier',
+        created_at:  new Date().toISOString(),
+        updated_at:  new Date().toISOString(),
+      };
+
+      const id = p.patient_id || p.id || ('imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+      await _idbPut(PATIENTS_STORE, {
+        id,
+        nom:        fiche.nom,
+        prenom:     fiche.prenom,
+        _data:      _enc(fiche),
+        updated_at: fiche.updated_at,
+      });
+
+      existIndex.add(key); // évite les doublons dans la même passe
+      added++;
+    }
+
+    if (added > 0) {
+      console.info(`[AMI] ${added} patient(s) ajouté(s) au carnet depuis l'import.`);
+      if (typeof showToast === 'function')
+        showToast(`📋 ${added} nouveau(x) patient(s) ajouté(s) au Carnet.`);
+      // Sync carnet vers le serveur si disponible
+      if (typeof syncPatientsToServer === 'function')
+        setTimeout(() => syncPatientsToServer().catch(() => {}), 1000);
+    }
+  } catch (e) {
+    console.warn('[AMI] Auto-ajout carnet KO:', e.message);
+  }
+}
+
+/* Clé de normalisation pour déduplication (insensible à la casse/accents) */
+function _normalizePatientKey(nom, prenom, extra) {
+  const n = String(nom || extra?.nom || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const p = String(prenom || extra?.prenom || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!n && !p) return null;
+  return `${p}__${n}`;
 }
 
 /* ============================================================

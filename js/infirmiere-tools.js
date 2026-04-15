@@ -123,7 +123,7 @@ function calculerCharges() {
    Enregistrement déplacements + export fiscal
 ════════════════════════════════════════════════ */
 
-const KM_STORE_KEY = 'ami_km_journal';
+const KM_STORE_KEY = 'ami_km_journal'; // clé de base — suffixée par userId dans les fonctions
 
 /*
   Barème fiscal officiel 2025 & 2026 (non revalorisé — identique les deux années)
@@ -153,11 +153,80 @@ function _getKmRate(cv, kmAnnuel, electrique) {
   return electrique ? rate * KM_ELECTRIQUE_BONUS : rate;
 }
 
+/* ── Clé localStorage isolée par userId (même principe que ami_planning_<userId>) ──
+   Isolation RGPD : chaque infirmière/admin ne lit que ses propres trajets.
+────────────────────────────────────────────────────────────────────────────────── */
+function _kmKey() {
+  let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  if (!uid) {
+    try {
+      const sess = JSON.parse(sessionStorage.getItem('ami_sess') || 'null');
+      uid = sess?.user?.id || null;
+    } catch {}
+  }
+  return KM_STORE_KEY + '_' + String(uid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 function _loadKmJournal() {
-  try { return JSON.parse(localStorage.getItem(KM_STORE_KEY) || '[]'); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(_kmKey()) || '[]'); } catch { return []; }
 }
 function _saveKmJournal(entries) {
-  try { localStorage.setItem(KM_STORE_KEY, JSON.stringify(entries)); } catch {}
+  try {
+    localStorage.setItem(_kmKey(), JSON.stringify(entries));
+    _syncKmToServer(entries).catch(() => {}); // sync silencieux en arrière-plan
+  } catch {}
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SYNC JOURNAL KILOMÉTRIQUE — navigateur ↔ mobile
+   Identique au mécanisme carnet patients : blob AES-256 opaque côté serveur.
+   Le worker ne déchiffre jamais — il stocke/retourne le blob.
+   Isolation : table km_journal → infirmiere_id UNIQUE (1 ligne / compte).
+════════════════════════════════════════════════════════════════════════ */
+async function _syncKmToServer(entries) {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    const data = entries || _loadKmJournal();
+    // Chiffrement côté client — le serveur reçoit un blob opaque
+    let encrypted_data;
+    if (typeof _enc === 'function') {
+      try { encrypted_data = _enc({ __km_journal: data }); } catch { encrypted_data = JSON.stringify(data); }
+    } else {
+      encrypted_data = JSON.stringify(data);
+    }
+    await wpost('/webhook/km-push', { encrypted_data, updated_at: new Date().toISOString() });
+  } catch (e) { console.warn('[AMI] KM push KO (silencieux):', e.message); }
+}
+
+async function syncKmFromServer() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    const res = await wpost('/webhook/km-pull', {});
+    if (!res?.ok || !res.data?.encrypted_data) return;
+
+    // Déchiffrer le blob
+    let remote = null;
+    try {
+      if (typeof _dec === 'function') {
+        const d = _dec(res.data.encrypted_data);
+        remote = d?.__km_journal || null;
+      }
+      if (!remote) remote = JSON.parse(res.data.encrypted_data);
+    } catch {}
+    if (!Array.isArray(remote) || !remote.length) return;
+
+    // Fusion avec l'existant local — dédoublonnage par id
+    const local   = _loadKmJournal();
+    const localIds = new Set(local.map(e => e.id));
+    let merged = [...local];
+    remote.forEach(e => { if (e.id && !localIds.has(e.id)) merged.push(e); });
+    merged.sort((a, b) => (a.date || '') < (b.date || '') ? -1 : 1);
+
+    // Sauvegarder localement SANS re-push (évite la boucle)
+    try { localStorage.setItem(_kmKey(), JSON.stringify(merged)); } catch {}
+    if (typeof renderKmJournal === 'function') renderKmJournal();
+    console.info('[AMI] KM sync depuis serveur :', merged.length, 'entrée(s)');
+  } catch (e) { console.warn('[AMI] KM pull KO:', e.message); }
 }
 
 function addKmEntry() {
@@ -865,7 +934,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('ui:navigate', onNav);
 
   // Badge ordonnances au login
-  document.addEventListener('ami:login', () => setTimeout(refreshOrdoBadge, 800));
+  document.addEventListener('ami:login', () => {
+    setTimeout(refreshOrdoBadge, 800);
+    // Sync Journal kilométrique depuis le serveur au login (navigateur ↔ mobile)
+    setTimeout(() => syncKmFromServer().catch(() => {}), 1500);
+  });
   refreshOrdoBadge();
 });
 
@@ -875,6 +948,7 @@ window.addKmEntry         = addKmEntry;
 window.deleteKmEntry      = deleteKmEntry;
 window.renderKmJournal    = renderKmJournal;
 window.exportKmCSV        = exportKmCSV;
+window.syncKmFromServer   = syncKmFromServer;
 window.renderModeles      = renderModeles;
 window.utiliserModele     = utiliserModele;
 window.sauvegarderModele  = sauvegarderModele;
