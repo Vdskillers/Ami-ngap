@@ -80,27 +80,130 @@
   </div>
   <div class="adm-body">
     <h1 style="font-family:var(--fs);font-size:28px;margin-bottom:6px">Tableau de bord <em style="font-style:italic;color:var(--a)">Admin</em></h1>
-    <p style="color:var(--m);font-size:13px;margin-bottom:24px">Données agrégées anonymisées · aucune donnée patient identifiable</p>
-    <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici.</p></div>
+    <p style="color:var(--m);font-size:13px;margin-bottom:16px">Données agrégées anonymisées · aucune donnée patient identifiable</p>
+    <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici. Les données de santé sont stockées exclusivement sur le terminal de l'utilisateur et ne sont jamais transmises à nos serveurs.</p></div>
     <div class="adm-alert e" id="adm-alert"></div>
-    <!-- Activité plateforme & Santé système — chargé par loadSystemHealth() -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-      <div class="lbl">🖥️ Activité plateforme & Santé du système</div>
-      <button class="bs bsm" onclick="loadSystemHealth()" style="padding:8px 16px;font-size:12px">↻ Rafraîchir</button>
-    </div>
-    <div id="adm-system-health-body" style="margin-bottom:28px"><div class="empty" style="padding:20px"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:8px;color:var(--m);font-size:13px">Chargement...</p></div></div>
-    <!-- Gestion comptes -->
-    <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
-    <div class="adm-search">
-      <input type="text" id="adm-q" placeholder="🔍 Filtrer par nom ou prénom...">
-      <button class="bs bsm" onclick="loadAdm()" style="padding:10px 18px;font-size:13px">↻ Actualiser</button>
-    </div>
-    <div id="accs" class="accs"><div class="empty"><div class="ei"><div class="spin spinw" style="width:32px;height:32px"></div></div><p style="margin-top:12px">Chargement...</p></div></div>
 
-    <!-- Messages des infirmières -->
-    <div style="margin-top:32px">
+    <!-- ═══ ONGLETS NAVIGATION ═══ -->
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:24px;border-bottom:1px solid var(--b);padding-bottom:0">
+      <button class="adm-tab-btn on" data-tab="comptes"    onclick="admTab('comptes')"   style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">👥 Comptes</button>
+      <button class="adm-tab-btn"    data-tab="stats"      onclick="admTab('stats')"     style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">📊 Statistiques</button>
+      <button class="adm-tab-btn"    data-tab="logs"       onclick="admTab('logs')"      style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🔍 Logs d'audit</button>
+      <button class="adm-tab-btn"    data-tab="messages"   onclick="admTab('messages')"  style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">💬 Messages <span id="adm-msg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></button>
+    </div>
+
+    <style>
+      .adm-tab-btn.on { color:var(--a) !important; border-bottom-color:var(--a) !important; font-weight:600; }
+      .adm-tab-btn:hover:not(.on) { color:var(--t) !important; }
+    </style>
+
+    <!-- ═══ ONGLET : COMPTES ═══ -->
+    <div class="adm-tab-section" data-tab="comptes">
+      <!-- Santé système -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-        <div class="lbl">💬 Messages des infirmières <span id="adm-msg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:11px;padding:2px 10px;margin-left:8px;font-family:var(--fm)">0 non lu(s)</span></div>
+        <div class="lbl">🖥️ Activité plateforme & Santé du système</div>
+        <button class="bs bsm" onclick="loadSystemHealth()" style="padding:8px 16px;font-size:12px">↻ Rafraîchir</button>
+      </div>
+      <div id="adm-system-health-body" style="margin-bottom:28px"><div class="empty" style="padding:20px"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:8px;color:var(--m);font-size:13px">Chargement...</p></div></div>
+
+      <!-- Gestion comptes -->
+      <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
+      <div class="adm-search">
+        <input type="text" id="adm-q" placeholder="🔍 Filtrer par nom ou prénom..." oninput="filterAccs()">
+        <button class="bs bsm" onclick="loadAdmComptes()" style="padding:10px 18px;font-size:13px">↻ Actualiser</button>
+      </div>
+      <div id="accs" class="accs"><div class="empty"><div class="ei"><div class="spin spinw" style="width:32px;height:32px"></div></div><p style="margin-top:12px">Chargement...</p></div></div>
+    </div>
+
+    <!-- ═══ ONGLET : STATISTIQUES ═══ -->
+    <div class="adm-tab-section" data-tab="stats" style="display:none">
+      <div class="adm-notice" style="margin-bottom:20px"><span style="font-size:18px;flex-shrink:0">📊</span><p><strong>Statistiques anonymisées :</strong> Ces KPIs agrègent les données de toutes les infirmières sans exposer aucune information identifiable. Seuls les codes NGAP et montants totaux sont analysés.</p></div>
+
+      <!-- KPIs globaux -->
+      <div class="lbl" style="margin-bottom:12px">KPIs globaux plateforme</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px">
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:16px"><div style="font-size:22px;margin-bottom:4px">💰</div><div id="kpi-ca"   style="font-family:var(--fs);font-size:24px;color:var(--a)">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">CA total</div></div>
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:16px"><div style="font-size:22px;margin-bottom:4px">⚡</div><div id="kpi-actes" style="font-family:var(--fs);font-size:24px;color:var(--a)">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">Actes cotés</div></div>
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:16px"><div style="font-size:22px;margin-bottom:4px">🧾</div><div id="kpi-panier" style="font-family:var(--fs);font-size:24px;color:var(--a)">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">Panier moyen</div></div>
+        <div style="background:var(--s);border:1px solid rgba(255,181,71,.3);border-radius:10px;padding:16px"><div style="font-size:22px;margin-bottom:4px">⚠️</div><div id="kpi-alertes" style="font-family:var(--fs);font-size:24px;color:var(--w)">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">Alertes</div></div>
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:16px"><div style="font-size:22px;margin-bottom:4px">🏥</div><div id="kpi-dre"   style="font-family:var(--fs);font-size:24px;color:var(--a)">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">DRE requises</div></div>
+      </div>
+      <div id="adm-top-actes" style="margin-bottom:24px"></div>
+
+      <!-- Stats sécurité -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="lbl">🔐 Sécurité temps réel</div>
+        <button class="bs bsm" onclick="loadAdmSecurityStats()" style="padding:6px 14px;font-size:12px">↻</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:20px">
+        <div style="background:var(--s);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:14px"><div style="font-size:20px;margin-bottom:4px">🔴</div><div id="kpi-login-fails" style="font-family:var(--fs);font-size:22px;color:#ef4444">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">Échecs connexion</div></div>
+        <div style="background:var(--s);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:14px"><div style="font-size:20px;margin-bottom:4px">🚨</div><div id="kpi-fraud-alerts" style="font-family:var(--fs);font-size:22px;color:#ef4444">—</div><div style="font-size:11px;color:var(--m);font-family:var(--fm)">Alertes fraude</div></div>
+      </div>
+      <div id="adm-recent-alerts"><div class="ai in">Chargement des alertes...</div></div>
+
+      <!-- Stats par utilisateur -->
+      <div style="margin-top:28px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="lbl">👥 Comptes & isolation des données</div>
+          <button class="bs bsm" onclick="loadAdmUserStats()" style="padding:6px 14px;font-size:12px">↻</button>
+        </div>
+        <div id="adm-user-stats"><div class="empty" style="padding:20px"><div class="ei"><div class="spin spinw" style="width:24px;height:24px"></div></div></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ ONGLET : LOGS D'AUDIT ═══ -->
+    <div class="adm-tab-section" data-tab="logs" style="display:none">
+      <div class="adm-notice" style="margin-bottom:20px"><span style="font-size:18px;flex-shrink:0">🔍</span><p><strong>Journal d'audit RGPD :</strong> Traçabilité complète des accès et actions. Conforme HDS — les user IDs sont tronqués, aucune donnée patient n'apparaît. Checklist : ✔ logs d'accès · ✔ logs actions · ✔ surveillance · ✔ export CSV.</p></div>
+
+      <!-- KPIs audit -->
+      <div id="adm-audit-kpis"></div>
+
+      <!-- Filtres -->
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:16px">
+        <div class="lbl" style="margin-bottom:12px">🔎 Filtres</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
+          <select id="adm-log-event-filter" onchange="_applyAuditFilters()" style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+            <option value="">Tous les événements</option>
+          </select>
+          <select id="adm-log-score-filter" onchange="_applyAuditFilters()" style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+            <option value="">Tous les scores</option>
+            <option value="high">🔴 Score ≥ 70 (risque élevé)</option>
+            <option value="med">🟡 Score 40–69 (risque moyen)</option>
+            <option value="low">🟢 Score &lt; 40 (risque faible)</option>
+            <option value="scored">Avec score uniquement</option>
+          </select>
+          <input type="date" id="adm-log-date-from" onchange="_applyAuditFilters()" placeholder="Depuis" style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+          <input type="date" id="adm-log-date-to"   onchange="_applyAuditFilters()" placeholder="Jusqu'au" style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+          <input type="text" id="adm-log-search" oninput="_applyAuditFilters()" placeholder="🔍 Recherche libre…" style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span id="adm-logs-count" style="font-size:12px;color:var(--m);font-family:var(--fm)">—</span>
+          <div style="flex:1"></div>
+          <button class="bs bsm" onclick="resetAuditFilters()" style="font-size:12px">✕ Réinitialiser</button>
+          <button class="bs bsm" onclick="loadAdmLogs()" style="font-size:12px">↻ Recharger</button>
+          <button class="btn bp bsm" onclick="exportAuditCSV()" style="font-size:12px">⬇ Export CSV</button>
+        </div>
+      </div>
+
+      <!-- Table des logs -->
+      <div id="adm-logs-body" style="min-height:120px"></div>
+      <div id="adm-logs-pagination"></div>
+
+      <!-- System logs -->
+      <div style="margin-top:28px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="lbl">🖥️ System logs (N8N · IA · Frontend)</div>
+        </div>
+        <div id="adm-system-logs-body" style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;max-height:280px;overflow-y:auto;font-family:var(--fm)">
+          <div class="ai in">Chargez l'onglet Logs pour voir les system logs.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ ONGLET : MESSAGES ═══ -->
+    <div class="adm-tab-section" data-tab="messages" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+        <div class="lbl">💬 Messages des infirmières</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <select id="adm-msg-filter" onchange="loadAdmMessages()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
             <option value="all">Tous les messages</option>
