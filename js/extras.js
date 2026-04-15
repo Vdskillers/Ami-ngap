@@ -468,14 +468,17 @@ function showNextPatientLocal(){
     return;
   }
 
-  const done = data.filter(x=>x.done).length;
+  const done = data.filter(x => x.done || x._done).length;
   const rest = data.length - done;
-  const caRealise = data.filter(x=>x.done).reduce((s,x)=>{
-    const a=(x.acte||x.description||'').toLowerCase();
-    if(a.includes('insuline'))return s+26.35;
-    if(a.includes('toilette'))return s+31.45;
-    return s+15;
-  },0);
+  // CA réalisé : cotation validée > amount estimé > calcul basique
+  const caRealise = data.filter(x => x.done || x._done).reduce((s, x) => {
+    if (x._cotation?.validated) return s + parseFloat(x._cotation.total || 0);
+    if (x.amount > 0) return s + parseFloat(x.amount);
+    const a = (x.acte || x.description || '').toLowerCase();
+    if (a.includes('insuline')) return s + 26.35;
+    if (a.includes('toilette')) return s + 31.45;
+    return s + 15;
+  }, 0);
 
   if(nameEl) nameEl.textContent = p.acte || p.description || 'Patient suivant';
   if(infoEl) infoEl.textContent = `Heure prévue : ${p.heure_soin||p.heure_preferee||p.time||p.heure||'—'} · ${rest} patient(s) restant(s)`;
@@ -487,7 +490,7 @@ function showNextPatientLocal(){
       <div class="ai in">🩺 ${p.acte||p.description||'Soin infirmier'}</div>
       ${(p.acte||p.description||'').toLowerCase().includes('domicile') ? '<div class="ai wa" style="margin-top:8px">💡 IFD 2,75 € applicable</div>' : ''}
     </div>
-    <div style="font-size:11px;color:var(--m)">${done} fait(s) · ${data.filter(x=>x.absent).length} absent(s) · CA réalisé : ${caRealise.toFixed(2)} €</div>
+    <div style="font-size:11px;color:var(--m)">${done} fait(s) · ${data.filter(x=>x.absent||x._absent).length} absent(s) · CA réalisé : ${caRealise.toFixed(2)} €</div>
   </div>`;
 }
 

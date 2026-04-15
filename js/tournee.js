@@ -1106,6 +1106,9 @@ function _stopDayInternal(caOverride) {
   // Arrêter le timer
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
 
+  // allPatients déclaré ici pour être accessible partout dans la fonction (sync, etc.)
+  const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+
   let caFinal = 0;
 
   if (caOverride != null && parseFloat(caOverride) > 0) {
@@ -1113,7 +1116,6 @@ function _stopDayInternal(caOverride) {
     caFinal = parseFloat(caOverride);
   } else {
     // Calcul autonome (stopDay simple sans bilan)
-    const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
     const caFromCotations = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
     // Fallback : CA estimé des patients marqués done (p.done) OU _done (mode live pilotage)
     const caFromAmounts = caFromCotations === 0
@@ -1380,7 +1382,31 @@ window.liveAction=async function(action){
    LISTE PATIENTS PILOTAGE — Affichage local avec état
    ============================================================ */
 function renderLivePatientList() {
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Fusionner importedData + uberPatients pour avoir les statuts à jour des deux modes
+  const imported = APP.importedData?.patients || APP.importedData?.entries || [];
+  const uber = APP.get('uberPatients') || [];
+
+  // Construire un index uberPatients par id/patient_id pour synchroniser les statuts
+  const uberIndex = {};
+  uber.forEach(p => {
+    const k = p.patient_id || p.id;
+    if (k) uberIndex[String(k)] = p;
+  });
+
+  // Patients de référence = importedData si disponible, sinon uberPatients
+  const base = imported.length ? imported : uber;
+  const patients = base.map(p => {
+    const k = String(p.patient_id || p.id || '');
+    const u = uberIndex[k] || {};
+    return {
+      ...p,
+      _done:   p._done   || p.done   || u._done   || u.done   || false,
+      _absent: p._absent || p.absent || u._absent || u.absent || false,
+      amount:  p.amount  || u.amount  || 0,
+      _cotation: p._cotation || u._cotation,
+    };
+  });
+
   const el = $('live-next');
   if (!el) return;
 
@@ -1396,6 +1422,12 @@ function renderLivePatientList() {
   const absent = patients.filter(p => p._absent).length;
   const reste  = patients.length - done - absent;
 
+  const caRealise = patients.filter(p => p._done).reduce((s, p) => {
+    if (p._cotation?.validated) return s + parseFloat(p._cotation.total || 0);
+    if (p.amount > 0) return s + parseFloat(p.amount);
+    return s;
+  }, 0);
+
   el.innerHTML = `<div class="card">
     <div class="ct" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <span>📋 Patients de la journée (${patients.length})</span>
@@ -1405,6 +1437,7 @@ function renderLivePatientList() {
       <span class="dreb" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:#22c55e">✅ ${done} fait(s)</span>
       <span class="dreb" style="background:rgba(255,95,109,.08);border-color:rgba(255,95,109,.2);color:var(--d)">❌ ${absent} absent(s)</span>
       <span class="dreb">⏳ ${reste} restant(s)</span>
+      ${caRealise > 0 ? `<span class="dreb" style="background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.25);color:var(--a)">💶 ${caRealise.toFixed(2)} € réalisés</span>` : ''}
     </div>
     ${patients.map((p, i) => {
       const desc = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.texte || `Patient ${i+1}`;
