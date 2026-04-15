@@ -160,7 +160,11 @@ function renderDashboard(arr) {
     if(best<t) best=t;
     if((r.date_soin||'').startsWith(today)) todayRev+=t;
     if((r.date_soin||'').startsWith(monthStr)) monthRev+=t;
-    try { JSON.parse(r.actes||'[]').forEach(a=>{ if(a.code&&a.code!=='IMPORT') actesFreq[a.code]=(actesFreq[a.code]||0)+1; }); } catch{}
+    try {
+      // r.actes peut être une chaîne JSON (TEXT Supabase) ou un tableau déjà parsé (JSONB)
+      const actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
+      actesArr.forEach(a => { if (a.code && a.code !== 'IMPORT') actesFreq[a.code] = (actesFreq[a.code] || 0) + 1; });
+    } catch {}
     const d=(r.date_soin||'').slice(0,10);
     if(d) daily[d]=(daily[d]||0)+t;
   });
@@ -318,7 +322,7 @@ function explainAnomalies(rows, anomalyResult) {
       const h=r.heure_soin||'';
       if(h&&(h<'08:00'||h>'20:00')) nuit++;
       try {
-        const acts=JSON.parse(r.actes||'[]');
+        const acts = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
         actesCount+=acts.length;
         acts.forEach(act=>{ if(act.code==='IFD') domicile++; });
       } catch{}
