@@ -12,6 +12,7 @@
 ════════════════════════════════════════════════ */
 
 const TRESOR_PAID_KEY = 'ami_tresor_paid';
+const KM_FISCAL_RATE_TRESOR = 0.636; // barème 5 CV 2025/2026
 
 /* Charge les paiements locaux (localStorage) */
 function _loadPaidMap() {
@@ -19,6 +20,46 @@ function _loadPaidMap() {
 }
 function _savePaidMap(map) {
   try { localStorage.setItem(TRESOR_PAID_KEY, JSON.stringify(map)); } catch {}
+}
+
+/* ════════════════════════════════════════════════
+   JOURNAL KILOMÉTRIQUE — données pour la période
+════════════════════════════════════════════════ */
+function _getKmForPeriod(period) {
+  try {
+    const entries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    const now = new Date();
+
+    // Calculer la date de début selon la période
+    let since = new Date();
+    if      (period === 'today')    { since.setHours(0,0,0,0); }
+    else if (period === 'week')     { since.setDate(now.getDate() - 7); }
+    else if (period === 'lastmonth'){
+      since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const until = new Date(now.getFullYear(), now.getMonth(), 0);
+      const filtered = entries.filter(e => {
+        const d = new Date(e.date); return d >= since && d <= until;
+      });
+      const totalKm   = filtered.reduce((s, e) => s + parseFloat(e.km || 0), 0);
+      const deduction = totalKm * KM_FISCAL_RATE_TRESOR;
+      return { totalKm: Math.round(totalKm * 10) / 10, deduction: Math.round(deduction * 100) / 100, count: filtered.length, label: 'Mois précédent' };
+    }
+    else if (period === '3month')   { since.setMonth(now.getMonth() - 3); }
+    else if (period === 'year')     { since = new Date(now.getFullYear(), 0, 1); }
+    else /* month */                { since = new Date(now.getFullYear(), now.getMonth(), 1); }
+
+    const filtered  = entries.filter(e => new Date(e.date) >= since);
+    const totalKm   = filtered.reduce((s, e) => s + parseFloat(e.km || 0), 0);
+    const deduction = totalKm * KM_FISCAL_RATE_TRESOR;
+
+    const labels = { month:'Ce mois', lastmonth:'Mois précédent', '3month':'3 derniers mois', year:'Cette année', today:'Aujourd\'hui', week:'Cette semaine' };
+    return {
+      totalKm:   Math.round(totalKm * 10) / 10,
+      deduction: Math.round(deduction * 100) / 100,
+      count:     filtered.length,
+      label:     labels[period] || 'Ce mois',
+    };
+  } catch { return { totalKm: 0, deduction: 0, count: 0, label: '' }; }
 }
 
 /* ════════════════════════════════════════════════
@@ -31,9 +72,10 @@ async function loadTresorerie() {
 
   const period = gv('tresor-period') || 'month';
   try {
-    const d = await fetchAPI(`/webhook/ami-historique?period=${period}`);
+    const d   = await fetchAPI(`/webhook/ami-historique?period=${period}`);
     const arr = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
-    renderTresorerie(arr);
+    const km  = _getKmForPeriod(period);
+    renderTresorerie(arr, km);
     statsRemboursements(arr);
   } catch(e) {
     el.innerHTML = `<div class="ai er">⚠️ ${e.message}</div>`;
@@ -43,13 +85,37 @@ async function loadTresorerie() {
 /* ════════════════════════════════════════════════
    RENDU TABLEAU
 ════════════════════════════════════════════════ */
-function renderTresorerie(arr) {
+function renderTresorerie(arr, km) {
   const el = $('tresor-body');
   if (!el) return;
   const paid = _loadPaidMap();
 
+  // Bloc kilométrique — affiché même si aucune cotation
+  const kmBlock = km && km.totalKm > 0 ? `
+    <div style="background:rgba(79,168,255,.05);border:1px solid rgba(79,168,255,.2);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="font-size:22px">🚗</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--t)">Journal kilométrique — <span style="color:var(--a2)">${km.label}</span></div>
+        <div style="font-size:12px;color:var(--m);margin-top:2px">${km.count} trajet(s) · barème ${KM_FISCAL_RATE_TRESOR} €/km (5 CV 2025/2026)</div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:var(--a2);font-family:var(--fm)">${km.totalKm.toFixed(1)} km</div>
+          <div style="font-size:10px;color:var(--m)">parcourus</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:#22c55e;font-family:var(--fm)">${km.deduction.toFixed(2)} €</div>
+          <div style="font-size:10px;color:var(--m)">déduction fiscale</div>
+        </div>
+      </div>
+    </div>` : (km?.count === 0 ? `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">🚗</span>
+      <span style="font-size:12px;color:var(--m)">Aucun trajet dans le Journal kilométrique sur cette période. <a href="#" onclick="if(typeof navTo==='function')navTo('outils-km',null)" style="color:var(--a);text-decoration:none">→ Ajouter des trajets</a></span>
+    </div>` : '');
+
   if (!arr.length) {
-    el.innerHTML = '<div class="empty"><div class="ei">💸</div><p style="margin-top:8px;color:var(--m)">Aucune cotation sur cette période.</p></div>';
+    el.innerHTML = kmBlock + '<div class="empty"><div class="ei">💸</div><p style="margin-top:8px;color:var(--m)">Aucune cotation sur cette période.</p></div>';
     return;
   }
 
@@ -96,6 +162,7 @@ function renderTresorerie(arr) {
   }).join('');
 
   el.innerHTML = `
+    ${kmBlock}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">
       <div class="sc g"><div class="si">💶</div><div class="sv">${totalTTC.toFixed(0)}€</div><div class="sn">Total facturé</div></div>
       <div class="sc b"><div class="si">✅</div><div class="sv">${amoRecu.toFixed(0)}€</div><div class="sn">AMO reçu</div></div>
@@ -103,6 +170,7 @@ function renderTresorerie(arr) {
       <div class="sc b"><div class="si">✅</div><div class="sv">${amcRecu.toFixed(0)}€</div><div class="sn">AMC reçu</div></div>
       <div class="sc o"><div class="si">⏳</div><div class="sv">${amcAttente.toFixed(0)}€</div><div class="sn">AMC en attente</div></div>
       <div class="sc r"><div class="si">💳</div><div class="sv">${totalPat.toFixed(0)}€</div><div class="sn">Part patients</div></div>
+      ${km?.deduction > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${km.deduction.toFixed(0)}€</div><div class="sn">Déd. km</div></div>` : ''}
     </div>
     <div id="tresor-checklist-bar" style="margin-bottom:16px"></div>
     <div style="overflow-x:auto">
@@ -161,6 +229,7 @@ async function exportComptable() {
     const d   = await fetchAPI(`/webhook/ami-historique?period=${period}`);
     const arr = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
     const paid = _loadPaidMap();
+    const km   = _getKmForPeriod(period);
 
     const header = ['ID','Date soin','Actes','Total TTC','Part AMO','AMO reçu','Part AMC','AMC reçu','Part Patient','DRE','N° Facture','Version NGAP'];
     const lines  = arr.map(r => {
@@ -182,8 +251,28 @@ async function exportComptable() {
       ].join(';');
     });
 
+    // Ligne séparatrice + récap kilométrique
+    if (km.totalKm > 0) {
+      lines.push('');
+      lines.push(['KILOMÉTRIQUE','','','','','','','','','','',''].join(';'));
+      lines.push([
+        'KM',
+        km.label,
+        `${km.count} trajet(s)`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        `${km.totalKm.toFixed(1)} km parcourus`,
+        `Déduction ${km.deduction.toFixed(2)} € (${KM_FISCAL_RATE_TRESOR} €/km)`,
+      ].join(';'));
+    }
+
     const csv  = [header.join(';'), ...lines].join('\n');
-    const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8' }); // BOM pour Excel
+    const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `ami-export-${period}-${new Date().toISOString().slice(0,10)}.csv`;

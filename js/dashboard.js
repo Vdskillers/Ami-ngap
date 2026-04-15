@@ -18,10 +18,9 @@
   if(typeof DASH_CACHE_KEY==='undefined') console.error('dashboard.js : DASH_CACHE_KEY manquant (voice.js non chargé).');
 })();
 
-/* Cache 5 minutes avec fallback hors-ligne */
-function loadDashCache(maxAge = 5 * 60 * 1000) {
+/* Cache 30 minutes (au lieu de 5) avec fallback hors-ligne */
+function loadDashCache(maxAge = 30 * 60 * 1000) {
   try {
-    // Utiliser la clé segmentée par user (définie dans voice.js) si disponible
     const key = (typeof _dashCacheKey === 'function') ? _dashCacheKey() : DASH_CACHE_KEY;
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -31,30 +30,9 @@ function loadDashCache(maxAge = 5 * 60 * 1000) {
   } catch { return null; }
 }
 
-/* ── Badge cache UI ──────────────────────────── */
-function _showCacheInfo(cache) {
-  const el = $('dash-cache-info');
-  if (!el) return;
-  const min = Math.floor(cache.age / 60000);
-  el.innerHTML = cache.expired
-    ? `🔴 Mode hors ligne — données en cache (${min} min)`
-    : `🟡 Données en cache (${min} min)`;
-  el.style.display = 'block';
-}
-function _hideCacheInfo() {
-  const el = $('dash-cache-info');
-  if (el) el.style.display = 'none';
-}
-
 /* ── 3. loadDash robuste + fallback cache ─────── */
 async function loadDash() {
   if(!requireAuth()) return;
-
-  // ── Mode admin : afficher la structure vide pour tester l'UI ──
-  if (typeof S !== 'undefined' && S?.role === 'admin') {
-    _renderAdminDashDemo();
-    return;
-  }
 
   $('dash-loading').style.display='block';
   $('dash-body').style.display='none';
@@ -72,7 +50,7 @@ async function loadDash() {
 
   try {
     const data = await fetchAPI('/webhook/ami-historique?period=month');
-    const arr = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+    const arr  = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     if (!arr.length) {
       if (!cache?.data?.length) {
         $('dash-loading').style.display='none';
@@ -88,7 +66,6 @@ async function loadDash() {
   } catch(e) {
     console.warn('[Dashboard] API error:', e.message);
     if (cache?.data?.length) {
-      // 🔴 Fallback cache — afficher les données en cache avec avertissement
       renderDashboard(cache.data);
       _showCacheInfo({ ...cache, expired: true });
       $('dash-loading').style.display='none';
@@ -168,11 +145,7 @@ function renderDashboard(arr) {
     if(best<t) best=t;
     if((r.date_soin||'').startsWith(today)) todayRev+=t;
     if((r.date_soin||'').startsWith(monthStr)) monthRev+=t;
-
-    // Actes
     try { JSON.parse(r.actes||'[]').forEach(a=>{ if(a.code&&a.code!=='IMPORT') actesFreq[a.code]=(actesFreq[a.code]||0)+1; }); } catch{}
-
-    // Chart journalier
     const d=(r.date_soin||'').slice(0,10);
     if(d) daily[d]=(daily[d]||0)+t;
   });
@@ -181,7 +154,41 @@ function renderDashboard(arr) {
   const dayOfMonth=new Date().getDate();
   const daysInMonth=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
 
-  // KPIs enrichis
+  // ── Km du mois depuis le journal kilométrique ──────────────────────────
+  let kmMois = 0, kmDeduction = 0;
+  try {
+    const kmEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    const since = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    kmEntries.filter(e => new Date(e.date) >= since).forEach(e => { kmMois += parseFloat(e.km||0); });
+    kmDeduction = Math.round(kmMois * 0.636 * 100) / 100;
+    kmMois = Math.round(kmMois * 10) / 10;
+  } catch {}
+
+  // ── Patients du carnet ce mois (IDB local) ─────────────────────────────
+  let nbPatientsCarnet = 0;
+  try {
+    const uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : 'local';
+    const dbName = 'ami_patients_db_' + String(uid).replace(/[^a-zA-Z0-9_-]/g,'_');
+    // Lecture asynchrone non-bloquante — met à jour le badge si disponible
+    (async () => {
+      try {
+        const req = indexedDB.open(dbName);
+        req.onsuccess = e => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('ami_patients')) return;
+          const tx = db.transaction('ami_patients','readonly');
+          const store = tx.objectStore('ami_patients');
+          const countReq = store.count();
+          countReq.onsuccess = () => {
+            const el = $('dash-km-patients');
+            if (el) el.textContent = countReq.result + ' patient(s) dans le carnet';
+          };
+        };
+      } catch {}
+    })();
+  } catch {}
+
+  // KPIs enrichis + km
   $('dash-kpis').innerHTML=[
     {icon:'💶',val:total.toFixed(2)+'€',label:'CA total (mois)',cls:'g'},
     {icon:'🏦',val:amo.toFixed(2)+'€',label:'Part AMO',cls:'b'},
@@ -191,6 +198,8 @@ function renderDashboard(arr) {
     {icon:'🏆',val:best.toFixed(2)+'€',label:'Meilleure facture',cls:'g'},
     {icon:'📋',val:dre,label:'DRE requises',cls:'r'},
     {icon:'📊',val:avg.toFixed(2)+'€',label:'Moy. par passage',cls:'b'},
+    ...(kmMois>0 ? [{icon:'🚗',val:kmMois+'km',label:'Km ce mois',cls:'b'}] : []),
+    ...(kmDeduction>0 ? [{icon:'💸',val:kmDeduction+'€',label:'Déd. fiscale km',cls:'g'}] : []),
   ].map(k=>`<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
 
   // Graphique 30 jours
@@ -207,6 +216,13 @@ function renderDashboard(arr) {
   $('dash-top-actes').innerHTML=topActes.length
     ? topActes.map(([code,count])=>`<div class="ar"><div class="ac">${code}</div><div class="an"><div style="height:6px;background:var(--a);border-radius:3px;width:${Math.round(count/maxCount*100)}%;transition:width .4s"></div></div><div class="at" style="color:var(--a)">${count}×</div></div>`).join('')
     : '<div class="ai wa">Aucune cotation enregistrée</div>';
+
+  // Bandeau km si données disponibles
+  const kmBandeau = $('dash-km-bandeau');
+  if (kmBandeau) {
+    kmBandeau.style.display = kmMois > 0 ? 'flex' : 'none';
+    if (kmMois > 0) kmBandeau.innerHTML = `🚗 <strong>${kmMois} km</strong> parcourus ce mois · déduction fiscale estimée : <strong style="color:#22c55e">${kmDeduction} €</strong> (barème 5CV 2025) · <span id="dash-km-patients" style="color:var(--m)"></span>`;
+  }
 
   // Prévision intelligente
   const forecast = forecastRevenue(daily);
@@ -226,6 +242,11 @@ function renderDashboard(arr) {
   renderAI(explanations, suggestions);
   const loss = computeLoss(arr);
   showLossAlert(loss);
+
+  // Notice admin si applicable
+  const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
+  const notice = $('dash-admin-notice');
+  if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
 }
 
 /* ============================================================

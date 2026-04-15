@@ -66,6 +66,24 @@ function _buildRapportHTML(arr, u, period) {
   const avg     = arr.length ? total/arr.length : 0;
   const best    = Math.max(...arr.map(r=>parseFloat(r.total||0)), 0);
 
+  // ── Km depuis le journal kilométrique ─────────────────────────────────
+  let kmTotal = 0, kmCount = 0, kmDeduction = 0;
+  try {
+    const kmEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    const now = new Date();
+    let since = new Date();
+    if      (period === 'lastmonth') { since = new Date(now.getFullYear(), now.getMonth()-1, 1); }
+    else if (period === '3month')    { since.setMonth(now.getMonth()-3); }
+    else if (period === 'year')      { since = new Date(now.getFullYear(), 0, 1); }
+    else /* month */                 { since = new Date(now.getFullYear(), now.getMonth(), 1); }
+    const filtered = period === 'lastmonth'
+      ? kmEntries.filter(e => { const d=new Date(e.date); return d>=since && d<=new Date(now.getFullYear(),now.getMonth(),0); })
+      : kmEntries.filter(e => new Date(e.date) >= since);
+    kmCount = filtered.length;
+    kmTotal = Math.round(filtered.reduce((s,e) => s + parseFloat(e.km||0), 0) * 10) / 10;
+    kmDeduction = Math.round(kmTotal * 0.636 * 100) / 100;
+  } catch {}
+
   // Top actes
   const freq = {};
   arr.forEach(r => { try { JSON.parse(r.actes||'[]').forEach(a=>{ if(a.code&&a.code!=='IMPORT') freq[a.code]=(freq[a.code]||0)+1; }); } catch{} });
@@ -112,7 +130,7 @@ function _buildRapportHTML(arr, u, period) {
   .kpi { background:#f7f9fc; border:1px solid #e0e7ef; border-radius:10px; padding:16px; text-align:center }
   .kpi-v { font-size:26px; font-weight:700; color:#0b3954; margin-bottom:4px }
   .kpi-l { font-size:11px; text-transform:uppercase; color:#6b7a99; letter-spacing:.5px }
-  .kpi.green .kpi-v { color:#059669 } .kpi.blue .kpi-v { color:#2563eb } .kpi.orange .kpi-v { color:#d97706 }
+  .kpi.green .kpi-v { color:#059669 } .kpi.blue .kpi-v { color:#2563eb } .kpi.orange .kpi-v { color:#d97706 } .kpi.teal .kpi-v { color:#0891b2 }
   table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:20px }
   th { background:#f0f4fa; padding:8px 10px; text-align:left; font-size:11px; text-transform:uppercase; color:#6b7a99; letter-spacing:.3px }
   td { padding:8px 10px; border-bottom:1px solid #f0f4fa }
@@ -120,6 +138,7 @@ function _buildRapportHTML(arr, u, period) {
   tfoot td { font-weight:700; border-top:2px solid #ccd5e0; background:#f7f9fc }
   .bar-wrap { display:flex; align-items:flex-end; gap:3px; height:100px; margin:12px 0 4px }
   .bar { background:#0b3954; border-radius:3px 3px 0 0; min-height:4px; flex:1; transition:height .3s; opacity:.8 }
+  .km-block { background:#f0f9ff; border:1px solid #bae6fd; border-radius:10px; padding:16px 20px; margin-bottom:24px; display:flex; align-items:center; gap:20px; flex-wrap:wrap }
   .footer { margin-top:40px; padding-top:16px; border-top:1px solid #e0e7ef; font-size:11px; color:#9ca3af; text-align:center }
   .badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600 }
   .badge-ok { background:#d1fae5; color:#059669 } .badge-warn { background:#fef3c7; color:#d97706 }
@@ -153,6 +172,28 @@ function _buildRapportHTML(arr, u, period) {
   <div class="kpi"><div class="kpi-v">${best.toFixed(2)} €</div><div class="kpi-l">Meilleure facture</div></div>
   <div class="kpi ${dre>0?'orange':'green'}"><div class="kpi-v">${dre}</div><div class="kpi-l">DRE requises</div></div>
 </div>
+
+${kmTotal > 0 ? `
+<h2>🚗 Kilométrique & Déductions fiscales</h2>
+<div class="km-block">
+  <div style="font-size:32px">🚗</div>
+  <div style="flex:1">
+    <div style="font-size:20px;font-weight:700;color:#0b3954">${kmTotal} km parcourus</div>
+    <div style="font-size:12px;color:#6b7a99;margin-top:4px">${kmCount} trajet(s) sur la période · Barème 5 CV 2025/2026 : 0,636 €/km</div>
+  </div>
+  <div style="text-align:center;background:#fff;border:1px solid #bae6fd;border-radius:8px;padding:12px 20px">
+    <div style="font-size:24px;font-weight:700;color:#059669">${kmDeduction.toFixed(2)} €</div>
+    <div style="font-size:11px;color:#6b7a99;text-transform:uppercase;letter-spacing:.5px">Déduction fiscale</div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Indicateur</th><th>Valeur</th><th>Calcul</th></tr></thead>
+  <tbody>
+    <tr><td>Km totaux</td><td><strong>${kmTotal} km</strong></td><td>${kmCount} trajet(s)</td></tr>
+    <tr><td>Barème kilométrique</td><td>0,636 €/km</td><td>Véhicule 5 CV — barème 2025/2026</td></tr>
+    <tr><td>Déduction fiscale estimée</td><td><strong style="color:#059669">${kmDeduction.toFixed(2)} €</strong></td><td>${kmTotal} km × 0,636 €/km</td></tr>
+  </tbody>
+</table>` : ''}
 
 ${topActes.length ? `<h2>🩺 Actes les plus fréquents</h2>
 <table>
