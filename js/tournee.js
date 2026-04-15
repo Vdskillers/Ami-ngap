@@ -149,11 +149,12 @@ function showImportedPatients(){
    Conserve les données entre sessions et imports
    ══════════════════════════════════════════════════════ */
 function _planningKey() {
-  // Essayer S en mémoire d'abord, puis sessionStorage si S n'est pas encore hydraté
+  // Priorité 1 : S en mémoire (déjà hydraté)
   let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
-  if (!uid && typeof ss !== 'undefined') {
+  // Priorité 2 : sessionStorage clé 'ami' (celle utilisée par ss.save/load dans utils.js)
+  if (!uid) {
     try {
-      const sess = ss.load ? ss.load() : JSON.parse(sessionStorage.getItem('ami_sess') || 'null');
+      const sess = JSON.parse(sessionStorage.getItem('ami') || 'null');
       uid = sess?.user?.id || null;
     } catch {}
   }

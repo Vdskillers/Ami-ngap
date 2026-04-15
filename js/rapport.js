@@ -69,7 +69,11 @@ function _buildRapportHTML(arr, u, period) {
   // ── Données kilométriques depuis le journal local ──────────────────────
   let kmTotal = 0, kmDeduction = 0, kmEntries = [];
   try {
-    const allEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    // Clé isolée par userId — même logique que _kmKey() dans infirmiere-tools.js
+    let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+    const _kmKey2 = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const allEntries = JSON.parse(localStorage.getItem(_kmKey2) || '[]');
     // Filtrer selon la période sélectionnée
     const now = new Date();
     let since = new Date(now.getFullYear(), now.getMonth(), 1); // défaut : mois courant

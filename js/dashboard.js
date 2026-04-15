@@ -172,7 +172,11 @@ function renderDashboard(arr) {
   // ── Km du mois depuis le journal kilométrique ──────────────────────────
   let kmMois = 0, kmDeduction = 0;
   try {
-    const kmEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    // Clé isolée par userId — même logique que _kmKey() dans infirmiere-tools.js
+    let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+    const _kmKey3 = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const kmEntries = JSON.parse(localStorage.getItem(_kmKey3) || '[]');
     const since = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     kmEntries.filter(e => new Date(e.date) >= since).forEach(e => { kmMois += parseFloat(e.km||0); });
     kmDeduction = Math.round(kmMois * 0.636 * 100) / 100;

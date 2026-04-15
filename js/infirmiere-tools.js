@@ -155,12 +155,15 @@ function _getKmRate(cv, kmAnnuel, electrique) {
 
 /* ── Clé localStorage isolée par userId (même principe que ami_planning_<userId>) ──
    Isolation RGPD : chaque infirmière/admin ne lit que ses propres trajets.
+   ⚠️ La clé sessionStorage correcte est 'ami' (définie dans utils.js → ss.save/load)
 ────────────────────────────────────────────────────────────────────────────────── */
 function _kmKey() {
+  // Priorité 1 : S en mémoire (déjà hydraté)
   let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  // Priorité 2 : sessionStorage clé 'ami' (celle utilisée par ss.save/load dans utils.js)
   if (!uid) {
     try {
-      const sess = JSON.parse(sessionStorage.getItem('ami_sess') || 'null');
+      const sess = JSON.parse(sessionStorage.getItem('ami') || 'null');
       uid = sess?.user?.id || null;
     } catch {}
   }

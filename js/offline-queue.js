@@ -109,8 +109,13 @@ function _buildHeureIndex() {
 
   // ── Source 1 : planning sauvegardé en localStorage (ami_planning_<userId>) ──
   // Clé isolée par utilisateur — aucun risque de croiser les données entre comptes.
+  // ⚠️ La clé sessionStorage correcte est 'ami' (définie dans utils.js → ss.save/load).
   try {
-    let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : 'local';
+    let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    if (!uid) {
+      try { uid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {}
+    }
+    uid = uid || 'local';
     const planKey = 'ami_planning_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
     const raw = localStorage.getItem(planKey);
     if (raw) {
@@ -194,9 +199,15 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   const evoArrow = evo >= 0 ? '↑' : '↓';
 
   // ── Km du mois depuis le journal local ───────────────────────────────────
+  // Clé isolée par userId — même logique que _kmKey() dans infirmiere-tools.js
   let kmMois = 0, kmDeduction = 0;
   try {
-    const kmEntries = JSON.parse(localStorage.getItem('ami_km_journal') || '[]');
+    let kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    if (!kmUid) {
+      try { kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {}
+    }
+    const kmKey = 'ami_km_journal_' + String(kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const kmEntries = JSON.parse(localStorage.getItem(kmKey) || '[]');
     const since = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const filtered = kmEntries.filter(e => new Date(e.date) >= since);
     kmMois = Math.round(filtered.reduce((s, e) => s + parseFloat(e.km||0), 0) * 10) / 10;
