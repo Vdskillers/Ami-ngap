@@ -760,12 +760,17 @@
            3. EXPORTER LES KM DU JOUR → Journal kilométrique
            ═══════════════════════════════════════════════════════ */
         try {
-          /* Total km : somme des distance_km sur chaque patient de la route */
-          let kmTotal = snapshot.reduce((s, p) => s + parseFloat(p.distance_km || p.km || 0), 0);
+          /* Source 1 (fiable) : km OSRM stockés au moment de l'optimisation */
+          let kmTotal = parseFloat(APP.get('tourneeKmJour') || 0);
 
-          /* Fallback : lire dans l'affichage OSRM rendu (badge "X km") */
+          /* Source 2 : somme des distance_km par patient (mode Uber ou backend) */
           if (!kmTotal) {
-            const kmBadge = document.querySelector('#tbody .dreb, #res-tur .dreb');
+            kmTotal = snapshot.reduce((s, p) => s + parseFloat(p.distance_km || p.km || 0), 0);
+          }
+
+          /* Source 3 : badge affiché dans le rendu OSRM (ex: "🚗 38.4 km") */
+          if (!kmTotal) {
+            const kmBadge = document.querySelector('#tbody .dreb');
             if (kmBadge) {
               const m = kmBadge.textContent.match(/([\d.,]+)\s*km/);
               if (m) kmTotal = parseFloat(m[1].replace(',', '.'));
@@ -783,10 +788,12 @@
               depart:  'Cabinet',
               arrivee: 'Tournée patients',
               km:      Math.round(kmTotal * 10) / 10,
-              motif:   `Tournée du ${new Date().toLocaleDateString('fr-FR')} — ${nbVisites} visite(s)`,
+              motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} visite(s)`,
               _source: 'tournee_auto',
             });
             localStorage.setItem(KM_KEY, JSON.stringify(journal));
+            /* Réinitialiser pour la prochaine tournée */
+            APP.set('tourneeKmJour', 0);
           }
         } catch (e) { console.warn('[AMI] Import km KO:', e.message); }
 
