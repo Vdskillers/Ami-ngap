@@ -388,7 +388,7 @@ async function renderPlanning(d){
 
     return `<div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-        <div style="font-size:13px;font-weight:600;color:var(--t);flex:1;min-width:0;word-break:break-word">${nom}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--t);flex:1;min-width:0;overflow-wrap:break-word;word-break:normal;white-space:normal">${nom}</div>
         <span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>
         ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>` : ''}
         ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;flex-shrink:0">✅</span>` : ''}
@@ -427,12 +427,12 @@ async function renderPlanning(d){
       </div>
 
       <!-- Grille des jours -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
         ${JOURS.map(j => `
-          <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px">
-            <div style="font-weight:600;text-transform:capitalize;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between">
-              ${j}
-              ${byDay[j].length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px">${byDay[j].length}</span>` : ''}
+          <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-width:0">
+            <div style="font-weight:600;text-transform:capitalize;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j}</span>
+              ${byDay[j].length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px;flex-shrink:0">${byDay[j].length}</span>` : ''}
             </div>
             ${byDay[j].length
               ? byDay[j].map(p => renderPatientCard(p)).join('')
