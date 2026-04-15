@@ -673,6 +673,30 @@
         const todayStr  = today.split('T')[0];
         const u         = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
+        /* ── Enrichir APP.importedData avec les noms/dates des uberPatients
+           pour que le Planning hebdomadaire affiche les vraies infos ── */
+        if (APP.importedData) {
+          const key = APP.importedData.patients ? 'patients' : 'entries';
+          const arr = APP.importedData[key] || [];
+          const uberIndex = {};
+          (APP.get('uberPatients') || []).forEach(p => {
+            const k = p.patient_id || p.id;
+            if (k) uberIndex[k] = p;
+          });
+          APP.importedData[key] = arr.map(p => {
+            const uber = uberIndex[p.patient_id || p.id] || {};
+            return {
+              ...p,
+              nom:      uber.nom    || p.nom    || '',
+              prenom:   uber.prenom || p.prenom || '',
+              date:     p.date || p.date_soin || todayStr,
+              _cotation: p._cotation || uber._cotation,
+              done:     p.done  || p._done  || uber.done  || false,
+              absent:   p.absent || p._absent || uber.absent || false,
+            };
+          });
+        }
+
         /* ── Afficher un toast de progression ── */
         if (typeof showToast === 'function') showToast('⚙️ Génération des cotations en cours…');
 
