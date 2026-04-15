@@ -2342,13 +2342,8 @@ async function delHist(id) {
   }
 }
 
-/* Charger l'historique automatiquement à la navigation */
-document.addEventListener('app:nav', e => {
-  if (e.detail?.view === 'his') setTimeout(hist, 80);
-});
-document.addEventListener('ui:navigate', e => {
-  if (e.detail?.view === 'his') setTimeout(hist, 80);
-});
+/* Charger l'historique automatiquement à la navigation — géré par ui.js */
+
 </script>
 
 <script>
