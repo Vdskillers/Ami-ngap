@@ -83,16 +83,12 @@
     <p style="color:var(--m);font-size:13px;margin-bottom:24px">Données agrégées anonymisées · aucune donnée patient identifiable</p>
     <div class="adm-notice"><span style="font-size:20px;flex-shrink:0">🛡️</span><p><strong>Mode admin sécurisé :</strong> Vous ne voyez que les statistiques globales et le nom+prénom des infirmiers. Aucun email, patient, sécu, ni donnée médicale n'est accessible ici.</p></div>
     <div class="adm-alert e" id="adm-alert"></div>
-    <!-- KPI -->
-    <div class="lbl" style="margin-bottom:12px">Analytics globaux</div>
-    <div id="adm-kpi" class="kpi-grid">
-      <div class="kpi"><div class="kpi-v g" id="kpi-ca">—</div><div class="kpi-l">CA total (€)</div></div>
-      <div class="kpi"><div class="kpi-v b" id="kpi-actes">—</div><div class="kpi-l">Soins cotés</div></div>
-      <div class="kpi"><div class="kpi-v o" id="kpi-panier">—</div><div class="kpi-l">Panier moyen</div></div>
-      <div class="kpi"><div class="kpi-v r" id="kpi-alertes">—</div><div class="kpi-l">Alertes NGAP</div></div>
-      <div class="kpi"><div class="kpi-v b" id="kpi-dre">—</div><div class="kpi-l">DRE requises</div></div>
+    <!-- Activité plateforme & Santé système — chargé par loadSystemHealth() -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <div class="lbl">🖥️ Activité plateforme & Santé du système</div>
+      <button class="bs bsm" onclick="loadSystemHealth()" style="padding:8px 16px;font-size:12px">↻ Rafraîchir</button>
     </div>
-    <div id="adm-top-actes" style="margin-bottom:24px"></div>
+    <div id="adm-system-health-body" style="margin-bottom:28px"><div class="empty" style="padding:20px"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:8px;color:var(--m);font-size:13px">Chargement...</p></div></div>
     <!-- Gestion comptes -->
     <div class="lbl" style="margin-bottom:12px">Gestion des comptes infirmiers</div>
     <div class="adm-search">
@@ -120,14 +116,6 @@
       <div id="adm-messages"><div class="empty" style="padding:24px 0"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:10px">Chargement...</p></div></div>
     </div>
 
-    <!-- Monitoring système (admin) -->
-    <div style="margin-top:32px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-        <div class="lbl">🖥️ Santé du système</div>
-        <button class="bs bsm" onclick="loadSystemHealth()" style="padding:8px 16px;font-size:12px">↻ Rafraîchir monitoring</button>
-      </div>
-      <div id="system-health-body"><div class="empty" style="padding:20px"><div class="ei">🖥️</div><p style="margin-top:8px;color:var(--m);font-size:13px">Cliquez sur "Rafraîchir monitoring" pour charger l'état du système.</p></div></div>
-    </div>
   </div>
 </div>
 
