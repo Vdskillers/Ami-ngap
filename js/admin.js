@@ -314,6 +314,7 @@ function _renderAuditLogs() {
             <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500">User ID</th>
             <th style="padding:8px 10px;text-align:center;color:var(--m);font-weight:500">Score</th>
             <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500">IP</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500">Détails</th>
           </tr>
         </thead>
         <tbody>
@@ -322,6 +323,13 @@ function _renderAuditLogs() {
             const dt = new Date(l.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
             const scoreClass = l.score >= 70 ? 'high' : l.score >= 40 ? 'med' : 'low';
             const isAlert = l.event === 'COTATION_FRAUD_ALERT' || l.event === 'LOGIN_FAIL';
+            // Extraire infos utiles du meta pour affichage
+            const meta = l.meta || {};
+            const metaBits = [];
+            if (meta.role)       metaBits.push(`<span style="color:${meta.role==='admin'?'#f59e0b':'var(--a)'}">@${meta.role}</span>`);
+            if (meta.count != null) metaBits.push(`${meta.count} éléments`);
+            if (meta.email)      metaBits.push(`📧 ${_escAdm(meta.email.slice(0,20))}`);
+            if (meta.target_id)  metaBits.push(`cible: ${meta.target_id.slice(0,8)}…`);
             return `<tr style="border-bottom:1px solid var(--b);${isAlert ? 'background:rgba(239,68,68,.04)' : i % 2 === 0 ? 'background:rgba(255,255,255,.01)' : ''}">
               <td style="padding:8px 10px">
                 <span style="display:inline-flex;align-items:center;gap:6px">
@@ -330,11 +338,12 @@ function _renderAuditLogs() {
                 </span>
               </td>
               <td style="padding:8px 10px;white-space:nowrap;color:var(--m)">${dt}</td>
-              <td style="padding:8px 10px;color:var(--m);font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escAdm(l.user_id||'—')}">${l.user_id ? l.user_id.slice(0,8)+'…' : '—'}</td>
+              <td style="padding:8px 10px;color:var(--m);font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escAdm(l.user_id||'—')}">${l.user_id ? l.user_id.slice(0,8)+'…' : '—'}</td>
               <td style="padding:8px 10px;text-align:center">
                 ${l.score != null ? `<span class="log-score ${scoreClass}" style="font-family:var(--fm);font-size:11px;padding:2px 8px;border-radius:20px">${l.score}</span>` : '<span style="color:var(--m)">—</span>'}
               </td>
-              <td style="padding:8px 10px;color:var(--m);font-size:11px">${_escAdm(l.ip || '—')}</td>
+              <td style="padding:8px 10px;color:var(--m);font-size:11px;white-space:nowrap">${_escAdm(l.ip || '—')}</td>
+              <td style="padding:8px 10px;color:var(--m);font-size:11px">${metaBits.join(' · ') || '—'}</td>
             </tr>`;
           }).join('')}
         </tbody>
