@@ -556,7 +556,10 @@ async function optimiserTournee(){
       if(pts.length >= 2) osrm = await getOsrmRoute([startPoint,...pts]);
       $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, null, 'heure');
       $('terr').style.display = 'none';
-      if(osrm?.total_km) APP.set('tourneeKmJour', osrm.total_km);
+      if(osrm?.total_km) {
+        APP.set('tourneeKmJour', osrm.total_km);
+        try { localStorage.setItem('ami_tournee_km', String(osrm.total_km)); } catch {}
+      }
       if(typeof renderPatientsOnMap === 'function')
         renderPatientsOnMap(route, startPoint).catch(()=>{});
       APP.set('uberPatients', route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false,late:false,amount:parseFloat(p.total||p.montant||0)||estimateRevenue([p])})));
@@ -603,7 +606,10 @@ async function optimiserTournee(){
     /* ── 5. Rendu liste ───────────────────────────────── */
     $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, rentab, optimMode);
     $('terr').style.display = 'none';
-    if(osrm?.total_km) APP.set('tourneeKmJour', osrm.total_km);
+    if(osrm?.total_km) {
+      APP.set('tourneeKmJour', osrm.total_km);
+      try { localStorage.setItem('ami_tournee_km', String(osrm.total_km)); } catch {}
+    }
 
     /* ── 6. Map premium — markers + route + timeline ──── */
     if(typeof renderPatientsOnMap === 'function') {
@@ -734,7 +740,10 @@ async function _optimiserTourneeAPI(startLat, startLng) {
     if(!d.ok) throw new Error(d.error||'Erreur API');
     const ca = estimateRevenue(d.route||[]);
     $('tbody').innerHTML = _renderRouteHTML(d.route||[], null, ca, null);
-    if(d.total_km) APP.set('tourneeKmJour', d.total_km);
+    if(d.total_km) {
+      APP.set('tourneeKmJour', d.total_km);
+      try { localStorage.setItem('ami_tournee_km', String(d.total_km)); } catch {}
+    }
     if(typeof renderPatientsOnMap==='function' && d.route?.length) {
       renderPatientsOnMap(d.route,{lat:startLat,lng:startLng}).catch(()=>{});
     }
