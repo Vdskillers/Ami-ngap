@@ -108,11 +108,23 @@ window.addEventListener('offline', () => { _updateQueueBadge(); showToast('📡 
    Persiste les heure_soin entre sessions pour l'analyse horaire.
    Structure : { "id_cotation": "HH:MM", "YYYY-MM-DD": "HH:MM", ... }
    Alimenté à chaque réponse API avec heure_soin non null.
+   
+   Stratégie de clé robuste :
+   - Clé principale  : ami_heure_cache_<userId-UUID>  (isolée par compte)
+   - Clé de secours  : ami_heure_cache_local          (quand userId inconnu)
+   - Migration auto  : au login, les données "local" sont fusionnées dans la clé UUID
+   → garantit qu'aucune heure n'est perdue même si S n'est pas encore hydraté
 ────────────────────────────────────────────────────────────────────────── */
 function _heureCacheKey() {
+  // 1. S hydraté en mémoire (cas normal — session active)
   let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  // 2. sessionStorage (page rechargée, S pas encore réhydraté par checkAuth)
   if (!uid) {
     try { uid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {}
+  }
+  // 3. localStorage longue durée (survit aux fermetures de navigateur)
+  if (!uid) {
+    try { uid = JSON.parse(localStorage.getItem('ami_last_uid') || 'null'); } catch {}
   }
   return 'ami_heure_cache_' + String(uid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -122,7 +134,36 @@ function _loadHeureCache() {
 }
 
 function _saveHeureCache(cache) {
-  try { localStorage.setItem(_heureCacheKey(), JSON.stringify(cache)); } catch {}
+  // Persister aussi le userId courant pour les lectures futures avant réhydratation S
+  try {
+    const uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    if (uid) localStorage.setItem('ami_last_uid', JSON.stringify(uid));
+    localStorage.setItem(_heureCacheKey(), JSON.stringify(cache));
+  } catch {}
+}
+
+/* ── Migration : fusionne ami_heure_cache_local → clé userId au login ──────
+   Appelé après login quand S est hydraté. Évite de perdre les heures
+   mémorisées pendant une session où userId n'était pas encore disponible.
+──────────────────────────────────────────────────────────────────────────── */
+function _migrateHeureCacheLocal() {
+  try {
+    const uid = S?.user?.id;
+    if (!uid) return;
+    // Mettre à jour ami_last_uid maintenant qu'on a l'UUID
+    localStorage.setItem('ami_last_uid', JSON.stringify(uid));
+    const localKey  = 'ami_heure_cache_local';
+    const localData = localStorage.getItem(localKey);
+    if (!localData) return;
+    const local   = JSON.parse(localData);
+    if (!Object.keys(local).length) return;
+    // Merge : clé UUID existante + données local (UUID prioritaire)
+    const realKey = 'ami_heure_cache_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const existing = JSON.parse(localStorage.getItem(realKey) || '{}');
+    const merged   = { ...local, ...existing }; // existing (UUID) prioritaire
+    localStorage.setItem(realKey, JSON.stringify(merged));
+    localStorage.removeItem(localKey); // nettoyer le fallback
+  } catch {}
 }
 
 /* Mémorise les heures depuis un tableau de cotations retourné par l'API */
@@ -707,8 +748,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Onboarding après login
   document.addEventListener('ami:login', checkOnboarding);
 
-  // Pull du cache heures cross-appareils après login (synchronise PC ↔ mobile)
-  document.addEventListener('ami:login', () => { setTimeout(pullHeureCache, 2000); });
+  // Migration + pull du cache heures au login
+  document.addEventListener('ami:login', () => {
+    _migrateHeureCacheLocal();        // fusionner ami_heure_cache_local → clé UUID
+    setTimeout(pullHeureCache, 2000); // puis sync cross-appareils
+  });
 
   // Init queue status
   const q = _getQueue();
@@ -730,6 +774,7 @@ window.requestNotifPermission = requestNotifPermission;
 window.scheduleDailyCotationReminder = scheduleDailyCotationReminder;
 window.syncHeureCache          = syncHeureCache;
 window.pullHeureCache          = pullHeureCache;
+window._migrateHeureCacheLocal = _migrateHeureCacheLocal;
 window.loadTresorerie         = window.loadTresorerie || function(){};
 window.checklistCPAM          = window.checklistCPAM  || function(){};
 window.exportComptable        = window.exportComptable || function(){};
