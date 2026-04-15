@@ -886,10 +886,15 @@
         const nbCotManu = patients.filter(p => p._cotation?.validated && !p._cotation?.auto).length;
 
         /* CA : priorité au caJournee passé en param (depuis LIVE_CA_TOTAL),
-           fallback somme des cotations du snapshot */
+           fallback cotations validées + amount estimé des patients visités */
+        const caFromCotations = patients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+        const caFromAmounts   = caFromCotations === 0
+          ? patients.filter(p => p.done || p._done).reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+          : 0;
+        const caLive = (typeof _LIVE_CA_TOTAL !== 'undefined') ? _LIVE_CA_TOTAL : 0;
         const caTot = (typeof caJournee === 'number' && caJournee > 0)
           ? caJournee
-          : patients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+          : Math.max(caLive, caFromCotations + caFromAmounts);
 
         titre.textContent     = isBilan ? '🏁 Bilan de la tournée' : '📋 État de la tournée';
         sousTitre.textContent = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
