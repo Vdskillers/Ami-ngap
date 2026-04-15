@@ -1,16 +1,24 @@
 /* ════════════════════════════════════════════════
-   admin.js — AMI NGAP v4.0
+   admin.js — AMI NGAP v5.0
    ────────────────────────────────────────────────
-   Panel d'administration
-   - loadAdm() — charge la liste des comptes
-   - loadAdmStats() — KPIs globaux (anonymisés)
-   - loadAdmLogs() — journal d'audit
-   - loadAdmSecurityStats() — stats sécurité temps réel
-   - filterAccs() / renderAccs() — recherche
-   - admAct() — bloquer / débloquer / supprimer
-   - admAlert() — notifications admin
+   Panel d'administration — architecture RGPD/HDS
    ────────────────────────────────────────────────
-   v4.0 :
+   ISOLATION DES DONNÉES (rappel architectural) :
+   • Chaque utilisateur a sa propre base IndexedDB isolée par userId
+     → ami_patients_db_<userId> / ami_sig_db_<userId>
+   • Les admins ont LEUR PROPRE base IndexedDB (même mécanisme)
+     → ils voient uniquement leurs propres données de test
+   • Les infirmières ne voient que leurs propres données (isolation id)
+   • Les admins ne voient pas les données des infirmières (RGPD/HDS)
+   • Les admins ne voient pas les autres admins dans le panneau
+   ────────────────────────────────────────────────
+   PANNEAU ADMIN — 4 ONGLETS :
+   1. Comptes       — liste nurses + actions (bloquer/réactiver/supprimer)
+   2. Statistiques  — KPIs globaux anonymisés + stats par utilisateur
+   3. Logs d'audit  — table audit_logs Supabase, filtres, export CSV
+   4. Messages      — messages des infirmières, réponses
+   ────────────────────────────────────────────────
+   v5.0 :
    ⚠️ Aucune donnée patient n'est accessible ici (RGPD/HDS)
    Les admins voient : nom+prénom infirmiers, stats anonymisées,
    logs d'audit (sans données patient), alertes sécurité.
@@ -21,55 +29,384 @@
   if(typeof requireAuth==='undefined') console.error('admin.js : utils.js non chargé.');
 })();
 
-/* ADMIN */
-let ACCS=[];
-async function loadAdm(){
-  if(!requireAuth()) return;
-  $('accs').innerHTML='<div class="empty"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:12px">Chargement...</p></div>';
-  try{
-    const d=await wpost('/webhook/admin-liste',{});
-    if(!d.ok)throw new Error(d.error||'Erreur');
-    // ⚠️ RGPD/HDS : les admins ne voient pas les autres admins — nurses uniquement
-    ACCS=(d.comptes||[]).filter(a=>a.role!=='admin');renderAccs(ACCS);
-  }catch(e){admAlert(e.message,'e');$('accs').innerHTML='<div class="empty"><div class="ei">⚠️</div><p>Impossible de charger les comptes</p></div>';}
-  // Charger aussi logs + stats sécurité + messages
+/* ════════════════════════════════════════════════
+   NAVIGATION PAR ONGLETS DU PANNEAU ADMIN
+════════════════════════════════════════════════ */
+let _ADM_ACTIVE_TAB = 'comptes';
+
+function admTab(tab) {
+  _ADM_ACTIVE_TAB = tab;
+  // Mettre à jour les onglets visuels
+  document.querySelectorAll('.adm-tab-btn').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.tab === tab);
+  });
+  // Afficher/masquer les sections
+  document.querySelectorAll('.adm-tab-section').forEach(sec => {
+    sec.style.display = sec.dataset.tab === tab ? 'block' : 'none';
+  });
+  // Charger le contenu selon l'onglet actif
+  if (tab === 'comptes')   { loadAdmComptes(); }
+  if (tab === 'stats')     { loadAdmStats(); }
+  if (tab === 'logs')      { loadAdmLogs(); }
+  if (tab === 'messages')  { loadAdmMessages(); }
+}
+
+/* ════════════════════════════════════════════════
+   CHARGEMENT PRINCIPAL (appelé par showAdm)
+════════════════════════════════════════════════ */
+let ACCS = [];
+
+async function loadAdm() {
+  if (!requireAuth()) return;
+  // Premier chargement : aller sur l'onglet Comptes
+  admTab(_ADM_ACTIVE_TAB || 'comptes');
   loadAdmSecurityStats();
-  loadAdmMessages();
 }
 
-async function loadAdmStats(){
-  try{
-    const d=await wpost('/webhook/admin-stats',{});
-    if(!d.ok)return;
-    const s=d.stats;
-    if($('kpi-ca'))$('kpi-ca').textContent=(s.ca_total||0).toFixed(0)+'€';
-    if($('kpi-actes'))$('kpi-actes').textContent=s.nb_actes||0;
-    if($('kpi-panier'))$('kpi-panier').textContent=(s.panier_moyen||0).toFixed(2)+'€';
-    if($('kpi-alertes'))$('kpi-alertes').textContent=s.nb_alertes||0;
-    if($('kpi-dre'))$('kpi-dre').textContent=s.nb_dre||0;
-    if($('adm-top-actes')&&s.top_actes?.length){
-      $('adm-top-actes').innerHTML=`<div class="lbl" style="margin-bottom:10px">Actes les plus fréquents</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.top_actes.map(a=>`<span style="background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:4px 12px;border-radius:20px;font-family:var(--fm);font-size:12px">${a.code} <span style="opacity:.6">(${a.count})</span></span>`).join('')}</div>`;
+/* ── Onglet 1 : Gestion des comptes ─────────── */
+async function loadAdmComptes() {
+  const el = $('accs');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:12px">Chargement...</p></div>';
+  try {
+    const d = await wpost('/webhook/admin-liste', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    // ⚠️ RGPD/HDS : les admins ne voient pas les autres admins — nurses uniquement
+    // Le worker filtre déjà role=nurse, mais on double la protection côté client
+    ACCS = (d.comptes || []).filter(a => a.role !== 'admin');
+    renderAccs(ACCS);
+  } catch (e) {
+    admAlert(e.message, 'e');
+    el.innerHTML = '<div class="empty"><div class="ei">⚠️</div><p>Impossible de charger les comptes</p></div>';
+  }
+}
+
+/* ── Onglet 2 : Statistiques globales + par user ── */
+async function loadAdmStats() {
+  try {
+    const d = await wpost('/webhook/admin-stats', {});
+    if (!d.ok) return;
+    const s = d.stats;
+    if ($('kpi-ca'))     $('kpi-ca').textContent     = (s.ca_total    || 0).toFixed(0) + '€';
+    if ($('kpi-actes'))  $('kpi-actes').textContent  = s.nb_actes  || 0;
+    if ($('kpi-panier')) $('kpi-panier').textContent = (s.panier_moyen || 0).toFixed(2) + '€';
+    if ($('kpi-alertes'))$('kpi-alertes').textContent= s.nb_alertes || 0;
+    if ($('kpi-dre'))    $('kpi-dre').textContent    = s.nb_dre    || 0;
+    if ($('adm-top-actes') && s.top_actes?.length) {
+      $('adm-top-actes').innerHTML = `
+        <div class="lbl" style="margin-bottom:10px">Actes les plus fréquents (codes NGAP anonymisés)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${s.top_actes.map(a => `<span style="background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:4px 12px;border-radius:20px;font-family:var(--fm);font-size:12px">${a.code} <span style="opacity:.6">(${a.count})</span></span>`).join('')}
+        </div>`;
     }
-  }catch{}
+    // Charger aussi les stats par utilisateur (anonymisées)
+    await loadAdmUserStats();
+  } catch {}
 }
 
-/* ── Journal d'audit (sans données patient) ───── */
-async function loadAdmLogs(){
-  const el=$('adm-logs');
-  if(!el) return;
-  el.innerHTML='<div class="spin spinw" style="width:20px;height:20px;margin:12px auto"></div>';
-  try{
-    const d=await wpost('/webhook/admin-logs',{});
-    if(!d.ok) throw new Error(d.error||'Erreur');
-    const logs=d.logs||[];
-    if(!logs.length){el.innerHTML='<div class="ai in">Aucun log disponible</div>';return;}
-    el.innerHTML=logs.map(l=>{
-      const evtIcon={LOGIN_FAIL:'🔴',LOGIN_SUCCESS:'🟢',COTATION_FRAUD_ALERT:'🚨',ADMIN_BLOCK_USER:'⏸',ADMIN_DELETE_USER:'🗑️',REGISTER:'✨',PASSWORD_CHANGE:'🔑',COTATION_NGAP:'⚡'}[l.event]||'📋';
-      const d=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-      return`<div class="audit-log-row"><span class="log-icon">${evtIcon}</span><span class="log-event">${l.event||'—'}</span><span class="log-date">${d}</span>${l.score!=null?`<span class="log-score ${l.score>=70?'high':l.score>=40?'med':'low'}">${l.score}</span>`:''}</div>`;
-    }).join('');
-  }catch(e){el.innerHTML=`<div class="ai er">⚠️ ${e.message}</div>`;}
+async function loadAdmUserStats() {
+  const el = $('adm-user-stats');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></div>';
+  try {
+    // On réutilise admin-liste qui ne retourne que nurses (id, nom, prenom, is_blocked)
+    const dl = await wpost('/webhook/admin-liste', {});
+    const comptes = (dl.comptes || []).filter(a => a.role !== 'admin');
+    if (!comptes.length) {
+      el.innerHTML = '<div class="ai in">Aucun compte infirmier enregistré.</div>';
+      return;
+    }
+    // Rendu : tableau des utilisateurs avec statut (sans aucune donnée patient)
+    el.innerHTML = `
+      <div class="lbl" style="margin-bottom:12px">
+        👥 Comptes infirmiers enregistrés
+        <span style="font-size:11px;color:var(--m);font-family:var(--fm);font-weight:400;margin-left:8px">(${comptes.length} compte${comptes.length>1?'s':''})</span>
+      </div>
+      <div style="display:grid;gap:8px">
+        ${comptes.map(u => {
+          const ini  = ((u.prenom||'?')[0] + (u.nom||'?')[0]).toUpperCase();
+          const name = ((u.prenom || '') + ' ' + (u.nom || '')).trim() || '—';
+          return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:10px">
+            <div style="width:34px;height:34px;border-radius:50%;background:var(--ad);color:var(--a);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0">${ini}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px">${_escAdm(name)}</div>
+              <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Infirmier(ère) · Données exclusivement locales (RGPD)</div>
+            </div>
+            <div style="font-size:11px;padding:3px 10px;border-radius:20px;font-family:var(--fm);${u.is_blocked ? 'background:rgba(239,68,68,.1);color:#ef4444' : 'background:rgba(0,212,170,.08);color:var(--a)'}">${u.is_blocked ? '⏸ Suspendu' : '● Actif'}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="ai in" style="margin-top:12px;font-size:11px">
+        🔒 Conformité RGPD/HDS : les données de santé (patients, soins, signatures) sont stockées exclusivement sur le terminal de chaque infirmière et ne transitent jamais par nos serveurs non chiffrés.
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="ai er">⚠️ ${e.message}</div>`;
+  }
 }
+
+/* ════════════════════════════════════════════════
+   ONGLET 3 : JOURNAL D'AUDIT — audit_logs Supabase
+   Filtres : événement, score, date
+   Pagination côté client (50 par page)
+   Export CSV (RGPD-compliant — sans données patient)
+════════════════════════════════════════════════ */
+let _ALL_AUDIT_LOGS  = [];   // tous les logs bruts
+let _FILT_AUDIT_LOGS = [];   // après filtrage
+let _AUDIT_PAGE      = 1;
+const _AUDIT_PAGE_SIZE = 50;
+
+// Icônes et libellés pour chaque type d'événement
+const AUDIT_EVENT_META = {
+  LOGIN_SUCCESS:          { icon:'🟢', label:'Connexion réussie',        color:'#00d4aa' },
+  LOGIN_FAIL:             { icon:'🔴', label:'Échec de connexion',        color:'#ef4444' },
+  REGISTER:               { icon:'✨', label:'Création de compte',        color:'#00d4aa' },
+  LOGOUT:                 { icon:'🚪', label:'Déconnexion',               color:'var(--m)' },
+  PASSWORD_CHANGE:        { icon:'🔑', label:'Changement de mot de passe',color:'#f59e0b' },
+  PROFIL_UPDATE:          { icon:'👤', label:'Mise à jour du profil',     color:'var(--m)' },
+  ACCOUNT_DELETED_SELF:   { icon:'🗑️', label:'Suppression de compte',    color:'#ef4444' },
+  COTATION_NGAP:          { icon:'⚡', label:'Cotation NGAP',             color:'#00d4aa' },
+  COTATION_FRAUD_ALERT:   { icon:'🚨', label:'Alerte fraude cotation',    color:'#ef4444' },
+  COTATION_DELETE:        { icon:'🗑️', label:'Suppression cotation',     color:'#f59e0b' },
+  COTATIONS_SYNC:         { icon:'🔄', label:'Sync cotations',            color:'var(--m)' },
+  CALENDAR_IMPORT:        { icon:'📂', label:'Import calendrier',         color:'#00d4aa' },
+  PATIENTS_PUSH:          { icon:'📤', label:'Sync patients',             color:'var(--m)' },
+  PLANNING_PUSH:          { icon:'📅', label:'Sync planning',             color:'var(--m)' },
+  KM_PUSH:                { icon:'🚗', label:'Sync kilométrique',         color:'var(--m)' },
+  HEURE_CACHE_PUSH:       { icon:'⏱️', label:'Sync cache heures',         color:'var(--m)' },
+  PRESCRIPTEUR_ADD:       { icon:'🩺', label:'Ajout prescripteur',        color:'#00d4aa' },
+  CONTACT_MESSAGE_SENT:   { icon:'💬', label:'Message envoyé',            color:'var(--m)' },
+  CONTACT_MESSAGE_READ:   { icon:'👁️', label:'Message lu',               color:'var(--m)' },
+  CONTACT_MESSAGE_REPLIED:{ icon:'📤', label:'Message répondu',           color:'#00d4aa' },
+  COPILOT_QUERY:          { icon:'🤖', label:'Requête Copilote IA',       color:'var(--m)' },
+  ADMIN_BLOCK_USER:       { icon:'⏸',  label:'Admin : suspension compte', color:'#f59e0b' },
+  ADMIN_UNBLOCK_USER:     { icon:'▶️', label:'Admin : réactivation',      color:'#00d4aa' },
+  ADMIN_DELETE_USER:      { icon:'🗑️', label:'Admin : suppression',      color:'#ef4444' },
+  ADMIN_SYSTEM_RESET:     { icon:'🔁', label:'Admin : reset system logs', color:'#f59e0b' },
+};
+
+function _auditEventMeta(event) {
+  return AUDIT_EVENT_META[event] || { icon:'📋', label: event || '—', color:'var(--m)' };
+}
+
+async function loadAdmLogs() {
+  const el = $('adm-logs-body');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:32px"><div class="spin spinw" style="width:28px;height:28px;margin:0 auto"></div><p style="margin-top:12px;color:var(--m);font-size:13px">Chargement du journal d\'audit...</p></div>';
+  try {
+    const d = await wpost('/webhook/admin-logs', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    _ALL_AUDIT_LOGS = d.logs || [];
+    _AUDIT_PAGE = 1;
+    _renderAuditFilters();
+    _applyAuditFilters();
+    // Remplir aussi les system_logs si présents
+    _renderSystemLogs(d.system_logs || []);
+    // KPIs sécurité
+    _renderAuditKPIs(d.stats || {}, _ALL_AUDIT_LOGS);
+  } catch (e) {
+    el.innerHTML = `<div class="ai er">⚠️ ${e.message}</div>`;
+  }
+}
+
+function _renderAuditKPIs(stats, logs) {
+  const el = $('adm-audit-kpis');
+  if (!el) return;
+  const loginFails  = logs.filter(l => l.event === 'LOGIN_FAIL').length;
+  const fraudAlerts = logs.filter(l => l.event === 'COTATION_FRAUD_ALERT').length;
+  const highScore   = logs.filter(l => (l.score || 0) >= 70).length;
+  const adminActs   = logs.filter(l => l.event?.startsWith('ADMIN_')).length;
+  el.innerHTML = `
+    <div class="adm-kpi-row" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px">
+      <div class="adm-kpi-card" style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px">
+        <div style="font-size:20px;margin-bottom:4px">📋</div>
+        <div style="font-family:var(--fs);font-size:22px;color:var(--a)">${logs.length}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Logs totaux</div>
+      </div>
+      <div class="adm-kpi-card" style="background:var(--s);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 14px">
+        <div style="font-size:20px;margin-bottom:4px">🔴</div>
+        <div style="font-family:var(--fs);font-size:22px;color:#ef4444">${loginFails}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Échecs connexion</div>
+      </div>
+      <div class="adm-kpi-card" style="background:var(--s);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 14px">
+        <div style="font-size:20px;margin-bottom:4px">🚨</div>
+        <div style="font-family:var(--fs);font-size:22px;color:#ef4444">${fraudAlerts}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Alertes fraude</div>
+      </div>
+      <div class="adm-kpi-card" style="background:var(--s);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 14px">
+        <div style="font-size:20px;margin-bottom:4px">⚠️</div>
+        <div style="font-family:var(--fs);font-size:22px;color:#f59e0b">${highScore}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Score risque ≥70</div>
+      </div>
+      <div class="adm-kpi-card" style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px">
+        <div style="font-size:20px;margin-bottom:4px">⚙️</div>
+        <div style="font-family:var(--fs);font-size:22px;color:var(--a)">${adminActs}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Actions admin</div>
+      </div>
+    </div>`;
+}
+
+function _renderAuditFilters() {
+  const sel = $('adm-log-event-filter');
+  if (!sel) return;
+  // Collecter les événements uniques présents dans les logs
+  const events = [...new Set(_ALL_AUDIT_LOGS.map(l => l.event).filter(Boolean))].sort();
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Tous les événements</option>' +
+    events.map(e => {
+      const m = _auditEventMeta(e);
+      return `<option value="${e}">${m.icon} ${m.label}</option>`;
+    }).join('');
+  if (current) sel.value = current;
+}
+
+function _applyAuditFilters() {
+  const evtFilter   = ($('adm-log-event-filter')?.value || '').trim();
+  const scoreFilter = ($('adm-log-score-filter')?.value || '').trim();
+  const dateFrom    = ($('adm-log-date-from')?.value || '').trim();
+  const dateTo      = ($('adm-log-date-to')?.value || '').trim();
+  const searchQ     = ($('adm-log-search')?.value || '').toLowerCase().trim();
+
+  _FILT_AUDIT_LOGS = _ALL_AUDIT_LOGS.filter(l => {
+    if (evtFilter && l.event !== evtFilter) return false;
+    if (scoreFilter === 'high'   && (l.score || 0) < 70) return false;
+    if (scoreFilter === 'med'    && ((l.score || 0) < 40 || (l.score || 0) >= 70)) return false;
+    if (scoreFilter === 'low'    && (l.score || 0) >= 40) return false;
+    if (scoreFilter === 'scored' && l.score == null) return false;
+    if (dateFrom && new Date(l.created_at) < new Date(dateFrom)) return false;
+    if (dateTo   && new Date(l.created_at) > new Date(dateTo + 'T23:59:59')) return false;
+    if (searchQ) {
+      const hay = (l.event + ' ' + (l.user_id || '') + ' ' + (l.ip || '')).toLowerCase();
+      if (!hay.includes(searchQ)) return false;
+    }
+    return true;
+  });
+
+  _AUDIT_PAGE = 1;
+  _renderAuditLogs();
+}
+
+function _renderAuditLogs() {
+  const el = $('adm-logs-body');
+  if (!el) return;
+  const total  = _FILT_AUDIT_LOGS.length;
+  const pages  = Math.max(1, Math.ceil(total / _AUDIT_PAGE_SIZE));
+  _AUDIT_PAGE  = Math.min(_AUDIT_PAGE, pages);
+  const start  = (_AUDIT_PAGE - 1) * _AUDIT_PAGE_SIZE;
+  const slice  = _FILT_AUDIT_LOGS.slice(start, start + _AUDIT_PAGE_SIZE);
+
+  // Compteur
+  const cntEl = $('adm-logs-count');
+  if (cntEl) cntEl.textContent = `${total} entrée${total > 1 ? 's' : ''}${total !== _ALL_AUDIT_LOGS.length ? ' (filtrées)' : ''}`;
+
+  if (!slice.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px 0"><div class="ei">🔍</div><p style="margin-top:8px;color:var(--m)">Aucun log ne correspond aux filtres.</p></div>';
+    _renderAuditPagination(0, 1);
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--fm)">
+        <thead>
+          <tr style="border-bottom:2px solid var(--b)">
+            <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500;white-space:nowrap">Événement</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500;white-space:nowrap">Date & Heure</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500">User ID</th>
+            <th style="padding:8px 10px;text-align:center;color:var(--m);font-weight:500">Score</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--m);font-weight:500">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${slice.map((l, i) => {
+            const m  = _auditEventMeta(l.event);
+            const dt = new Date(l.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+            const scoreClass = l.score >= 70 ? 'high' : l.score >= 40 ? 'med' : 'low';
+            const isAlert = l.event === 'COTATION_FRAUD_ALERT' || l.event === 'LOGIN_FAIL';
+            return `<tr style="border-bottom:1px solid var(--b);${isAlert ? 'background:rgba(239,68,68,.04)' : i % 2 === 0 ? 'background:rgba(255,255,255,.01)' : ''}">
+              <td style="padding:8px 10px">
+                <span style="display:inline-flex;align-items:center;gap:6px">
+                  <span>${m.icon}</span>
+                  <span style="color:${m.color};font-weight:500">${_escAdm(m.label)}</span>
+                </span>
+              </td>
+              <td style="padding:8px 10px;white-space:nowrap;color:var(--m)">${dt}</td>
+              <td style="padding:8px 10px;color:var(--m);font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escAdm(l.user_id||'—')}">${l.user_id ? l.user_id.slice(0,8)+'…' : '—'}</td>
+              <td style="padding:8px 10px;text-align:center">
+                ${l.score != null ? `<span class="log-score ${scoreClass}" style="font-family:var(--fm);font-size:11px;padding:2px 8px;border-radius:20px">${l.score}</span>` : '<span style="color:var(--m)">—</span>'}
+              </td>
+              <td style="padding:8px 10px;color:var(--m);font-size:11px">${_escAdm(l.ip || '—')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  _renderAuditPagination(total, pages);
+}
+
+function _renderAuditPagination(total, pages) {
+  const el = $('adm-logs-pagination');
+  if (!el) return;
+  if (pages <= 1) { el.innerHTML = ''; return; }
+  const btns = [];
+  if (_AUDIT_PAGE > 1)  btns.push(`<button class="bs bsm" onclick="_auditGo(${_AUDIT_PAGE - 1})">← Précédent</button>`);
+  btns.push(`<span style="font-size:12px;color:var(--m);font-family:var(--fm);padding:0 8px">Page ${_AUDIT_PAGE} / ${pages}</span>`);
+  if (_AUDIT_PAGE < pages) btns.push(`<button class="bs bsm" onclick="_auditGo(${_AUDIT_PAGE + 1})">Suivant →</button>`);
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap">${btns.join('')}</div>`;
+}
+
+function _auditGo(page) {
+  _AUDIT_PAGE = page;
+  _renderAuditLogs();
+  $('adm-logs-body')?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+/* ── Export CSV des logs (RGPD — sans données patient) ── */
+function exportAuditCSV() {
+  const data = _FILT_AUDIT_LOGS.length ? _FILT_AUDIT_LOGS : _ALL_AUDIT_LOGS;
+  if (!data.length) { admAlert('Aucun log à exporter.', 'e'); return; }
+  const header = ['Date', 'Événement', 'Libellé', 'Score', 'User ID (partiel)', 'IP'];
+  const rows = data.map(l => {
+    const m  = _auditEventMeta(l.event);
+    const dt = new Date(l.created_at).toLocaleString('fr-FR');
+    const uid = l.user_id ? l.user_id.slice(0, 8) + '…' : '—';
+    return [dt, l.event || '—', m.label, l.score ?? '—', uid, l.ip || '—'];
+  });
+  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `audit_logs_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  admAlert(`✅ Export CSV : ${data.length} entrée(s) exportée(s).`, 'o');
+}
+
+/* ── Reset filtres logs ── */
+function resetAuditFilters() {
+  ['adm-log-event-filter','adm-log-score-filter','adm-log-date-from','adm-log-date-to','adm-log-search'].forEach(id => {
+    const el = $(id); if (el) el.value = '';
+  });
+  _applyAuditFilters();
+}
+
+/* ── System logs (onglet secondaire dans Logs) ── */
+function _renderSystemLogs(systemLogs) {
+  const el = $('adm-system-logs-body');
+  if (!el || !systemLogs.length) return;
+  el.innerHTML = systemLogs.slice(0, 50).map(l => {
+    const dt    = new Date(l.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const color = l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : 'var(--m)';
+    return `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--b);font-size:12px">
+      <span style="color:${color};font-family:var(--fm);flex-shrink:0">[${(l.level||'info').toUpperCase()}]</span>
+      <span style="color:var(--a);flex-shrink:0;font-family:var(--fm)">${_escAdm(l.source||'—')}</span>
+      <span style="flex:1;color:var(--m)">${_escAdm(l.message||l.event||'—')}</span>
+      <span style="color:var(--m);flex-shrink:0;font-family:var(--fm)">${dt}</span>
+    </div>`;
+  }).join('');
+}
+
 
 /* ── Stats sécurité temps réel ─────────────────── */
 async function loadAdmSecurityStats(){
@@ -138,11 +475,11 @@ async function loadAdmMessages() {
     if (!d.ok) throw new Error(d.error || 'Erreur');
     ADM_MESSAGES = d.messages || [];
     _renderAdmMessages(ADM_MESSAGES);
-    // Badge non-lus
+    // Badge non-lus dans le bouton d'onglet
     const unread = ADM_MESSAGES.filter(m => m.status === 'sent').length;
     const badge  = $('adm-msg-badge');
     if (badge) {
-      badge.textContent = unread + ' non lu(s)';
+      badge.textContent = unread;
       badge.style.display = unread > 0 ? 'inline' : 'none';
     }
   } catch (e) {
