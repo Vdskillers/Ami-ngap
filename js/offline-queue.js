@@ -214,10 +214,19 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
 function _renderHeureStats(arr) {
   const byHour = {};
   arr.forEach(r => {
-    const h = (r.heure_soin||'').slice(0,2);
+    // Priorité 1 : heure_soin ("HH:MM" ou "HH:MM:SS")
+    let h = (r.heure_soin || '').trim().slice(0, 2);
+
+    // Priorité 2 : extraire l'heure depuis date_soin si c'est un timestamp ISO
+    // ex : "2024-01-15T14:30:00" ou "2024-01-15T14:30:00.000Z"
+    if ((!h || isNaN(parseInt(h))) && r.date_soin && r.date_soin.includes('T')) {
+      const timePart = r.date_soin.split('T')[1] || '';
+      h = timePart.slice(0, 2);
+    }
+
     if (h && !isNaN(parseInt(h))) {
       const k = parseInt(h);
-      byHour[k] = (byHour[k]||0) + 1;
+      if (k >= 0 && k <= 23) byHour[k] = (byHour[k] || 0) + 1;
     }
   });
   if (!Object.keys(byHour).length) return '<div class="ai in">Renseignez l\'heure des soins pour voir l\'analyse horaire.</div>';

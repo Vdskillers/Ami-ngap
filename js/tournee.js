@@ -83,7 +83,22 @@ function _applyOptimModeStyle() {
 
 /* Écouter les events de navigation */
 const _onNavLive = e => {
-  if (e.detail?.view === 'live') setTimeout(_bindOptimModeUI, 100);
+  if (e.detail?.view === 'live') {
+    setTimeout(_bindOptimModeUI, 100);
+    // Restaurer le CA journée clôturée si la tournée est terminée
+    setTimeout(() => {
+      try {
+        const saved = sessionStorage.getItem('ami_ca_journee');
+        if (saved && LIVE_CA_TOTAL === 0) {
+          const caEl = document.getElementById('live-ca-total');
+          if (caEl && !caEl.textContent.includes('du jour')) {
+            caEl.textContent = `💶 CA journée clôturée : ${parseFloat(saved).toFixed(2)} €`;
+            caEl.style.display = 'block';
+          }
+        }
+      } catch {}
+    }, 150);
+  }
 };
 document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
@@ -540,7 +555,7 @@ async function optimiserTournee(){
       if(osrm?.total_km) APP.set('tourneeKmJour', osrm.total_km);
       if(typeof renderPatientsOnMap === 'function')
         renderPatientsOnMap(route, startPoint).catch(()=>{});
-      APP.set('uberPatients', route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false,late:false,amount:0})));
+      APP.set('uberPatients', route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false,late:false,amount:parseFloat(p.total||p.montant||0)||estimateRevenue([p])})));
       startLiveOptimization();
       $('res-tur').classList.add('show');
       ld('btn-tur',false);
@@ -599,7 +614,8 @@ async function optimiserTournee(){
       done:    false, absent: false, late: false,
       urgence: !!(p.urgent || p.urgence),
       time:    p.start_min ? p.start_min * 60000 : null,
-      amount:  parseFloat(p.total || p.montant || 0) || 0,
+      // amount : cotation réelle > montant enrichi (étape 2b) > estimation
+      amount:  parseFloat(p.total || p.montant || 0) || parseFloat(p.amount || 0) || estimateRevenue([p]),
     })));
 
     /* ── 8. Démarrer optimisation live ───────────────── */
@@ -1089,10 +1105,14 @@ function _stopDayInternal() {
 
   // CA réel = LIVE_CA_TOTAL (cotations validées manuellement pendant la tournée)
   //         + cotations auto-générées sur les patients visités (_cotation.validated)
-  //         → prendre le max des deux pour couvrir tous les cas (Uber / pilotage live)
+  //         + fallback : CA estimé (amount) des patients marqués done si aucune cotation
   const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
-  const caFromPatients = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
-  const caFinal = Math.max(LIVE_CA_TOTAL, caFromPatients);
+  const caFromCotations = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+  // Si aucune cotation manuelle : utiliser le CA estimé des patients visités (done)
+  const caFromAmounts   = caFromCotations === 0
+    ? allPatients.filter(p => p.done).reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+    : 0;
+  const caFinal = Math.max(LIVE_CA_TOTAL, caFromCotations, caFromAmounts);
 
   // Synchroniser toutes les cotations non encore envoyées à Supabase
   _syncCotationsToSupabase(allPatients).catch(() => {});
@@ -1112,6 +1132,9 @@ function _stopDayInternal() {
 
   const caEl = $('live-ca-total');
   if (caEl) { caEl.textContent = `💶 CA journée clôturée : ${caFinal.toFixed(2)} €`; caEl.style.display = 'block'; }
+
+  // Persister le CA final en sessionStorage pour survivre au changement de page
+  try { sessionStorage.setItem('ami_ca_journee', caFinal.toFixed(2)); } catch {}
 
   // Reset CA pour prochaine journée
   LIVE_CA_TOTAL = 0;
@@ -1205,8 +1228,9 @@ window.startDay=async function(){
     if(typeof showToast==='function') showToast('⚠️ Importez des patients avant de démarrer la journée.');
     return;
   }
-  // Reset état des patients pour une nouvelle journée
+  // Reset état des patients + CA persisté pour une nouvelle journée
   patients.forEach(p => { p._done=false; p._absent=false; });
+  try { sessionStorage.removeItem('ami_ca_journee'); } catch {}
 
   startLiveTimer();
   const el=$('live-badge');
