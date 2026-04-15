@@ -780,6 +780,11 @@
           } catch (e) { console.warn('[AMI] Import cotation IDB KO:', e.message); }
         }
 
+        /* ── Synchroniser les cotations locales vers Supabase (arrière-plan) ── */
+        if (typeof _syncCotationsToSupabase === 'function') {
+          _syncCotationsToSupabase(snapshot).catch(() => {});
+        }
+
         /* ═══════════════════════════════════════════════════════
            3. EXPORTER LES KM DU JOUR → Journal kilométrique
            ═══════════════════════════════════════════════════════ */
