@@ -81,16 +81,9 @@ function _applyOptimModeStyle() {
   });
 }
 
-/* Écouter les deux events de navigation */
+/* Écouter les events de navigation */
 const _onNavLive = e => {
   if (e.detail?.view === 'live') setTimeout(_bindOptimModeUI, 100);
-  if (e.detail?.view === 'pla') {
-    // Restaurer le planning sauvegardé si importedData est vide
-    _restorePlanningIfNeeded();
-    if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) {
-      setTimeout(() => renderPlanning({}).catch(()=>{}), 80);
-    }
-  }
 };
 document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
@@ -141,8 +134,16 @@ function showImportedPatients(){
    Conserve les données entre sessions et imports
    ══════════════════════════════════════════════════════ */
 function _planningKey() {
-  const uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : 'local';
-  return 'ami_planning_' + String(uid).replace(/[^a-zA-Z0-9_-]/g,'_');
+  // Essayer S en mémoire d'abord, puis sessionStorage si S n'est pas encore hydraté
+  let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  if (!uid && typeof ss !== 'undefined') {
+    try {
+      const sess = ss.load ? ss.load() : JSON.parse(sessionStorage.getItem('ami_sess') || 'null');
+      uid = sess?.user?.id || null;
+    } catch {}
+  }
+  uid = uid || 'local';
+  return 'ami_planning_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 function _savePlanning(patients) {
@@ -178,6 +179,15 @@ function _syncPlanningStorage() {
   const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   if (patients.length) _savePlanning(patients);
 }
+
+/* Écoute réactive : sauvegarde automatique quand APP.importedData change */
+document.addEventListener('app:update', e => {
+  if (e.detail.key !== 'importedData') return;
+  const d = e.detail.value;
+  if (d?.patients?.length || d?.entries?.length) {
+    _savePlanning(d.patients || d.entries);
+  }
+});
 
 /* Restaurer APP.importedData depuis le planning sauvegardé si vide */
 function _restorePlanningIfNeeded() {

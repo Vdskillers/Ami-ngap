@@ -95,6 +95,24 @@ document.addEventListener('ui:navigate', e => {
     if (!APP.get('uberPatients')?.length) loadUberPatients();
   }
 
+  /* Planning → restaurer depuis localStorage et re-rendre */
+  if (v === 'pla') {
+    setTimeout(() => {
+      if (typeof _restorePlanningIfNeeded === 'function') _restorePlanningIfNeeded();
+      const hasPts = APP.importedData?.patients?.length || APP.importedData?.entries?.length;
+      if (hasPts && typeof renderPlanning === 'function') {
+        renderPlanning({}).catch(() => {});
+      }
+    }, 120);
+  }
+
+  /* Historique → charger les cotations */
+  if (v === 'his') {
+    setTimeout(() => {
+      if (typeof hist === 'function') hist();
+    }, 100);
+  }
+
   log('navTo →', v);
 });
 
