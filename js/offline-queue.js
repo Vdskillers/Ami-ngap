@@ -309,10 +309,9 @@ async function loadStatsAvancees() {
     await pullHeureCache();
 
     // ── Enrichissement horaire depuis le planning local de l'utilisateur ──────
-    // Pour les admins : heure_soin est retiré de la réponse API (RGPD/HDS — worker.js:734).
-    // On récupère les heures depuis le planning local isolé par userId (ami_planning_<uid>).
-    // Pour les infirmières : complète les cotations où heure_soin est null (ex: import ICS).
-    // Dans les deux cas, l'isolation est garantie — chacun ne lit que sa propre clé.
+    // heure_soin est retourné par l'API pour admins ET infirmières (worker.js).
+    // Ce bloc complète les cotations où heure_soin est null (ex: import ICS, anciennes cotations).
+    // L'isolation est garantie — chacun ne lit que sa propre clé localStorage.
     try {
       // Source A : cache persistant par id (plus précis — évite les collisions de date)
       const heureCache = _loadHeureCache();
