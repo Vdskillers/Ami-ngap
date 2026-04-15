@@ -214,14 +214,34 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
 function _renderHeureStats(arr) {
   const byHour = {};
   arr.forEach(r => {
+    let h = '';
+
     // Priorité 1 : heure_soin ("HH:MM" ou "HH:MM:SS")
-    let h = (r.heure_soin || '').trim().slice(0, 2);
+    const hSoin = (r.heure_soin || '').trim().slice(0, 2);
+    if (hSoin && !isNaN(parseInt(hSoin))) h = hSoin;
 
     // Priorité 2 : extraire l'heure depuis date_soin si c'est un timestamp ISO
     // ex : "2024-01-15T14:30:00" ou "2024-01-15T14:30:00.000Z"
-    if ((!h || isNaN(parseInt(h))) && r.date_soin && r.date_soin.includes('T')) {
+    if (!h && r.date_soin && r.date_soin.includes('T')) {
       const timePart = r.date_soin.split('T')[1] || '';
-      h = timePart.slice(0, 2);
+      const hIso = timePart.slice(0, 2);
+      if (hIso && !isNaN(parseInt(hIso))) h = hIso;
+    }
+
+    // Priorité 3 : extraire l'heure depuis notes/description
+    // ex : "14h30", "14:30", "14H", "à 9h", "09h00", "matin" → 9, "après-midi" → 14, "soir" → 19
+    if (!h) {
+      const txt = (r.notes || r.description || r.texte || '').toLowerCase();
+      const matchH = txt.match(/\b(\d{1,2})[h:]\d{0,2}\b/);
+      if (matchH) {
+        h = String(parseInt(matchH[1])).padStart(2, '0');
+      } else if (/matin\b|morning/.test(txt)) {
+        h = '09';
+      } else if (/apr[eè]s.?midi\b|afternoon/.test(txt)) {
+        h = '14';
+      } else if (/\bsoir\b|evening/.test(txt)) {
+        h = '19';
+      }
     }
 
     if (h && !isNaN(parseInt(h))) {
