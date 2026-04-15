@@ -386,12 +386,14 @@ async function renderPlanning(d){
     const cot = p._cotation?.validated;
     const idx = p._planIdx;
 
-    return `<div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px">
-      <div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-        <div style="font-size:13px;font-weight:600;color:var(--t);flex:1;min-width:0;overflow-wrap:break-word;word-break:normal;white-space:normal">${nom}</div>
-        <span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>
-        ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>` : ''}
-        ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;flex-shrink:0">✅</span>` : ''}
+    return `<div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px;overflow:hidden">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:600;color:var(--t);overflow-wrap:anywhere;word-break:break-word;flex:1;min-width:100px">${nom}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
+          <span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">${dateAff}</span>
+          ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">⏰ ${heure}</span>` : ''}
+          ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px">✅</span>` : ''}
+        </div>
       </div>
       ${soin ? `<div style="font-size:11px;color:var(--m);margin-bottom:6px;line-height:1.4">${soin}</div>` : ''}
       ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
@@ -429,9 +431,9 @@ async function renderPlanning(d){
       <!-- Grille des jours -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
         ${JOURS.map(j => `
-          <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-width:0">
+          <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-width:0;overflow:hidden">
             <div style="font-weight:600;text-transform:capitalize;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px">
-              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j}</span>
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j}</span>
               ${byDay[j].length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px;flex-shrink:0">${byDay[j].length}</span>` : ''}
             </div>
             ${byDay[j].length
@@ -750,6 +752,25 @@ let LIVE_START_TIME=null;
 let LIVE_TIMER_ID=null;
 /* Exposer pour terminerTourneeAvecBilan (index.html) */
 Object.defineProperty(window, '_LIVE_CA_TOTAL', { get: () => LIVE_CA_TOTAL });
+
+/* ── Mise à jour bandeau CA en continu ────────────────────────────────────
+   Calcule depuis cotations validées + amount estimé des patients faits.
+   Appelée après chaque action patient (done/absent) et renderLivePatientList.
+──────────────────────────────────────────────────────────────────────────── */
+function _updateLiveCADisplay() {
+  const all = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+  const caFromCotations = all.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+  const caFromAmount    = all.filter(p => p.done || p._done).reduce((s, p) => {
+    return s + (p._cotation?.validated ? 0 : parseFloat(p.amount || 0));
+  }, 0);
+  const ca = Math.max(LIVE_CA_TOTAL, caFromCotations + caFromAmount);
+  const caEl = document.getElementById('live-ca-total');
+  if (caEl && ca > 0) {
+    caEl.textContent = `💶 CA du jour : ${ca.toFixed(2)} €`;
+    caEl.style.display = 'block';
+  }
+  return ca;
+}
 
 /* ══════════════════════════════════════════════════════════════
    SYNC COTATIONS LOCALES → SUPABASE
@@ -1468,6 +1489,8 @@ function renderLivePatientList() {
   // Masquer uber-progress (doublon — les stats sont dans le rendu ci-dessus)
   const uberProg = $('uber-progress');
   if (uberProg) uberProg.style.display = 'none';
+  // Mettre à jour le bandeau CA en continu
+  if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
 }
 
 function removeImportedPatient(index) {
