@@ -1010,9 +1010,14 @@
 
     <!-- HISTORIQUE -->
     <section class="view" id="view-his">
-      <h1 class="pt">Historique <em>des soins</em></h1><p class="ps">Accès infirmier uniquement</p>
+      <h1 class="pt">Historique <em>des soins</em></h1>
+      <p class="ps">Cotations · Historique · Recherche</p>
       <div class="card">
-        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p>Seule l'infirmière connectée voit ses données. Admins : aucun accès patient.</p></div>
+        <!-- Notice admin (masquée pour les infirmières, activée par auth.js) -->
+        <div id="his-admin-notice" style="display:none;margin-bottom:14px" class="ai in">
+          🛡️ <strong>Mode admin — vos données de test uniquement</strong> · Vous ne voyez que les cotations enregistrées depuis votre compte admin. Les données des infirmières sont physiquement inaccessibles.
+        </div>
+        <div class="priv" id="his-nurse-notice"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p>Seule l'infirmière connectée voit ses propres données. Isolation stricte par compte.</p></div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
           <input type="text" id="hq" placeholder="🔍 Rechercher..." style="width:200px" oninput="hist()">
           <select id="hp" onchange="hist()" style="width:160px"><option value="">Toute période</option><option value="today">Aujourd'hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select>
@@ -2248,6 +2253,99 @@ function _checkCumul() {
 // Exposer checkOnboarding pour l'événement login
 document.addEventListener('ami:login', () => {
   if (typeof checkOnboarding === 'function') checkOnboarding();
+});
+
+/* ═══════════════════════════════════════════════════════════
+   hist() — Historique des cotations
+   Accessible infirmière ET admin (chacun voit ses propres données)
+   ═══════════════════════════════════════════════════════════ */
+async function hist() {
+  const tbody = document.getElementById('htb');
+  const stats = document.getElementById('hstats');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
+
+  const q       = (document.getElementById('hq')?.value || '').toLowerCase().trim();
+  const period  = document.getElementById('hp')?.value || '';
+  const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+
+  /* Afficher/masquer notices selon le rôle */
+  const adminNotice = document.getElementById('his-admin-notice');
+  const nurseNotice = document.getElementById('his-nurse-notice');
+  if (adminNotice) adminNotice.style.display = isAdmin ? 'flex' : 'none';
+  if (nurseNotice) nurseNotice.style.display = isAdmin ? 'none' : 'flex';
+
+  try {
+    const url = period
+      ? `/webhook/ami-historique?period=${period}`
+      : '/webhook/ami-historique?period=month';
+    const d   = typeof fetchAPI === 'function' ? await fetchAPI(url) : await (typeof wpost === 'function' ? wpost('/webhook/ami-historique', { period: period || 'month' }) : null);
+    let rows  = Array.isArray(d?.data) ? d.data : (Array.isArray(d) ? d : []);
+
+    /* Filtre recherche locale */
+    if (q) {
+      rows = rows.filter(r => {
+        const date = (r.date_soin || '').toLowerCase();
+        const actes = (() => { try { return JSON.parse(r.actes||'[]').map(a=>a.code||'').join(' ').toLowerCase(); } catch { return ''; } })();
+        return date.includes(q) || actes.includes(q) || String(r.id).includes(q);
+      });
+    }
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
+      if (stats) stats.innerHTML = '';
+      return;
+    }
+
+    /* Stats rapides */
+    const totalCA  = rows.reduce((s, r) => s + parseFloat(r.total||0), 0);
+    const totalAMO = rows.reduce((s, r) => s + parseFloat(r.part_amo||0), 0);
+    if (stats) stats.innerHTML = `
+      <div class="sc g"><div class="si">💶</div><div class="sv">${totalCA.toFixed(0)}€</div><div class="sn">Total</div></div>
+      <div class="sc b"><div class="si">🏥</div><div class="sv">${totalAMO.toFixed(0)}€</div><div class="sn">AMO</div></div>
+      <div class="sc o"><div class="si">📋</div><div class="sv">${rows.length}</div><div class="sn">Actes</div></div>`;
+
+    /* Tableau */
+    tbody.innerHTML = rows.map(r => {
+      const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR') : '—';
+      let actesTxt = '—';
+      try { actesTxt = JSON.parse(r.actes||'[]').map(a=>a.code||'').filter(Boolean).join(', ') || '—'; } catch {}
+      const alertes = (() => { try { const a = JSON.parse(r.alerts||'[]'); return a.length ? `<span style="color:var(--d);font-size:11px">⚠️ ${a.length}</span>` : ''; } catch { return ''; } })();
+      const canDel  = !isAdmin; // l'admin ne peut pas supprimer les cotations des infirmières
+      return `<tr>
+        <td style="font-family:var(--fm);font-size:11px;color:var(--m)">#${r.id}</td>
+        <td>${date}</td>
+        <td style="font-family:var(--fm);font-size:11px">${actesTxt}</td>
+        <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
+        <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
+        <td>${alertes}</td>
+        <td>${canDel ? `<button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id})">🗑️</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
+  }
+}
+
+async function delHist(id) {
+  if (!confirm(`Supprimer la cotation #${id} ?`)) return;
+  try {
+    await (typeof wpost === 'function' ? wpost('/webhook/ami-supprimer', { id }) : fetchAPI('/webhook/ami-supprimer', { method:'POST', body: JSON.stringify({ id }) }));
+    hist();
+    if (typeof showToast === 'function') showToast('✅ Cotation supprimée.');
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('⚠️ ' + e.message);
+  }
+}
+
+/* Charger l'historique automatiquement à la navigation */
+document.addEventListener('app:nav', e => {
+  if (e.detail?.view === 'his') setTimeout(hist, 80);
+});
+document.addEventListener('ui:navigate', e => {
+  if (e.detail?.view === 'his') setTimeout(hist, 80);
 });
 </script>
 
