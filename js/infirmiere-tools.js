@@ -588,8 +588,10 @@ function utiliserSimulation(acte, heure, jour, domicile, enfant, coord, km) {
 
 /* ════════════════════════════════════════════════
    5. SUIVI ORDONNANCES & ALERTES RENOUVELLEMENT
-   Gestion locale des ordonnances par patient
-════════════════════════════════════════════════ */
+   Connecté au carnet patient (IndexedDB chiffré)
+   — Les ordonnances sont lues depuis les fiches
+     patient du carnet ET depuis le stockage local
+   ════════════════════════════════════════════════ */
 
 const ORDO_STORE_KEY = 'ami_ordonnances';
 
@@ -600,7 +602,55 @@ function _saveOrdos(ordos) {
   try { localStorage.setItem(ORDO_STORE_KEY, JSON.stringify(ordos)); } catch {}
 }
 
-function addOrdonnance() {
+/* Lire les ordonnances depuis le carnet patient IndexedDB */
+async function _loadOrdosFromCarnet() {
+  try {
+    if (typeof _idbGetAll !== 'function' || typeof _dec !== 'function') return [];
+    // Chercher le nom de la store patients (défini dans patients.js)
+    const STORE = (typeof PATIENTS_STORE !== 'undefined') ? PATIENTS_STORE : 'patients';
+    const rows  = await _idbGetAll(STORE);
+    const ordos = [];
+    for (const row of rows) {
+      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
+      const nomAff = [p.prenom, p.nom].filter(Boolean).join(' ') || p.nom || 'Patient';
+
+      // Lire le champ ordonnance/ordonnances de la fiche
+      const ordoData = p.ordonnance || p.ordonnances || p.ordo;
+      if (!ordoData) continue;
+
+      const list = Array.isArray(ordoData) ? ordoData : [ordoData];
+      for (const o of list) {
+        if (!o) continue;
+        const dateDebut = o.date || o.date_debut || o.date_prescription || '';
+        const duree     = parseInt(o.duree || o.duree_validite || 30);
+        const actes     = o.actes || o.acte || o.description || o.texte || '';
+        const medecin   = o.medecin || o.prescripteur || '';
+
+        if (!dateDebut) continue;
+        const dateExpir = new Date(dateDebut);
+        dateExpir.setDate(dateExpir.getDate() + duree);
+
+        ordos.push({
+          id:             `carnet_${row.id}_${dateDebut}`,
+          patient:        nomAff,
+          patient_id:     row.id,
+          medecin,
+          actes:          typeof actes === 'string' ? actes : JSON.stringify(actes),
+          duree,
+          dateDebut,
+          dateExpiration: dateExpir.toISOString().split('T')[0],
+          _source:        'carnet',
+        });
+      }
+    }
+    return ordos;
+  } catch (e) {
+    console.warn('[AMI] Lecture ordos carnet KO:', e.message);
+    return [];
+  }
+}
+
+async function addOrdonnance() {
   const patEl   = document.getElementById('ordo-patient');
   const medEl   = document.getElementById('ordo-medecin');
   const dateEl  = document.getElementById('ordo-date');
@@ -627,6 +677,7 @@ function addOrdonnance() {
     id: Date.now(), patient, medecin, actes, duree,
     dateDebut: date,
     dateExpiration: dateExpir.toISOString().split('T')[0],
+    _source: 'manuel',
   });
   _saveOrdos(ordos);
 
@@ -636,46 +687,65 @@ function addOrdonnance() {
   if (actesEl) actesEl.value = '';
   if (msgEl)   msgEl.style.display = 'none';
 
-  renderOrdonnances();
+  await renderOrdonnances();
   if (typeof showToast === 'function') showToast('✅ Ordonnance enregistrée.');
 }
 
 function deleteOrdonnance(id) {
+  // Supprimer uniquement les ordonnances manuelles (pas celles du carnet)
   _saveOrdos(_loadOrdos().filter(o => o.id !== id));
   renderOrdonnances();
 }
 
-function renderOrdonnances() {
+async function renderOrdonnances() {
   const el = document.getElementById('ordo-list');
   if (!el) return;
 
-  const ordos  = _loadOrdos();
+  el.innerHTML = '<div style="color:var(--m);font-size:12px;padding:12px">Chargement…</div>';
+
+  // Fusionner ordonnances manuelles + ordonnances du carnet patient
+  const manuel  = _loadOrdos();
+  const carnet  = await _loadOrdosFromCarnet();
+
+  // Dédupliquer : si une ordo manuelle et une ordo carnet ont même patient + dateDebut, garder carnet
+  const carnetKeys = new Set(carnet.map(o => `${o.patient}_${o.dateDebut}`));
+  const manuelFiltrees = manuel.filter(o => !carnetKeys.has(`${o.patient}_${o.dateDebut}`));
+  const toutes = [...carnet, ...manuelFiltrees];
+
   const today  = new Date(); today.setHours(0,0,0,0);
   const filtre = document.getElementById('ordo-filtre')?.value || 'all';
 
-  const classified = ordos.map(o => {
+  const classified = toutes.map(o => {
     const exp = new Date(o.dateExpiration); exp.setHours(0,0,0,0);
     const diffDays = Math.ceil((exp - today) / 86400000);
     let statut = 'ok';
-    if (diffDays < 0)   statut = 'expire';
-    else if (diffDays <= 7)  statut = 'urgent';
+    if (diffDays < 0)       statut = 'expire';
+    else if (diffDays <= 7) statut = 'urgent';
     else if (diffDays <= 21) statut = 'proche';
     return { ...o, diffDays, statut };
   }).sort((a, b) => a.diffDays - b.diffDays);
 
   const filtered = classified.filter(o => {
-    if (filtre === 'active')  return o.statut !== 'expire';
-    if (filtre === 'alerte')  return ['urgent','proche'].includes(o.statut);
-    if (filtre === 'expiree') return o.statut === 'expire';
+    if (filtre === 'active')   return o.statut !== 'expire';
+    if (filtre === 'alerte')   return ['urgent','proche'].includes(o.statut);
+    if (filtre === 'expiree')  return o.statut === 'expire';
+    if (filtre === 'carnet')   return o._source === 'carnet';
     return true;
   });
 
-  // Badge global dans la nav
+  // Mettre à jour badge alerte dans nav
   const nbAlertes = classified.filter(o => ['urgent','proche'].includes(o.statut)).length;
-  const badge = document.getElementById('ordo-alert-count');
-  if (badge) {
-    badge.textContent = nbAlertes > 0 ? nbAlertes : '';
-    badge.style.display = nbAlertes > 0 ? 'inline' : 'none';
+  const badge = document.getElementById('ordo-nav-badge');
+  if (badge) { badge.textContent = nbAlertes > 0 ? nbAlertes : ''; badge.style.display = nbAlertes > 0 ? 'inline' : 'none'; }
+
+  // Compteurs
+  const nbCarnet = carnet.length;
+  const nbManuel = manuelFiltrees.length;
+  const sourceInfo = document.getElementById('ordo-source-info');
+  if (sourceInfo) {
+    sourceInfo.innerHTML = `<span style="font-size:11px;color:var(--m);font-family:var(--fm)">
+      ${nbCarnet > 0 ? `📂 ${nbCarnet} depuis le carnet · ` : ''}${nbManuel > 0 ? `✍️ ${nbManuel} manuelles · ` : ''}${nbAlertes > 0 ? `<span style="color:var(--w)">⚠️ ${nbAlertes} en alerte</span>` : '✅ Aucune alerte'}
+    </span>`;
   }
 
   if (!filtered.length) {
@@ -685,7 +755,7 @@ function renderOrdonnances() {
 
   const STATUT_STYLE = {
     expire: { bg:'rgba(255,95,109,.08)',  border:'rgba(255,95,109,.3)',  color:'var(--d)',  label:'Expirée' },
-    urgent: { bg:'rgba(255,181,71,.08)',  border:'rgba(255,181,71,.3)',  color:'var(--w)',  label:'Urgent' },
+    urgent: { bg:'rgba(255,181,71,.08)',  border:'rgba(255,181,71,.3)',  color:'var(--w)',  label:'Urgent !' },
     proche: { bg:'rgba(255,181,71,.04)',  border:'rgba(255,181,71,.15)', color:'var(--w)',  label:'Bientôt' },
     ok:     { bg:'var(--s)',              border:'var(--b)',             color:'var(--a)',   label:'Valide' },
   };
@@ -696,11 +766,14 @@ function renderOrdonnances() {
       ? `Expirée il y a ${Math.abs(o.diffDays)} jour(s)`
       : o.diffDays === 0 ? `Expire aujourd'hui !`
       : `Expire dans ${o.diffDays} jour(s)`;
+    const sourceBadge = o._source === 'carnet'
+      ? `<span style="font-size:9px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border-radius:20px;padding:1px 7px;margin-left:6px">📂 Carnet</span>`
+      : `<span style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 7px;margin-left:6px">✍️ Manuel</span>`;
     return `
     <div style="background:${st.bg};border:1px solid ${st.border};border-radius:12px;padding:14px;margin-bottom:8px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
         <div>
-          <div style="font-size:14px;font-weight:600;color:var(--t)">${o.patient}</div>
+          <div style="font-size:14px;font-weight:600;color:var(--t)">${o.patient}${sourceBadge}</div>
           ${o.medecin ? `<div style="font-size:11px;color:var(--m)">Dr ${o.medecin}</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0">
@@ -712,30 +785,31 @@ function renderOrdonnances() {
         <div style="font-size:11px;font-family:var(--fm);color:${st.color}">
           ${diffLabel} · ${new Date(o.dateDebut).toLocaleDateString('fr-FR')} → ${new Date(o.dateExpiration).toLocaleDateString('fr-FR')}
         </div>
+        ${o._source !== 'carnet' ? `
         <button onclick="deleteOrdonnance(${o.id})"
           style="font-size:10px;font-family:var(--fm);padding:3px 8px;border-radius:20px;border:1px solid rgba(255,95,109,.2);background:none;color:var(--d);cursor:pointer">
           ✕ Supprimer
-        </button>
+        </button>` : `<span style="font-size:10px;color:var(--m);font-family:var(--fm)">Gérer dans Carnet patients</span>`}
       </div>
     </div>`;
   }).join('');
 }
 
 /* Badge ordonnances en alerte dans la sidebar */
-function refreshOrdoBadge() {
-  const ordos = _loadOrdos();
-  const today = new Date(); today.setHours(0,0,0,0);
-  const nb = ordos.filter(o => {
-    const exp = new Date(o.dateExpiration); exp.setHours(0,0,0,0);
-    return Math.ceil((exp - today) / 86400000) <= 21;
-  }).length;
-
-  // Badge dans la nav sidebar
-  const badge = document.getElementById('ordo-nav-badge');
-  if (badge) {
-    badge.textContent = nb > 0 ? nb : '';
-    badge.style.display = nb > 0 ? 'inline' : 'none';
-  }
+async function refreshOrdoBadge() {
+  try {
+    const manuel  = _loadOrdos();
+    const carnet  = await _loadOrdosFromCarnet();
+    const carnetKeys = new Set(carnet.map(o => `${o.patient}_${o.dateDebut}`));
+    const toutes  = [...carnet, ...manuel.filter(o => !carnetKeys.has(`${o.patient}_${o.dateDebut}`))];
+    const today   = new Date(); today.setHours(0,0,0,0);
+    const nb = toutes.filter(o => {
+      const exp = new Date(o.dateExpiration); exp.setHours(0,0,0,0);
+      return Math.ceil((exp - today) / 86400000) <= 21;
+    }).length;
+    const badge = document.getElementById('ordo-nav-badge');
+    if (badge) { badge.textContent = nb > 0 ? nb : ''; badge.style.display = nb > 0 ? 'inline' : 'none'; }
+  } catch {}
 }
 
 /* ════════════════════════════════════════════════
@@ -748,13 +822,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (v === 'outils-km')         renderKmJournal();
     if (v === 'outils-modeles')    renderModeles();
     if (v === 'outils-simulation') simulerMajoration();
-    if (v === 'outils-ordos')      { renderOrdonnances(); refreshOrdoBadge(); }
+    if (v === 'outils-ordos')      renderOrdonnances().then(() => refreshOrdoBadge());
   };
   document.addEventListener('app:nav',     onNav);
   document.addEventListener('ui:navigate', onNav);
 
   // Badge ordonnances au login
-  document.addEventListener('ami:login', () => setTimeout(refreshOrdoBadge, 500));
+  document.addEventListener('ami:login', () => setTimeout(refreshOrdoBadge, 800));
   refreshOrdoBadge();
 });
 
