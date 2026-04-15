@@ -1055,7 +1055,9 @@ const _geocodeCache = new Map();
 function _fetchGeo(url, opts, ms) {
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), ms || 7000);
-  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
+  return fetch(url, { ...opts, signal: ctrl.signal })
+    .then(res => { clearTimeout(tid); return res; })
+    .catch(err => { clearTimeout(tid); throw err; });
 }
 
 /* ── Géocodage avec API Adresse gouv.fr en priorité absolue ──────────────────────
@@ -1128,7 +1130,7 @@ async function _geocodeAdresse(adresse, patient) {
         console.info('[GEO] ✅ gouv.fr:', p.type, 'score', apiScore.toFixed(3), '→', p.label, 'geoScore:', geoScore);
         break;
       } catch(e) {
-        console.warn('[GEO] gouv.fr erreur:', e.message);
+        if (e?.name !== 'AbortError') console.warn('[GEO] gouv.fr erreur:', e.message);
       }
     }
 
@@ -1161,7 +1163,7 @@ async function _geocodeAdresse(adresse, patient) {
           console.info('[GEO] nominatim fallback:', best.type, 'geoScore:', geoScore);
         }
       } catch(e) {
-        console.warn('[GEO] nominatim erreur:', e.message);
+        if (e?.name !== 'AbortError') console.warn('[GEO] nominatim erreur:', e.message);
       }
     }
 
