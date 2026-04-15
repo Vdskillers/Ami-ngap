@@ -24,6 +24,21 @@ async function cotation() {
   ld('btn-cot', true);
   $('res-cot').classList.remove('show');
   $('cerr').style.display = 'none';
+
+  // ── Feedback progressif si l'IA est lente (Grok cold start) ──
+  const _btnEl = $('btn-cot');
+  const _origBtnHTML = _btnEl ? _btnEl.innerHTML : null;
+  const _slowTimers = [];
+  const _showSlowMsg = (msg) => { if (_btnEl) _btnEl.innerHTML = `<span style="font-size:12px;font-weight:400">${msg}</span>`; };
+  _slowTimers.push(setTimeout(() => _showSlowMsg('🤖 Analyse NGAP en cours…'),           5000));
+  _slowTimers.push(setTimeout(() => _showSlowMsg('🤖 Calcul en cours — merci de patienter…'), 15000));
+  _slowTimers.push(setTimeout(() => _showSlowMsg('🤖 Encore quelques secondes…'),        30000));
+  _slowTimers.push(setTimeout(() => _showSlowMsg('🤖 Dernière tentative…'),               44000));
+  const _clearSlowTimers = () => {
+    _slowTimers.forEach(t => clearTimeout(t));
+    if (_btnEl && _origBtnHTML) _btnEl.innerHTML = _origBtnHTML;
+  };
+
   const u = S?.user || {};
   try {
     // Récupérer le prescripteur sélectionné (select ou champ texte libre)
@@ -61,11 +76,17 @@ async function cotation() {
         }
       }
     } catch {}
+    _clearSlowTimers();
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
   } catch (e) {
+    _clearSlowTimers();
     $('cerr').style.display = 'flex';
-    $('cerr-m').textContent = e.message;
+    // Message plus clair pour timeout IA
+    const isSlowTimeout = e.message && e.message.includes("prend plus de temps");
+    $('cerr-m').textContent = isSlowTimeout
+      ? "⏱️ L'IA a mis trop de temps à répondre. La cotation a été estimée automatiquement ci-dessous."
+      : e.message;
     $('res-cot').classList.add('show');
   }
   ld('btn-cot', false);

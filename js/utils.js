@@ -129,7 +129,7 @@ async function _safeParseResponse(res) {
 
 async function _apiFetch(path, body, retry = true) {
   const isIA    = path.includes('ami-calcul') || path.includes('ami-historique') || path.includes('ami-copilot');
-  const TIMEOUT = isIA ? 30000 : 8000;
+  const TIMEOUT = isIA ? 55000 : 8000;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT);
 
@@ -175,7 +175,7 @@ async function weekAnalytics() {
 
 async function fetchAPI(url, options = {}) {
   const isIA    = url.includes('ami-calcul') || url.includes('ami-historique');
-  const TIMEOUT = isIA ? 30000 : 8000;
+  const TIMEOUT = isIA ? 55000 : 8000;
   const ctrl    = new AbortController();
   const timer   = setTimeout(() => ctrl.abort(), TIMEOUT);
   try {
