@@ -259,8 +259,7 @@
       <div class="slbl">Outils pratiques</div>
       <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
-      <div class="ni" data-v="dash"><span class="nic">📈</span> Dashboard</div>
-      <div class="ni nurse-only" data-v="stats"><span class="nic">📊</span> Statistiques</div>
+      <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques</div>
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
       <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
@@ -307,8 +306,7 @@
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" onclick="openPM();toggleMobileMenu()"><span class="bn-ic">👤</span>Profil</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="tresor" onclick="navTo('tresor',this);toggleMobileMenu()"><span class="bn-ic">💸</span>Tréso</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="rapport" onclick="navTo('rapport',this);toggleMobileMenu()"><span class="bn-ic">📄</span>Rapport</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="dash" onclick="navTo('dash',this);toggleMobileMenu()"><span class="bn-ic">📈</span>Dashboard</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="stats" onclick="navTo('stats',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
+      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="dash" onclick="navTo('dash',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="copilote" onclick="navTo('copilote',this);toggleMobileMenu()"><span class="bn-ic">🤖</span>Copilote</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-charges" onclick="navTo('outils-charges',this);toggleMobileMenu()"><span class="bn-ic">💰</span>Charges</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-modeles" onclick="navTo('outils-modeles',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Modèles</button>
@@ -1044,7 +1042,7 @@
     <!-- DASHBOARD -->
     <section class="view" id="view-dash">
       <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
-      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances</p>
+      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Comparatif mois/mois · Analyse horaire</p>
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select id="dash-period" onchange="loadDash()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
           <option value="month">Ce mois</option>
@@ -1053,10 +1051,15 @@
           <option value="year">Cette année</option>
         </select>
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
+        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
       </div>
       <!-- Notice admin (masquée pour les infirmières) -->
       <div id="dash-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
         🛡️ <strong>Mode admin — données isolées</strong> · Les statistiques affichées sont issues de vos propres données de test. Les données des infirmières (stockage local chiffré par compte) sont physiquement inaccessibles depuis votre session.
+      </div>
+      <!-- Notice admin stats (masquée pour les infirmières) -->
+      <div id="stats-admin-notice" class="ai in" style="display:none;margin-bottom:16px">
+        🛡️ <strong>Mode admin — statistiques globales</strong> · Données agrégées anonymisées de toutes les infirmières · Aucune donnée patient identifiable.
       </div>
       <!-- Badge cache / hors-ligne -->
       <div id="dash-cache-info" style="display:none;font-size:12px;margin-bottom:10px;padding:6px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
@@ -1093,17 +1096,30 @@
           <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
         </div>
         <!-- IA analyse -->
-        <div class="card">
+        <div class="card" style="margin-bottom:20px">
           <div class="ct">🧠 Analyse IA & Optimisations NGAP</div>
           <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
         </div>
+        <!-- ══ STATISTIQUES AVANCÉES (ex view-stats) ══ -->
+        <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
+        <div class="lbl" style="margin-bottom:16px">📊 Statistiques avancées</div>
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <select id="stats-period" onchange="loadStatsAvancees()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+            <option value="month">Ce mois</option>
+            <option value="lastmonth">Mois précédent</option>
+            <option value="3month">3 derniers mois</option>
+            <option value="year">Cette année</option>
+          </select>
+          <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
+        </div>
+        <div id="stats-avancees-body"></div>
       </div>
       <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
         <div style="font-size:40px;margin-bottom:12px">📊</div>
         <p>Aucune donnée. Générez des cotations pour voir vos statistiques.</p>
       </div>
       <div style="margin-top:20px;display:flex;gap:10px">
-        <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
+        <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser tout</button>
       </div>
     </section>
 
@@ -1725,25 +1741,7 @@
     </section>
 
     <!-- STATISTIQUES AVANCÉES -->
-    <section class="view" id="view-stats">
-      <h1 class="pt">Statistiques <em>avancées</em></h1>
-      <p class="ps">Comparatif mois/mois · Évolution actes · Analyse horaire · Tendances</p>
-      <!-- Notice admin -->
-      <div id="stats-admin-notice" class="ai in" style="display:none;margin-bottom:16px">
-        🛡️ <strong>Mode admin — statistiques globales</strong> · Données agrégées anonymisées de toutes les infirmières · Aucune donnée patient identifiable.
-      </div>
-      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-        <select id="stats-period" onchange="loadStatsAvancees()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
-          <option value="month">Ce mois</option>
-          <option value="lastmonth">Mois précédent</option>
-          <option value="3month">3 derniers mois</option>
-          <option value="year">Cette année</option>
-        </select>
-        <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
-        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
-      </div>
-      <div id="stats-avancees-body"></div>
-    </section>
+
 
     <!-- RAPPORT MENSUEL -->
     <section class="view" id="view-rapport">
