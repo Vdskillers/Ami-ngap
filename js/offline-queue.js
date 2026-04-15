@@ -349,10 +349,10 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
 function _renderHeureStats(arr) {
   const byHour = {};
 
+  // Pré-charger le cache persistant (heure_soin mémorisé par id entre sessions)
+  const heureCache = _loadHeureCache();
+
   // Pré-charger l'index horaire local (planning isolé par userId)
-  // Sert de source de repli quand heure_soin n'est pas dans la réponse API
-  // (ex : admin dont heure_soin est retiré côté worker pour RGPD,
-  //  ou infirmière dont les cotations ICS n'ont pas d'heure explicite).
   const heureIdx = _buildHeureIndex();
 
   arr.forEach(r => {
@@ -362,8 +362,13 @@ function _renderHeureStats(arr) {
     const hSoin = (r.heure_soin || '').trim().slice(0, 2);
     if (hSoin && !isNaN(parseInt(hSoin))) h = hSoin;
 
-    // Priorité 2 : croiser avec le planning local (ami_planning_<userId>)
-    // Garantit que l'admin voit ses heures de test même si heure_soin est masqué par l'API.
+    // Priorité 2 : cache persistant par id (mémorisé lors des sessions précédentes)
+    if (!h && r.id) {
+      const cached = heureCache[String(r.id)];
+      if (cached) h = (cached || '').trim().slice(0, 2);
+    }
+
+    // Priorité 3 : index planning local par date
     if (!h) {
       const date = (r.date_soin || '').slice(0, 10);
       if (date && heureIdx[date]) {
@@ -372,15 +377,20 @@ function _renderHeureStats(arr) {
       }
     }
 
-    // Priorité 3 : timestamp ISO dans date_soin ("2024-01-15T14:30:00")
+    // Priorité 4 : cache persistant par date (fallback si pas d'id)
+    if (!h) {
+      const date = (r.date_soin || '').slice(0, 10);
+      if (date && heureCache[date]) h = (heureCache[date] || '').trim().slice(0, 2);
+    }
+
+    // Priorité 5 : timestamp ISO dans date_soin ("2024-01-15T14:30:00")
     if (!h && r.date_soin && r.date_soin.includes('T')) {
       const timePart = r.date_soin.split('T')[1] || '';
       const hIso = timePart.slice(0, 2);
       if (hIso && !isNaN(parseInt(hIso)) && parseInt(hIso) < 24) h = hIso;
     }
 
-    // Priorité 4 : texte libre (notes, description)
-    // "14h30", "à 9h", "matin", "après-midi", "soir"
+    // Priorité 6 : texte libre (notes) — "14h30", "matin", "après-midi", "soir"
     if (!h) {
       const txt = (r.notes || r.description || r.texte || '').toLowerCase();
       const matchH = txt.match(/\b(\d{1,2})[h:]\d{0,2}\b/);

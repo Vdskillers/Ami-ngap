@@ -81,6 +81,7 @@ function showApp(){
     ────────────────────────────────────────────────────────────────────────── */
     // Pré-remplir date pour test fonctionnel
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
+    const fhs=$('f-hs'); if(fhs && !fhs.value) { const now=new Date(); fhs.value=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'); }
     // Charger les prescripteurs (fonctionnel en mode admin)
     loadPrescripteurs();
 
