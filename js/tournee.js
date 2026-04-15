@@ -217,12 +217,28 @@ function _restorePlanningIfNeeded() {
 /* Rendre le planning uniquement si la vue pla est actuellement visible */
 function _renderPlanningIfVisible() {
   const view = document.getElementById('view-pla');
-  if (!view || view.style.display === 'none') return;
+  // La visibilité est gérée par classList ('on'), pas style.display
+  if (!view || !view.classList.contains('on')) return;
   const patients = APP.importedData?.patients || APP.state?.importedData?.patients || [];
   if (!patients.length) return;
   renderPlanning({}).catch(() => {});
 }
-async function generatePlanningFromImport(){
+
+/* Actualiser le planning manuellement (bouton Actualiser dans view-pla) */
+function refreshPlanning() {
+  _restorePlanningIfNeeded();
+  const patients = APP.importedData?.patients || APP.importedData?.entries
+                || APP.state?.importedData?.patients || [];
+  if (patients.length) {
+    renderPlanning({}).catch(() => {});
+  } else {
+    const pbody = document.getElementById('pbody');
+    if (pbody) pbody.innerHTML = '<div class="ai in" style="margin-top:12px">Aucune donnée disponible. Importez un planning depuis "Import calendrier" ou saisissez manuellement.</div>';
+    if (typeof showToast === 'function') showToast('ℹ️ Aucune donnée à charger.', 'ok');
+  }
+}
+
+
   if(!APP.importedData){alert('Aucune donnée importée.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
