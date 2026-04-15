@@ -152,24 +152,50 @@ async function generatePlanningFromImport(){
 }
 
 function renderPlanning(d){
-  // Source de données : APP.importedData en priorité (données réelles),
-  // sinon d.planning retourné par l'API (peut être vide ou mal structuré)
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Source principale : importedData
+  // Enrichi avec uberPatients (noms réels, dates, cotations du jour)
+  const rawPatients = APP.importedData?.patients || APP.importedData?.entries || [];
+
+  // Construire un index par id depuis uberPatients pour l'enrichissement
+  const uberMap = {};
+  (APP.get('uberPatients') || []).forEach(p => {
+    const key = p.patient_id || p.id;
+    if (key) uberMap[key] = p;
+  });
+
+  // Date du jour pour les patients sans date
+  const todayISO = new Date().toISOString().split('T')[0];
+
+  // Enrichir chaque patient importé avec les données uber si disponible
+  const patients = rawPatients.map((p, idx) => {
+    const uber = uberMap[p.patient_id || p.id] || {};
+    return {
+      ...p,
+      // Nom : préférer uber (qui vient du carnet) puis champs structurés puis extraction
+      nom:    uber.nom    || p.nom    || '',
+      prenom: uber.prenom || p.prenom || '',
+      // Date : uber ou import ou aujourd'hui si visité
+      date:   p.date || p.date_soin || uber.date || uber.date_soin
+              || ((p._cotation?.validated || p.done || p._done || uber.done) ? todayISO : ''),
+      // Cotation et statut du uber
+      _cotation: p._cotation || uber._cotation,
+      done:   p.done  || p._done  || uber.done  || false,
+      absent: p.absent || p._absent || uber.absent || false,
+    };
+  });
+
   const ca = patients.length ? estimateRevenue(patients) : null;
 
   // Jours de la semaine français
   const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
-  const JOUR_IDX = { lundi:1, mardi:2, mercredi:3, jeudi:4, vendredi:5, samedi:6, dimanche:0 };
 
   // Grouper les patients par jour
-  // Chaque patient peut avoir : date (ISO), heure_soin, description, texte, nom, prenom
   const byDay = {};
   JOURS.forEach(j => { byDay[j] = []; });
 
   patients.forEach((p, idx) => {
-    // Extraire le jour depuis la date ISO, ou depuis le champ "jour" si présent
     let jourKey = null;
-    const dateStr = p.date || p.date_soin || p.date_prevue || '';
+    const dateStr = p.date || p.date_soin || '';
     if (dateStr) {
       try {
         const d2 = new Date(dateStr);
@@ -179,46 +205,39 @@ function renderPlanning(d){
         }
       } catch {}
     }
-    // Fallback : chercher un nom de jour dans la description
     if (!jourKey) {
       const desc = (p.description || p.texte || '').toLowerCase();
       jourKey = JOURS.find(j => desc.includes(j)) || null;
     }
-    // Fallback final : distribuer dans l'ordre
-    if (!jourKey) {
-      jourKey = JOURS[idx % JOURS.length];
-    }
+    if (!jourKey) jourKey = JOURS[idx % JOURS.length];
     byDay[jourKey].push({ ...p, _planIdx: idx });
   });
 
-  // Rendu d'une carte patient dans le planning
+  // Rendu d'une carte patient
   function renderPatientCard(p) {
-    // Nom : champs structurés → patient_nom → extraction depuis description
+    // ── Nom ──────────────────────────────────────────────────────
     let nom = [p.prenom, p.nom].filter(Boolean).join(' ').trim()
-      || p.patient_nom || p.patient_name || p.name || '';
+           || p.patient_nom || p.patient_name || p.name || '';
 
-    // Si pas de nom structuré, extraire depuis la description
-    // Format typique : "Nom Prénom — soin" ou "Nom Prénom : soin" ou "Nom Prénom soin"
-    if (!nom && (p.description || p.texte)) {
+    if (!nom) {
+      // Extraire depuis description : "Marie Dupont — injection" → "Marie Dupont"
       const raw = (p.description || p.texte || '').trim();
-      // Tout ce qui est avant — ou : ou la description du soin
-      const sepMatch = raw.match(/^([^—\-:]+?)(?:\s*[—\-:]\s*|\s+(?:injection|pansement|toilette|prélèvement|perfusion|insuline|soin|bilan|visite))/i);
-      if (sepMatch) {
+      const sepMatch = raw.match(/^([^—\-:]+?)(?:\s*[—\-:]\s*|\s+(?:injection|pansement|toilette|prélèvement|perfusion|insuline|soin|bilan|visite|acte))/i);
+      if (sepMatch && sepMatch[1].trim().length > 1) {
         nom = sepMatch[1].trim();
       } else {
-        // Prendre les 3 premiers mots si ça ressemble à un nom (commence par majuscule)
+        // Mots commençant par majuscule en début de chaîne
         const words = raw.split(/\s+/);
-        const nameWords = [];
+        const nameW = [];
         for (const w of words.slice(0, 4)) {
-          if (/^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ]/.test(w)) nameWords.push(w);
-          else break;
+          if (/^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ]/.test(w)) nameW.push(w); else break;
         }
-        nom = nameWords.join(' ') || raw.split(' ').slice(0, 3).join(' ');
+        nom = nameW.length >= 1 ? nameW.join(' ') : raw.slice(0, 25);
       }
     }
-    nom = nom || 'Patient';
+    if (!nom || nom.toLowerCase() === 'soin infirmier') nom = 'Patient';
 
-    // Date formatée — priorité aux champs ISO, puis extraction depuis heure_soin
+    // ── Date ─────────────────────────────────────────────────────
     const dateStr = p.date || p.date_soin || p.date_prevue || '';
     let dateAff = '';
     if (dateStr) {
@@ -227,57 +246,37 @@ function renderPlanning(d){
         if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
       } catch {}
     }
-    // Si toujours pas de date, afficher "Aujourd'hui" si la tournée vient d'être faite
+    // Fallback : afficher aujourd'hui si le patient a été coté ou visité
     if (!dateAff && (p._cotation?.validated || p.done || p._done)) {
       dateAff = new Date().toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
     }
 
-    // Heure
+    // ── Heure / Soin ─────────────────────────────────────────────
     const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+    // Description du soin = description sans le nom si extrait
+    let soin = (p.description || p.texte || '').slice(0, 60);
+    if (nom && nom !== 'Patient' && soin.startsWith(nom)) {
+      soin = soin.slice(nom.length).replace(/^\s*[—\-:]\s*/, '').trim().slice(0, 60);
+    }
 
-    // Description courte du soin
-    const soin = (p.description || p.texte || '').slice(0, 60);
-
-    // Cotation déjà validée ?
     const cot = p._cotation?.validated;
 
     return `
-    <div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px;position:relative">
-
-      <!-- En-tête : nom + badges date/heure -->
+    <div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-bottom:4px">
         <div style="font-size:13px;font-weight:600;color:var(--t);flex:1;min-width:0;word-break:break-word">${nom}</div>
-        ${dateAff
-          ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>`
-          : ''}
-        ${heure
-          ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>`
-          : ''}
+        ${dateAff ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>` : ''}
+        ${heure   ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>` : ''}
+        ${p.done||p._done ? `<span style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;flex-shrink:0">✅</span>` : ''}
       </div>
-
-      <!-- Description du soin -->
       ${soin ? `<div style="font-size:11px;color:var(--m);margin-bottom:6px;line-height:1.4">${soin}</div>` : ''}
-
-      <!-- Cotation validée -->
-      ${cot
-        ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${p._cotation.total?.toFixed(2)} €</div>`
-        : ''}
-
-      <!-- Actions -->
+      ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-        <button onclick="openCotationPatient(${p._planIdx})"
-          style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">
+        <button onclick="openCotationPatient(${p._planIdx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">
           ${cot ? '✏️ Modifier' : '⚡ Coter'}
         </button>
-        ${cot ? `
-        <button onclick="_planningDeleteCotation(${p._planIdx})"
-          style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">
-          🗑️ Supprimer cotation
-        </button>` : ''}
-        <button onclick="_planningRemovePatient(${p._planIdx})"
-          style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">
-          ✕ Retirer
-        </button>
+        ${cot ? `<button onclick="_planningDeleteCotation(${p._planIdx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">🗑️ Supprimer cotation</button>` : ''}
+        <button onclick="_planningRemovePatient(${p._planIdx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕ Retirer</button>
       </div>
     </div>`;
   }
