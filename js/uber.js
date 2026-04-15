@@ -165,11 +165,17 @@ function markUberAbsent() {
 }
 
 function _updateUberProgress() {
-  const pts = APP.get('uberPatients');
-  const total = pts.length;
-  const done  = pts.filter(p => p.done || p.absent).length;
-  const el = $('uber-progress');
-  if (el) el.textContent = `${done} / ${total} patients · ${total - done} restant(s)`;
+  // Déléguer à renderLivePatientList pour un affichage unifié (évite le doublon uber-progress)
+  if (typeof renderLivePatientList === 'function') {
+    renderLivePatientList();
+  } else {
+    // Fallback si tournee.js pas encore chargé
+    const pts = APP.get('uberPatients');
+    const total = pts.length;
+    const done  = pts.filter(p => p.done || p.absent).length;
+    const el = $('uber-progress');
+    if (el) el.textContent = `${done} / ${total} patients · ${total - done} restant(s)`;
+  }
 }
 
 /* ── Navigation Google Maps ──────────────────────────────────

@@ -1407,14 +1407,18 @@ function renderLivePatientList() {
     };
   });
 
-  const el = $('live-next');
+  // Écrire dans uber-next-patient (visible dans le DOM) + live-next (compat)
+  const el = $('uber-next-patient') || $('live-next');
+  const elLive = $('live-next');
   if (!el) return;
 
   if (!patients.length) {
-    el.innerHTML = `<div class="card">
+    const msg = `<div class="card">
       <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong> ou <strong>Tournée IA</strong> pour importer des patients.</div>
       <button class="btn bp bsm" style="margin-top:10px" onclick="navTo('imp',null)"><span>📂</span> Importer des patients</button>
     </div>`;
+    el.innerHTML = msg;
+    if (elLive && elLive !== el) elLive.innerHTML = msg;
     return;
   }
 
@@ -1428,7 +1432,7 @@ function renderLivePatientList() {
     return s;
   }, 0);
 
-  el.innerHTML = `<div class="card">
+  const html = `<div class="card">
     <div class="ct" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <span>📋 Patients de la journée (${patients.length})</span>
       <button class="btn bs bsm" onclick="removeAllImportedPatients()" style="font-size:11px;padding:4px 10px">🗑️ Tout supprimer</button>
@@ -1457,6 +1461,13 @@ function renderLivePatientList() {
       </div>`;
     }).join('')}
   </div>`;
+
+  el.innerHTML = html;
+  // Synchroniser live-next si différent (compat code existant)
+  if (elLive && elLive !== el) elLive.innerHTML = html;
+  // Masquer uber-progress (doublon — les stats sont dans le rendu ci-dessus)
+  const uberProg = $('uber-progress');
+  if (uberProg) uberProg.style.display = 'none';
 }
 
 function removeImportedPatient(index) {
