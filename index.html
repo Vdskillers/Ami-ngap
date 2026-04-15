@@ -983,7 +983,11 @@
 
     <!-- PLANNING -->
     <section class="view" id="view-pla">
-      <h1 class="pt">Planning <em>hebdomadaire</em></h1><p class="ps">8–15 patients/jour · Connecté à l'import · Organisation optimale</p>
+      <h1 class="pt">Planning <em>hebdomadaire</em></h1>
+      <p class="ps">8–15 patients/jour · Connecté à l'import · Organisation optimale</p>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="btn bs bsm" onclick="refreshPlanning()">↻ Actualiser</button>
+      </div>
       <div id="pla-import-banner" class="card" style="display:none;margin-bottom:16px">
         <div class="ct">📂 Données importées disponibles</div>
         <div class="ai in" id="pla-import-info">—</div>
@@ -1018,6 +1022,7 @@
             <option value="year">Cette année</option>
           </select>
           <button class="btn bs bsm" onclick="hist()">↻ Actualiser</button>
+          <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
         </div>
         <div id="hstats" class="sg"></div>
         <div class="ht"><table>
@@ -1106,8 +1111,9 @@
         <div style="font-size:40px;margin-bottom:12px">📊</div>
         <p>Aucune donnée. Générez des cotations pour voir vos statistiques.</p>
       </div>
-      <div style="margin-top:20px;display:flex;gap:10px">
+      <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser tout</button>
+        <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
       </div>
     </section>
 
@@ -2361,6 +2367,55 @@ async function delHist(id) {
     if (typeof showToast === 'function') showToast('✅ Cotation supprimée.');
   } catch(e) {
     if (typeof showToast === 'function') showToast('⚠️ ' + e.message);
+  }
+}
+
+async function resetAllHist() {
+  const period  = document.getElementById('hp')?.value || 'month';
+  const periodLabel = { month:'ce mois', lastmonth:'le mois précédent', '3month':'les 3 derniers mois', year:'cette année' }[period] || period;
+  if (!confirm(`⚠️ Supprimer TOUTES les cotations de ${periodLabel} ?\n\nCette action est irréversible.`)) return;
+  if (!confirm(`Confirmer la suppression définitive de toutes les cotations de ${periodLabel} ?`)) return;
+
+  const tbody = document.getElementById('htb');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
+
+  try {
+    const url = `/webhook/ami-historique?period=${period}`;
+    const d   = typeof fetchAPI === 'function' ? await fetchAPI(url) : await wpost('/webhook/ami-historique', { period });
+    const rows = Array.isArray(d?.data) ? d.data : (Array.isArray(d) ? d : []);
+
+    if (!rows.length) {
+      if (typeof showToast === 'function') showToast('ℹ️ Aucune cotation à supprimer.', 'ok');
+      hist();
+      return;
+    }
+
+    // Suppression séquentielle avec délai pour ne pas surcharger l'API
+    let deleted = 0, errors = 0;
+    for (const r of rows) {
+      try {
+        await (typeof wpost === 'function' ? wpost('/webhook/ami-supprimer', { id: r.id }) : fetchAPI('/webhook/ami-supprimer', { method:'POST', body: JSON.stringify({ id: r.id }) }));
+        deleted++;
+      } catch { errors++; }
+    }
+
+    // Invalider le cache dashboard
+    try {
+      const cacheKey = (typeof _dashCacheKey === 'function') ? _dashCacheKey() : (typeof DASH_CACHE_KEY !== 'undefined' ? DASH_CACHE_KEY : null);
+      if (cacheKey) localStorage.removeItem(cacheKey);
+    } catch {}
+
+    const msg = errors > 0
+      ? `✅ ${deleted} cotation(s) supprimée(s) · ⚠️ ${errors} erreur(s)`
+      : `✅ ${deleted} cotation(s) supprimée(s).`;
+    if (typeof showToast === 'function') showToast(msg, errors > 0 ? 'warn' : 'ok');
+    hist();
+    // Recharger le dashboard si ouvert
+    if (document.getElementById('view-dash')?.classList.contains('on') && typeof loadDash === 'function') loadDash();
+
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('⚠️ ' + e.message, 'err');
+    hist();
   }
 }
 
