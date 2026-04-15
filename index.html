@@ -2568,9 +2568,13 @@ async function resetAllHist() {
     let deleted = 0, errors = 0;
     for (const r of rows) {
       try {
-        await (typeof wpost === 'function' ? wpost('/webhook/ami-supprimer', { id: r.id }) : fetchAPI('/webhook/ami-supprimer', { method:'POST', body: JSON.stringify({ id: r.id }) }));
+        // force:true = suppression confirmée explicitement par l'utilisateur (double confirm)
+        await wpost('/webhook/ami-supprimer', { id: r.id, force: true });
         deleted++;
-      } catch { errors++; }
+      } catch(e) {
+        console.warn('[resetAllHist] erreur suppression id', r.id, e?.message);
+        errors++;
+      }
     }
 
     // Invalider le cache dashboard
