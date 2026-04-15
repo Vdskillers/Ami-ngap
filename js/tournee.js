@@ -189,6 +189,14 @@ document.addEventListener('app:update', e => {
   }
 });
 
+/* Restauration du planning au login (après hydratation de S = bonne clé userId) */
+document.addEventListener('ami:login', () => {
+  // Attendre un tick pour que S.user.id soit disponible
+  setTimeout(() => {
+    _restorePlanningIfNeeded();
+  }, 100);
+});
+
 /* Restaurer APP.importedData depuis le planning sauvegardé si vide */
 function _restorePlanningIfNeeded() {
   if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) return;
@@ -692,27 +700,72 @@ async function _syncCotationsToSupabase(patients) {
     const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
     if (isAdmin) return; // admins: cotations de test, pas de sync
 
-    const toSync = (patients || APP.get('uberPatients') || []).filter(p =>
-      p._cotation?.validated && p._cotation?.total > 0 && !p._cotation?._synced
+    // Source 1 : patients en mémoire (uberPatients, snapshot tournée)
+    const fromMemory = (patients || APP.get('uberPatients') || []).filter(p =>
+      p._cotation?.validated && parseFloat(p._cotation?.total || 0) > 0 && !p._cotation?._synced
     );
-    if (!toSync.length) return;
 
-    const cotations = toSync.map(p => ({
+    // Source 2 : cotations IDB locales non encore envoyées (source = tournee_auto/tournee_local)
+    let fromIDB = [];
+    try {
+      if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+        const rows = await _idbGetAll(PATIENTS_STORE);
+        const today = new Date().toISOString().slice(0, 10);
+        for (const row of rows) {
+          const p = { id: row.id, ...((typeof _dec === 'function' ? _dec(row._data) : {}) || {}) };
+          if (!Array.isArray(p.cotations)) continue;
+          for (const cot of p.cotations) {
+            // Synchroniser uniquement les cotations récentes (dernières 24h) non déjà sync
+            if (cot._synced) continue;
+            const cotDate = (cot.date || '').slice(0, 10);
+            if (cotDate < today) continue; // uniquement aujourd'hui
+            if (parseFloat(cot.total || 0) <= 0) continue;
+            fromIDB.push({
+              _idb_patient_id: row.id,
+              _idb_cot: cot,
+              _cotation: { actes: cot.actes || [], total: parseFloat(cot.total), validated: true, auto: cot.source === 'tournee_auto' },
+              heure_soin: cot.heure || null,
+              description: cot.soin || '',
+            });
+          }
+        }
+      }
+    } catch(e) { console.warn('[AMI] Lecture IDB pour sync KO:', e.message); }
+
+    const allToSync = [...fromMemory, ...fromIDB];
+    if (!allToSync.length) return;
+
+    const cotations = allToSync.map(p => ({
       actes:       p._cotation.actes || [],
       total:       parseFloat(p._cotation.total || 0),
       date_soin:   new Date().toISOString().slice(0, 10),
-      heure_soin:  p.heure_soin || p.heure_preferee || null,
-      soin:        (p.description || p.texte || '').slice(0, 200),
+      heure_soin:  p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
+      soin:        (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
       source:      p._cotation.auto ? 'tournee_auto' : 'tournee_live',
       dre_requise: !!p._cotation.dre_requise,
     }));
 
     const result = await apiCall('/webhook/ami-save-cotation', { cotations });
     if (result?.ok) {
-      // Marquer comme synced pour ne pas re-envoyer
-      toSync.forEach(p => { if (p._cotation) p._cotation._synced = true; });
+      // Marquer comme synced en mémoire
+      fromMemory.forEach(p => { if (p._cotation) p._cotation._synced = true; });
+      // Marquer comme synced dans IDB
+      for (const item of fromIDB) {
+        try {
+          const rows = await _idbGetAll(PATIENTS_STORE);
+          const row = rows.find(r => r.id === item._idb_patient_id);
+          if (!row) continue;
+          const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
+          if (Array.isArray(pat.cotations)) {
+            const c = pat.cotations.find(c => c.date === item._idb_cot.date && c.total === item._idb_cot.total);
+            if (c) c._synced = true;
+          }
+          pat.updated_at = new Date().toISOString();
+          await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+        } catch {}
+      }
       console.info(`[AMI] ${result.saved} cotation(s) synchronisées vers Supabase.`);
-      // Invalider le cache dashboard pour forcer un rechargement
+      // Invalider le cache dashboard
       try {
         const key = (typeof _dashCacheKey === 'function') ? _dashCacheKey() : 'ami_dash_cache';
         localStorage.removeItem(key);
