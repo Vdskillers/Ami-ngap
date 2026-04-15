@@ -82,6 +82,9 @@ function _applyOptimModeStyle() {
 /* Écouter les deux events de navigation */
 const _onNavLive = e => {
   if (e.detail?.view === 'live') setTimeout(_bindOptimModeUI, 100);
+  if (e.detail?.view === 'pla'  && (APP.importedData?.patients?.length || APP.importedData?.entries?.length)) {
+    setTimeout(() => renderPlanning({}).catch(()=>{}), 80);
+  }
 };
 document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
@@ -144,139 +147,139 @@ async function generatePlanningFromImport(){
   $('res-pla').classList.remove('show');
   try{
     const d=await apiCall('/webhook/ami-calcul',{mode:'planning',texte:txt});
-    renderPlanning(d);
+    renderPlanning(d).catch(()=>{});
     $('perr').style.display='none';
   }catch(e){$('perr').style.display='flex';$('perr-m').textContent=e.message;}
   $('res-pla').classList.add('show');
   ld('btn-pla',false);
 }
 
-function renderPlanning(d){
-  // Source principale : importedData
-  // Enrichi avec uberPatients (noms réels, dates, cotations du jour)
+async function renderPlanning(d){
+  // Patients importés (source principale)
   const rawPatients = APP.importedData?.patients || APP.importedData?.entries || [];
-
-  // Construire un index par id depuis uberPatients pour l'enrichissement
-  const uberMap = {};
-  (APP.get('uberPatients') || []).forEach(p => {
-    const key = p.patient_id || p.id;
-    if (key) uberMap[key] = p;
-  });
-
-  // Date du jour pour les patients sans date
+  const ca = rawPatients.length ? estimateRevenue(rawPatients) : null;
   const todayISO = new Date().toISOString().split('T')[0];
 
-  // Enrichir chaque patient importé avec les données uber si disponible
+  // ── Enrichir depuis le carnet patient (IDB) par patient_id ──────────────
+  // Si le patient a un patient_id qui correspond à une fiche IDB, on récupère nom/prenom
+  let carnetIndex = {};
+  try {
+    if (typeof _idbGetAll === 'function') {
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      rows.forEach(r => {
+        const decoded = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
+        carnetIndex[r.id] = { nom: r.nom || '', prenom: r.prenom || '', ...decoded };
+      });
+    }
+  } catch(e) { console.warn('[Planning] IDB KO:', e.message); }
+
+  // ── Enrichir depuis uberPatients (statut done/absent/cotation) ───────────
+  const uberIndex = {};
+  (APP.get('uberPatients') || []).forEach(p => {
+    const k = p.patient_id || p.id;
+    if (k) uberIndex[k] = p;
+  });
+
+  // ── Construire la liste enrichie ─────────────────────────────────────────
   const patients = rawPatients.map((p, idx) => {
-    const uber = uberMap[p.patient_id || p.id] || {};
+    const pid   = p.patient_id || p.id || '';
+    const fiche = carnetIndex[pid] || {};
+    const uber  = uberIndex[pid]   || {};
+
+    // Nom : fiche IDB > champs structurés > uber > extraction description
+    const nomFiche = [fiche.prenom, fiche.nom].filter(Boolean).join(' ').trim();
+    const nomDirect = [p.prenom, p.nom].filter(Boolean).join(' ').trim();
+    const nomUber   = [uber.prenom, uber.nom].filter(Boolean).join(' ').trim();
+    let nom = nomFiche || nomDirect || nomUber;
+
+    if (!nom) {
+      // Extraction depuis description : "Marie Dupont — injection" ou "DUPONT Marie"
+      const raw = (p.description || p.texte || '').trim();
+      const sep = raw.match(/^([^—\-:]+?)(?:\s*[—\-:]\s*|\s+(?:injection|pansement|toilette|prélèvement|perfusion|insuline|soin\s|bilan|visite|acte\s))/i);
+      if (sep && sep[1].trim().length > 1) {
+        nom = sep[1].trim();
+      } else {
+        // Mots commençant par majuscule
+        const nameW = [];
+        for (const w of raw.split(/\s+/).slice(0, 4)) {
+          if (/^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ]/.test(w)) nameW.push(w); else break;
+        }
+        nom = nameW.length >= 2 ? nameW.join(' ') : '';
+      }
+    }
+
+    // Toujours afficher aujourd'hui si pas de date (tournée du jour)
+    const date = p.date || p.date_soin || p.date_prevue || todayISO;
+
     return {
       ...p,
-      // Nom : préférer uber (qui vient du carnet) puis champs structurés puis extraction
-      nom:    uber.nom    || p.nom    || '',
-      prenom: uber.prenom || p.prenom || '',
-      // Date : uber ou import ou aujourd'hui si visité
-      date:   p.date || p.date_soin || uber.date || uber.date_soin
-              || ((p._cotation?.validated || p.done || p._done || uber.done) ? todayISO : ''),
-      // Cotation et statut du uber
+      nom:       (fiche.nom    || p.nom    || uber.nom    || '').trim(),
+      prenom:    (fiche.prenom || p.prenom || uber.prenom || '').trim(),
+      _nomAff:   nom || 'Patient',
+      date,
       _cotation: p._cotation || uber._cotation,
-      done:   p.done  || p._done  || uber.done  || false,
-      absent: p.absent || p._absent || uber.absent || false,
+      done:      p.done  || p._done  || uber.done  || false,
+      absent:    p.absent || p._absent || uber.absent || false,
+      _planIdx:  idx,
     };
   });
 
-  const ca = patients.length ? estimateRevenue(patients) : null;
-
-  // Jours de la semaine français
+  // Jours de la semaine
   const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
-
-  // Grouper les patients par jour
   const byDay = {};
   JOURS.forEach(j => { byDay[j] = []; });
 
-  patients.forEach((p, idx) => {
+  patients.forEach(p => {
     let jourKey = null;
-    const dateStr = p.date || p.date_soin || '';
-    if (dateStr) {
-      try {
-        const d2 = new Date(dateStr);
-        if (!isNaN(d2)) {
-          const nomJour = d2.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
-          jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
-        }
-      } catch {}
-    }
+    try {
+      const d2 = new Date(p.date);
+      if (!isNaN(d2)) {
+        const nomJour = d2.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
+        jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
+      }
+    } catch {}
     if (!jourKey) {
       const desc = (p.description || p.texte || '').toLowerCase();
       jourKey = JOURS.find(j => desc.includes(j)) || null;
     }
-    if (!jourKey) jourKey = JOURS[idx % JOURS.length];
-    byDay[jourKey].push({ ...p, _planIdx: idx });
+    if (!jourKey) jourKey = JOURS[p._planIdx % JOURS.length];
+    byDay[jourKey].push(p);
   });
 
-  // Rendu d'une carte patient
+  // ── Rendu carte patient ───────────────────────────────────────────────────
   function renderPatientCard(p) {
-    // ── Nom ──────────────────────────────────────────────────────
-    let nom = [p.prenom, p.nom].filter(Boolean).join(' ').trim()
-           || p.patient_nom || p.patient_name || p.name || '';
-
-    if (!nom) {
-      // Extraire depuis description : "Marie Dupont — injection" → "Marie Dupont"
-      const raw = (p.description || p.texte || '').trim();
-      const sepMatch = raw.match(/^([^—\-:]+?)(?:\s*[—\-:]\s*|\s+(?:injection|pansement|toilette|prélèvement|perfusion|insuline|soin|bilan|visite|acte))/i);
-      if (sepMatch && sepMatch[1].trim().length > 1) {
-        nom = sepMatch[1].trim();
-      } else {
-        // Mots commençant par majuscule en début de chaîne
-        const words = raw.split(/\s+/);
-        const nameW = [];
-        for (const w of words.slice(0, 4)) {
-          if (/^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ]/.test(w)) nameW.push(w); else break;
-        }
-        nom = nameW.length >= 1 ? nameW.join(' ') : raw.slice(0, 25);
-      }
-    }
-    if (!nom || nom.toLowerCase() === 'soin infirmier') nom = 'Patient';
-
-    // ── Date ─────────────────────────────────────────────────────
-    const dateStr = p.date || p.date_soin || p.date_prevue || '';
+    const nom  = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
+    const date = p.date || todayISO;
     let dateAff = '';
-    if (dateStr) {
-      try {
-        const d2 = new Date(dateStr);
-        if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
-      } catch {}
-    }
-    // Fallback : afficher aujourd'hui si le patient a été coté ou visité
-    if (!dateAff && (p._cotation?.validated || p.done || p._done)) {
-      dateAff = new Date().toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
-    }
+    try {
+      const d2 = new Date(date);
+      if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    } catch {}
 
-    // ── Heure / Soin ─────────────────────────────────────────────
     const heure = p.heure_soin || p.heure_preferee || p.heure || '';
-    // Description du soin = description sans le nom si extrait
-    let soin = (p.description || p.texte || '').slice(0, 60);
-    if (nom && nom !== 'Patient' && soin.startsWith(nom)) {
-      soin = soin.slice(nom.length).replace(/^\s*[—\-:]\s*/, '').trim().slice(0, 60);
+    // Soin : retirer le nom si extrait
+    let soin = (p.description || p.texte || '').trim();
+    if (nom !== 'Patient' && soin.toLowerCase().startsWith(nom.toLowerCase())) {
+      soin = soin.slice(nom.length).replace(/^\s*[—\-:]\s*/, '').trim();
     }
+    soin = soin.slice(0, 60);
 
     const cot = p._cotation?.validated;
+    const idx = p._planIdx;
 
-    return `
-    <div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    return `<div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-bottom:4px">
         <div style="font-size:13px;font-weight:600;color:var(--t);flex:1;min-width:0;word-break:break-word">${nom}</div>
-        ${dateAff ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>` : ''}
-        ${heure   ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>` : ''}
-        ${p.done||p._done ? `<span style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;flex-shrink:0">✅</span>` : ''}
+        <span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">${dateAff}</span>
+        ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;flex-shrink:0">⏰ ${heure}</span>` : ''}
+        ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;flex-shrink:0">✅</span>` : ''}
       </div>
       ${soin ? `<div style="font-size:11px;color:var(--m);margin-bottom:6px;line-height:1.4">${soin}</div>` : ''}
       ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-        <button onclick="openCotationPatient(${p._planIdx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">
-          ${cot ? '✏️ Modifier' : '⚡ Coter'}
-        </button>
-        ${cot ? `<button onclick="_planningDeleteCotation(${p._planIdx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">🗑️ Supprimer cotation</button>` : ''}
-        <button onclick="_planningRemovePatient(${p._planIdx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕ Retirer</button>
+        <button onclick="openCotationPatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">${cot ? '✏️ Modifier' : '⚡ Coter'}</button>
+        ${cot ? `<button onclick="_planningDeleteCotation(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">🗑️ Suppr. cotation</button>` : ''}
+        <button onclick="_planningRemovePatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕ Retirer</button>
       </div>
     </div>`;
   }
@@ -329,7 +332,7 @@ function _planningDeleteCotation(idx) {
   if (!confirm(`Supprimer la cotation de ${[p.prenom, p.nom].filter(Boolean).join(' ') || 'ce patient'} ?`)) return;
   delete p._cotation;
   // Ré-afficher le planning
-  renderPlanning({});
+  renderPlanning({}).catch(()=>{});
   if (typeof showToast === 'function') showToast('🗑️ Cotation supprimée.');
 }
 
@@ -343,7 +346,7 @@ function _planningRemovePatient(idx) {
   const key = APP.importedData.patients ? 'patients' : 'entries';
   APP.importedData[key] = arr.filter((_, i) => i !== idx);
   APP.importedData.total = APP.importedData[key].length;
-  renderPlanning({});
+  renderPlanning({}).catch(()=>{});
   if (typeof showToast === 'function') showToast('✅ Patient retiré du planning.');
 }
 
