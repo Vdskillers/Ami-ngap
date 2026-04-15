@@ -137,7 +137,55 @@ function _updateHeureCache(rows) {
     if (r.id)       { cache[String(r.id)]                         = heure; changed = true; }
     if (r.date_soin){ cache[(r.date_soin||'').slice(0,10)]        = heure; changed = true; }
   });
-  if (changed) _saveHeureCache(cache);
+  if (changed) {
+    _saveHeureCache(cache);
+    _scheduleSyncHeureCache(); // push cross-appareils (debounced 5s)
+  }
+}
+
+/* ── Sync serveur du cache heures (push) — cross-appareils PC ↔ mobile ──
+   Données NON sensibles : { id: "HH:MM", "YYYY-MM-DD": "HH:MM" }
+   Aucun nom patient, aucune donnée médicale. Uniquement pour l'analyse horaire.
+   Debounced 5 secondes pour éviter les appels répétés en rafale.
+   Admins ignorés : leurs heures de test restent locales.
+──────────────────────────────────────────────────────────────────────── */
+let _syncHeureCacheTimer = null;
+function _scheduleSyncHeureCache() {
+  if (_syncHeureCacheTimer) clearTimeout(_syncHeureCacheTimer);
+  _syncHeureCacheTimer = setTimeout(syncHeureCache, 5000);
+}
+
+async function syncHeureCache() {
+  _syncHeureCacheTimer = null;
+  // Accessible admins ET infirmières : chacun synchronise ses propres heures
+  if (!navigator.onLine) return;
+  try {
+    const cache = _loadHeureCache();
+    if (!Object.keys(cache).length) return;
+    const data = JSON.stringify(cache);
+    await wpost('/webhook/heure-push', { data, updated_at: new Date().toISOString() });
+  } catch(e) { /* silencieux — non critique */ }
+}
+
+/* ── Pull du cache heures depuis le serveur (cross-appareils) ──────────
+   Appelé au chargement du dashboard et après login.
+   Merge : les entrées serveur complètent le cache local (union des deux).
+   La clé locale gagne en cas de conflit (données saisies sur cet appareil).
+──────────────────────────────────────────────────────────────────────── */
+async function pullHeureCache() {
+  // Accessible admins ET infirmières : chacun récupère ses propres heures
+  if (!navigator.onLine) return;
+  try {
+    const d = await wpost('/webhook/heure-pull', {});
+    if (!d?.data?.data) return;
+    let remote;
+    try { remote = JSON.parse(d.data.data); } catch { return; }
+    if (typeof remote !== 'object' || Array.isArray(remote)) return;
+    // Merge : local + remote (local prioritaire)
+    const local  = _loadHeureCache();
+    const merged = { ...remote, ...local }; // local écrase remote
+    _saveHeureCache(merged);
+  } catch(e) { /* silencieux — non critique */ }
 }
 
 function _buildHeureIndex() {
@@ -214,6 +262,10 @@ async function loadStatsAvancees() {
     // Chaque fois qu'une cotation arrive avec heure_soin non null, on la mémorise
     // pour qu'elle soit disponible lors des prochaines sessions (analyse horaire).
     _updateHeureCache([...arr1, ...arr2, ...arr3]);
+
+    // ── Pull cross-appareils : récupérer les heures saisies sur mobile/PC ─────
+    // Merge silencieux — complète le cache local avec les heures de l'autre appareil.
+    await pullHeureCache();
 
     // ── Enrichissement horaire depuis le planning local de l'utilisateur ──────
     // Pour les admins : heure_soin est retiré de la réponse API (RGPD/HDS — worker.js:734).
@@ -655,6 +707,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Onboarding après login
   document.addEventListener('ami:login', checkOnboarding);
 
+  // Pull du cache heures cross-appareils après login (synchronise PC ↔ mobile)
+  document.addEventListener('ami:login', () => { setTimeout(pullHeureCache, 2000); });
+
   // Init queue status
   const q = _getQueue();
   if (q.length > 0 && navigator.onLine) {
@@ -673,6 +728,8 @@ window.completeOnboarding     = completeOnboarding;
 window.resetOnboarding        = resetOnboarding;
 window.requestNotifPermission = requestNotifPermission;
 window.scheduleDailyCotationReminder = scheduleDailyCotationReminder;
+window.syncHeureCache          = syncHeureCache;
+window.pullHeureCache          = pullHeureCache;
 window.loadTresorerie         = window.loadTresorerie || function(){};
 window.checklistCPAM          = window.checklistCPAM  || function(){};
 window.exportComptable        = window.exportComptable || function(){};
