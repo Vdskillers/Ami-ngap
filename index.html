@@ -198,10 +198,10 @@
       <!-- Logs système récents -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="lbl">📄 Logs système récents <span style="font-size:11px;color:var(--m);font-weight:400">(N8N · IA · Frontend)</span></div>
-        <button class="bs bsm" onclick="loadSystemLogs()" style="padding:6px 14px;font-size:12px">↻ Charger</button>
+        <button class="bs bsm" onclick="loadAdmLogs()" style="padding:6px 14px;font-size:12px">↻</button>
       </div>
       <div id="adm-system-logs-body" style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;max-height:360px;overflow-y:auto;font-family:var(--fm)">
-        <div class="ai in">Cliquez sur ↻ Charger pour afficher les logs système.</div>
+        <div class="ai in">Cliquez sur ↻ pour charger les logs système.</div>
       </div>
     </div>
 
@@ -809,7 +809,27 @@
         );
 
         const _autoCoterOne = async (p) => {
-          const texte = p.description || p.texte || p.texte_soin || p.acte || '';
+          /* ── Chercher les actes_recurrents dans la fiche patient IDB ── */
+          let actesRecurrents = '';
+          try {
+            if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+              const rows = await _idbGetAll(PATIENTS_STORE);
+              const row  = rows.find(r => r.id === p.patient_id || r.id === p.id);
+              if (row) {
+                const pat = { ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}) };
+                if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
+              }
+            }
+          } catch (_) {}
+
+          /* ── Construire le texte de cotation :
+             Priorité 1 : actes_recurrents (fiche patient)
+             Priorité 2 : description/texte importé (calendrier/texte libre)
+             Priorité 3 : pathologies (rétrocompatibilité) ── */
+          const texteImport = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
+          const texte = actesRecurrents
+            ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
+            : (texteImport || p.pathologies || '');
           if (!texte) return;
           /* Fallback local immédiat — appliqué d'abord pour ne pas bloquer */
           let cot = (typeof autoCotationLocale === 'function')
@@ -1803,6 +1823,21 @@
             <div class="f"><label for="pat-exo">Exonération</label><select id="pat-exo"><option value="">Aucune</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité</option><option value="accident">Accident travail</option><option value="cmu">CSS/C2S</option></select></div>
             <div class="f"><label for="pat-medecin">Médecin référent</label><input type="text" id="pat-medecin" placeholder="Dr. Martin"></div>
           </div>
+          <!-- 💊 Actes Récurrents à Réaliser -->
+          <div class="fg" style="margin-bottom:16px;background:rgba(0,212,170,.04);border:2px solid rgba(0,212,170,.25);border-radius:var(--r);padding:14px">
+            <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+              <div style="font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase">💊 Actes Récurrents à Réaliser</div>
+              <span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 8px;border-radius:20px;font-family:var(--fm)">⚡ Utilisé pour les cotations automatiques de la Tournée IA</span>
+            </div>
+            <div style="grid-column:1/-1;font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:10px;line-height:1.6">
+              Décrivez les soins habituels de ce patient en langage naturel. Ces informations seront utilisées automatiquement pour générer les cotations lors de la <strong style="color:var(--t)">Tournée IA</strong> et du <strong style="color:var(--t)">Pilotage de journée</strong>, en remplacement du champ Pathologies.
+            </div>
+            <div class="f" style="grid-column:1/-1">
+              <label for="pat-actes-recurrents">Soins habituels <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(ex : injection insuline SC matin, pansement complexe, perfusion 3x/semaine…)</span></label>
+              <textarea id="pat-actes-recurrents" placeholder="Ex : Injection insuline SC 2x/jour + surveillance glycémie&#10;Ex : Pansement complexe jambe droite + AMI4&#10;Ex : Soins de nursing complets, patient grabataire&#10;Ex : Perfusion antibiotique 3x/semaine + IFD domicile" style="min-height:90px;font-family:var(--fm);font-size:12px" maxlength="500"></textarea>
+            </div>
+          </div>
+
           <div class="fg" style="margin-bottom:16px">
             <div class="f"><label for="pat-allergies" style="color:var(--d)">Allergies ⚠️</label><input type="text" id="pat-allergies" placeholder="Pénicilline, Aspirine..."></div>
             <div class="f"><label for="pat-pathologies">Pathologies</label><input type="text" id="pat-pathologies" placeholder="Diabète type 2, HTA..."></div>
