@@ -918,26 +918,6 @@ async function checkOrdoExpiry() {
     console.warn('[AMI] checkOrdoExpiry KO:', e.message);
   }
 }
-  const rows = await _idbGetAll(PATIENTS_STORE);
-  const in30 = new Date(); in30.setDate(in30.getDate() + 30);
-  let alerts = [];
-  rows.forEach(r => {
-    const p = _dec(r._data) || {};
-    if (p.ordo_date && new Date(p.ordo_date) <= in30) {
-      alerts.push(`${r.prenom||''} ${r.nom} — ordonnance avant le ${p.ordo_date}`);
-    }
-  });
-  const badge = $('patients-ordo-badge');
-  if (badge) {
-    badge.textContent = alerts.length + ' à renouveler';
-    badge.style.display = alerts.length > 0 ? 'inline' : 'none';
-  }
-  // Toast discret
-  if (alerts.length > 0) {
-    showToastSafe(`📋 ${alerts.length} ordonnance(s) à renouveler prochainement.`);
-  }
-}
-
 /* Cotation depuis la fiche patient */
 async function coterDepuisPatient(id) {
   const rows = await _idbGetAll(PATIENTS_STORE);
