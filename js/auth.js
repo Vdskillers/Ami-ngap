@@ -69,8 +69,8 @@ function showApp(){
     // Classe admin-active sur le header pour le layout mobile
     const topBar = document.querySelector('.top');
     if(topBar) topBar.classList.add('admin-active');
-    $('admin-cot-notice').style.display='flex';
-    $('priv-cot').style.display='none';
+    $('admin-cot-notice').style.display='none';
+    $('priv-cot').style.display='';
     document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
     /* ── MODE ADMIN : accès fonctionnel complet pour tester l'application ──
        L'admin ne voit QUE ses propres données (base IndexedDB isolée par userId).
