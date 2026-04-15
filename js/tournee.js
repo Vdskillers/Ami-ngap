@@ -681,6 +681,48 @@ let LIVE_TIMER_ID=null;
 /* Exposer pour terminerTourneeAvecBilan (index.html) */
 Object.defineProperty(window, '_LIVE_CA_TOTAL', { get: () => LIVE_CA_TOTAL });
 
+/* ══════════════════════════════════════════════════════════════
+   SYNC COTATIONS LOCALES → SUPABASE
+   Envoie les cotations créées localement (mode live, auto-fin tournée)
+   vers le worker pour persistance dans planning_patients.
+   Silencieux en cas d'erreur (l'IDB reste la source de vérité locale).
+══════════════════════════════════════════════════════════════ */
+async function _syncCotationsToSupabase(patients) {
+  try {
+    const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+    if (isAdmin) return; // admins: cotations de test, pas de sync
+
+    const toSync = (patients || APP.get('uberPatients') || []).filter(p =>
+      p._cotation?.validated && p._cotation?.total > 0 && !p._cotation?._synced
+    );
+    if (!toSync.length) return;
+
+    const cotations = toSync.map(p => ({
+      actes:       p._cotation.actes || [],
+      total:       parseFloat(p._cotation.total || 0),
+      date_soin:   new Date().toISOString().slice(0, 10),
+      heure_soin:  p.heure_soin || p.heure_preferee || null,
+      soin:        (p.description || p.texte || '').slice(0, 200),
+      source:      p._cotation.auto ? 'tournee_auto' : 'tournee_live',
+      dre_requise: !!p._cotation.dre_requise,
+    }));
+
+    const result = await apiCall('/webhook/ami-save-cotation', { cotations });
+    if (result?.ok) {
+      // Marquer comme synced pour ne pas re-envoyer
+      toSync.forEach(p => { if (p._cotation) p._cotation._synced = true; });
+      console.info(`[AMI] ${result.saved} cotation(s) synchronisées vers Supabase.`);
+      // Invalider le cache dashboard pour forcer un rechargement
+      try {
+        const key = (typeof _dashCacheKey === 'function') ? _dashCacheKey() : 'ami_dash_cache';
+        localStorage.removeItem(key);
+      } catch {}
+    }
+  } catch(e) {
+    console.warn('[AMI] Sync cotations KO (silencieux):', e.message);
+  }
+}
+
 function startLiveTimer(){
   LIVE_START_TIME=Date.now();
   $('live-timer').style.display='block';
@@ -954,6 +996,9 @@ function _stopDayInternal() {
   const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
   const caFromPatients = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
   const caFinal = Math.max(LIVE_CA_TOTAL, caFromPatients);
+
+  // Synchroniser toutes les cotations non encore envoyées à Supabase
+  _syncCotationsToSupabase(allPatients).catch(() => {});
 
   // Reset badge
   const badge = $('live-badge');
@@ -1474,6 +1519,9 @@ function _validateCotationLive() {
 
   // Marquer la cotation sur le patient en mémoire
   if (patient) patient._cotation = { actes, total, validated: true };
+
+  // Synchroniser vers Supabase en arrière-plan (non-bloquant)
+  _syncCotationsToSupabase([patient]).catch(() => {});
 
   // Sauvegarder la cotation dans le carnet patient (IDB) si la fiche existe
   (async () => {
