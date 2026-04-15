@@ -27,6 +27,8 @@ if (typeof optimizeTour === 'undefined') {
 
 function storeImportedData(d){
   APP.importedData=d;
+  // Sauvegarder dans localStorage (persistance entre sessions)
+  if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
   const banner=$('pla-import-banner');
   const info=$('pla-import-info');
@@ -82,8 +84,12 @@ function _applyOptimModeStyle() {
 /* Écouter les deux events de navigation */
 const _onNavLive = e => {
   if (e.detail?.view === 'live') setTimeout(_bindOptimModeUI, 100);
-  if (e.detail?.view === 'pla'  && (APP.importedData?.patients?.length || APP.importedData?.entries?.length)) {
-    setTimeout(() => renderPlanning({}).catch(()=>{}), 80);
+  if (e.detail?.view === 'pla') {
+    // Restaurer le planning sauvegardé si importedData est vide
+    _restorePlanningIfNeeded();
+    if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) {
+      setTimeout(() => renderPlanning({}).catch(()=>{}), 80);
+    }
   }
 };
 document.addEventListener('app:nav',     _onNavLive);
@@ -129,9 +135,58 @@ function showImportedPatients(){
   $('res-tur').classList.add('show');
 }
 
-/* ============================================================
-   PLANNING DEPUIS IMPORT
-   ============================================================ */
+/* ══════════════════════════════════════════════════════
+   PLANNING HEBDOMADAIRE — PERSISTANCE localStorage
+   Clé isolée par utilisateur : ami_planning_<userId>
+   Conserve les données entre sessions et imports
+   ══════════════════════════════════════════════════════ */
+function _planningKey() {
+  const uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : 'local';
+  return 'ami_planning_' + String(uid).replace(/[^a-zA-Z0-9_-]/g,'_');
+}
+
+function _savePlanning(patients) {
+  try {
+    const key = _planningKey();
+    // Sauvegarder avec timestamp pour TTL éventuel (7 jours)
+    const data = { patients, savedAt: Date.now() };
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch(e) { console.warn('[Planning] Save KO:', e.message); }
+}
+
+function _loadPlanning() {
+  try {
+    const key = _planningKey();
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // TTL 7 jours
+    if (Date.now() - (data.savedAt || 0) > 7 * 24 * 3600 * 1000) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return Array.isArray(data.patients) ? data.patients : null;
+  } catch { return null; }
+}
+
+function _clearPlanning() {
+  try { localStorage.removeItem(_planningKey()); } catch {}
+}
+
+/* Sauvegarder le planning chaque fois qu'importedData change */
+function _syncPlanningStorage() {
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  if (patients.length) _savePlanning(patients);
+}
+
+/* Restaurer APP.importedData depuis le planning sauvegardé si vide */
+function _restorePlanningIfNeeded() {
+  if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) return;
+  const saved = _loadPlanning();
+  if (saved?.length) {
+    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+  }
+}
 async function generatePlanningFromImport(){
   if(!APP.importedData){alert('Aucune donnée importée.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
@@ -346,6 +401,7 @@ function _planningRemovePatient(idx) {
   const key = APP.importedData.patients ? 'patients' : 'entries';
   APP.importedData[key] = arr.filter((_, i) => i !== idx);
   APP.importedData.total = APP.importedData[key].length;
+  _syncPlanningStorage();
   renderPlanning({}).catch(()=>{});
   if (typeof showToast === 'function') showToast('✅ Patient retiré du planning.');
 }
@@ -353,8 +409,9 @@ function _planningRemovePatient(idx) {
 /* Effacer tout le planning hebdomadaire */
 function _planningResetAll() {
   const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
-  if (!confirm(`Effacer tout le planning ?\n\n${n} patient(s) seront supprimés du planning.\nCette action ne supprime PAS les fiches du carnet patient.`)) return;
+  if (!confirm(`Réinitialiser le planning ?\n\n${n} patient(s) seront supprimés.\nCette action ne supprime PAS les fiches du carnet patient.`)) return;
   APP.importedData = null;
+  _clearPlanning();
   $('pbody').innerHTML = '<div class="ai in" style="margin-top:12px">Planning effacé. Importez de nouvelles données depuis "Import calendrier".</div>';
   const banner = $('pla-import-banner');
   if (banner) banner.style.display = 'none';
@@ -659,13 +716,25 @@ async function autoFacturation(patient){
   }catch(e){console.warn('Auto-facturation: ',e.message);}
 }
 
-function updateLiveCaCard(patient,cot){
-  const card=$('live-ca-card');
-  const detail=$('live-ca-detail');
-  if(!card||!detail)return;
-  card.style.display='block';
-  const existing=detail.innerHTML;
-  detail.innerHTML+=`<div class="route-item"><div class="route-num">✅</div><div class="route-info" style="font-size:12px">${patient.description?.slice(0,40)||'Soin'}</div><div class="route-km" style="color:var(--a)">${(cot.total||0).toFixed(2)} €</div></div>`;
+function updateLiveCaCard(patient, cot) {
+  const card   = $('live-ca-card');
+  const detail = $('live-ca-detail');
+  if (!card || !detail) return;
+  card.style.display = 'block';
+
+  const total = parseFloat(cot?.total || 0);
+
+  // Incrémenter le CA live (évite les doublons si déjà compté par _validateCotationLive)
+  if (total > 0 && !patient?._caCardCounted) {
+    LIVE_CA_TOTAL += total;
+    patient._caCardCounted = true;
+    const caEl = $('live-ca-total');
+    if (caEl) { caEl.textContent = `💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`; caEl.style.display = 'block'; }
+  }
+
+  const nom = [patient?.prenom, patient?.nom].filter(Boolean).join(' ')
+           || patient?.description?.slice(0, 40) || 'Soin';
+  detail.innerHTML += `<div class="route-item"><div class="route-num">✅</div><div class="route-info" style="font-size:12px">${nom}</div><div class="route-km" style="color:var(--a)">${total.toFixed(2)} €</div></div>`;
 }
 
 async function recalculTournee(){
@@ -869,28 +938,33 @@ function _stopDayInternal() {
   // Arrêter le timer
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
 
+  // CA réel = LIVE_CA_TOTAL (cotations validées manuellement pendant la tournée)
+  //         + cotations auto-générées sur les patients visités (_cotation.validated)
+  //         → prendre le max des deux pour couvrir tous les cas (Uber / pilotage live)
+  const allPatients = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+  const caFromPatients = allPatients.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
+  const caFinal = Math.max(LIVE_CA_TOTAL, caFromPatients);
+
   // Reset badge
   const badge = $('live-badge');
   if (badge) { badge.textContent = 'TERMINÉE'; badge.style.background = 'rgba(34,197,94,.15)'; badge.style.color = '#22c55e'; }
 
   $('live-patient-name').textContent = 'Tournée terminée ✅';
-  $('live-info').textContent = '🏁 Bonne fin de journée ! CA total : ' + LIVE_CA_TOTAL.toFixed(2) + ' €';
+  $('live-info').textContent = `🏁 Bonne fin de journée ! CA total : ${caFinal.toFixed(2)} €`;
   $('live-controls').style.display = 'none';
 
-  // Afficher bouton démarrer, cacher bouton terminer
   const btnStart = $('btn-live-start');
   const btnStop  = $('btn-live-stop');
   if (btnStart) btnStart.style.display = 'inline-flex';
   if (btnStop)  btnStop.style.display  = 'none';
 
-  // Résumé CA
   const caEl = $('live-ca-total');
-  if (caEl) { caEl.textContent = '💶 CA journée clôturée : ' + LIVE_CA_TOTAL.toFixed(2) + ' €'; caEl.style.display = 'block'; }
+  if (caEl) { caEl.textContent = `💶 CA journée clôturée : ${caFinal.toFixed(2)} €`; caEl.style.display = 'block'; }
 
   // Reset CA pour prochaine journée
   LIVE_CA_TOTAL = 0;
 
-  if (typeof showToast === 'function') showToast('🏁 Tournée terminée — bonne journée !');
+  if (typeof showToast === 'function') showToast(`🏁 Tournée terminée · CA : ${caFinal.toFixed(2)} €`);
 }
 
 /* ============================================================
@@ -1382,7 +1456,10 @@ function _validateCotationLive() {
   const caEl = $('live-ca-total');
   if (caEl) { caEl.textContent = `💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`; caEl.style.display = 'block'; }
 
-  // Ajouter au récap CA
+  // Marquer comme déjà compté avant updateLiveCaCard (évite le double-comptage)
+  if (patient) patient._caCardCounted = true;
+
+  // Ajouter au récap CA (sans incrémenter LIVE_CA_TOTAL à nouveau)
   updateLiveCaCard(patient, { actes, total });
 
   // Marquer la cotation sur le patient en mémoire
