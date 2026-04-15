@@ -784,8 +784,9 @@
           let kmTotal = 0;
           let kmSource = '';
 
-          /* Source 1 : km OSRM stockés lors de l'optimisation carte */
-          const osrmKm = parseFloat(APP.get('tourneeKmJour') || 0);
+          /* Source 1 : km OSRM stockés lors de l'optimisation (APP state + localStorage persisté) */
+          const osrmKm = parseFloat(APP.get('tourneeKmJour') || 0)
+            || parseFloat(localStorage.getItem('ami_tournee_km') || 0);
           if (osrmKm > 0) { kmTotal = osrmKm; kmSource = 'OSRM'; }
 
           /* Source 2 : badge HTML "🚗 X km" dans la vue tournée */
@@ -797,11 +798,14 @@
             }
           }
 
-          /* Source 3 : haversine sur TOUS les patients GPS (visités + non visités)
-             Le trajet total = cabinet → patient 1 → ... → patient N → cabinet */
+          /* Source 3 : haversine sur TOUS les patients GPS (visités + non visités) */
           if (!kmTotal) {
             const start = APP.get('startPoint');
-            const withGPS = snapshot.filter(p => p.lat && p.lng && parseFloat(p.lat) && parseFloat(p.lng));
+            // Utiliser snapshot d'abord, puis uberPatients comme fallback (meilleurs coords GPS)
+            const gpsSource = snapshot.some(p => p.lat && p.lng)
+              ? snapshot
+              : (APP.get('uberPatients') || []);
+            const withGPS = gpsSource.filter(p => p.lat && p.lng && parseFloat(p.lat) && parseFloat(p.lng));
             if (withGPS.length >= 1) {
               let pts = [];
               if (start?.lat && start?.lng) pts.push(start);
@@ -810,7 +814,6 @@
               for (let i = 0; i < pts.length - 1; i++) {
                 dist += _hav(parseFloat(pts[i].lat), parseFloat(pts[i].lng), parseFloat(pts[i+1].lat), parseFloat(pts[i+1].lng));
               }
-              /* Retour au départ */
               if (start?.lat && pts.length > 1) {
                 const last = pts[pts.length-1];
                 dist += _hav(parseFloat(last.lat), parseFloat(last.lng), parseFloat(start.lat), parseFloat(start.lng));
@@ -843,6 +846,7 @@
             });
             localStorage.setItem(KM_KEY, JSON.stringify(journal));
             APP.set('tourneeKmJour', 0);
+            try { localStorage.removeItem('ami_tournee_km'); } catch {}
           }
         } catch (e) { console.warn('[AMI] Import km KO:', e.message); }
 
