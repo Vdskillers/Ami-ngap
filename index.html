@@ -526,7 +526,10 @@
 
     <!-- TOURNÉE IA -->
     <section class="view" id="view-tur">
-      <h1 class="pt">Tournée <em>optimisée par IA</em></h1>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <h1 class="pt" style="margin-bottom:0">Tournée <em>optimisée par IA</em></h1>
+        <button onclick="showTourneeIntro()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
+      </div>
       <p class="ps">Carte interactive · GPS · Routage OSRM · Prévision CA</p>
       <div class="card">
         <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez d'abord via "Import calendrier".</p></div>
@@ -576,7 +579,10 @@
 
     <!-- PILOTAGE LIVE -->
     <section class="view" id="view-live">
-      <h1 class="pt">Pilotage <em>de journée</em></h1>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <h1 class="pt" style="margin-bottom:0">Pilotage <em>de journée</em></h1>
+        <button onclick="showLiveIntro()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
+      </div>
       <p class="ps">Assistant temps réel · auto-facturation · détection retard · recalcul automatique</p>
 
       <!-- Sélecteur mode optimisation tournée -->
@@ -1746,7 +1752,10 @@
 
     <!-- CARNET PATIENTS (nurse-only, 100% local chiffré) -->
     <section class="view" id="view-patients">
-      <h1 class="pt">Carnet <em>patients</em></h1>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <h1 class="pt" style="margin-bottom:0">Carnet <em>patients</em></h1>
+        <button onclick="showPatientsIntro()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
+      </div>
       <p class="ps">Stockage 100% local chiffré · RGPD · Aucune donnée transmise au serveur</p>
 
       <!-- Bandeau RGPD -->
@@ -2369,6 +2378,9 @@
 
 <!-- Extras — fonctions complémentaires de ami-ngap.html -->
 <script src="js/extras.js"></script>
+
+<!-- Onboarding — intros contextuelles par section (première visite) -->
+<script src="js/onboarding.js"></script>
 
 <!-- Nouveaux modules SaaS médical -->
 <script src="js/signature.js"></script>
