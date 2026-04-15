@@ -558,9 +558,20 @@ async function optimiserTournee(){
     _showOptimProgress('🔁 Optimisation 2-opt…');
     route = twoOpt(route);
 
+    /* ── 2b. Enrichir route avec CA estimé par patient ──────────────────────
+       scoreTourneeRentabilite lit p.total || p.amount.
+       Les patients importés n'ont ni l'un ni l'autre → totalCA = 0 → 0€/h.
+       On injecte le CA estimé individuellement via estimateRevenue([patient]).
+    ─────────────────────────────────────────────────────────────────────── */
+    route = route.map(p => {
+      if (parseFloat(p.total || p.amount || 0) > 0) return p; // déjà valorisé
+      const ca = estimateRevenue([p]);
+      return { ...p, amount: ca };
+    });
+
     /* ── 3. Scoring rentabilité ───────────────────────── */
-    const rentab = scoreTourneeRentabilite(route);
     const ca     = estimateRevenue(route);
+    const rentab = scoreTourneeRentabilite(route);
 
     /* ── 4. OSRM route pour distances précises ────────── */
     let osrm = null;

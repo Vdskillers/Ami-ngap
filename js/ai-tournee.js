@@ -453,8 +453,20 @@ async function completePatient(patientId, actualArrivalMin) {
 function scoreTourneeRentabilite(route) {
   if (!route?.length) return null;
 
-  const totalCA   = route.reduce((s,p) => s + (parseFloat(p.total || p.amount || 0)), 0);
-  const totalMin  = route.reduce((s,p) => s + (p.travel_min || 0) + (p.duration || 15), 0);
+  // CA : utiliser total > amount > estimation locale
+  const totalCA   = route.reduce((s,p) => {
+    const v = parseFloat(p.total || p.amount || 0);
+    return s + v;
+  }, 0);
+
+  // Temps : travel_min (réel OSRM) + durée soin (15 min défaut)
+  // Pour les patients sans coords, on suppose 5 min de trajet minimum
+  const totalMin  = route.reduce((s,p) => {
+    const travel   = p.travel_min > 0 ? p.travel_min : (p.lat && p.lng ? 5 : 0);
+    const duration = p.duration   > 0 ? p.duration   : 15;
+    return s + travel + duration;
+  }, 0);
+
   const totalKm   = route.reduce((s,p) => {
     if (!p.travel_min) return s;
     return s + (p.travel_min / 60) * USER_STATS.avgSpeedKmh;
