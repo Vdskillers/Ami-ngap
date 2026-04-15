@@ -193,18 +193,43 @@ function renderPlanning(d){
 
   // Rendu d'une carte patient dans le planning
   function renderPatientCard(p) {
-    const nom = [p.prenom, p.nom].filter(Boolean).join(' ')
-      || p.patient_nom || p.patient_name
-      || (p.description || p.texte || 'Patient').split(' ').slice(0,3).join(' ');
+    // Nom : champs structurés → patient_nom → extraction depuis description
+    let nom = [p.prenom, p.nom].filter(Boolean).join(' ').trim()
+      || p.patient_nom || p.patient_name || p.name || '';
 
-    // Date formatée
+    // Si pas de nom structuré, extraire depuis la description
+    // Format typique : "Nom Prénom — soin" ou "Nom Prénom : soin" ou "Nom Prénom soin"
+    if (!nom && (p.description || p.texte)) {
+      const raw = (p.description || p.texte || '').trim();
+      // Tout ce qui est avant — ou : ou la description du soin
+      const sepMatch = raw.match(/^([^—\-:]+?)(?:\s*[—\-:]\s*|\s+(?:injection|pansement|toilette|prélèvement|perfusion|insuline|soin|bilan|visite))/i);
+      if (sepMatch) {
+        nom = sepMatch[1].trim();
+      } else {
+        // Prendre les 3 premiers mots si ça ressemble à un nom (commence par majuscule)
+        const words = raw.split(/\s+/);
+        const nameWords = [];
+        for (const w of words.slice(0, 4)) {
+          if (/^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ]/.test(w)) nameWords.push(w);
+          else break;
+        }
+        nom = nameWords.join(' ') || raw.split(' ').slice(0, 3).join(' ');
+      }
+    }
+    nom = nom || 'Patient';
+
+    // Date formatée — priorité aux champs ISO, puis extraction depuis heure_soin
     const dateStr = p.date || p.date_soin || p.date_prevue || '';
     let dateAff = '';
     if (dateStr) {
       try {
         const d2 = new Date(dateStr);
-        if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+        if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
       } catch {}
+    }
+    // Si toujours pas de date, afficher "Aujourd'hui" si la tournée vient d'être faite
+    if (!dateAff && (p._cotation?.validated || p.done || p._done)) {
+      dateAff = new Date().toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
     }
 
     // Heure
@@ -584,6 +609,8 @@ async function _optimiserTourneeAPI(startLat, startLng) {
 let LIVE_CA_TOTAL=0;
 let LIVE_START_TIME=null;
 let LIVE_TIMER_ID=null;
+/* Exposer pour terminerTourneeAvecBilan (index.html) */
+Object.defineProperty(window, '_LIVE_CA_TOTAL', { get: () => LIVE_CA_TOTAL });
 
 function startLiveTimer(){
   LIVE_START_TIME=Date.now();
@@ -832,7 +859,11 @@ function modeAI(mode) {
    ============================================================ */
 function stopDay() {
   if (!confirm('Terminer la tournée du jour ?\n\nLe chronomètre sera arrêté et la journée sera clôturée.')) return;
+  _stopDayInternal();
+}
 
+/* Version interne sans confirm — appelée par terminerTourneeAvecBilan */
+function _stopDayInternal() {
   // Arrêter le timer
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
 
