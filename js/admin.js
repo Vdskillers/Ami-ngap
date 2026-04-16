@@ -194,8 +194,6 @@ async function loadAdmLogs() {
     _AUDIT_PAGE = 1;
     _renderAuditFilters();
     _applyAuditFilters();
-    // Remplir aussi les system_logs si présents
-    _renderSystemLogs(d.system_logs || []);
     // KPIs sécurité
     _renderAuditKPIs(d.stats || {}, _ALL_AUDIT_LOGS);
   } catch (e) {
