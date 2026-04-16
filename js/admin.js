@@ -95,6 +95,47 @@ async function loadAdmStats() {
           ${s.top_actes.map(a => `<span style="background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:4px 12px;border-radius:20px;font-family:var(--fm);font-size:12px">${a.code} <span style="opacity:.6">(${a.count})</span></span>`).join('')}
         </div>`;
     }
+
+    // ── Stats par infirmière ─────────────────────────────────────────
+    // ⚠️ RGPD/HDS : seuls nom, prénom et métriques NGAP agrégées sont affichés
+    // Les données de santé des patients restent sur l'appareil de l'infirmière (chiffrées AES-256)
+    const perUser = d.per_user || [];
+    const puEl = $('adm-per-user-stats');
+    if (puEl) {
+      if (!perUser.length) {
+        puEl.innerHTML = '<p style="color:var(--m);font-size:13px;text-align:center;padding:20px">Aucune activité enregistrée.</p>';
+      } else {
+        // Trier par CA décroissant
+        const sorted = [...perUser].sort((a,b) => b.ca_total - a.ca_total);
+        const maxCA  = sorted[0]?.ca_total || 1;
+        puEl.innerHTML = `
+          <div class="lbl" style="margin-bottom:12px">Activité par infirmier(ère) — métriques NGAP uniquement · Données patient non accessibles</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${sorted.map(u => {
+              const ini   = ((u.prenom||'?')[0]+(u.nom||'?')[0]).toUpperCase();
+              const name  = ((u.prenom||'')+' '+(u.nom||'')).trim() || '—';
+              const pct   = maxCA > 0 ? Math.round((u.ca_total / maxCA) * 100) : 0;
+              const panier= u.nb_actes > 0 ? (u.ca_total / u.nb_actes).toFixed(2) : '0.00';
+              return `<div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                  <div style="width:32px;height:32px;border-radius:50%;background:var(--ad);border:1px solid rgba(0,212,170,.3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--a);flex-shrink:0">${ini}</div>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;font-weight:600;color:var(--t)">${_escAdm(name)}</div>
+                    <div style="font-size:11px;color:var(--m);margin-top:1px">${u.nb_actes} acte${u.nb_actes!==1?'s':''} · panier moyen ${panier}€</div>
+                  </div>
+                  <div style="text-align:right;flex-shrink:0">
+                    <div style="font-size:15px;font-weight:700;color:var(--a);font-family:var(--fm)">${u.ca_total.toFixed(0)}€</div>
+                    <div style="font-size:10px;color:var(--m)">CA total</div>
+                  </div>
+                </div>
+                <div style="height:4px;background:rgba(0,212,170,.1);border-radius:2px;overflow:hidden">
+                  <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#00d4aa,#4fa8ff);border-radius:2px;transition:width .4s ease"></div>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>`;
+      }
+    }
   } catch {}
 }
 

@@ -598,6 +598,13 @@ function clrCot() {
   const invDisplay = $('invoice-number-display');
   if (invDisplay) invDisplay.textContent = '';
   $('res-cot').classList.remove('show');
+  // Réinitialiser le sélecteur patient
+  if (typeof cotClearPatient === 'function') cotClearPatient();
+  // Masquer les reco live
+  const liveReco = $('live-reco');
+  if (liveReco) liveReco.style.display = 'none';
+  // Réinitialiser l'édition de cotation en cours
+  window._editingCotation = null;
 }
 
 function coterDepuisRoute(desc, nomPatient) {

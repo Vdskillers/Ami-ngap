@@ -1905,3 +1905,170 @@ document.addEventListener('ami:login', () => {
     await syncPatientsFromServer();
   }).catch(() => {});
 });
+
+/* ════════════════════════════════════════════════
+   SÉLECTEUR PATIENT INLINE — SECTION COTATION
+   Permet de sélectionner un patient depuis le carnet
+   pour pré-remplir automatiquement les champs
+════════════════════════════════════════════════ */
+let _cotPatientList = [];    // cache des patients pour la recherche
+let _cotSelectedPatient = null;
+let _cotDropdownIdx = -1;    // navigation clavier
+
+/* Charge les patients en mémoire (appelé à l'ouverture de la vue cotation) */
+async function cotLoadPatientCache() {
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    _cotPatientList = rows.map(r => ({
+      id: r.id,
+      nom: r.nom || '',
+      prenom: r.prenom || '',
+      data: _dec(r._data) || {}
+    })).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom));
+  } catch { _cotPatientList = []; }
+}
+
+/* Ouvre le dropdown (au focus ou au clic) */
+async function cotOpenDropdown() {
+  if (!_cotPatientList.length) await cotLoadPatientCache();
+  const q = (document.getElementById('cot-patient-search')?.value || '').trim();
+  cotRenderDropdown(q);
+}
+
+/* Filtre dynamique à la frappe */
+async function cotFilterPatients(q) {
+  if (!_cotPatientList.length) await cotLoadPatientCache();
+  cotRenderDropdown(q);
+}
+
+/* Affiche les résultats dans le dropdown */
+function cotRenderDropdown(q) {
+  const dd = document.getElementById('cot-patient-dropdown');
+  if (!dd) return;
+
+  const query = (q || '').toLowerCase().trim();
+  const results = query
+    ? _cotPatientList.filter(p =>
+        (p.nom + ' ' + p.prenom).toLowerCase().includes(query) ||
+        (p.prenom + ' ' + p.nom).toLowerCase().includes(query)
+      ).slice(0, 12)
+    : _cotPatientList.slice(0, 12);
+
+  if (!results.length) {
+    dd.innerHTML = '<div style="padding:12px 14px;font-size:12px;opacity:.5;color:var(--t)">Aucun patient trouvé dans le carnet</div>';
+  } else {
+    dd.innerHTML = results.map((p, i) => {
+      const ddn = p.data.ddn ? ` · ${new Date(p.data.ddn).toLocaleDateString('fr-FR')}` : '';
+      const med = p.data.medecin ? ` · Dr ${p.data.medecin}` : '';
+      return `<div class="cot-dd-item" data-idx="${i}" data-id="${p.id}"
+        onclick="cotSelectPatient('${p.id}')"
+        onmouseenter="cotDDHover(this)"
+        style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--b);font-size:13px;transition:background .15s">
+        <strong style="color:var(--t)">${p.nom} ${p.prenom}</strong>
+        <span style="font-size:11px;opacity:.55;margin-left:6px">${ddn}${med}</span>
+      </div>`;
+    }).join('');
+  }
+
+  _cotDropdownIdx = -1;
+  dd.style.display = 'block';
+
+  // Fermer au clic extérieur
+  setTimeout(() => {
+    const closeHandler = (e) => {
+      if (!e.target.closest('#cot-patient-selector')) {
+        dd.style.display = 'none';
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    document.addEventListener('click', closeHandler);
+  }, 10);
+}
+
+/* Hover clavier */
+function cotDDHover(el) {
+  document.querySelectorAll('.cot-dd-item').forEach(i => i.style.background = '');
+  el.style.background = 'rgba(0,212,170,.08)';
+}
+
+/* Navigation clavier dans le dropdown */
+function cotKeyNav(e) {
+  const items = document.querySelectorAll('.cot-dd-item');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _cotDropdownIdx = Math.min(_cotDropdownIdx + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _cotDropdownIdx = Math.max(_cotDropdownIdx - 1, 0);
+  } else if (e.key === 'Enter' && _cotDropdownIdx >= 0) {
+    e.preventDefault();
+    const id = items[_cotDropdownIdx]?.dataset?.id;
+    if (id) cotSelectPatient(id);
+    return;
+  } else if (e.key === 'Escape') {
+    document.getElementById('cot-patient-dropdown').style.display = 'none';
+    return;
+  }
+  items.forEach((item, i) => {
+    item.style.background = i === _cotDropdownIdx ? 'rgba(0,212,170,.08)' : '';
+  });
+  items[_cotDropdownIdx]?.scrollIntoView({ block: 'nearest' });
+}
+
+/* Sélectionne un patient et pré-remplit les champs */
+async function cotSelectPatient(id) {
+  const p = _cotPatientList.find(x => x.id === id);
+  if (!p) return;
+  _cotSelectedPatient = p;
+
+  // Fermer dropdown, mettre à jour la recherche
+  const dd = document.getElementById('cot-patient-dropdown');
+  const search = document.getElementById('cot-patient-search');
+  const badge = document.getElementById('cot-patient-badge');
+  const badgeText = document.getElementById('cot-patient-badge-text');
+
+  if (dd) dd.style.display = 'none';
+  if (search) search.value = '';
+  if (badge) badge.style.display = 'flex';
+  if (badgeText) badgeText.textContent = `👤 ${p.prenom} ${p.nom}${p.data.ddn ? ' — ' + new Date(p.data.ddn).toLocaleDateString('fr-FR') : ''}`;
+
+  // Pré-remplir les champs patient
+  const d = p.data;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  set('f-pt',  (p.prenom + ' ' + p.nom).trim());
+  set('f-ddn', d.ddn || '');
+  set('f-sec', d.nir || d.secu || '');
+  set('f-amo', d.amo || '');
+  set('f-amc', d.amc || '');
+  set('f-exo', d.exo || '');
+  set('f-pr',  d.medecin || '');
+
+  // Pré-remplir les actes récurrents si définis
+  const fTxt = document.getElementById('f-txt');
+  if (fTxt && d.actes_recurrents) {
+    fTxt.value = d.actes_recurrents;
+    if (typeof renderLiveReco === 'function') renderLiveReco(d.actes_recurrents);
+  }
+
+  if (typeof showToast === 'function') {
+    showToast(`👤 ${p.prenom} ${p.nom} — fiche chargée${d.actes_recurrents ? ' avec actes récurrents' : ''}`);
+  }
+}
+
+/* Désélectionne le patient et vide le badge */
+function cotClearPatient() {
+  _cotSelectedPatient = null;
+  const badge = document.getElementById('cot-patient-badge');
+  if (badge) badge.style.display = 'none';
+  const search = document.getElementById('cot-patient-search');
+  if (search) { search.value = ''; search.focus(); }
+}
+
+/* Recharge le cache à l'ouverture de la vue cotation */
+document.addEventListener('ui:navigate', (e) => {
+  if (e.detail?.view === 'cot') {
+    cotLoadPatientCache().catch(() => {});
+  }
+});
