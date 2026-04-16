@@ -327,8 +327,7 @@
 <!-- APP SHELL -->
 <div id="app" style="display:none">
   <header class="top">
-    <div class="logo"><div class="lmark">A</div>
-      <div id="mobile-greeting" style="display:none;flex-direction:column;line-height:1.2;margin-left:4px"><span id="mobile-greeting-hello" style="font-size:9px;color:rgba(255,255,255,.35);font-family:var(--fm);letter-spacing:.08em;text-transform:uppercase">Bonjour</span><span id="mobile-greeting-name" style="font-size:14px;font-weight:700;color:#F0F4F8;letter-spacing:-.3px">—</span></div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
+    <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
     <div id="mobile-header-fabs"></div>
     <div class="tr">
       <button id="btn-install-header" onclick="installApp()" style="display:none;background:var(--ad);border:1px solid var(--a);color:var(--a);font-family:var(--fm);font-size:10px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:all .15s">📱 Installer AMI</button>
@@ -338,6 +337,7 @@
       <div id="admin-header-controls" style="display:none;align-items:center;gap:8px">
         <div class="admin-mode-badge" id="admin-mode-badge">🛡️ MODE ADMIN SÉCURISÉ</div>
         <button class="bout" style="font-size:11px;padding:5px 12px" onclick="logout()">⏻ Déconnexion</button>
+        <div id="mobile-greeting" style="display:none;flex-direction:column;line-height:1.1;margin-left:4px"><span id="mobile-greeting-hello" style="font-size:9px;color:rgba(255,255,255,.5);font-family:var(--fm);letter-spacing:.06em;text-transform:uppercase">Bonjour</span><span id="mobile-greeting-name" style="font-size:12px;font-weight:700;color:#F0F4F8;letter-spacing:-.2px">—</span></div>
       </div>
       <!-- Mode normal : profil + déconnexion -->
       <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
