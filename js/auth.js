@@ -239,6 +239,46 @@ async function login(){
     APP.uberPatients = [];
     APP.startPoint   = null;
     APP.nextPatient  = null;
+
+    /* ── Reset visuel Tournée IA + Pilotage au login ──────────────────────
+       Remet l'UI à zéro sans appeler aucune fonction complexe.
+       Le Planning hebdomadaire est préservé (stocké dans localStorage, 
+       rechargé séparément via _restorePlanningIfNeeded au bon moment).
+    ────────────────────────────────────────────────────────────────────── */
+    try {
+      // Tournée IA : vider la liste de résultats
+      const tbody = document.getElementById('tbody');
+      if (tbody) tbody.innerHTML = '';
+      const resTur = document.getElementById('res-tur');
+      if (resTur) resTur.classList.remove('show');
+      const caWrap = document.getElementById('tur-ca-wrap');
+      if (caWrap) caWrap.style.display = 'none';
+      // Pilotage : remettre le badge et les textes à l'état initial
+      const liveBadge = document.getElementById('live-badge');
+      if (liveBadge) { liveBadge.textContent = 'EN ATTENTE'; liveBadge.style.background = ''; liveBadge.style.color = ''; }
+      const livePat = document.getElementById('live-patient-name');
+      if (livePat) livePat.textContent = 'Démarrez votre journée';
+      const liveInfo = document.getElementById('live-info');
+      if (liveInfo) liveInfo.textContent = 'Cliquez sur "Démarrer" pour activer le pilotage automatique';
+      const liveTimer = document.getElementById('live-timer');
+      if (liveTimer) { liveTimer.textContent = ''; liveTimer.style.display = 'none'; }
+      const liveCa = document.getElementById('live-ca-total');
+      if (liveCa) { liveCa.textContent = ''; liveCa.style.display = 'none'; }
+      const btnStart = document.getElementById('btn-live-start');
+      if (btnStart) btnStart.style.display = 'inline-flex';
+      const btnStop = document.getElementById('btn-live-stop');
+      if (btnStop) btnStop.style.display = 'none';
+      const uberNext = document.getElementById('uber-next-patient');
+      if (uberNext) uberNext.innerHTML = '<div style="color:var(--m);font-size:13px">Démarrez la journée pour charger vos patients.</div>';
+      // Nettoyer la carte Leaflet si déjà initialisée
+      const mapInst = window.APP?.map?.instance || window.APP?.map;
+      if (mapInst && typeof mapInst.removeLayer === 'function') {
+        if (APP.markers && Array.isArray(APP.markers)) { APP.markers.forEach(m => { try { mapInst.removeLayer(m); } catch(_){} }); APP.markers = []; }
+        if (APP._routePolyline) { try { mapInst.removeLayer(APP._routePolyline); } catch(_){} APP._routePolyline = null; }
+        if (APP._startMarker)   { try { mapInst.removeLayer(APP._startMarker);   } catch(_){} APP._startMarker   = null; }
+        if (window._liveMarker) { try { mapInst.removeLayer(window._liveMarker); } catch(_){} window._liveMarker = null; }
+      }
+    } catch(_) { /* reset visuel non-bloquant */ }
     /* Fermer (sans supprimer) la connexion IDB de l'utilisateur précédent */
     if (typeof _patientsDB !== 'undefined' && _patientsDB) {
       try { _patientsDB.close(); } catch(_) {}
