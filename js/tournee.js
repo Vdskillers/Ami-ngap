@@ -25,36 +25,8 @@ if (typeof optimizeTour === 'undefined') {
   };
 }
 
-/* ══════════════════════════════════════════════════════════
-   TOURNÉE DATA — stockage séparé du Planning hebdomadaire
-   - tourneeData : écrit/lu uniquement par import manuel
-   - importedData : Planning hebdomadaire (weekly_planning)
-   Les deux ne se mélangent JAMAIS.
-══════════════════════════════════════════════════════════ */
-function storeTourneeData(d) {
-  APP.tourneeData = d;
-  try {
-    if (d) localStorage.setItem('ami_tournee_session', JSON.stringify(d));
-    else    localStorage.removeItem('ami_tournee_session');
-  } catch(_) {}
-}
-
-function loadTourneeData() {
-  if (APP.tourneeData) return APP.tourneeData;
-  try {
-    const raw = localStorage.getItem('ami_tournee_session');
-    if (raw) { APP.tourneeData = JSON.parse(raw); return APP.tourneeData; }
-  } catch(_) {}
-  return null;
-}
-
 function storeImportedData(d){
   APP.importedData=d;
-  // Import carnet/calendrier → aussi dans tourneeData (Tournée IA)
-  // weekly_planning/serveur → uniquement importedData (Planning hebdo), PAS tourneeData
-  if (d && /carnet|import|calendrier/i.test(d.source || '')) {
-    storeTourneeData(d);
-  }
   // Sauvegarder dans localStorage (persistance entre sessions)
   if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
@@ -132,9 +104,8 @@ document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
 
 function showCaFromImport(){
-  const _tdCa = loadTourneeData();
-  if(!_tdCa)return;
-  const patients=_tdCa.patients||_tdCa.entries||[];
+  if(!APP.importedData)return;
+  const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length)return;
   const ca=estimateRevenue(patients);
   const w=$('tur-ca-wrap'),v=$('tur-ca-val');
@@ -159,9 +130,9 @@ function estimateRevenue(patients){
 }
 
 function showImportedPatients(){
-  const _tdShow = loadTourneeData();
-  const patients=(_tdShow?.patients||_tdShow?.entries||APP.importedData?.patients||APP.importedData?.entries||[]);
-  if(!patients.length){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
+  if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
+  const patients=APP.importedData.patients||APP.importedData.entries||[];
+  if(!patients.length){alert('Aucun patient dans les données importées.');return;}
   $('tbody').innerHTML=`<div class="card">
     <div class="ct">👥 Patients importés (${patients.length})</div>
     ${patients.map((p,i)=>`<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info">
@@ -577,8 +548,7 @@ function _planningRemovePatient(idx) {
 
 /* Effacer tout le planning hebdomadaire */
 function _planningResetAll() {
-  const _tdReset = loadTourneeData();
-  const n = (_tdReset?.patients || _tdReset?.entries || []).length;
+  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
   if (!confirm(`Réinitialiser le planning ?\n\n${n} patient(s) seront supprimés.\nCette action ne supprime PAS les fiches du carnet patient.`)) return;
   APP.importedData = null;
   _clearPlanning();
@@ -614,8 +584,7 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const _td = loadTourneeData();
-  const rawPatients = _td?.patients || _td?.entries || [];
+  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -819,7 +788,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
 /* Retirer un patient de la tournée optimisée */
 function removeFromTournee(encodedId, fallbackIndex) {
   const id = decodeURIComponent(encodedId);
-  const data = loadTourneeData();
+  const data = APP.get('importedData') || APP.importedData;
   if (!data) return;
   const patients = data.patients || data.entries || [];
   const idx = patients.findIndex((p, i2) =>
@@ -828,7 +797,8 @@ function removeFromTournee(encodedId, fallbackIndex) {
   if (idx === -1) return;
   patients.splice(idx, 1);
   data.total = patients.length;
-  storeTourneeData(data);
+  if (typeof storeImportedData === 'function') storeImportedData(data);
+  else APP.importedData = data;
   if (typeof showToast === 'function') showToast('Patient retiré de la tournée');
   optimiserTournee();
 }
@@ -836,8 +806,9 @@ function removeFromTournee(encodedId, fallbackIndex) {
 /* Vider entièrement la tournée */
 function clearTournee() {
   if (!confirm('Vider la tournée ? Tous les patients importés seront retirés.')) return;
-  storeTourneeData(null);
+  APP.importedData = null;
   APP.uberPatients = [];
+  if (typeof storeImportedData === 'function') storeImportedData(null);
   const tbody = $('tbody');
   if (tbody) tbody.innerHTML = '';
   const resTur = $('res-tur');
@@ -1646,9 +1617,8 @@ window.liveAction=async function(action){
    LISTE PATIENTS PILOTAGE — Affichage local avec état
    ============================================================ */
 function renderLivePatientList() {
-  // Fusionner tourneeData + uberPatients pour avoir les statuts à jour
-  const _tdLive = loadTourneeData();
-  const imported = _tdLive?.patients || _tdLive?.entries || [];
+  // Fusionner importedData + uberPatients pour avoir les statuts à jour des deux modes
+  const imported = APP.importedData?.patients || APP.importedData?.entries || [];
   const uber = APP.get('uberPatients') || [];
 
   // Construire un index uberPatients par id/patient_id pour synchroniser les statuts
@@ -2076,15 +2046,14 @@ async function openCotationPatient(patientIndex) {
    Accessible depuis Tournée IA ET Pilotage de journée.
    ============================================================ */
 function resetTourneeJour() {
-  const _tdReset = loadTourneeData();
-  const n = (_tdReset?.patients || _tdReset?.entries || []).length;
+  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
   const msg = n > 0
     ? `Réinitialiser la tournée du jour ?\n\n${n} patient(s) seront effacés de la Tournée IA et du Pilotage de journée.\nCette action ne supprime PAS les fiches du carnet patient.`
     : 'Réinitialiser la tournée du jour ?\n\nLe pilotage sera remis à zéro.';
   if (!confirm(msg)) return;
 
-  // Vider uniquement la tournée — NE PAS toucher à APP.importedData (Planning hebdo)
-  storeTourneeData(null);
+  // Reset données importées
+  APP.importedData  = null;
   APP.uberPatients  = [];
   APP.nextPatient   = null;
 
@@ -2161,18 +2130,6 @@ function resetTourneeJour() {
   if (uberRoute) uberRoute.textContent = '';
 
   LIVE_PATIENT_ID = null;
-
-  // Vider la carte (trajet + markers patients)
-  try {
-    if (typeof _turRouteLine !== 'undefined' && _turRouteLine && APP.map) {
-      APP.map.removeLayer(_turRouteLine);
-      window._turRouteLine = null;
-    }
-    if (APP.markers && APP.map) {
-      APP.markers.forEach(m => { try { APP.map.removeLayer(m); } catch(_){} });
-      APP.markers = [];
-    }
-  } catch(_) {}
 
   if (typeof showToast === 'function') showToast('🗑️ Tournée du jour réinitialisée.');
 }
