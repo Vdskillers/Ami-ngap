@@ -584,7 +584,8 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries
+                    || APP.importedData?.patients || APP.importedData?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -727,7 +728,8 @@ function _showOptimProgress(msg) {
 
 /* Rendu HTML de la route optimisée */
 function _renderRouteHTML(route, osrm, ca, rentab, mode) {
-  const total = route.filter(p=>p.lat&&p.lng).length;
+  const total = route.length;
+  const totalGps = route.filter(p=>p.lat&&p.lng).length;
   const modeBadge = mode === 'heure'
     ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 10px;border-radius:20px;letter-spacing:1px">🕐 Heures préférées</span>`
     : mode === 'mixte'
@@ -748,6 +750,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
       <div class="dreb">📍 ${total} patients</div>
+      ${totalGps < total ? `<div class="dreb" style="background:rgba(255,181,71,.1);border-color:rgba(255,181,71,.3);color:var(--w)" title="${total - totalGps} patient(s) sans adresse GPS — navigation manuelle">⚠️ ${totalGps}/${total} géocodés</div>` : ''}
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
       <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
       ${rentab?`<div class="ca-pill" style="background:rgba(79,168,255,.1);border-color:rgba(79,168,255,.3);color:var(--a2)">📊 ${rentab.euro_heure}€/h</div>`:''}
