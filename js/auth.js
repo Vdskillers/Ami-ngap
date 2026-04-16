@@ -133,7 +133,20 @@ function showApp(){
         const mobileGrid = document.querySelector('#mobile-menu > div');
         if(!mobileGrid){ setTimeout(_injectAdminMobile, 100); return; }
 
-        // Bouton "Panneau admin"
+        // Bouton "Profil" — juste avant Admin
+        if (!document.getElementById('btn-profil-mobile')) {
+          const btnProfilM = document.createElement('button');
+          btnProfilM.id = 'btn-profil-mobile';
+          btnProfilM.className = 'bn-item';
+          btnProfilM.style.cssText = 'background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none';
+          btnProfilM.innerHTML = '<span class="bn-ic">👤</span>Profil';
+          btnProfilM.onclick = () => { if(typeof openPM==='function') openPM(); if(typeof toggleMobileMenu==='function') toggleMobileMenu(); };
+          const btnQuitter0 = mobileGrid.querySelector('[onclick*="logout"]');
+          if(btnQuitter0) mobileGrid.insertBefore(btnProfilM, btnQuitter0);
+          else mobileGrid.appendChild(btnProfilM);
+        }
+
+        // Bouton "Panneau admin" — juste après Profil, avant Quitter
         const btnAdminM = document.createElement('button');
         btnAdminM.id = 'btn-goto-admin-mobile';
         btnAdminM.className = 'bn-item';
