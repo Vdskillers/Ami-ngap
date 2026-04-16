@@ -674,12 +674,46 @@ function _saveOrdos(ordos) {
   try { localStorage.setItem(ORDO_STORE_KEY, JSON.stringify(ordos)); } catch {}
 }
 
-/* Lire les ordonnances depuis le carnet patient IndexedDB */
+/* Lire les ordonnances depuis le carnet patient IndexedDB
+   — retry automatique si la connexion IDB est en cours de fermeture */
 async function _loadOrdosFromCarnet() {
   try {
     if (typeof _idbGetAll !== 'function' || typeof _dec !== 'function') return [];
-    const STORE = (typeof PATIENTS_STORE !== 'undefined') ? PATIENTS_STORE : 'patients';
-    const rows  = await _idbGetAll(STORE);
+    const STORE = (typeof PATIENTS_STORE !== 'undefined') ? PATIENTS_STORE : 'ami_patients';
+
+    // Retry si InvalidStateError (DB closing) — jusqu'à 3 tentatives
+    let rows = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        rows = await _idbGetAll(STORE);
+        break; // succès
+      } catch (retryErr) {
+        const isClosing = retryErr?.name === 'InvalidStateError'
+          || (retryErr?.message || '').includes('closing')
+          || (retryErr?.message || '').includes('closed');
+        if (isClosing && attempt < 2) {
+          // Forcer la réouverture si initPatientsDB est disponible
+          if (typeof initPatientsDB === 'function') {
+            try {
+              if (typeof _patientsDB !== 'undefined' && _patientsDB) {
+                _patientsDB.close();
+              }
+            } catch (_) {}
+            if (typeof _patientsDB !== 'undefined') {
+              // eslint-disable-next-line no-global-assign
+              try { window._patientsDB = null; } catch (_) {}
+            }
+            await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
+            await initPatientsDB().catch(() => {});
+          } else {
+            await new Promise(r => setTimeout(r, 150));
+          }
+          continue;
+        }
+        throw retryErr;
+      }
+    }
+    if (!rows) return [];
     const ordos = [];
     for (const row of rows) {
       const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
@@ -931,14 +965,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (v === 'outils-km')         renderKmJournal();
     if (v === 'outils-modeles')    renderModeles();
     if (v === 'outils-simulation') simulerMajoration();
-    if (v === 'outils-ordos')      renderOrdonnances().then(() => refreshOrdoBadge());
+    if (v === 'outils-ordos') {
+      // Délai court pour laisser la DB IDB se stabiliser après navigation
+      setTimeout(() => renderOrdonnances().then(() => refreshOrdoBadge()).catch(() => {}), 80);
+    }
   };
   document.addEventListener('app:nav',     onNav);
   document.addEventListener('ui:navigate', onNav);
 
   // Badge ordonnances au login
   document.addEventListener('ami:login', () => {
-    setTimeout(refreshOrdoBadge, 800);
+    // Délai 1.2s : laisser initPatientsDB() se terminer après le login
+    setTimeout(() => refreshOrdoBadge().catch(() => {}), 1200);
     // Sync Journal kilométrique depuis le serveur au login (navigateur ↔ mobile)
     setTimeout(() => syncKmFromServer().catch(() => {}), 1500);
   });
