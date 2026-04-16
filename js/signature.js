@@ -20,7 +20,8 @@
 const SIG_STORE = 'ami_signatures';
 let _sigCanvas = null, _sigCtx = null, _sigDrawing = false;
 let _currentInvoiceId = null, _sigDB = null;
-let _sigDBUserId = null; // Garde la trace du user actif pour la DB signatures
+let _sigDBUserId = null;        // Garde la trace du user actif pour la DB signatures
+let _sigDBOpeningPromise = null; // Verrou contre les ouvertures simultanées
 
 /* ── Retourne le nom de la base IndexedDB signatures isolée par user ──
    Chaque infirmière a sa propre base : ami_sig_db_<userId>.
@@ -36,13 +37,17 @@ async function _initSigDB() {
   const currentUserId = (typeof S !== 'undefined') ? (S?.user?.id || S?.user?.email || 'local') : 'local';
   // Fermer si l'utilisateur a changé
   if (_sigDB && _sigDBUserId !== currentUserId) {
-    _sigDB.close();
+    try { _sigDB.close(); } catch (_) {}
     _sigDB = null;
     _sigDBUserId = null;
+    _sigDBOpeningPromise = null;
   }
   if (_sigDB) return _sigDB;
+  // Verrou : si une ouverture est déjà en cours, attendre qu'elle termine
+  if (_sigDBOpeningPromise) return _sigDBOpeningPromise;
+
   const dbName = _getSigDBName();
-  return new Promise((res, rej) => {
+  _sigDBOpeningPromise = new Promise((res, rej) => {
     const req = indexedDB.open(dbName, 1);
     req.onupgradeneeded = e => {
       const db = e.target.result;
@@ -53,38 +58,72 @@ async function _initSigDB() {
     req.onsuccess = e => {
       _sigDB = e.target.result;
       _sigDBUserId = currentUserId;
+      _sigDBOpeningPromise = null;
+      // Détecter fermeture inattendue (ex: Tracking Prevention Edge)
+      _sigDB.onclose = () => {
+        _sigDB = null;
+        _sigDBUserId = null;
+        _sigDBOpeningPromise = null;
+      };
       res(_sigDB);
     };
-    req.onerror   = () => rej(req.error);
+    req.onerror = () => {
+      _sigDBOpeningPromise = null;
+      rej(req.error);
+    };
+    req.onblocked = () => {
+      console.warn('[AMI] SigDB bloquée — autre instance ouverte');
+    };
   });
+  return _sigDBOpeningPromise;
+}
+
+/* Wrapper retry sur InvalidStateError (DB closing) */
+async function _sigExec(fn, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const db = await _initSigDB();
+      return await fn(db);
+    } catch (e) {
+      const isClosing = e?.name === 'InvalidStateError'
+        || (e?.message || '').includes('closing')
+        || (e?.message || '').includes('closed');
+      if (isClosing && attempt < retries) {
+        try { if (_sigDB) _sigDB.close(); } catch (_) {}
+        _sigDB = null;
+        _sigDBUserId = null;
+        _sigDBOpeningPromise = null;
+        await new Promise(r => setTimeout(r, 80 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 async function _sigPut(val) {
-  const db = await _initSigDB();
-  return new Promise((res, rej) => {
+  return _sigExec(db => new Promise((res, rej) => {
     const tx = db.transaction(SIG_STORE, 'readwrite');
     tx.objectStore(SIG_STORE).put(val).onsuccess = () => res();
     tx.onerror = () => rej(tx.error);
-  });
+  }));
 }
 
 async function _sigGet(id) {
-  const db = await _initSigDB();
-  return new Promise((res) => {
+  return _sigExec(db => new Promise((res) => {
     const tx = db.transaction(SIG_STORE, 'readonly');
     const req = tx.objectStore(SIG_STORE).get(id);
     req.onsuccess = () => res(req.result || null);
     req.onerror   = () => res(null);
-  });
+  }));
 }
 
 async function _sigDelete(id) {
-  const db = await _initSigDB();
-  return new Promise((res) => {
+  return _sigExec(db => new Promise((res) => {
     const tx = db.transaction(SIG_STORE, 'readwrite');
     tx.objectStore(SIG_STORE).delete(id);
     tx.oncomplete = () => res();
-  });
+  }));
 }
 
 /* ════════════════════════════════════════════════
@@ -333,14 +372,12 @@ async function loadSignatureList() {
   if (!el) return;
   el.innerHTML = '<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Chargement…</p>';
   try {
-    const db = await _initSigDB();
-    const tx = db.transaction(SIG_STORE, 'readonly');
-    const store = tx.objectStore(SIG_STORE);
-    const all = await new Promise((res, rej) => {
-      const req = store.getAll();
+    const all = await _sigExec(db => new Promise((res, rej) => {
+      const tx  = db.transaction(SIG_STORE, 'readonly');
+      const req = tx.objectStore(SIG_STORE).getAll();
       req.onsuccess = () => res(req.result || []);
-      req.onerror  = () => rej(req.error);
-    });
+      req.onerror   = () => rej(req.error);
+    }));
 
     if (!all.length) {
       el.innerHTML = `<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">
