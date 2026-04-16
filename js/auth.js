@@ -196,6 +196,12 @@ function showApp(){
 
   // Dispatcher l'event de login pour les modules qui en dépendent (copilote, etc.)
   setTimeout(()=>{ document.dispatchEvent(new CustomEvent('ami:login', { detail: { role: S?.role } })); }, 150);
+
+  /* ── Salutation mobile ── */
+  const _grN = document.getElementById('mobile-greeting-name');
+  const _grH = document.getElementById('mobile-greeting-hello');
+  if (_grN) { const fn = (u.prenom||'').split(' ')[0] || u.email?.split('@')[0] || '—'; _grN.textContent = fn; }
+  if (_grH) { const h = new Date().getHours(); _grH.textContent = h < 12 ? 'Bonjour 👋' : h < 18 ? 'Bon après-midi 👋' : 'Bonsoir 👋'; }
 }
 function switchTab(t){['l','r'].forEach(x=>{$('tab-'+x).classList.toggle('on',x===t);$('pan-'+x).style.display=x===t?'block':'none';});hideM('le','re','ro');}
 async function login(){
