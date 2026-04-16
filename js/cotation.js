@@ -79,6 +79,49 @@ async function cotation() {
     _clearSlowTimers();
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
+
+    // ── Sauvegarder la cotation dans le carnet patient (IDB) ────────────────
+    // Synchronise IDB ↔ Supabase pour que Dashboard et Carnet patient affichent
+    // le même nombre de cotations.
+    try {
+      const _patNom = (gv('f-pt') || '').trim();
+      if (_patNom && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+        const _patRows = await _idbGetAll(PATIENTS_STORE);
+        // Chercher le patient par nom (correspondance partielle insensible à la casse)
+        const _patNomLower = _patNom.toLowerCase();
+        const _patRow = _patRows.find(r =>
+          ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_patNomLower) ||
+          ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_patNomLower)
+        );
+        if (_patRow) {
+          const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+          if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
+          // Éviter les doublons par invoice_number
+          const _alreadySaved = d.invoice_number && _pat.cotations.some(c => c.invoice_number === d.invoice_number);
+          if (!_alreadySaved) {
+            _pat.cotations.push({
+              date:           gv('f-ds') || new Date().toISOString().slice(0,10),
+              heure:          gv('f-hs') || '',
+              actes:          d.actes || [],
+              total:          parseFloat(d.total || 0),
+              part_amo:       parseFloat(d.part_amo || 0),
+              part_amc:       parseFloat(d.part_amc || 0),
+              part_patient:   parseFloat(d.part_patient || 0),
+              soin:           txt.slice(0, 120),
+              invoice_number: d.invoice_number || null,
+              source:         'cotation_form',
+              _synced:        true, // déjà dans Supabase via ami-calcul
+            });
+            _pat.updated_at = new Date().toISOString();
+            await _idbPut(PATIENTS_STORE, {
+              id: _pat.id, nom: _pat.nom, prenom: _pat.prenom,
+              _data: _enc(_pat), updated_at: _pat.updated_at,
+            });
+          }
+        }
+      }
+    } catch(_idbErr) { console.warn('[cotation] IDB save KO:', _idbErr.message); }
+
     // ── Déclencher la signature après cotation ──────────────────────────────
     // Dispatch ami:cotation_done pour signature.js + injection directe du bouton
     const _invoiceId = d.invoice_number || null;

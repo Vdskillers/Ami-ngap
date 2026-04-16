@@ -890,7 +890,9 @@ async function _syncCotationsToSupabase(patients) {
             // Synchroniser uniquement les cotations récentes (dernières 24h) non déjà sync
             if (cot._synced) continue;
             const cotDate = (cot.date || '').slice(0, 10);
-            if (cotDate < today) continue; // uniquement aujourd'hui
+            // Fenêtre élargie : 7 derniers jours pour rattraper les cotations manquées
+            const sevenDaysAgo = new Date(Date.now() - 7*24*3600*1000).toISOString().slice(0,10);
+            if (cotDate < sevenDaysAgo) continue;
             if (parseFloat(cot.total || 0) <= 0) continue;
             fromIDB.push({
               _idb_patient_id: row.id,
