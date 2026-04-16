@@ -631,23 +631,13 @@ async function optimiserTournee(){
     return;
   }
 
-  let startLat = parseFloat($('t-lat')?.value) || null;
-  let startLng = parseFloat($('t-lng')?.value) || null;
-  if(!startLat || !startLng) {
-    const sp = APP.get('startPoint');
-    if(sp?.lat && sp?.lng) {
-      startLat = parseFloat(sp.lat);
-      startLng = parseFloat(sp.lng);
-      if($('t-lat')) $('t-lat').value = startLat.toFixed(6);
-      if($('t-lng')) $('t-lng').value = startLng.toFixed(6);
-    }
-  }
+  const startLat = parseFloat($('t-lat')?.value) || APP.get('startPoint')?.lat || null;
+  const startLng = parseFloat($('t-lng')?.value) || APP.get('startPoint')?.lng || null;
   if(!startLat || !startLng){
     $('terr').style.display='flex';
     $('terr-m').textContent='📍 Définis ton point de départ (bouton GPS ou clic sur la carte)';
     $('res-tur').classList.add('show'); return;
   }
-  if($('terr')) $('terr').style.display = 'none';
 
   ld('btn-tur',true); $('res-tur').classList.remove('show');
   _showOptimProgress('🧠 Calcul des temps de trajet réels…');
