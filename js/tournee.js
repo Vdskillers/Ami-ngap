@@ -26,8 +26,16 @@ if (typeof optimizeTour === 'undefined') {
 }
 
 function storeImportedData(d){
-  // setter APP.importedData déclenche app:update (synchrone) → _clearPlanning + _savePlanning
-  APP.importedData = d;
+  APP.importedData=d;
+  // Sauvegarder dans localStorage — REMPLACE complètement l'ancien contenu
+  if (d?.patients?.length || d?.entries?.length) {
+    // Effacer d'abord pour éviter toute fusion parasite avec de vieilles données
+    _clearPlanning();
+    _syncPlanningStorage();
+  } else if (!d) {
+    // null explicite = reset complet
+    _clearPlanning();
+  }
   // Mettre à jour le banner Planning
   const banner=$('pla-import-banner');
   const info=$('pla-import-info');
@@ -232,35 +240,18 @@ async function _syncPlanningFromServer() {
     } catch {}
     if (!Array.isArray(remote) || !remote.length) return;
 
-    // ── Validation stricte : refuser les données corrompues (actes NGAP sans noms) ──
-    // Un vrai patient de tournée a un nom OU un patient_id OU une description non-NGAP
-    const isRealPatient = p =>
-      (p.nom && p.nom.trim().length > 1) ||
-      (p.prenom && p.prenom.trim().length > 1) ||
-      (p.patient_id && /^P\d+/i.test(String(p.patient_id))) ||
-      (p.description && p.description.trim().length > 3 &&
-        !/^(AMI|IFD|IK|BSC|MN|AIS|DI|BSA|BSB)\b/i.test(p.description.trim()));
-
-    const validRemote = remote.filter(isRealPatient);
-
-    // Si aucun patient valide → les données sont des cotations NGAP mal pushées → ignorer + purger
-    if (!validRemote.length) {
-      console.warn('[AMI] Planning serveur ignoré : données NGAP sans noms patients');
-      // Purger le serveur pour éviter la répétition
-      try { await wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }); } catch {}
-      return;
-    }
-
     // Utiliser les données distantes seulement si le local est vide
+    // (la version locale fait foi si elle existe — évite d'écraser un travail en cours)
     const localSaved = _loadPlanning();
     if (!localSaved || !localSaved.length) {
-      _savePlanning(validRemote);
-      APP.importedData = { patients: validRemote, total: validRemote.length, source: 'planning_serveur' };
+      _savePlanning(remote);
+      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur' };
       _renderPlanningIfVisible();
-      console.info('[AMI] Planning sync depuis serveur :', validRemote.length, 'patient(s)');
+      console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
     } else {
+      // Fusion : ajouter les entrées distantes absentes localement (par id)
       const localIds = new Set(localSaved.map(p => p.id || p.patient_id || ''));
-      const toAdd = validRemote.filter(p => {
+      const toAdd = remote.filter(p => {
         const pid = p.id || p.patient_id || '';
         return pid && !localIds.has(pid);
       });
@@ -280,10 +271,7 @@ document.addEventListener('app:update', e => {
   if (e.detail.key !== 'importedData') return;
   const d = e.detail.value;
   if (d?.patients?.length || d?.entries?.length) {
-    _clearPlanning();
     _savePlanning(d.patients || d.entries);
-  } else if (d === null || d === undefined) {
-    _clearPlanning();
   }
 });
 
@@ -291,17 +279,8 @@ document.addEventListener('app:update', e => {
 document.addEventListener('ami:login', () => {
   setTimeout(() => {
     _restorePlanningIfNeeded();
-    // Sync depuis le serveur SEULEMENT si aucune donnée locale récente (< 30s)
-    // Évite d'écraser un import fraîchement fait avant la fin du login
-    const localSaved = _loadPlanning();
-    const hasRecentLocal = localSaved?.length > 0;
-    if (!hasRecentLocal) {
-      setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
-    }
-    // Si données locales présentes, sync serveur différé de 5s (laisse le temps à l'UI)
-    else {
-      setTimeout(() => _syncPlanningFromServer().catch(() => {}), 5000);
-    }
+    // Sync depuis le serveur après restauration locale (navigateur ↔ mobile)
+    setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
   }, 200);
 });
 
@@ -315,18 +294,20 @@ function _restorePlanningIfNeeded() {
   if (saved?.length) {
     // Valider que les données restaurées sont bien des patients (pas des cotations NGAP)
     // Un vrai patient a un nom/prénom ou un patient_id — pas seulement des codes d'actes
-    const validPatients = saved.filter(p =>
-      (p.nom && p.nom.trim()) ||
-      (p.prenom && p.prenom.trim()) ||
-      (p.patient_id && String(p.patient_id).startsWith('P')) ||
-      (p.description && !/^(AMI|IFD|IK|BSC|MN|AIS|DI)\d*/i.test(p.description.trim()))
-    );
+    // Filtre minimal : exclure uniquement les entrées qui sont PUREMENT des codes NGAP
+    // (pas de nom, pas de prenom, pas d'id valide, description = code court NGAP seul)
+    const validPatients = saved.filter(p => {
+      const hasName = (p.nom && p.nom.trim()) || (p.prenom && p.prenom.trim());
+      const hasId   = p.patient_id || p.id;
+      const hasAddr = p.adresse || p.address || p.addressFull;
+      const descIsPureNgap = p.description && /^(AMI\d*|IFD|IK|BSC|MN\d?|AIS|DI)(\s*\+\s*(AMI\d*|IFD|IK|BSC|MN\d?|AIS|DI))*$/i.test(p.description.trim());
+      // Garder si : a un nom OU un id OU une adresse OU description non-NGAP pure
+      return hasName || hasId || hasAddr || !descIsPureNgap;
+    });
     if (!validPatients.length) {
-      // Données corrompues (actes NGAP sans noms) — purger silencieusement
       _clearPlanning();
       return;
     }
-    // Utiliser le setter réactif pour déclencher app:update correctement
     APP.importedData = { patients: validPatients, total: validPatients.length, source: 'planning_sauvegardé' };
     _renderPlanningIfVisible();
   }
@@ -627,8 +608,6 @@ async function optimiserTournee(){
 
   const _imp = APP.get('importedData') || APP.importedData || APP.state?.importedData;
   const rawPatients = _imp?.patients || _imp?.entries || [];
-  // Debug — à supprimer après confirmation
-  console.log('[AMI-TUR] importedData:', _imp, 'rawPatients:', rawPatients.length);
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -650,31 +629,6 @@ async function optimiserTournee(){
     $('terr-m').textContent='📍 Définis ton point de départ (bouton GPS ou clic sur la carte)';
     $('res-tur').classList.add('show'); return;
   }
-
-  // ── Géocodage automatique des patients sans GPS mais avec adresse ──────────
-  const needsGeo = rawPatients.filter(p => (!p.lat || !p.lng) && (p.adresse || p.addressFull || p.address));
-  if (needsGeo.length > 0 && typeof _geocodeAdresse === 'function') {
-    _showOptimProgress(`📡 Géocodage de ${needsGeo.length} adresse(s)…`);
-    for (const p of needsGeo) {
-      try {
-        const addr = p.adresse || p.addressFull || p.address || '';
-        if (!addr.trim() || addr.trim() === 'France') continue;
-        const coords = await _geocodeAdresse(addr, p);
-        if (coords?.lat && coords?.lng) {
-          p.lat = coords.lat;
-          p.lng = coords.lng;
-          p.geoScore = coords.geoScore || 70;
-        }
-      } catch { /* silencieux */ }
-    }
-    // Sauvegarder les nouvelles coordonnées dans APP.importedData
-    const _impForGeo = APP.get('importedData') || APP.importedData;
-    if (_impForGeo) {
-      APP.importedData = { ..._impForGeo };
-      _syncPlanningStorage();
-    }
-  }
-  // ──────────────────────────────────────────────────────────────────────────
 
   ld('btn-tur',true); $('res-tur').classList.remove('show');
   _showOptimProgress('🧠 Calcul des temps de trajet réels…');
@@ -2131,12 +2085,6 @@ function resetTourneeJour() {
   APP.importedData  = null;
   APP.uberPatients  = [];
   APP.nextPatient   = null;
-
-  // Vider localStorage planning (sinon les anciens patients reviennent au rechargement)
-  _clearPlanning();
-
-  // Vider aussi weekly_planning sur le serveur
-  try { wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }).catch(()=>{}); } catch {}
 
   // ── Vider le localStorage planning (sinon les anciens patients reviennent au rechargement) ──
   _clearPlanning();
