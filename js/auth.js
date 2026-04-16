@@ -69,6 +69,9 @@ function showApp(){
     // Classe admin-active sur le header pour le layout mobile
     const topBar = document.querySelector('.top');
     if(topBar) topBar.classList.add('admin-active');
+    // Cacher le greeting mobile en mode admin (inutile + prend de la place)
+    const greet = document.getElementById('mobile-greeting');
+    if(greet) greet.style.display = 'none';
     $('admin-cot-notice').style.display='none';
     $('priv-cot').style.display='';
     document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
@@ -238,6 +241,13 @@ async function login(){
     ss.save(d.token,d.role,d.user);
     /* ── Sécurité RGPD : chiffrement + audit ── */
     if(typeof initSecurity==='function') initSecurity(d.token);
+    // Appliquer les préférences depuis la base de données
+    if (d.user?.preferences) {
+      const prefs = d.user.preferences;
+      if (prefs.clear_tournee_on_logout !== undefined) {
+        localStorage.setItem('ami_pref_clear_tournee', prefs.clear_tournee_on_logout ? '1' : '0');
+      }
+    }
     showApp();
   }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
 }
