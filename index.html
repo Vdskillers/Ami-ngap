@@ -340,8 +340,7 @@
     <div class="sl">
       <div class="slbl">Navigation</div>
       <div class="ni on" data-v="cot"><span class="nic">🩺</span> Cotation NGAP</div>
-      <div class="ni" data-v="ver"><span class="nic">✅</span> Vérifier soin</div>
-      <div class="ni nurse-only" data-v="patients"><span class="nic">👤</span> Carnet patients <span id="patients-ordo-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
+            <div class="ni nurse-only" data-v="patients"><span class="nic">👤</span> Carnet patients <span id="patients-ordo-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="imp"><span class="nic">📂</span> Import calendrier</div>
       <div class="ni nurse-only" data-v="tur"><span class="nic">🗺️</span> Tournée IA</div>
       <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
@@ -392,8 +391,7 @@
   <!-- MENU "PLUS" MOBILE -->
   <div id="mobile-menu" style="display:none;position:fixed;bottom:68px;left:0;right:0;z-index:300;background:rgba(11,15,20,.98);border-top:1px solid var(--b);backdrop-filter:blur(20px);padding:12px 8px;padding-bottom:env(safe-area-inset-bottom)">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ver" onclick="navTo('ver',this);toggleMobileMenu()"><span class="bn-ic">✅</span>Vérifier</button>
-      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
+            <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-ordos" onclick="navTo('outils-ordos',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Ordonnances</button>
@@ -465,29 +463,6 @@
     </section>
 
     <!-- VERIFY -->
-    <section class="view" id="view-ver">
-      <h1 class="pt">Vérifier <em>un soin</em></h1><p class="ps">Correction auto · Normalisation médicale · Alertes NGAP</p>
-      <!-- Notice admin -->
-      <div id="ver-admin-notice" class="ai in" style="display:none;margin-bottom:16px">
-        🛡️ <strong>Mode admin — test fonctionnel</strong> · Saisissez une description de soin pour tester l'analyse IA. Aucune donnée patient n'est requise.
-      </div>
-      <div class="card">
-        <div class="aic" style="margin-bottom:20px">
-          <div class="ai in">✏️ <strong>Corrige</strong> les fautes de frappe et erreurs de reconnaissance vocale</div>
-          <div class="ai wa">⚠️ <strong>Détecte</strong> les incohérences NGAP : heure de nuit sans heure précise</div>
-          <div class="ai su">💡 <strong>Suggère</strong> les majorations oubliées : IFD si domicile, IK si km présents</div>
-        </div>
-        <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label for="v-ds">Date du soin</label><input type="date" id="v-ds" name="date_soin"></div>
-          <div class="f"><label for="v-hs">Heure</label><input type="time" id="v-hs" name="heure_soin"></div>
-          <div class="f"><label for="v-exo">Exonération</label><select id="v-exo" name="exoneration"><option value="">Aucune</option><option value="ALD">ALD</option></select></div>
-        </div>
-        <div class="f" style="margin-bottom:16px"><textarea id="v-txt" placeholder="Ex : injection SC insuline + panse dimanche domisil..." style="min-height:100px"></textarea></div>
-        <button class="btn bv" id="btn-ver" onclick="verifyStandalone()"><span>🔍</span> Analyser & Corriger</button>
-      </div>
-      <div id="res-ver" class="res"><div id="verr" class="errb" style="display:none">⚠️ <span id="verr-m"></span></div><div id="vbody"></div></div>
-    </section>
-
     <!-- IMPORT CALENDRIER -->
     <section class="view" id="view-imp">
       <h1 class="pt">Import <em>calendrier</em></h1>
@@ -495,17 +470,7 @@
       <div class="card">
         <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Anonymisation RGPD automatique :</strong> les noms de patients sont convertis en identifiants anonymes. Vous seul(e) pouvez voir vos données importées.</p></div>
 
-        <!-- Import depuis le Carnet patients -->
-        <div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-          <div style="font-size:22px">👤</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;color:var(--t);margin-bottom:2px">Importer depuis le Carnet patients</div>
-            <div style="font-size:12px;color:var(--m)">Sélectionnez directement vos patients enregistrés — leur adresse sera utilisée pour l'optimisation de tournée.</div>
-          </div>
-          <button class="btn bv bsm" onclick="openPatientImportPicker()"><span>📋</span> Choisir mes patients</button>
-        </div>
-
-        <div class="lbl" style="margin-bottom:16px">Ou importez depuis un fichier / texte</div>
+        <div class="lbl" style="margin-bottom:16px">Importez depuis un fichier / texte</div>
         <div class="drop-zone" id="drop-zone">
           <input type="file" id="imp-file" accept=".ics,.csv,.xlsx,.json,.txt" onchange="handleFileSelect(this)">
           <div class="drop-icon">📂</div>
@@ -532,7 +497,7 @@
       </div>
       <p class="ps">Carte interactive · GPS · Routage OSRM · Prévision CA</p>
       <div class="card">
-        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez d'abord via "Import calendrier".</p></div>
+        <div class="priv"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🗺️</span><p>Cliquez sur la carte ou utilisez la recherche d'adresse pour définir votre point de départ. Importez via le Carnet patients ou l'Import calendrier.</p></div>
 
         <!-- Barre de recherche unifiée -->
         <div class="map-search" style="margin-bottom:10px">
