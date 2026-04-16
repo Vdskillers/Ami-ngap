@@ -265,12 +265,6 @@ document.addEventListener('app:update', e => {
   const d = e.detail.value;
   if (d?.patients?.length || d?.entries?.length) {
     _savePlanning(d.patients || d.entries);
-    // Mettre à jour les vues si elles sont actives
-    if (typeof showCaFromImport === 'function') showCaFromImport();
-    const turActive  = document.getElementById('view-tur')  ?.classList.contains('on');
-    const liveActive = document.getElementById('view-live') ?.classList.contains('on');
-    if (liveActive && typeof renderLivePatientList === 'function') renderLivePatientList();
-    if (turActive  && typeof showCaFromImport === 'function') showCaFromImport();
   }
 });
 

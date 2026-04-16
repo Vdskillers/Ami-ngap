@@ -55,10 +55,6 @@ function showApp(){
   $('uname').textContent=((u.prenom||'')+' '+(u.nom||'')).trim()||u.email||'—';
   if($('sess-inf'))$('sess-inf').textContent=(u.email||'')+' · session active';
   $('voicebtn').classList.add('show');
-  /* ── Salutation mobile premium ── */
-  const _grN=$('mobile-greeting-name'),_grH=$('mobile-greeting-hello');
-  if(_grN){const _fn=(u.prenom||'').split(' ')[0]||u.email?.split('@')[0]||'—';_grN.textContent=_fn;}
-  if(_grH){const _h=new Date().getHours();_grH.textContent=_h<12?'Bonjour 👋':_h<18?'Bon après-midi 👋':'Bonsoir 👋';}
   updateNavMode();
 
   const isAdmin = S?.role==='admin';

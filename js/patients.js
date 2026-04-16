@@ -65,9 +65,6 @@ async function initPatientsDB() {
     req.onsuccess = e => {
       _patientsDB = e.target.result;
       _patientsDBUserId = S?.user?.id || S?.user?.email || 'local';
-      // Réinitialiser si le navigateur ferme la connexion (changement de version, arrière-plan)
-      _patientsDB.onversionchange = () => { _patientsDB.close(); _patientsDB = null; _patientsDBUserId = null; };
-      _patientsDB.onclose        = () => { _patientsDB = null; _patientsDBUserId = null; };
       resolve(_patientsDB);
       // Migration silencieuse clé de chiffrement
       _migratePatientKeyIfNeeded().catch(()=>{});
@@ -119,65 +116,31 @@ async function _migratePatientKeyIfNeeded() {
 
 
 async function _idbPut(store, val) {
-  for (let _attempt = 0; _attempt < 2; _attempt++) {
-    try {
-      const db = await initPatientsDB();
-      return await new Promise((res, rej) => {
-        const tx  = db.transaction(store, 'readwrite');
-        const req = tx.objectStore(store).put(val);
-        req.onsuccess = () => res(req.result);
-        req.onerror   = () => rej(req.error);
-        tx.onerror    = () => rej(tx.error);
-      });
-    } catch (e) {
-      if (_attempt === 0 && (e?.name === 'InvalidStateError' || String(e).includes('closing'))) {
-        _patientsDB = null; _patientsDBUserId = null;
-        continue;
-      }
-      throw e;
-    }
-  }
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).put(val);
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
 }
 async function _idbGetAll(store) {
-  for (let _attempt = 0; _attempt < 2; _attempt++) {
-    try {
-      const db = await initPatientsDB();
-      return await new Promise((res, rej) => {
-        const tx  = db.transaction(store, 'readonly');
-        const req = tx.objectStore(store).getAll();
-        req.onsuccess = () => res(req.result || []);
-        req.onerror   = () => rej(req.error);
-        tx.onerror    = () => rej(tx.error);
-      });
-    } catch (e) {
-      if (_attempt === 0 && (e?.name === 'InvalidStateError' || String(e).includes('closing'))) {
-        // Connexion fermée — on reset et on réessaie une fois
-        _patientsDB = null; _patientsDBUserId = null;
-        continue;
-      }
-      throw e;
-    }
-  }
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => res(req.result || []);
+    req.onerror   = () => rej(req.error);
+  });
 }
 async function _idbDelete(store, key) {
-  for (let _attempt = 0; _attempt < 2; _attempt++) {
-    try {
-      const db = await initPatientsDB();
-      return await new Promise((res, rej) => {
-        const tx  = db.transaction(store, 'readwrite');
-        const req = tx.objectStore(store).delete(key);
-        req.onsuccess = () => res();
-        req.onerror   = () => rej(req.error);
-        tx.onerror    = () => rej(tx.error);
-      });
-    } catch (e) {
-      if (_attempt === 0 && (e?.name === 'InvalidStateError' || String(e).includes('closing'))) {
-        _patientsDB = null; _patientsDBUserId = null;
-        continue;
-      }
-      throw e;
-    }
-  }
+  const db = await initPatientsDB();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => res();
+    req.onerror   = () => rej(req.error);
+  });
 }
 async function _idbGetByIndex(store, indexName, val) {
   const db = await initPatientsDB();
