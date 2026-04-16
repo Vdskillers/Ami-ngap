@@ -27,10 +27,13 @@
     background-size: 32px 32px !important;
   }
 
-  /* ── Masquer greeting en mode admin ── */
-  .top.admin-active #mobile-greeting { display: none !important; }
+  /* ── Masquer greeting + sticky en mode admin mobile ── */
+  /* Cacher le greeting "Bastien" — inutile en mode admin */
+  .top.admin-active #mobile-greeting,
+  .admin-active #mobile-greeting,
+  #mobile-greeting.admin-hide { display: none !important; }
 
-  /* ── Annuler sticky en mode admin mobile — le header 2 lignes déborde sinon ── */
+  /* Annuler sticky — le header 2 lignes déborde sinon */
   .top.admin-active {
     position: relative !important;
     top: auto !important;
