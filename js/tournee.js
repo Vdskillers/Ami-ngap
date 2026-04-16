@@ -25,8 +25,29 @@ if (typeof optimizeTour === 'undefined') {
   };
 }
 
+/* ── Stockage séparé tournée (n'affecte pas le Planning hebdomadaire) ── */
+function storeTourneeData(d) {
+  // Tournée IA + Pilotage : clé séparée de APP.importedData (Planning hebdomadaire)
+  APP.tourneeData = d;
+  try {
+    if (d) localStorage.setItem('ami_tournee_session', JSON.stringify(d));
+    else    localStorage.removeItem('ami_tournee_session');
+  } catch(_) {}
+}
+
+function loadTourneeData() {
+  if (APP.tourneeData) return APP.tourneeData;
+  try {
+    const raw = localStorage.getItem('ami_tournee_session');
+    if (raw) { APP.tourneeData = JSON.parse(raw); return APP.tourneeData; }
+  } catch(_) {}
+  return null;
+}
+
 function storeImportedData(d){
   APP.importedData=d;
+  // Sauvegarder aussi dans la clé tournée (séparée du Planning hebdomadaire)
+  storeTourneeData(d);
   // Sauvegarder dans localStorage (persistance entre sessions)
   if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
@@ -104,8 +125,9 @@ document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
 
 function showCaFromImport(){
-  if(!APP.importedData)return;
-  const patients=APP.importedData.patients||APP.importedData.entries||[];
+  const _tdCa = loadTourneeData() || APP.importedData;
+  if(!_tdCa)return;
+  const patients=_tdCa.patients||_tdCa.entries||[];
   if(!patients.length)return;
   const ca=estimateRevenue(patients);
   const w=$('tur-ca-wrap'),v=$('tur-ca-val');
@@ -130,8 +152,9 @@ function estimateRevenue(patients){
 }
 
 function showImportedPatients(){
-  if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
-  const patients=APP.importedData.patients||APP.importedData.entries||[];
+  const _tdShow = loadTourneeData() || APP.importedData;
+  if(!_tdShow){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
+  const patients=_tdShow.patients||_tdShow.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
   $('tbody').innerHTML=`<div class="card">
     <div class="ct">👥 Patients importés (${patients.length})</div>
@@ -584,7 +607,7 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+  const _td = loadTourneeData(); const rawPatients = _td?.patients || _td?.entries || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -788,7 +811,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
 /* Retirer un patient de la tournée optimisée */
 function removeFromTournee(encodedId, fallbackIndex) {
   const id = decodeURIComponent(encodedId);
-  const data = APP.get('importedData') || APP.importedData;
+  const data = loadTourneeData() || APP.get('importedData') || APP.importedData;
   if (!data) return;
   const patients = data.patients || data.entries || [];
   const idx = patients.findIndex((p, i2) =>
@@ -806,9 +829,8 @@ function removeFromTournee(encodedId, fallbackIndex) {
 /* Vider entièrement la tournée */
 function clearTournee() {
   if (!confirm('Vider la tournée ? Tous les patients importés seront retirés.')) return;
-  APP.importedData = null;
+  storeTourneeData(null);
   APP.uberPatients = [];
-  if (typeof storeImportedData === 'function') storeImportedData(null);
   const tbody = $('tbody');
   if (tbody) tbody.innerHTML = '';
   const resTur = $('res-tur');
@@ -2052,8 +2074,8 @@ function resetTourneeJour() {
     : 'Réinitialiser la tournée du jour ?\n\nLe pilotage sera remis à zéro.';
   if (!confirm(msg)) return;
 
-  // Reset données importées
-  APP.importedData  = null;
+  // Reset tournée uniquement — ne pas toucher à APP.importedData (Planning hebdomadaire)
+  storeTourneeData(null);
   APP.uberPatients  = [];
   APP.nextPatient   = null;
 

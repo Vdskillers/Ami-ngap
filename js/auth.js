@@ -276,10 +276,13 @@ function logout(){
   APP.uberPatients=[];
   // Vider la tournée si la préférence est activée
   if (localStorage.getItem('ami_pref_clear_tournee') === '1') {
-    try { wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }).catch(()=>{}); } catch(_) {}
-    try { Object.keys(localStorage).filter(k=>k.startsWith('ami_planning')).forEach(k=>localStorage.removeItem(k)); } catch(_) {}
-    APP.importedData = null;
-    APP.uberPatients = [];
+    // Vider uniquement la tournée — NE PAS toucher à weekly_planning ni ami_planning (Planning hebdomadaire)
+    try { localStorage.removeItem('ami_tournee_session'); } catch(_) {}
+    if (typeof APP !== 'undefined') {
+      APP.tourneeData  = null;
+      APP.uberPatients = [];
+      APP.nextPatient  = null;
+    }
   }
   if(typeof stopVoice==='function') stopVoice();
   /* ── Fermer les connexions IndexedDB ouvertes (sans supprimer les données) ──
