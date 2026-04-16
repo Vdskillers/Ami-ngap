@@ -238,6 +238,16 @@ async function trafficAwareCachedTravel(a, b, departureMin = _nowMinutes()) {
 async function optimizeTour(patients, startPoint, startTimeMin = 480, mode = 'ia') {
   if (!patients?.length) return [];
 
+  const noCoords = patients.filter(p => !p.lat || !p.lng);
+
+  /* Si AUCUN patient n'a de coordonnées GPS → retourner tous les patients
+     triés par heure, sans optimisation géographique */
+  if (noCoords.length === patients.length) {
+    return [...patients].sort((a,b) =>
+      (a.heure_preferee||a.heure_soin||'99:99').localeCompare(b.heure_preferee||b.heure_soin||'99:99')
+    );
+  }
+
   /* Normalisation entrée */
   let remaining = patients
     .filter(p => p.lat && p.lng)
