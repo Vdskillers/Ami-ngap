@@ -853,7 +853,6 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
         </div>
         ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km" title="Inclut correction trafic">~${p.travel_min}min</div>`:'')}
         ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
-        <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'),decodeURIComponent('${spn}'))">⚡ Coter</button>
         <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
       </div>`;
     }).join('')}
