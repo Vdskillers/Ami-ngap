@@ -640,7 +640,9 @@ async function optimiserTournee(){
     }
 
     /* ── 1. Moteur IA local — VRPTW greedy + cache OSRM ── */
-    _showOptimProgress('⚡ Optimisation VRPTW en cours…');
+    // Badge trafic en temps réel pendant l'optimisation
+    const _tfInfo = (typeof getTrafficInfo === 'function') ? getTrafficInfo(startTimeMin) : { label: '' };
+    _showOptimProgress(`⚡ Optimisation VRPTW en cours… ${_tfInfo.label}`);
     /* Heure de départ = heure actuelle en minutes depuis minuit (pas 8h00 fixe) */
     const _now = new Date();
     const startTimeMin = _now.getHours() * 60 + _now.getMinutes();
@@ -729,9 +731,17 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.3);padding:2px 10px;border-radius:20px;letter-spacing:1px">⚡ Mode mixte</span>`
     : `<span style="font-family:var(--fm);font-size:10px;background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.25);padding:2px 10px;border-radius:20px;letter-spacing:1px">🧠 IA VRPTW</span>`;
 
+  // Badge trafic calculé à l'heure d'affichage
+  const _nowMin = (new Date().getHours() * 60 + new Date().getMinutes());
+  const _tf = (typeof getTrafficInfo === 'function') ? getTrafficInfo(_nowMin) : { label: '🟢 Fluide', factor: 1.0 };
+  const _tfColor = _tf.label.includes('🔴') ? 'rgba(255,95,109,.15)' : _tf.label.includes('🟡') ? 'rgba(255,181,71,.12)' : 'rgba(0,212,170,.1)';
+  const _tfBorder = _tf.label.includes('🔴') ? 'rgba(255,95,109,.35)' : _tf.label.includes('🟡') ? 'rgba(255,181,71,.3)' : 'rgba(0,212,170,.25)';
+  const _tfText = _tf.label.includes('🔴') ? 'var(--d)' : _tf.label.includes('🟡') ? 'var(--w)' : 'var(--a)';
+  const trafficBadge = `<span style="font-family:var(--fm);font-size:10px;background:${_tfColor};color:${_tfText};border:1px solid ${_tfBorder};padding:2px 10px;border-radius:20px;letter-spacing:.5px">${_tf.label}</span>`;
+
   return `<div class="card">
     <div class="ct" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      🗺️ Tournée optimisée — ${total} patients ${modeBadge}
+      🗺️ Tournée optimisée — ${total} patients ${modeBadge} ${trafficBadge}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
       <div class="dreb">📍 ${total} patients</div>
@@ -763,7 +773,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
             ${contrainteBadge}
           </div>
         </div>
-        ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km">~${p.travel_min}min</div>`:'')}
+        ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km" title="Inclut correction trafic">~${p.travel_min}min</div>`:'')}
         ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
         <button class="btn bp bsm" onclick="coterDepuisRoute(decodeURIComponent('${sd}'),decodeURIComponent('${spn}'))">⚡ Coter</button>
         <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>

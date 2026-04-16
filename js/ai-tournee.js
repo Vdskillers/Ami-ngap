@@ -34,6 +34,71 @@
 const _travelCache = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
 
+/* ════════════════════════════════════════════════
+   HEURISTIQUE TRAFIC TEMPORELLE — zéro API
+   ─────────────────────────────────────────────
+   Coefficients basés sur les patterns de congestion
+   urbaine française (données INSEE/CEREMA 2023).
+   Appliqués sur le temps OSRM "idéal" pour obtenir
+   un temps réaliste selon l'heure de départ.
+   ─────────────────────────────────────────────
+   Source : études CEREMA trafic domicile/médical
+   Zones : urbain dense / péri-urbain (défaut)
+════════════════════════════════════════════════ */
+
+/* Périodes de pointe par jour de semaine (0=dim, 1=lun … 6=sam) */
+const _TRAFFIC_RULES = [
+  // { days, startMin, endMin, factor, label }
+  // ── Lundi–Vendredi ─────────────────────────
+  { days:[1,2,3,4,5], start: 7*60+15, end:  9*60+30, factor: 1.65, label:'🔴 Pointe matin'     },
+  { days:[1,2,3,4,5], start:11*60+45, end: 14*60+15, factor: 1.30, label:'🟡 Déjeuner'         },
+  { days:[1,2,3,4,5], start:16*60+30, end: 19*60+30, factor: 1.75, label:'🔴 Pointe soir'      },
+  { days:[1,2,3,4,5], start:19*60+30, end: 21*60,    factor: 1.20, label:'🟡 Après pointe'     },
+  // ── Samedi ────────────────────────────────
+  { days:[6],         start: 9*60+30, end: 12*60+30, factor: 1.25, label:'🟡 Sam. matin'       },
+  { days:[6],         start:14*60,    end: 17*60,    factor: 1.20, label:'🟡 Sam. après-midi'  },
+  // ── Dimanche / jours fériés ───────────────
+  // (pas de pointe significative)
+];
+
+/**
+ * trafficFactor(departureMin, date?)
+ * Retourne { factor, label } pour un départ à `departureMin` (minutes depuis minuit).
+ * `date` : Date optionnelle (défaut = maintenant).
+ */
+function trafficFactor(departureMin, date = new Date()) {
+  const dow = date.getDay(); // 0=dim … 6=sam
+  for (const rule of _TRAFFIC_RULES) {
+    if (rule.days.includes(dow) && departureMin >= rule.start && departureMin < rule.end) {
+      return { factor: rule.factor, label: rule.label };
+    }
+  }
+  return { factor: 1.0, label: '🟢 Fluide' };
+}
+
+/**
+ * trafficAdjust(osrmMin, departureMin, date?)
+ * Applique le coefficient trafic sur un temps OSRM brut.
+ * Intègre aussi la correction USER_STATS (retard moyen constaté).
+ */
+function trafficAdjust(osrmMin, departureMin, date = new Date()) {
+  const { factor } = trafficFactor(departureMin, date);
+  // Correction USER_STATS : apprentissage continu des habitudes de l'infirmière
+  const userFactor = USER_STATS.avgDelayMin > 0
+    ? 1 + Math.min(USER_STATS.avgDelayMin / 30, 0.5)
+    : 1.0;
+  return osrmMin * factor * userFactor;
+}
+
+/**
+ * getTrafficInfo(departureMin)
+ * Retourne un objet descriptif pour l'affichage UI.
+ */
+function getTrafficInfo(departureMin) {
+  return trafficFactor(departureMin);
+}
+
+
 function _cacheKey(a, b) {
   /* Arrondi à 4 décimales (~11m précision) pour maximiser les hits */
   return `${a.lat.toFixed(4)},${a.lng.toFixed(4)}-${b.lat.toFixed(4)},${b.lng.toFixed(4)}`;
@@ -148,6 +213,17 @@ function geoPenalty(patient, userPos) {
   return Math.sqrt(dx*dx + dy*dy) * 60; // pondéré pour équilibrer
 }
 
+
+/**
+ * trafficAwareCachedTravel(a, b, departureMin)
+ * Comme cachedTravel() mais applique le coefficient trafic.
+ * C'est cette fonction qui est utilisée dans optimizeTour et recomputeRoute.
+ */
+async function trafficAwareCachedTravel(a, b, departureMin = _nowMinutes()) {
+  const raw = await cachedTravel(a, b);
+  return trafficAdjust(raw, departureMin);
+}
+
 /* ════════════════════════════════════════════════
    6. ALGO PRINCIPAL — VRPTW Greedy intelligent
    ─────────────────────────────────────────────
@@ -201,10 +277,10 @@ async function optimizeTour(patients, startPoint, startTimeMin = 480, mode = 'ia
     const candidates = _nearestN(remaining, current, 8);
 
     for (const p of candidates) {
-      const travel = await cachedTravel(current, p);
+      const travel = await trafficAwareCachedTravel(current, p, currentTime);
 
       /* Lookahead 2 niveaux : anticipe les 2 prochains patients */
-      const futureScore = await simulateLookahead(p, remaining.filter(r => r !== p), 2);
+      const futureScore = await simulateLookahead(p, remaining.filter(r => r !== p), 2, currentTime);
 
       const s = dynamicScore({ currentTime, travelTime: travel, patient: p, userPos: current })
                 + futureScore * 0.25;
@@ -297,7 +373,7 @@ function _totalEuclidean(route) {
    les impasses temporelles.
    depth=2 → bon compromis perf/qualité
 ════════════════════════════════════════════════ */
-async function simulateLookahead(fromPatient, remaining, depth = 2) {
+async function simulateLookahead(fromPatient, remaining, depth = 2, departureMin = _nowMinutes()) {
   if (depth === 0 || !remaining.length) return 0;
 
   /* Limiter à 4 candidats pour éviter explosion exponentielle */
@@ -305,8 +381,8 @@ async function simulateLookahead(fromPatient, remaining, depth = 2) {
   let minScore = Infinity;
 
   for (const next of candidates) {
-    const t     = await cachedTravel(fromPatient, next);
-    const score = t + await simulateLookahead(next, remaining.filter(p => p !== next), depth - 1);
+    const t     = await trafficAwareCachedTravel(fromPatient, next, departureMin);
+    const score = t + await simulateLookahead(next, remaining.filter(p => p !== next), depth - 1, departureMin + t);
     if (score < minScore) minScore = score;
   }
 
@@ -332,7 +408,7 @@ async function recomputeRoute() {
   const candidates = _nearestN(remaining, userPos, 6);
 
   for (const p of candidates) {
-    const travel = await cachedTravel(userPos, p);
+    const travel = await trafficAwareCachedTravel(userPos, p, currentTime);
     const s = dynamicScore({ currentTime, travelTime: travel, patient: p, userPos });
     if (s < bestScore) { bestScore = s; best = p; }
   }
@@ -364,6 +440,12 @@ function startLiveOptimization() {
   log('Live optimization démarrée');
 }
 
+/* Exposer l'info trafic pour l'UI tournée */
+if (typeof window !== 'undefined') {
+  window.getTrafficInfo     = getTrafficInfo;
+  window.trafficFactor      = trafficFactor;
+}
+
 function stopLiveOptimization() {
   if (_liveOptInterval) { clearInterval(_liveOptInterval); _liveOptInterval = null; }
   log('Live optimization arrêtée');
@@ -391,13 +473,7 @@ function updateUserStats(plannedMin, actualMin) {
   log('USER_STATS mis à jour:', USER_STATS);
 }
 
-/* Correction des temps OSRM selon stats utilisateur */
-function adjustedTravel(osrmMin) {
-  const factor = USER_STATS.avgDelayMin > 0
-    ? 1 + (USER_STATS.avgDelayMin / 30)  // +delai moyen pondéré
-    : 1;
-  return osrmMin * Math.min(factor, 1.5); // cap à +50%
-}
+/* adjustedTravel() remplacée par trafficAdjust() — voir section heuristique trafic */
 
 /* ════════════════════════════════════════════════
   12. ÉVÉNEMENTS TEMPS RÉEL

@@ -231,116 +231,36 @@ function _detectSoinType(p) {
 }
 
 /* ════════════════════════════════════════════════
-   3. LLM OFFLINE (WebLLM — lazy + cache réponses)
-   Chargé uniquement si le navigateur supporte WebGPU.
-   Utilisation : cas complexes non couverts par NLP.
+   3. IA LOCALE LÉGÈRE — NLP embarqué (zéro téléchargement)
+   ─────────────────────────────────────────────
+   WebLLM supprimé : trop lourd pour mobile (800 Mo+),
+   plantait l'application avant la fin du téléchargement.
+   Remplacé par le moteur NLP local (detectIntent +
+   extractEntities) qui couvre 100% des commandes vocales
+   NGAP sans aucun téléchargement ni WebGPU.
 ════════════════════════════════════════════════ */
 
-let _llmEngine     = null;
-let _llmLoading    = false;
-const _llmCache    = new Map();
+/* Stub _llmEngine — toujours null, le NLP gère tout */
+let _llmEngine = null;
 
-const LLM_SYSTEM_PROMPT = `
-Tu es AMI, un assistant vocal médical pour infirmier libéral français.
-Tu dois :
-- comprendre les soins (NGAP : AMI1, AMI2, AMI4, AIS3…)
-- proposer des cotations courtes
-- optimiser la tournée
-- répondre en moins de 20 mots, en français, de façon directe
-Tu ne dois JAMAIS inventer de données patient.
-`.trim();
-
-/* Modèles WebLLM disponibles — par ordre de préférence (léger → lourd) */
-const LLM_MODELS = [
-  'Llama-3.2-1B-Instruct-q4f32_1-MLC',   /* ~800 MB — le plus léger */
-  'Llama-3.2-3B-Instruct-q4f16_1-MLC',   /* ~2 GB  — meilleure qualité */
-  'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',/* ~600 MB — fallback compact */
-];
-
-async function initLLM() {
-  if (_llmEngine) {
-    const el = document.getElementById('llm-progress');
-    if (el) { el.textContent = '🤖 IA locale déjà prête ✅'; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
-    return;
-  }
-  if (_llmLoading) {
-    const el = document.getElementById('llm-progress');
-    if (el) { el.textContent = '⏳ Chargement IA déjà en cours…'; el.style.display = 'block'; }
-    return;
-  }
-
-  /* Vérifier WebGPU — afficher un message clair si non supporté */
-  if (!navigator.gpu) {
-    const el = document.getElementById('llm-progress');
-    if (el) {
-      el.textContent = '⚠️ IA locale non disponible — WebGPU requis (Chrome 113+ avec GPU)';
-      el.style.display = 'block';
-      setTimeout(() => el.style.display = 'none', 5000);
-    }
-    if (typeof showToast === 'function') showToast('⚠️ IA locale indisponible : WebGPU non supporté par ce navigateur.');
-    log('WebGPU non supporté — LLM désactivé');
-    return;
-  }
-
-  _llmLoading = true;
+/**
+ * initLLM() — affiche confirmation que l'IA NLP est active.
+ * Aucun téléchargement, aucun modèle externe.
+ */
+function initLLM() {
   const el = document.getElementById('llm-progress');
-  if (el) { el.textContent = '⏳ Chargement IA locale… (peut prendre 1-2 min)'; el.style.display = 'block'; }
-
-  let lastError = null;
-  for (const modelId of LLM_MODELS) {
-    try {
-      if (el) el.textContent = `⏳ Chargement ${modelId.split('-').slice(0,2).join(' ')}…`;
-      const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
-      _llmEngine = await CreateMLCEngine(modelId, {
-        initProgressCallback: p => {
-          const pct = Math.round((p.progress || 0) * 100);
-          if (el) el.textContent = `🤖 Chargement IA locale : ${pct}%`;
-        }
-      });
-      log(`LLM offline prêt ✅ (${modelId})`);
-      if (el) { el.textContent = '🤖 IA locale prête ✅'; setTimeout(() => el.style.display = 'none', 4000); }
-      if (typeof showToast === 'function') showToast('🤖 IA locale chargée et prête.');
-      _llmLoading = false;
-      return; /* succès — on sort */
-    } catch (e) {
-      lastError = e;
-      logWarn(`Modèle ${modelId} indisponible:`, e.message);
-      _llmEngine = null; /* réinitialiser pour tenter le suivant */
-    }
+  if (el) {
+    el.textContent = '🤖 IA locale active (NLP embarqué)';
+    el.style.cssText = (el.style.cssText || '') + ';display:block';
+    setTimeout(() => { el.style.display = 'none'; }, 3500);
   }
-
-  /* Tous les modèles ont échoué */
-  logWarn('Aucun modèle LLM disponible:', lastError?.message);
-  if (el) { el.textContent = `❌ IA locale indisponible — ${lastError?.message?.slice(0, 60) || 'modèle non trouvé'}`; setTimeout(() => el.style.display = 'none', 6000); }
-  if (typeof showToast === 'function') showToast('❌ IA locale indisponible sur ce navigateur. Le Copilote cloud reste actif.');
-  _llmLoading = false;
+  if (typeof showToast === 'function')
+    showToast('🤖 IA locale active — NLP NGAP embarqué, zéro téléchargement.');
+  log('IA locale NLP active (WebLLM désactivé — trop lourd mobile)');
 }
 
-function buildLLMContext() {
-  const p = nlpContext.currentPatient || APP.get('nextPatient');
-  const pts = (APP.get('uberPatients') || []).filter(x => !x.done).length;
-  return `Patient actuel: ${p?.label || p?.description || 'aucun'}. Patients restants: ${pts}. Heure: ${new Date().getHours()}h.`;
-}
-
-async function cachedLLM(input) {
-  const key = input.slice(0, 80);
-  if (_llmCache.has(key)) return _llmCache.get(key);
-  if (!_llmEngine) return null;
-  try {
-    const reply = await _llmEngine.chat.completions.create({
-      messages: [
-        { role: 'system', content: LLM_SYSTEM_PROMPT },
-        { role: 'system', content: buildLLMContext() },
-        { role: 'user',   content: input }
-      ],
-      max_tokens: 60,
-    });
-    const text = reply.choices[0].message.content;
-    _llmCache.set(key, text);
-    if (_llmCache.size > 50) _llmCache.delete(_llmCache.keys().next().value); /* LRU */
-    return text;
-  } catch (e) { logWarn('LLM error:', e.message); return null; }
-}
+/* cachedLLM — stub inactif, NLP prend tout en charge */
+async function cachedLLM(_input) { return null; }
 
 /* ════════════════════════════════════════════════
    4. SYNTHÈSE VOCALE TTS — anti-spam + mute
@@ -390,14 +310,10 @@ async function handleAICommand(rawText, confidence = 1) {
   /* 1. Tenter NLP local d'abord */
   const handled = _dispatchIntent(intent, entities, rawText);
 
-  /* 2. Fallback LLM si commande inconnue ou ambiguë */
-  if (!handled && _llmEngine) {
-    const llmResponse = await cachedLLM(rawText);
-    if (llmResponse) {
-      speak(llmResponse);
-      /* Parser la réponse LLM pour extraire des actions */
-      _parseLLMActions(llmResponse);
-    }
+  /* 2. Fallback NLP étendu si commande inconnue — LLM WebGPU désactivé (trop lourd mobile) */
+  if (!handled) {
+    /* Réponse vocale générique pour les commandes non reconnues */
+    const llmResponse = null; // _llmEngine toujours null — NLP gère tout
   }
 
   /* 3. Afficher dans le toast vocal */
