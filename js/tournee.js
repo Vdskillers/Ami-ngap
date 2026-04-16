@@ -130,7 +130,7 @@ function estimateRevenue(patients){
 }
 
 function showImportedPatients(){
-  if(!APP.importedData){alert('Aucune donnée importée. Utilisez "Import calendrier" d\'abord.');return;}
+  if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
   $('tbody').innerHTML=`<div class="card">
@@ -318,7 +318,7 @@ function refreshPlanning() {
 }
 
 async function generatePlanningFromImport(){
-  if(!APP.importedData){alert('Aucune donnée importée.');return;}
+  if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
   // Construire un texte structuré depuis l'import
@@ -589,8 +589,11 @@ async function optimiserTournee(){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
       <div class="ct">⚠️ Aucune donnée importée</div>
-      <div class="ai wa" style="margin-bottom:12px">Importez d'abord votre planning via <strong>📂 Import calendrier</strong> avant d'optimiser la tournée.</div>
-      <button class="btn bp bsm" onclick="navTo('imp',null)"><span>📂</span> Aller à l'import</button>
+      <div class="ai wa" style="margin-bottom:12px">Importez vos patients via le <strong>👤 Carnet patients</strong> ou l'<strong>📂 Import calendrier</strong>.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn bp bsm" onclick="navTo('patients',null)"><span>👤</span> Carnet patients</button>
+        <button class="btn bs bsm" onclick="navTo('imp',null)"><span>📂</span> Import calendrier</button>
+      </div>
     </div>`;
     $('res-tur').classList.add('show');
     return;

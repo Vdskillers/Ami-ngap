@@ -237,7 +237,11 @@ function loadUberPatients() {
   const data = APP.get('importedData');
   if (!data) {
     const el = $('uber-next-patient');
-    if (el) el.innerHTML = '<div class="ai wa">⚠️ Aucune donnée importée. Utilisez d\'abord "Import calendrier".</div>';
+    if (el) el.innerHTML = '<div class="ai wa" style="margin-bottom:10px">⚠️ Aucune donnée importée.</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn bp bsm" onclick="navTo('patients',null)"><span>👤</span> Carnet patients</button>' +
+        '<button class="btn bs bsm" onclick="navTo('imp',null)"><span>📂</span> Import calendrier</button>' +
+        '</div>';
     return;
   }
   const raw = data?.patients || data?.entries || [];
