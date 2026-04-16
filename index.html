@@ -2633,11 +2633,13 @@ async function hist() {
 async function delHist(id) {
   if (!confirm(`Supprimer la cotation #${id} ?`)) return;
   try {
-    await (typeof wpost === 'function' ? wpost('/webhook/ami-supprimer', { id }) : fetchAPI('/webhook/ami-supprimer', { method:'POST', body: JSON.stringify({ id }) }));
+    await (typeof wpost === 'function'
+      ? wpost('/webhook/ami-supprimer', { id })
+      : fetchAPI('/webhook/ami-supprimer', { method:'POST', body: JSON.stringify({ id }) }));
     hist();
     if (typeof showToast === 'function') showToast('✅ Cotation supprimée.');
   } catch(e) {
-    if (typeof showToast === 'function') showToast('⚠️ ' + e.message);
+    if (typeof showToast === 'function') showToast('❌ ' + e.message);
   }
 }
 
