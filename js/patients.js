@@ -947,7 +947,8 @@ async function editCotationPatient(patientId, cotationIdx) {
     }
 
     // Stocker la référence pour mise à jour après re-cotation
-    window._editingCotation = { patientId, cotationIdx };
+    // invoice_number original indispensable pour l'upsert Supabase
+    window._editingCotation = { patientId, cotationIdx, invoice_number: c.invoice_number || null };
 
     showToastSafe(`✏️ Cotation du ${new Date(c.date).toLocaleDateString('fr-FR')} chargée — modifiez et recotez.`);
   }, 250);

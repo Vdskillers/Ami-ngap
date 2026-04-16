@@ -44,6 +44,8 @@ async function cotation() {
     // Récupérer le prescripteur sélectionné (select ou champ texte libre)
     const prescSel = $('f-prescripteur-select');
     const prescripteur_id = prescSel?.value || null;
+    // Si mode édition, passer l'invoice_number original pour upsert Supabase
+    const _editRef = window._editingCotation || null;
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
@@ -54,7 +56,9 @@ async function cotation() {
       prescripteur_nom: gv('f-pr') || '',
       prescripteur_rpps: gv('f-pr-rp') || '',
       date_prescription: gv('f-pr-dt') || '',
-      ...(prescripteur_id ? { prescripteur_id } : {})
+      ...(prescripteur_id ? { prescripteur_id } : {}),
+      // invoice_number existant → le worker fera un PATCH au lieu d'un POST
+      ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
     });
     if (d.error) throw new Error(d.error);
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
@@ -96,28 +100,40 @@ async function cotation() {
         if (_patRow) {
           const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
           if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
-          // Éviter les doublons par invoice_number
-          const _alreadySaved = d.invoice_number && _pat.cotations.some(c => c.invoice_number === d.invoice_number);
-          if (!_alreadySaved) {
-            _pat.cotations.push({
-              date:           gv('f-ds') || new Date().toISOString().slice(0,10),
-              heure:          gv('f-hs') || '',
-              actes:          d.actes || [],
-              total:          parseFloat(d.total || 0),
-              part_amo:       parseFloat(d.part_amo || 0),
-              part_amc:       parseFloat(d.part_amc || 0),
-              part_patient:   parseFloat(d.part_patient || 0),
-              soin:           txt.slice(0, 120),
-              invoice_number: d.invoice_number || null,
-              source:         'cotation_form',
-              _synced:        true, // déjà dans Supabase via ami-calcul
-            });
-            _pat.updated_at = new Date().toISOString();
-            await _idbPut(PATIENTS_STORE, {
-              id: _pat.id, nom: _pat.nom, prenom: _pat.prenom,
-              _data: _enc(_pat), updated_at: _pat.updated_at,
-            });
+
+          const _newCot = {
+            date:           gv('f-ds') || new Date().toISOString().slice(0,10),
+            heure:          gv('f-hs') || '',
+            actes:          d.actes || [],
+            total:          parseFloat(d.total || 0),
+            part_amo:       parseFloat(d.part_amo || 0),
+            part_amc:       parseFloat(d.part_amc || 0),
+            part_patient:   parseFloat(d.part_patient || 0),
+            soin:           txt.slice(0, 120),
+            invoice_number: d.invoice_number || (_editRef?.invoice_number) || null,
+            source:         _editRef ? 'cotation_edit' : 'cotation_form',
+            _synced:        true,
+          };
+
+          // Mode édition : remplacer la cotation existante par index
+          if (_editRef && typeof _editRef.cotationIdx === 'number' && _pat.cotations[_editRef.cotationIdx]) {
+            _pat.cotations[_editRef.cotationIdx] = {
+              ..._pat.cotations[_editRef.cotationIdx],
+              ..._newCot,
+              date_edit: new Date().toISOString(),
+            };
+          } else {
+            // Nouvelle cotation : vérifier l'absence de doublon par invoice_number
+            const _alreadySaved = _newCot.invoice_number &&
+              _pat.cotations.some(c => c.invoice_number === _newCot.invoice_number);
+            if (!_alreadySaved) _pat.cotations.push(_newCot);
           }
+
+          _pat.updated_at = new Date().toISOString();
+          await _idbPut(PATIENTS_STORE, {
+            id: _pat.id, nom: _pat.nom, prenom: _pat.prenom,
+            _data: _enc(_pat), updated_at: _pat.updated_at,
+          });
         }
       }
     } catch(_idbErr) { console.warn('[cotation] IDB save KO:', _idbErr.message); }
@@ -250,6 +266,33 @@ async function _saveEditedCotation(d) {
       updated_at: new Date().toISOString(),
     };
     await _idbPut(PATIENTS_STORE, toStore);
+
+    // Synchroniser vers Supabase (PATCH si invoice_number connu)
+    try {
+      const invNum = p.cotations[cotationIdx].invoice_number || null;
+      if (invNum && typeof apiCall === 'function') {
+        // Utiliser ami-save-cotation avec invoice_number → le worker fait un PATCH
+        apiCall('/webhook/ami-save-cotation', {
+          cotations: [{
+            actes:          d.actes || [],
+            total:          d.total || 0,
+            part_amo:       d.part_amo || 0,
+            part_amc:       d.part_amc || 0,
+            part_patient:   d.part_patient || 0,
+            dre_requise:    d.dre_requise || false,
+            source:         'cotation_edit',
+            invoice_number: invNum, // déclenche PATCH côté worker
+          }]
+        }).catch(() => {}); // silencieux — IDB fait foi
+      }
+    } catch (_syncErr) {}
+
+    // Invalider le cache dashboard
+    try {
+      const _key = (typeof _dashCacheKey === 'function') ? _dashCacheKey()
+        : ('ami_dash_cache_' + (typeof S !== 'undefined' ? (S?.user?.id || '') : ''));
+      localStorage.removeItem(_key);
+    } catch {}
 
     // Réinitialiser le mode édition
     window._editingCotation = null;
