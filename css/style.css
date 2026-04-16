@@ -646,3 +646,13 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   text-align:center;
   font-size:18px;
 }
+
+/* ── Sélecteur patient cotation ── */
+#cot-patient-search:focus{border-color:rgba(0,212,170,.5)!important;outline:none;box-shadow:0 0 0 3px rgba(0,212,170,.08)}
+#cot-patient-dropdown::-webkit-scrollbar{width:4px}
+#cot-patient-dropdown::-webkit-scrollbar-track{background:transparent}
+#cot-patient-dropdown::-webkit-scrollbar-thumb{background:rgba(0,212,170,.2);border-radius:2px}
+.cot-dd-item:last-child{border-bottom:none!important}
+.cot-dd-item:first-child{border-radius:10px 10px 0 0}
+.cot-dd-item:last-child{border-radius:0 0 10px 10px}
+.cot-dd-item:only-child{border-radius:10px}
