@@ -46,9 +46,15 @@ let _turMap=null, _turMarker=null, _turRouteLine=null, _turLiveMarker=null;
 function initTurMap(){
   const depMapEl = document.getElementById('dep-map');
 
-  // ── Cas 1 : carte déjà créée — juste invalider + rebind ──
+  // ── Cas 1 : carte déjà créée — invalider + rebind + recentrer France si pas de départ ──
   if (_turMap) {
-    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 100);
+    setTimeout(() => {
+      try { _turMap.invalidateSize(); } catch(_){}
+      if (!APP.get('startPoint')) {
+        const z = _turMap.getZoom();
+        if (!z || z < 5) _turMap.setView([46.603354, 1.888334], 6);
+      }
+    }, 100);
     setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 400);
     _rebindMapClick(_turMap);
     return;
@@ -61,7 +67,13 @@ function initTurMap(){
     APP.map.instance = _turMap; // synchroniser le namespace aussi
     window._tourMap  = _turMap;
     _rebindMapClick(_turMap);
-    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 150);
+    setTimeout(() => {
+      try { _turMap.invalidateSize(); } catch(_){}
+      if (!APP.get('startPoint')) {
+        const z = _turMap.getZoom();
+        if (!z || z < 5) _turMap.setView([46.603354, 1.888334], 6);
+      }
+    }, 150);
     return;
   }
 
@@ -70,7 +82,13 @@ function initTurMap(){
     _turMap = APP.map.instance;
     window._tourMap = _turMap;
     _rebindMapClick(_turMap);
-    setTimeout(() => { try { _turMap.invalidateSize(); } catch(_){} }, 150);
+    setTimeout(() => {
+      try { _turMap.invalidateSize(); } catch(_){}
+      if (!APP.get('startPoint')) {
+        const z = _turMap.getZoom();
+        if (!z || z < 5) _turMap.setView([46.603354, 1.888334], 6);
+      }
+    }, 150);
     return;
   }
 
@@ -250,6 +268,10 @@ function setDepartPoint(lat, lng, label){
   _waitTurMap(map => _placeDepMarker(map, lat, lng, label));
 
   updateCAEstimate();
+
+  /* Afficher le panneau téléchargement cartes offline dès qu'un départ est défini */
+  const dlPanel = document.getElementById('map-download-panel');
+  if (dlPanel) dlPanel.style.display = 'block';
 }
 
 /* Géocodage adresse via Nominatim pour tur-map */
