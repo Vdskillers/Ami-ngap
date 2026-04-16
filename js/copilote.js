@@ -585,14 +585,13 @@ function _tryInitCopilote() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Panneau flottant nurse uniquement
-  if (typeof S === 'undefined' || S?.role !== 'admin') {
-    _createCopilotPanel();
-  }
+  // Panneau flottant : créé pour tout le monde (nurse ET admin)
+  // Le fab est inséré dans #mobile-header-fabs sur mobile, avant le bouton vocal
+  _createCopilotPanel();
 
-  // Après login : créer panel nurse, init copilote si déjà sur la page
+  // Après login : s'assurer que le panel existe (cas reload avec session restaurée)
   document.addEventListener('ami:login', () => {
-    if (S?.role === 'nurse' && !document.getElementById('copilot-panel')) {
+    if (!document.getElementById('copilot-panel')) {
       _createCopilotPanel();
     }
     setTimeout(_tryInitCopilote, 100);
