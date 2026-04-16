@@ -2159,7 +2159,7 @@
       <p class="ps">AES-256 · Privacy by Design · HDS ready</p>
 
       <!-- Statut protection + PIN — 1 col mobile, 2 col desktop -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:16px">
         <div class="card">
           <div class="ct">🛡️ Protection active</div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:13px;display:block">Chiffrement AES-256-GCM</strong><span style="font-size:12px;color:var(--m)">Données locales chiffrées en mémoire</span></div></div>
@@ -2181,14 +2181,14 @@
       </div>
 
       <!-- Préférences session -->
-      <div class="card" style="margin-bottom:16px">
+      <div class="card" style="margin-bottom:16px;max-width:600px">
         <div class="ct">⚙️ Préférences de session</div>
-        <div class="secrow" style="padding:10px 0">
-          <div style="flex:1">
-            <strong style="font-size:13px;display:block">Vider la tournée à la déconnexion</strong>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0">
+          <div>
+            <strong style="font-size:13px;display:block;margin-bottom:3px">Vider la tournée à la déconnexion</strong>
             <span style="font-size:12px;color:var(--m)">Efface les patients de la Tournée IA et du Pilotage de journée à chaque déconnexion. Le Planning hebdomadaire n'est pas affecté.</span>
           </div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0;margin-left:16px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--t)">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--t);white-space:nowrap">
             <input type="checkbox" id="pref-clear-tournee" style="width:18px;height:18px;accent-color:var(--a);cursor:pointer;flex-shrink:0"
               onchange="localStorage.setItem('ami_pref_clear_tournee', this.checked ? '1' : '0')"
             >
