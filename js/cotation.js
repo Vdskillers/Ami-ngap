@@ -115,10 +115,15 @@ async function cotation() {
             _synced:        true,
           };
 
-          // Mode édition : remplacer la cotation existante par index
-          if (_editRef && typeof _editRef.cotationIdx === 'number' && _pat.cotations[_editRef.cotationIdx]) {
-            _pat.cotations[_editRef.cotationIdx] = {
-              ..._pat.cotations[_editRef.cotationIdx],
+          // Mode édition : remplacer la cotation existante
+          // Index résolu par cotationIdx direct OU par invoice_number (tournée)
+          let _editIdx = (typeof _editRef?.cotationIdx === 'number') ? _editRef.cotationIdx : -1;
+          if (_editIdx < 0 && _editRef?.invoice_number) {
+            _editIdx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
+          }
+          if (_editRef && _editIdx >= 0 && _pat.cotations[_editIdx]) {
+            _pat.cotations[_editIdx] = {
+              ..._pat.cotations[_editIdx],
               ..._newCot,
               date_edit: new Date().toISOString(),
             };

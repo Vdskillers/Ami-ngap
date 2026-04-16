@@ -988,13 +988,15 @@ async function _syncCotationsToSupabase(patients) {
     if (!allToSync.length) return;
 
     const cotations = allToSync.map(p => ({
-      actes:       p._cotation.actes || [],
-      total:       parseFloat(p._cotation.total || 0),
-      date_soin:   new Date().toISOString().slice(0, 10),
-      heure_soin:  p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
-      soin:        (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
-      source:      p._cotation.auto ? 'tournee_auto' : 'tournee_live',
-      dre_requise: !!p._cotation.dre_requise,
+      actes:          p._cotation.actes || [],
+      total:          parseFloat(p._cotation.total || 0),
+      date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
+      heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
+      soin:           (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
+      source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
+      dre_requise:    !!p._cotation.dre_requise,
+      // invoice_number existant -> PATCH (correction), sinon POST (nouvelle ligne)
+      invoice_number: p._cotation.invoice_number || null,
     }));
 
     const result = await apiCall('/webhook/ami-save-cotation', { cotations });
@@ -2018,28 +2020,33 @@ function _cotRemoveActe(idx) {
 /* Valide la cotation et met à jour le CA */
 function _validateCotationLive() {
   _cotUpdateTotal();
-  const actes  = _cotModalState.actes;
-  const total  = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
+  const actes   = _cotModalState.actes;
+  const total   = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
   const patient = _cotModalState.patient;
 
-  // Mettre à jour le CA de la journée
-  LIVE_CA_TOTAL += total;
+  // Correction CA : soustraire l'ancien montant avant d'ajouter le nouveau
+  const ancienTotal = patient?._cotation?.validated ? parseFloat(patient._cotation.total || 0) : 0;
+  LIVE_CA_TOTAL = Math.max(0, LIVE_CA_TOTAL - ancienTotal) + total;
   const caEl = $('live-ca-total');
   if (caEl) { caEl.textContent = `💶 CA du jour : ${LIVE_CA_TOTAL.toFixed(2)} €`; caEl.style.display = 'block'; }
 
-  // Marquer comme déjà compté avant updateLiveCaCard (évite le double-comptage)
   if (patient) patient._caCardCounted = true;
-
-  // Ajouter au récap CA (sans incrémenter LIVE_CA_TOTAL à nouveau)
   updateLiveCaCard(patient, { actes, total });
 
-  // Marquer la cotation sur le patient en mémoire
-  if (patient) patient._cotation = { actes, total, validated: true };
+  // Conserver l'invoice_number existant (evite un nouvel ID a chaque correction)
+  const existingInvoice = patient?._cotation?.invoice_number || null;
 
-  // Synchroniser vers Supabase en arrière-plan (non-bloquant)
+  if (patient) patient._cotation = {
+    actes,
+    total,
+    validated:      true,
+    invoice_number: existingInvoice,
+    _tournee_date:  patient._cotation?._tournee_date || new Date().toISOString().slice(0, 10),
+  };
+
   _syncCotationsToSupabase([patient]).catch(() => {});
 
-  // Sauvegarder la cotation dans le carnet patient (IDB) si la fiche existe
+  // Upsert IDB : remplace si cotation tournee existe aujourd'hui, sinon cree
   (async () => {
     try {
       const pid = patient?.patient_id || patient?.id;
@@ -2049,33 +2056,49 @@ function _validateCotationLive() {
       if (!row) return;
       const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
       if (!p.cotations) p.cotations = [];
-      p.cotations.push({
-        date:   new Date().toISOString(),
+      const today     = new Date().toISOString().slice(0, 10);
+      const soinLabel = (patient.description || patient.texte || '').slice(0, 120);
+      // Chercher la cotation existante par invoice_number (plus fiable),
+      // puis par source tournee + date du jour (fallback)
+      let existingIdx = existingInvoice
+        ? p.cotations.findIndex(c => c.invoice_number === existingInvoice)
+        : -1;
+      if (existingIdx < 0) {
+        existingIdx = p.cotations.findIndex(c =>
+          (c.source === 'tournee' || c.source === 'tournee_auto' || c.source === 'tournee_live') &&
+          (c.date || '').slice(0, 10) === today
+        );
+      }
+      const cotEntry = {
+        date:           existingIdx >= 0 ? p.cotations[existingIdx].date : new Date().toISOString(),
         actes,
         total,
-        soin:   patient.description || patient.texte || '',
-        source: 'tournee',
-      });
+        soin:           soinLabel,
+        source:         'tournee',
+        invoice_number: existingInvoice || (existingIdx >= 0 ? p.cotations[existingIdx].invoice_number : null),
+        _synced:        false,
+        updated_at:     new Date().toISOString(),
+      };
+      if (existingIdx >= 0) {
+        p.cotations[existingIdx] = cotEntry;
+      } else {
+        p.cotations.push(cotEntry);
+      }
       p.updated_at = new Date().toISOString();
-      await _idbPut(PATIENTS_STORE, {
-        id:         p.id,
-        nom:        p.nom,
-        prenom:     p.prenom,
-        _data:      _enc(p),
-        updated_at: p.updated_at,
-      });
-    } catch(e) {
-      console.warn('[AMI] Sauvegarde cotation IDB KO:', e.message);
-    }
+      await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at });
+    } catch(e) { console.warn('[AMI] Sauvegarde cotation IDB KO:', e.message); }
   })();
 
-  // Callback optionnel
   if (typeof _cotModalState.onValidate === 'function') _cotModalState.onValidate(actes, total);
-
   const modal = document.getElementById('cot-modal-live');
   if (modal) modal.remove();
-
-  if (typeof showToast === 'function') showToast(`✅ Cotation validée — ${total.toFixed(2)} € ajoutés au CA`);
+  const isCorrection = ancienTotal > 0;
+  if (typeof showToast === 'function') {
+    showToast(isCorrection
+      ? `✏️ Cotation corrigée — ${total.toFixed(2)} €`
+      : `✅ Cotation validée — ${total.toFixed(2)} € ajoutés au CA`
+    );
+  }
   renderLivePatientList();
 }
 
@@ -2084,6 +2107,17 @@ function _openCotationComplete() {
   const patient = _cotModalState.patient;
   const modal   = document.getElementById('cot-modal-live');
   if (modal) modal.remove();
+
+  // Poser _editingCotation AVANT la navigation pour que renderCot affiche
+  // le bouton 'Mettre à jour' et que cotation() fasse un upsert
+  const existingInvoice = patient?._cotation?.invoice_number || null;
+  const patientIDBId    = patient?.patient_id || patient?.id || null;
+  window._editingCotation = {
+    invoice_number: existingInvoice,
+    patientId:      patientIDBId,
+    cotationIdx:    null,      // sera résolu par cotation.js via invoice_number
+    _fromTournee:   true,      // flag pour distinguer la source
+  };
 
   if (typeof navTo === 'function') navTo('cot', null);
 
@@ -2106,11 +2140,17 @@ function _openCotationComplete() {
     setV('f-exo', patient.exo  || '');
     setV('f-pr',  patient.medecin || '');
 
-    const desc = (patient.actes_recurrents || patient.texte || patient.description || '').trim();
+    // Pré-remplir avec les actes actuels de la cotation (pas la description brute)
     const fTxt = document.getElementById('f-txt');
-    if (fTxt && desc) {
-      fTxt.value = desc;
-      if (typeof renderLiveReco === 'function') renderLiveReco(desc);
+    if (fTxt) {
+      const cotActes = (patient._cotation?.actes || []);
+      const actesTxt = cotActes.length
+        ? cotActes.map(a => (a.code || '') + (a.nom ? ' ' + a.nom : '')).join(' + ')
+        : (patient.actes_recurrents || patient.texte || patient.description || '').trim();
+      if (actesTxt) {
+        fTxt.value = actesTxt;
+        if (typeof renderLiveReco === 'function') renderLiveReco(actesTxt);
+      }
     }
 
     if (typeof cotClearPatient === 'function') cotClearPatient();
@@ -2124,8 +2164,12 @@ function _openCotationComplete() {
       badge.style.display = 'flex';
     }
 
+    const isEdit = !!existingInvoice;
     if (typeof showToast === 'function') {
-      showToast('👤 ' + (nomComplet || 'Patient') + ' — fiche pre-remplie');
+      showToast(isEdit
+        ? '✏️ ' + (nomComplet || 'Patient') + ' — correction de cotation'
+        : '👤 ' + (nomComplet || 'Patient') + ' — fiche pre-remplie'
+      );
     }
   }, 220);
 }
