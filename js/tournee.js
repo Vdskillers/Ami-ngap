@@ -1471,7 +1471,20 @@ function autoCotationLocale(texte) {
 /* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Tenter de restaurer depuis localStorage si importedData est vide
+  if (!APP.importedData?.patients?.length && !APP.importedData?.entries?.length) {
+    if (typeof _restorePlanningIfNeeded === 'function') _restorePlanningIfNeeded();
+  }
+  // Fallback : utiliser uberPatients déjà chargés par loadUberPatients()
+  let patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  if (!patients.length) {
+    const uber = APP.get('uberPatients') || [];
+    if (uber.length) {
+      // Reconstruire importedData depuis uberPatients
+      APP.importedData = { patients: uber, total: uber.length, source: 'uber_fallback' };
+      patients = uber;
+    }
+  }
   if (!patients.length) {
     if(typeof showToast==='function') showToast('⚠️ Importez des patients avant de démarrer la journée.');
     return;
