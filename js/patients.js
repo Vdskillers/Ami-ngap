@@ -425,8 +425,8 @@ async function openPatientDetail(id) {
       <!-- Barre d'onglets -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px" id="pat-tabs">
         <button id="tab-infos"   style="${tabStyle(true)}"  onclick="_patTab('infos','${id}')">📋 Infos</button>
-        <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
         <button id="tab-cotations" style="${tabStyle(false)}" onclick="_patTab('cotations','${id}')">🧾 Cotations ${p.cotations?.length ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.cotations.length+'</span>' : ''}</button>
+        <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
         <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
       </div>
     </div>
@@ -582,7 +582,10 @@ function _patTabRender(tab, id, p, notes) {
   if (tab === 'cotations') {
     el.innerHTML = `
       <div class="card">
-        <div class="ct" style="margin-bottom:12px">🧾 Historique des cotations</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="ct" style="margin-bottom:0">🧾 Historique des cotations</div>
+          <button class="btn bp bsm" style="font-size:11px" onclick="coterMoisPatient('${id}')">⚡ Coter le mois</button>
+        </div>
         ${p.cotations?.length ? `
         <div style="display:flex;flex-direction:column;gap:8px">
           ${p.cotations.slice().reverse().map((c, ri) => {
@@ -911,6 +914,122 @@ async function deleteCotationPatient(patientId, cotationIdx) {
   showToastSafe('🗑️ Cotation supprimée.');
 }
 
+
+/* ════════════════════════════════════════════════
+   COTER LE MOIS — génère une cotation par jour ouvré
+   pour tous les actes récurrents du patient
+════════════════════════════════════════════════ */
+async function coterMoisPatient(patientId) {
+  // Charger la fiche patient
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+
+  const nomAff = `${p.prenom||''} ${p.nom}`.trim();
+  const texte  = p.actes_recurrents || p.notes || p.pathologies || '';
+
+  if (!texte.trim()) {
+    if (typeof showToastSafe === 'function') showToastSafe('⚠️ Aucun acte récurrent défini pour ce patient. Renseignez les actes dans la fiche Infos.', 'warn');
+    return;
+  }
+
+  // Période : mois courant
+  const now       = new Date();
+  const annee     = now.getFullYear();
+  const mois      = now.getMonth(); // 0-indexed
+  const nbJours   = new Date(annee, mois + 1, 0).getDate();
+  const moisLabel = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  if (!confirm(`Générer les cotations de ${moisLabel} pour ${nomAff} ?
+
+📋 Actes : ${texte.slice(0, 80)}${texte.length > 80 ? '…' : ''}
+📅 ${nbJours} jours (tous les jours, dimanches inclus)
+
+Les cotations existantes pour ce mois ne seront pas dupliquées.`)) return;
+
+  // Tous les jours du mois — dimanches inclus (les infirmières travaillent 7j/7)
+  const jours = [];
+  for (let j = 1; j <= nbJours; j++) {
+    jours.push(new Date(annee, mois, j));
+  }
+
+  // Dates déjà cotées ce mois pour ce patient (éviter doublons)
+  const existingDates = new Set(
+    (p.cotations || [])
+      .filter(c => { const d = new Date(c.date); return d.getFullYear() === annee && d.getMonth() === mois; })
+      .map(c => new Date(c.date).toISOString().slice(0, 10))
+  );
+
+  const joursACoter = jours.filter(d => !existingDates.has(d.toISOString().slice(0, 10)));
+
+  if (joursACoter.length === 0) {
+    if (typeof showToastSafe === 'function') showToastSafe(`ℹ️ Toutes les cotations de ${moisLabel} existent déjà.`);
+    return;
+  }
+
+  // Toast de progression
+  if (typeof showToastSafe === 'function') showToastSafe(`⏳ Génération de ${joursACoter.length} cotations…`);
+
+  let generated = 0, errors = 0;
+
+  for (const jour of joursACoter) {
+    const dateStr  = jour.toISOString().slice(0, 10);
+    const heureStr = p.heure_soin || '08:00';
+    const isWeekend = jour.getDay() === 0 || jour.getDay() === 6;
+
+    try {
+      // Utiliser autoCotationLocale si disponible (moteur IA local), sinon fallback simple
+      let cot;
+      if (typeof autoCotationLocale === 'function') {
+        cot = autoCotationLocale(texte, { date: dateStr, heure: heureStr, dimanche: jour.getDay() === 0, samedi: jour.getDay() === 6 });
+      } else {
+        // Fallback : cotation minimale avec le texte des actes
+        cot = { actes: [{ code: 'AMI 1', nom: texte.slice(0, 60), total: 3.15 }], total: 3.15 };
+      }
+
+      if (!cot || (!cot.actes?.length && !cot.total)) continue;
+
+      const cotEntry = {
+        date:   dateStr,
+        heure:  heureStr,
+        actes:  cot.actes || [],
+        total:  parseFloat(cot.total || 0),
+        soin:   texte.slice(0, 80),
+        source: 'carnet_mois',
+      };
+
+      if (!p.cotations) p.cotations = [];
+      p.cotations.push(cotEntry);
+      generated++;
+    } catch(e) {
+      console.warn('[coterMois] Erreur jour', dateStr, e.message);
+      errors++;
+    }
+  }
+
+  // Sauvegarder en IDB
+  if (generated > 0) {
+    const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    await _idbPut(PATIENTS_STORE, toStore);
+
+    // Sync Supabase en arrière-plan
+    if (typeof _syncCotationsToSupabase === 'function') {
+      _syncCotationsToSupabase([]).catch(() => {});
+    }
+
+    // Rafraîchir l'onglet cotations
+    await openPatientDetail(patientId);
+    _patTab('cotations', patientId);
+
+    const msg = errors > 0
+      ? `⚡ ${generated} cotation(s) générée(s) · ${errors} erreur(s).`
+      : `✅ ${generated} cotation(s) générée(s) pour ${moisLabel}.`;
+    if (typeof showToastSafe === 'function') showToastSafe(msg, 'ok');
+  } else {
+    if (typeof showToastSafe === 'function') showToastSafe('⚠️ Aucune cotation générée. Vérifiez les actes récurrents.', 'warn');
+  }
+}
 
 /* Vérification expiration ordonnances */
 async function checkOrdoExpiry() {
