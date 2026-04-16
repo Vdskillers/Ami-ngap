@@ -302,33 +302,54 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
     min-height:100dvh;
   }
 
-  /* HEADER mobile — compact */
+  /* HEADER mobile — compact, ligne unique */
   .top{
     height:56px;
-    padding:0 16px;
-    gap:8px;
+    padding:0 12px;
+    gap:6px;
+    overflow:hidden;
+    flex-wrap:nowrap;
+    align-items:center;
+  }
+  /* Mode admin sur mobile : reste sur une seule ligne propre */
+  .top.admin-active{
+    height:56px;
+    min-height:56px;
+    flex-wrap:nowrap;
+    padding:0 12px;
     overflow:hidden;
   }
-  /* Mode admin sur mobile : header s'étend sur 2 lignes */
-  .top.admin-active{
-    height:auto;
-    min-height:56px;
-    flex-wrap:wrap;
-    padding:6px 16px;
-    overflow:visible;
+  .top.admin-active .logo{ order:1; flex-shrink:0; }
+  .top.admin-active #mobile-header-fabs{ order:2; margin-left:6px; flex-shrink:0; }
+  .top.admin-active .tr{
+    order:3;
+    margin-left:auto;
+    width:auto;
+    flex-shrink:1;
+    min-width:0;
+    border-top:none;
+    padding:0;
+    justify-content:flex-end;
+    overflow:hidden;
   }
-  .top.admin-active .logo{ order:1; }
-  .top.admin-active #mobile-header-fabs{ order:2; margin-left:auto; }
-  .top.admin-active .tr{ order:3; width:100%; justify-content:flex-start; padding:4px 0 2px; border-top:1px solid rgba(255,95,109,.15); }
-  .top.admin-active #admin-header-controls{ gap:6px; }
-  .top.admin-active .admin-mode-badge{ font-size:9px; padding:3px 8px; }
-  .top.admin-active .bout{ font-size:9px !important; padding:3px 10px !important; }
+  .top.admin-active #admin-header-controls{ gap:5px; flex-shrink:1; min-width:0; }
+  .top.admin-active .admin-mode-badge{
+    font-size:8px;
+    padding:3px 7px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:140px;
+  }
+  .top.admin-active .bout{ font-size:9px !important; padding:3px 9px !important; white-space:nowrap; flex-shrink:0; }
   .ltext{font-size:17px}
   .lsub{display:none}
   .badge{display:none}
   .bvoice{display:none} /* bouton vocal dans fab à la place */
-  .buser span:first-child{display:none} /* cache icône user */
-  .tr{gap:6px}
+  /* Masquer profil + déconnexion normale sur mobile (accessibles via menu Plus) */
+  #btn-profil{ display:none !important; }
+  #btn-logout-normal{ display:none !important; }
+  .tr{gap:5px}
   .bout{font-size:10px;padding:4px 10px}
   .buser{font-size:10px;padding:4px 10px}
 
@@ -432,8 +453,8 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .route-item .btn{width:100%;justify-content:center;margin-top:4px}
   .route-km,.route-time{font-size:10px}
 
-  /* MAP */
-  #dep-map{height:220px}
+  /* MAP — plus haute pour un meilleur rendu mobile */
+  #dep-map{height:340px}
   .map-search{flex-wrap:wrap}
   .map-search input{width:100%}
   .map-btn{flex:1;padding:9px 8px;font-size:12px}
@@ -575,9 +596,9 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
 .tl-actes{font-size:11px;color:var(--m);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-check{font-size:14px;flex-shrink:0}
 
-/* ── Mobile : map compacte ───────────────────── */
+/* ── Mobile : map plus haute ─────────────────── */
 @media(max-width:768px){
-  #dep-map{height:220px}
+  #dep-map{height:340px}
   .map-toolbar{gap:6px}
   #btn-map-fullscreen{padding:6px 10px;font-size:11px}
 }
