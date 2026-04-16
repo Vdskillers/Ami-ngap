@@ -69,28 +69,6 @@ function showApp(){
     // Classe admin-active sur le header pour le layout mobile
     const topBar = document.querySelector('.top');
     if(topBar) topBar.classList.add('admin-active');
-
-    // ── Mobile : afficher nom admin dans header, masquer btn-profil normal ──
-    if(window.innerWidth <= 768) {
-      // Masquer le btn-profil normal (remplacé par pill admin)
-      const btnProfilNormal = $('btn-profil');
-      if(btnProfilNormal) btnProfilNormal.style.display='none';
-      // Injecter pill nom admin dans admin-header-controls (une seule fois)
-      if(!document.getElementById('mobile-admin-name')) {
-        const u2 = S?.user || {};
-        const nomAdmin = ((u2.prenom||'')+' '+(u2.nom||'')).trim() || 'Admin';
-        const namePill = document.createElement('button');
-        namePill.id = 'mobile-admin-name';
-        namePill.onclick = () => { if(typeof openPM==='function') openPM(); };
-        namePill.style.cssText = 'background:rgba(255,95,109,.1);border:1px solid rgba(255,95,109,.25);color:#FF7A85;font-family:var(--fm);font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;cursor:pointer;white-space:nowrap;flex-shrink:0';
-        namePill.textContent = nomAdmin;
-        const admCtrl2 = $('admin-header-controls');
-        const boutBtn = admCtrl2?.querySelector('.bout');
-        if(boutBtn) admCtrl2.insertBefore(namePill, boutBtn);
-        else if(admCtrl2) admCtrl2.appendChild(namePill);
-      }
-    }
-
     $('admin-cot-notice').style.display='none';
     $('priv-cot').style.display='';
     document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
@@ -218,6 +196,12 @@ function showApp(){
 
   // Dispatcher l'event de login pour les modules qui en dépendent (copilote, etc.)
   setTimeout(()=>{ document.dispatchEvent(new CustomEvent('ami:login', { detail: { role: S?.role } })); }, 150);
+
+  // ── Réinitialiser la tournée automatiquement à chaque login ──────────────
+  // Garantit une ardoise propre : pas de données de la session précédente.
+  setTimeout(() => {
+    if (typeof _resetTourneeJourSilent === 'function') _resetTourneeJourSilent();
+  }, 300);
 }
 function switchTab(t){['l','r'].forEach(x=>{$('tab-'+x).classList.toggle('on',x===t);$('pan-'+x).style.display=x===t?'block':'none';});hideM('le','re','ro');}
 async function login(){

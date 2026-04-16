@@ -26,13 +26,7 @@ if (typeof optimizeTour === 'undefined') {
 }
 
 function storeImportedData(d){
-  // Un vrai import utilisateur efface le flag planning-only
-  if (d) delete d._planningOnly;
   APP.importedData=d;
-  // Synchroniser aussi _planningData pour la vue Planning hebdomadaire
-  if (d?.patients?.length || d?.entries?.length) {
-    window.APP._planningData = d;
-  }
   // Sauvegarder dans localStorage (persistance entre sessions)
   if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
@@ -108,15 +102,6 @@ const _onNavLive = e => {
 };
 document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
-
-/* Recharger le planning hebdomadaire quand on navigue vers la vue "pla" */
-const _onNavPla = e => {
-  if (e.detail?.view === 'pla') {
-    setTimeout(_restorePlanningIfNeeded, 100);
-  }
-};
-document.addEventListener('app:nav',     _onNavPla);
-document.addEventListener('ui:navigate', _onNavPla);
 
 function showCaFromImport(){
   if(!APP.importedData)return;
@@ -253,7 +238,7 @@ async function _syncPlanningFromServer() {
     const localSaved = _loadPlanning();
     if (!localSaved || !localSaved.length) {
       _savePlanning(remote);
-      window.APP._planningData = { patients: remote, total: remote.length, source: 'planning_serveur' };
+      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur' };
       _renderPlanningIfVisible();
       console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
     } else {
@@ -266,7 +251,7 @@ async function _syncPlanningFromServer() {
       if (toAdd.length) {
         const merged = [...localSaved, ...toAdd];
         _savePlanning(merged);
-        window.APP._planningData = { patients: merged, total: merged.length, source: 'planning_fusionné' };
+        APP.importedData = { patients: merged, total: merged.length, source: 'planning_fusionné' };
         _renderPlanningIfVisible();
         console.info('[AMI] Planning fusion :', toAdd.length, 'patient(s) ajouté(s) depuis le serveur');
       }
@@ -294,23 +279,24 @@ document.addEventListener('ami:login', () => {
 
 /* Restaurer APP.importedData depuis le planning sauvegardé si vide */
 function _restorePlanningIfNeeded() {
-  // Ne JAMAIS écrire dans APP.importedData depuis ici :
-  // importedData = tournée du jour (vide au login).
-  // Le planning hebdomadaire est stocké séparément dans APP._planningData.
+  if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) {
+    _renderPlanningIfVisible();
+    return;
+  }
   const saved = _loadPlanning();
   if (saved?.length) {
-    window.APP._planningData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    // Utiliser le setter réactif pour déclencher app:update correctement
+    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    _renderPlanningIfVisible();
   }
-  _renderPlanningIfVisible();
 }
 
 /* Rendre le planning uniquement si la vue pla est actuellement visible */
 function _renderPlanningIfVisible() {
   const view = document.getElementById('view-pla');
+  // La visibilité est gérée par classList ('on'), pas style.display
   if (!view || !view.classList.contains('on')) return;
-  const patients = window.APP._planningData?.patients
-    || APP.importedData?.patients
-    || APP.state?.importedData?.patients || [];
+  const patients = APP.importedData?.patients || APP.state?.importedData?.patients || [];
   if (!patients.length) return;
   renderPlanning({}).catch(() => {});
 }
@@ -318,9 +304,8 @@ function _renderPlanningIfVisible() {
 /* Actualiser le planning manuellement (bouton Actualiser dans view-pla) */
 function refreshPlanning() {
   _restorePlanningIfNeeded();
-  const patients = window.APP._planningData?.patients
-    || APP.importedData?.patients || APP.importedData?.entries
-    || APP.state?.importedData?.patients || [];
+  const patients = APP.importedData?.patients || APP.importedData?.entries
+                || APP.state?.importedData?.patients || [];
   if (patients.length) {
     renderPlanning({}).catch(() => {});
   } else {
@@ -355,11 +340,8 @@ async function generatePlanningFromImport(){
 }
 
 async function renderPlanning(d){
-  // Patients : planning hebdomadaire (_planningData) en priorité, sinon importedData (import direct)
-  const rawPatients = window.APP._planningData?.patients
-    || APP.importedData?.patients
-    || APP.importedData?.entries
-    || [];
+  // Patients importés (source principale)
+  const rawPatients = APP.importedData?.patients || APP.importedData?.entries || [];
   const ca = rawPatients.length ? estimateRevenue(rawPatients) : null;
   const todayISO = new Date().toISOString().split('T')[0];
 
@@ -1489,25 +1471,7 @@ function autoCotationLocale(texte) {
 /* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
-  // Tenter de restaurer depuis localStorage si importedData est vide
-  if (!APP.importedData?.patients?.length && !APP.importedData?.entries?.length) {
-    if (typeof _restorePlanningIfNeeded === 'function') _restorePlanningIfNeeded();
-  }
-  // Bloquer si les données viennent uniquement du planning hebdomadaire (pas d'import tournée)
-  if (APP.importedData?._planningOnly) {
-    if(typeof showToast==='function') showToast('⚠️ Importez des patients via Import calendrier ou Carnet patients pour démarrer la tournée.');
-    return;
-  }
-  // Fallback : utiliser uberPatients déjà chargés par loadUberPatients()
-  let patients = APP.importedData?.patients || APP.importedData?.entries || [];
-  if (!patients.length) {
-    const uber = APP.get('uberPatients') || [];
-    if (uber.length) {
-      // Reconstruire importedData depuis uberPatients
-      APP.importedData = { patients: uber, total: uber.length, source: 'uber_fallback' };
-      patients = uber;
-    }
-  }
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   if (!patients.length) {
     if(typeof showToast==='function') showToast('⚠️ Importez des patients avant de démarrer la journée.');
     return;
@@ -1534,20 +1498,6 @@ window.startDay=async function(){
     LIVE_PATIENT_ID = firstP.patient_id || firstP.id || null;
     $('live-patient-name').textContent = firstP.description||firstP.texte||'Premier patient';
     $('live-info').textContent = `Soin 1/${patients.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
-  }
-
-  /* ── Synchroniser uberPatients depuis importedData si pas déjà peuplé ── */
-  const uberCurrent = APP.get('uberPatients') || [];
-  if (!uberCurrent.length && patients.length) {
-    APP.set('uberPatients', patients.map((p, i) => ({
-      ...p,
-      id:      p.patient_id || p.id || i,
-      label:   p.description || p.texte || 'Patient ' + (i + 1),
-      done:    false, absent: false, late: false,
-      urgence: !!(p.urgent || p.urgence),
-      time:    p.heure_soin ? (function(h){ const [hh,mm]=(h||'').split(':').map(Number); const t=new Date(); t.setHours(hh||0,mm||0,0,0); return t.getTime(); })(p.heure_soin) : null,
-      amount:  parseFloat(p.total || p.montant || p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30),
-    })));
   }
 
   /* ── Démarrer le moteur IA temps réel ── */
@@ -2101,6 +2051,11 @@ function resetTourneeJour() {
     ? `Réinitialiser la tournée du jour ?\n\n${n} patient(s) seront effacés de la Tournée IA et du Pilotage de journée.\nCette action ne supprime PAS les fiches du carnet patient.`
     : 'Réinitialiser la tournée du jour ?\n\nLe pilotage sera remis à zéro.';
   if (!confirm(msg)) return;
+  _resetTourneeJourSilent();
+}
+
+/* Reset silencieux — appelé au login automatiquement (sans confirm) */
+function _resetTourneeJourSilent() {
 
   // Reset données importées
   APP.importedData  = null;
@@ -2169,37 +2124,6 @@ function resetTourneeJour() {
   // Arrêter GPS Uber si actif
   if (typeof stopLiveTracking === 'function') stopLiveTracking();
 
-  // ── Nettoyer la carte Leaflet (markers patients + tracé de route) ──────────
-  try {
-    const mapInst = APP.map?.instance || APP.map;
-    if (mapInst && typeof mapInst.removeLayer === 'function') {
-      // Markers patients
-      if (APP.markers && Array.isArray(APP.markers)) {
-        APP.markers.forEach(m => { try { mapInst.removeLayer(m); } catch(_){} });
-        APP.markers = [];
-      }
-      // Tracé de route
-      if (APP._routePolyline) {
-        try { mapInst.removeLayer(APP._routePolyline); } catch(_){}
-        APP._routePolyline = null;
-      }
-      // Marker point de départ
-      if (APP._startMarker) {
-        try { mapInst.removeLayer(APP._startMarker); } catch(_){}
-        APP._startMarker = null;
-      }
-      // Marker GPS live infirmière (uber.js)
-      if (window._liveMarker) {
-        try { mapInst.removeLayer(window._liveMarker); } catch(_){}
-        window._liveMarker = null;
-      }
-    }
-  } catch(e) { console.warn('[AMI] Reset carte KO:', e.message); }
-  // Arrêter l'optimisation live IA si active
-  if (typeof stopLiveOptimization === 'function') stopLiveOptimization();
-  // Effacer le planning local sauvegardé
-  if (typeof _clearPlanning === 'function') _clearPlanning();
-
   // Reset affichage Mode Uber Médical
   const uberNext = $('uber-next-patient');
   if (uberNext) uberNext.innerHTML = '<div style="color:var(--m);font-size:13px">Démarrez la journée pour charger vos patients.</div>';
@@ -2214,6 +2138,7 @@ function resetTourneeJour() {
 
   if (typeof showToast === 'function') showToast('🗑️ Tournée du jour réinitialisée.');
 }
+
 
 /* Patch liveStatus global — affiche TOUJOURS l'état local d'abord */
 window.liveStatus = function() {
