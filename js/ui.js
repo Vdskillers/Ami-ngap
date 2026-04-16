@@ -178,6 +178,6 @@ const admQ        = $('adm-q');           if (admQ)         admQ.addEventListene
    INIT
 ════════════════════════════════════════════════ */
 const today = new Date().toISOString().split('T')[0];
-['f-ds', 'f-pr-dt', 'v-ds'].forEach(id => { const e = $(id); if (e) e.value = today; });
+['f-ds', 'f-pr-dt'].forEach(id => { const e = $(id); if (e) e.value = today; });
 updateNavMode();
 checkAuth();
