@@ -274,8 +274,6 @@ async function optimizeTour(patients, startPoint, startTimeMin = 480, mode = 'ia
       };
     });
 
-  const noCoords = patients.filter(p => !p.lat || !p.lng);
-
   let route    = [];
   let current  = startPoint;
   let currentTime = startTimeMin;
