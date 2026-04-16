@@ -80,26 +80,24 @@
     padding: 4px 11px !important;
   }
 
-  /* ── SALUTATION MOBILE ── */
+  /* ── SALUTATION MOBILE — nom uniquement, sans "BONJOUR" ── */
   #mobile-greeting {
-    flex-direction: column !important;
-    line-height: 1.15 !important;
-    margin-left: 4px !important;
+    display: none !important; /* remplacé par #mobile-admin-name */
   }
 
-  #mobile-greeting-hello {
-    font-size: 9px !important;
-    color: rgba(255,255,255,.7) !important;
+  /* Pill nom admin dans le header mobile */
+  #mobile-admin-name {
+    background: rgba(255,95,109,.1) !important;
+    border: 1px solid rgba(255,95,109,.25) !important;
+    color: #FF7A85 !important;
     font-family: var(--fm) !important;
-    letter-spacing: .08em !important;
-    text-transform: uppercase !important;
-  }
-
-  #mobile-greeting-name {
-    font-size: 14px !important;
+    font-size: 11px !important;
     font-weight: 700 !important;
-    color: #F0F4F8 !important;
-    letter-spacing: -.3px !important;
+    padding: 4px 11px !important;
+    border-radius: 20px !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
   }
 
   /* ── BOTTOM NAV ── */
