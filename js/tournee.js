@@ -25,9 +25,13 @@ if (typeof optimizeTour === 'undefined') {
   };
 }
 
-/* ── Stockage séparé tournée (n'affecte pas le Planning hebdomadaire) ── */
+/* ══════════════════════════════════════════════════════════
+   TOURNÉE DATA — stockage séparé du Planning hebdomadaire
+   - tourneeData : écrit/lu uniquement par import manuel
+   - importedData : Planning hebdomadaire (weekly_planning)
+   Les deux ne se mélangent JAMAIS.
+══════════════════════════════════════════════════════════ */
 function storeTourneeData(d) {
-  // Tournée IA + Pilotage : clé séparée de APP.importedData (Planning hebdomadaire)
   APP.tourneeData = d;
   try {
     if (d) localStorage.setItem('ami_tournee_session', JSON.stringify(d));
@@ -44,26 +48,11 @@ function loadTourneeData() {
   return null;
 }
 
-/* Import depuis le Carnet patients → écrit dans tourneeData (pas dans importedData/planning) */
-function importTourneePatients(d) {
-  storeTourneeData(d);
-  // Mettre à jour le banner + CA
-  if (typeof showCaFromImport === 'function') showCaFromImport();
-  const banner = $('pla-import-banner');
-  const info   = $('pla-import-info');
-  if (banner && d) {
-    const n = d.total || d.patients?.length || 0;
-    if (info) info.innerHTML = `✅ <strong>${n}</strong> patient(s) prêt(s) pour la tournée.`;
-    banner.style.display = 'block';
-  }
-}
-
 function storeImportedData(d){
   APP.importedData=d;
-  // Si c'est un import depuis le Carnet patients → aussi dans tourneeData (Tournée IA)
-  // Si c'est depuis weekly_planning/serveur → NE PAS écrire dans tourneeData
-  const src = d?.source || '';
-  if (d && /carnet_patients|import|calendrier/i.test(src)) {
+  // Import carnet/calendrier → aussi dans tourneeData (Tournée IA)
+  // weekly_planning/serveur → uniquement importedData (Planning hebdo), PAS tourneeData
+  if (d && /carnet_patients|import|calendrier/i.test(d.source || '')) {
     storeTourneeData(d);
   }
   // Sauvegarder dans localStorage (persistance entre sessions)
@@ -625,7 +614,8 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const _td = loadTourneeData(); const rawPatients = _td?.patients || _td?.entries || [];
+  const _td = loadTourneeData();
+  const rawPatients = _td?.patients || _td?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -838,8 +828,7 @@ function removeFromTournee(encodedId, fallbackIndex) {
   if (idx === -1) return;
   patients.splice(idx, 1);
   data.total = patients.length;
-  if (typeof storeImportedData === 'function') storeImportedData(data);
-  else APP.importedData = data;
+  storeTourneeData(data);
   if (typeof showToast === 'function') showToast('Patient retiré de la tournée');
   optimiserTournee();
 }
@@ -2092,7 +2081,7 @@ function resetTourneeJour() {
     : 'Réinitialiser la tournée du jour ?\n\nLe pilotage sera remis à zéro.';
   if (!confirm(msg)) return;
 
-  // Reset tournée uniquement — ne pas toucher à APP.importedData (Planning hebdomadaire)
+  // Vider uniquement la tournée — NE PAS toucher à APP.importedData (Planning hebdo)
   storeTourneeData(null);
   APP.uberPatients  = [];
   APP.nextPatient   = null;
