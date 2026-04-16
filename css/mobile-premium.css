@@ -30,9 +30,10 @@
   /* ── Masquer greeting en mode admin ── */
   .top.admin-active #mobile-greeting { display: none !important; }
 
-  /* ── Header admin : annuler sticky pour éviter chevauchement ── */
+  /* ── Annuler sticky en mode admin mobile — le header 2 lignes déborde sinon ── */
   .top.admin-active {
     position: relative !important;
+    top: auto !important;
   }
 
   /* ── TOPBAR ── */
@@ -132,6 +133,11 @@
   }
 
   /* ── MAIN CONTENT ── */
+  /* En mode admin, le header fait 2 lignes — forcer le recalcul du grid */
+  #app:has(.top.admin-active) {
+    grid-template-rows: auto 1fr 64px !important;
+  }
+
   .main {
     background: #090D11 !important;
   }
