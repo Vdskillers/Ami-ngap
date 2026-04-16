@@ -52,7 +52,7 @@ function storeImportedData(d){
   APP.importedData=d;
   // Import carnet/calendrier → aussi dans tourneeData (Tournée IA)
   // weekly_planning/serveur → uniquement importedData (Planning hebdo), PAS tourneeData
-  if (d && /carnet_patients|import|calendrier/i.test(d.source || '')) {
+  if (d && /carnet|import|calendrier/i.test(d.source || '')) {
     storeTourneeData(d);
   }
   // Sauvegarder dans localStorage (persistance entre sessions)
