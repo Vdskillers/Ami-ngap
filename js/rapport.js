@@ -436,14 +436,71 @@ function searchNGAP(query) {
     .map(([code, info]) => ({ code, ...info }));
 }
 
+/* Catégories pour règles de coefficient */
+const NGAP_ACTE_CATEGORIES = {
+  AMI1: 'principal', AMI2: 'principal', AMI3: 'principal',
+  AMI4: 'principal', AMI5: 'principal', AMI6: 'principal',
+  AIS1: 'principal', AIS2: 'principal', AIS3: 'principal',
+  BSA: 'bilan', BSB: 'bilan', BSC: 'bilan',
+  IFD: 'majoration', IK: 'majoration',
+  MN: 'majoration', MN2: 'majoration', MD: 'majoration',
+  MIE: 'majoration', MCI: 'majoration', MAU: 'majoration',
+};
+
+/**
+ * Valide les règles NGAP de cumul ET de coefficient :
+ * - Cumuls interdits (AIS+BSx, BSx+BSx, MN+MN2, MN+MD...)
+ * - Règle acte principal (coef 1) / actes secondaires (coef 0.5)
+ * - Un seul acte principal par passage
+ * - AIS + BSx : alerte URSSAF critique
+ */
 function validateNGAPCumul(actes) {
-  const codes   = actes.map(a => (a.code||'').toUpperCase());
-  const errors  = [];
+  const codes  = actes.map(a => (a.code||'').toUpperCase());
+  const errors = [];
+
+  // ── 1. Cumuls interdits ────────────────────────────────────────────────
   for (const [a, b] of NGAP_CUMUL_INTERDIT) {
     const hasA = codes.some(c => c.startsWith(a));
     const hasB = codes.some(c => c.startsWith(b));
-    if (hasA && hasB) errors.push(`Cumul interdit : ${a} + ${b}`);
+    if (hasA && hasB) {
+      const isCritical = (a.startsWith('AIS') && b.startsWith('BS')) ||
+                         (a.startsWith('BS') && b.startsWith('BS')) ||
+                         (a.startsWith('BS') && b.startsWith('AIS'));
+      errors.push((isCritical ? '🚨 URSSAF — ' : '⚠️ ') + `Cumul interdit : ${a} + ${b}`);
+    }
   }
+
+  // ── 2. Règle acte principal / actes secondaires ────────────────────────
+  const principaux = actes.filter(a => {
+    const cat = NGAP_ACTE_CATEGORIES[(a.code||'').toUpperCase()];
+    return cat === 'principal';
+  });
+
+  if (principaux.length > 1) {
+    // Trouver l'acte principal (plus grand tarif NGAP)
+    const sorted = [...principaux].sort((a, b) => {
+      const ta = NGAP_NOMENCLATURE[(a.code||'').toUpperCase()]?.tarif || 0;
+      const tb = NGAP_NOMENCLATURE[(b.code||'').toUpperCase()]?.tarif || 0;
+      return tb - ta;
+    });
+    const principal = sorted[0];
+    const secondaires = sorted.slice(1);
+
+    secondaires.forEach(a => {
+      const coeff = a.coefficient || 1;
+      if (coeff !== 0.5) {
+        errors.push(`⚠️ ${a.code} est un acte secondaire — coefficient doit être 0,5 (demi-tarif NGAP)`);
+      }
+    });
+
+    errors.push(`ℹ️ Acte principal : ${principal.code} (tarif plein) · Secondaires : ${secondaires.map(a => a.code).join(', ')} (demi-tarif ×0,5)`);
+  }
+
+  // ── 3. Majoration nuit profonde préférable ─────────────────────────────
+  if (codes.includes('MN') && !codes.includes('MN2')) {
+    // Vérifier si l'heure suggère MN2 (non vérifiable ici sans contexte — info uniquement)
+  }
+
   return errors;
 }
 

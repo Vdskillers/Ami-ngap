@@ -189,7 +189,28 @@ function renderCot(d) {
   <div class="al">${a.length ? a.map(x => `<div class="ar"><div class="ac ${cc(x.code)}">${x.code || '?'}</div><div class="an">${x.nom || ''}</div><div class="ao">×${(x.coefficient || 1).toFixed(1)}</div><div class="at">${fmt(x.total)}</div></div>`).join('') : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}</div>
   ${al.length ? `<div class="aic" style="margin-top:12px">${al.map(x => `<div class="ai ${x.startsWith('⚠️')?'wa':'er'}">⚠️ ${x.replace(/^⚠️\s*/,'')}</div>`).join('')}</div>` : '<div class="ai su" style="margin-top:12px">✅ Aucune alerte NGAP</div>'}
   ${gainBadge}
-  ${op.length ? `<div style="margin-top:12px"><div class="lbl" style="font-size:10px;margin-bottom:6px">Optimisations détectées</div><div class="aic">${op.map(x => `<div class="ai in">💡 ${x}</div>`).join('')}</div></div>` : ''}
+  ${op.length ? (() => {
+    // Séparer upgrades (valorisation), pertes de revenus, incompatibilités, optimisations générales
+    const upgrades      = op.filter(o => (typeof o === 'object' ? o.type : '') === 'upgrade');
+    const lostRevenue   = op.filter(o => (typeof o === 'object' ? o.type : '') === 'lost_revenue');
+    const incompats     = op.filter(o => (typeof o === 'object' ? o.type : '') === 'incompatibilite');
+    const others        = op.filter(o => !['upgrade','lost_revenue','incompatibilite'].includes(typeof o === 'object' ? o.type : 'optimization'));
+    const getMsg  = o => typeof o === 'string' ? o : (o.msg || '');
+    const getGain = o => typeof o === 'object' && o.gain > 0 ? ` <strong style="color:var(--a)">+${o.gain.toFixed(2)} €</strong>` : '';
+    const getCode = o => typeof o === 'object' && o.code_suggere ? ` <span style="font-family:var(--fm);font-size:10px;background:var(--ad);color:var(--a);padding:1px 7px;border-radius:20px;margin-left:6px">${o.code_suggere}</span>` : '';
+    let html = '<div style="margin-top:14px">';
+    if (upgrades.length) html += `<div class="lbl" style="font-size:10px;margin-bottom:6px;color:#22c55e">⬆️ Valorisations légales possibles</div>`
+      + `<div class="aic">${upgrades.map(o => `<div class="ai su" style="border-left:3px solid #22c55e">`
+        + `⬆️ ${getMsg(o)}${getGain(o)}${getCode(o)}</div>`).join('')}</div>`;
+    if (lostRevenue.length) html += `<div class="lbl" style="font-size:10px;margin-bottom:6px;margin-top:10px;color:var(--w)">💰 Revenus non cotés détectés</div>`
+      + `<div class="aic">${lostRevenue.map(o => `<div class="ai wa">`
+        + `💰 ${getMsg(o)}${getGain(o)}${getCode(o)}</div>`).join('')}</div>`;
+    if (incompats.length) html += `<div class="aic" style="margin-top:8px">${incompats.map(o =>`<div class="ai er">${getMsg(o)}</div>`).join('')}</div>`;
+    if (others.length) html += `<div class="lbl" style="font-size:10px;margin-bottom:6px;margin-top:${upgrades.length||lostRevenue.length?10:0}px">💡 Optimisations</div>`
+      + `<div class="aic">${others.map(o => `<div class="ai in">💡 ${getMsg(o)}${getGain(o)}</div>`).join('')}</div>`;
+    html += '</div>';
+    return html;
+  })() : ''}
   ${d.ai_issues && d.ai_issues.length ? `<div class="aic" style="margin-top:8px">${d.ai_issues.map(x=>`<div class="ai wa">🔍 ${x}</div>`).join('')}</div>` : ''}
   </div>`;
 }
