@@ -5,8 +5,6 @@
 
 ---
 
-## ⚠️ Points de vigilance N8N v7 (audit 17 avril 2026)
-
 ### ✅ Routes alignées frontend ↔ N8N v7
 | Route N8N | Méthode | Frontend | Statut |
 |---|---|---|---|
@@ -14,20 +12,6 @@
 | `/webhook/ami-historique` | GET | `dashboard.js`, `rapport.js`, `tresorerie.js`, `offline-queue.js` | ✅ OK (bypassed Supabase direct) |
 | `/webhook/ami-supprimer` | POST | `worker.js` route interne | ✅ OK |
 
-### ⚠️ Nouveau champ v7 — `preuve_soin` non encore envoyé
-Le workflow N8N v7 introduit un champ `preuve_soin` (type, timestamp, hash, force_probante).  
-**Actuellement `cotation.js` ne l'envoie pas** → N8N utilise le défaut `auto_declaration` (force_probante: STANDARD).  
-À intégrer dans `cotation.js` payload pour activer le bouclier anti-redressement CPAM complet.
-
-```javascript
-// À ajouter dans cotation.js — payload apiCall('/webhook/ami-calcul', {...})
-preuve_soin: {
-  type: 'auto_declaration',       // ou 'signature_patient' / 'photo'
-  timestamp: new Date().toISOString(),
-  certifie_ide: true,
-  geo_zone: 'Finistère-29'        // département uniquement — jamais coordonnées précises
-}
-```
 
 ### ℹ️ `invoice_number` absent de l'INSERT N8N
 Le nœud **"Sauvegarder en BDD"** dans N8N n'insère pas `invoice_number` dans la table `cotations`.  
