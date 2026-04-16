@@ -69,9 +69,7 @@ function showApp(){
     // Classe admin-active sur le header pour le layout mobile
     const topBar = document.querySelector('.top');
     if(topBar) topBar.classList.add('admin-active');
-    // Cacher le greeting mobile en mode admin (inutile + prend de la place)
-    const greet = document.getElementById('mobile-greeting');
-    if(greet) greet.style.display = 'none';
+
     $('admin-cot-notice').style.display='none';
     $('priv-cot').style.display='';
     document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
