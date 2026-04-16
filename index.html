@@ -877,13 +877,43 @@
             }
 
             if (!pat.cotations) pat.cotations = [];
-            pat.cotations.push({
-              date:   today,
-              actes:  p._cotation.actes || [],
-              total:  parseFloat(p._cotation.total || 0),
-              soin:   (p.description || p.texte || '').slice(0, 120),
-              source: p._cotation.auto ? 'tournee_auto' : 'tournee',
-            });
+
+            // ── Règle stricte no-doublon ──────────────────────────────
+            // Résolution index : invoice_number > source+date du jour
+            const _cotInvoice = p._cotation?.invoice_number || null;
+            let _cotIdx = _cotInvoice
+              ? pat.cotations.findIndex(c => c.invoice_number === _cotInvoice)
+              : -1;
+            if (_cotIdx < 0) {
+              _cotIdx = pat.cotations.findIndex(c =>
+                (c.source === 'tournee' || c.source === 'tournee_auto' ||
+                 c.source === 'tournee_live' || c.source === 'cotation_edit') &&
+                (c.date || '').slice(0, 10) === today
+              );
+            }
+
+            const _cotEntry = {
+              date:           today,
+              actes:          p._cotation.actes || [],
+              total:          parseFloat(p._cotation.total || 0),
+              soin:           (p.description || p.texte || '').slice(0, 120),
+              invoice_number: _cotInvoice,
+              source:         p._cotation.auto ? 'tournee_auto' : 'tournee',
+              _synced:        false,
+            };
+
+            if (_cotIdx >= 0) {
+              // Cotation existante → upsert
+              pat.cotations[_cotIdx] = { ...pat.cotations[_cotIdx], ..._cotEntry };
+            } else if (!_cotInvoice || row) {
+              // Nouveau patient (row=null, pas d'invoice) OU première cotation de ce patient
+              // Pas d'invoice + patient existant → push seulement si pas encore de cotation aujourd'hui
+              const _alreadyToday = pat.cotations.some(c =>
+                (c.date || '').slice(0, 10) === today &&
+                (c.source === 'tournee' || c.source === 'tournee_auto')
+              );
+              if (!_alreadyToday) pat.cotations.push(_cotEntry);
+            }
             pat.updated_at = today;
 
             await _idbPut(PATIENTS_STORE, {
@@ -1098,41 +1128,20 @@
         document.body.style.overflow = '';
       }
 
-      /* ── Ouvrir la cotation d'un patient depuis la modale état/bilan ── */
+      /* ── Ouvrir la cotation d'un patient depuis la modale ── */
       function ouvrirCotationDepuisEtat(idx) {
         fermerEtatTournee();
-
-        // uberPatients est la source autoritaire pour le bilan tournée
-        const uberPats = (typeof APP !== 'undefined') ? (APP.get('uberPatients') || []) : [];
-        const impPats  = (typeof APP !== 'undefined')
-          ? (APP.importedData?.patients || APP.importedData?.entries || [])
-          : [];
-        const patients = uberPats.length ? uberPats : impPats;
-        const patient  = patients[idx];
-
+        /* Utiliser le snapshot stocké dans la modale (data attr) */
+        const patients = APP.get('uberPatients') || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
         if (typeof openCotationPatient === 'function') {
-          // openCotationPatient gère lui-même la source (uberPatients en priorité)
           openCotationPatient(idx);
-        } else if (patient) {
-          // Fallback manuel : pré-remplir les champs directement
+        } else {
+          const p = patients[idx];
+          if (p) {
+            const txt = document.getElementById('f-txt');
+            if (txt) txt.value = p.description || p.texte || '';
+          }
           if (typeof navTo === 'function') navTo('cot', null);
-          setTimeout(() => {
-            const setV = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-            const nom = ([patient.prenom, patient.nom].filter(Boolean).join(' ') || patient._nomAff || '').trim();
-            setV('f-pt',  nom);
-            setV('f-ddn', patient.ddn  || '');
-            setV('f-sec', patient.nir  || patient.secu || '');
-            setV('f-amo', patient.amo  || '');
-            setV('f-amc', patient.amc  || '');
-            setV('f-exo', patient.exo  || '');
-            setV('f-pr',  patient.medecin || '');
-            const desc = (patient.actes_recurrents || patient.texte || patient.description || '').trim();
-            const fTxt = document.getElementById('f-txt');
-            if (fTxt && desc) {
-              fTxt.value = desc;
-              if (typeof renderLiveReco === 'function') renderLiveReco(desc);
-            }
-          }, 200);
         }
       }
 
