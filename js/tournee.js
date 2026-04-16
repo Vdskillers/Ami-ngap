@@ -578,7 +578,8 @@ function _planningRemovePatient(idx) {
 
 /* Effacer tout le planning hebdomadaire */
 function _planningResetAll() {
-  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
+  const _tdReset = loadTourneeData();
+  const n = (_tdReset?.patients || _tdReset?.entries || []).length;
   if (!confirm(`Réinitialiser le planning ?\n\n${n} patient(s) seront supprimés.\nCette action ne supprime PAS les fiches du carnet patient.`)) return;
   APP.importedData = null;
   _clearPlanning();
@@ -1646,8 +1647,9 @@ window.liveAction=async function(action){
    LISTE PATIENTS PILOTAGE — Affichage local avec état
    ============================================================ */
 function renderLivePatientList() {
-  // Fusionner importedData + uberPatients pour avoir les statuts à jour des deux modes
-  const imported = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Fusionner tourneeData + uberPatients pour avoir les statuts à jour
+  const _tdLive = loadTourneeData();
+  const imported = _tdLive?.patients || _tdLive?.entries || [];
   const uber = APP.get('uberPatients') || [];
 
   // Construire un index uberPatients par id/patient_id pour synchroniser les statuts
@@ -2075,7 +2077,8 @@ async function openCotationPatient(patientIndex) {
    Accessible depuis Tournée IA ET Pilotage de journée.
    ============================================================ */
 function resetTourneeJour() {
-  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
+  const _tdReset = loadTourneeData();
+  const n = (_tdReset?.patients || _tdReset?.entries || []).length;
   const msg = n > 0
     ? `Réinitialiser la tournée du jour ?\n\n${n} patient(s) seront effacés de la Tournée IA et du Pilotage de journée.\nCette action ne supprime PAS les fiches du carnet patient.`
     : 'Réinitialiser la tournée du jour ?\n\nLe pilotage sera remis à zéro.';
