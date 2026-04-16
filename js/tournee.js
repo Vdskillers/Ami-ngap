@@ -29,6 +29,10 @@ function storeImportedData(d){
   // Un vrai import utilisateur efface le flag planning-only
   if (d) delete d._planningOnly;
   APP.importedData=d;
+  // Synchroniser aussi _planningData pour la vue Planning hebdomadaire
+  if (d?.patients?.length || d?.entries?.length) {
+    window.APP._planningData = d;
+  }
   // Sauvegarder dans localStorage (persistance entre sessions)
   if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
@@ -249,7 +253,7 @@ async function _syncPlanningFromServer() {
     const localSaved = _loadPlanning();
     if (!localSaved || !localSaved.length) {
       _savePlanning(remote);
-      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur', _planningOnly: true };
+      window.APP._planningData = { patients: remote, total: remote.length, source: 'planning_serveur' };
       _renderPlanningIfVisible();
       console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
     } else {
@@ -262,7 +266,7 @@ async function _syncPlanningFromServer() {
       if (toAdd.length) {
         const merged = [...localSaved, ...toAdd];
         _savePlanning(merged);
-        APP.importedData = { patients: merged, total: merged.length, source: 'planning_fusionné', _planningOnly: true };
+        window.APP._planningData = { patients: merged, total: merged.length, source: 'planning_fusionné' };
         _renderPlanningIfVisible();
         console.info('[AMI] Planning fusion :', toAdd.length, 'patient(s) ajouté(s) depuis le serveur');
       }
@@ -290,25 +294,23 @@ document.addEventListener('ami:login', () => {
 
 /* Restaurer APP.importedData depuis le planning sauvegardé si vide */
 function _restorePlanningIfNeeded() {
-  if (APP.importedData?.patients?.length || APP.importedData?.entries?.length) {
-    _renderPlanningIfVisible();
-    return;
-  }
+  // Ne JAMAIS écrire dans APP.importedData depuis ici :
+  // importedData = tournée du jour (vide au login).
+  // Le planning hebdomadaire est stocké séparément dans APP._planningData.
   const saved = _loadPlanning();
   if (saved?.length) {
-    // _planningOnly : signale que ces données viennent du planning hebdomadaire.
-    // Elles alimentent la vue Planning mais PAS la Tournée IA ni le Pilotage.
-    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé', _planningOnly: true };
-    _renderPlanningIfVisible();
+    window.APP._planningData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
   }
+  _renderPlanningIfVisible();
 }
 
 /* Rendre le planning uniquement si la vue pla est actuellement visible */
 function _renderPlanningIfVisible() {
   const view = document.getElementById('view-pla');
-  // La visibilité est gérée par classList ('on'), pas style.display
   if (!view || !view.classList.contains('on')) return;
-  const patients = APP.importedData?.patients || APP.state?.importedData?.patients || [];
+  const patients = window.APP._planningData?.patients
+    || APP.importedData?.patients
+    || APP.state?.importedData?.patients || [];
   if (!patients.length) return;
   renderPlanning({}).catch(() => {});
 }
@@ -316,8 +318,9 @@ function _renderPlanningIfVisible() {
 /* Actualiser le planning manuellement (bouton Actualiser dans view-pla) */
 function refreshPlanning() {
   _restorePlanningIfNeeded();
-  const patients = APP.importedData?.patients || APP.importedData?.entries
-                || APP.state?.importedData?.patients || [];
+  const patients = window.APP._planningData?.patients
+    || APP.importedData?.patients || APP.importedData?.entries
+    || APP.state?.importedData?.patients || [];
   if (patients.length) {
     renderPlanning({}).catch(() => {});
   } else {
@@ -352,8 +355,11 @@ async function generatePlanningFromImport(){
 }
 
 async function renderPlanning(d){
-  // Patients importés (source principale)
-  const rawPatients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Patients : planning hebdomadaire (_planningData) en priorité, sinon importedData (import direct)
+  const rawPatients = window.APP._planningData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries
+    || [];
   const ca = rawPatients.length ? estimateRevenue(rawPatients) : null;
   const todayISO = new Date().toISOString().split('T')[0];
 
