@@ -965,8 +965,10 @@ async function _syncCotationsToSupabase(patients) {
           const p = { id: row.id, ...((typeof _dec === 'function' ? _dec(row._data) : {}) || {}) };
           if (!Array.isArray(p.cotations)) continue;
           for (const cot of p.cotations) {
-            // Synchroniser uniquement les cotations récentes (dernières 24h) non déjà sync
+            // Synchroniser uniquement les cotations récentes non encore synchro
             if (cot._synced) continue;
+            // Ne pas re-envoyer les cotations déjà corrigées via PATCH (worker)
+            if (cot.source === 'cotation_edit' || cot.source === 'ngap_edit') continue;
             const cotDate = (cot.date || '').slice(0, 10);
             // Fenêtre élargie : 7 derniers jours pour rattraper les cotations manquées
             const sevenDaysAgo = new Date(Date.now() - 7*24*3600*1000).toISOString().slice(0,10);
@@ -2080,10 +2082,13 @@ function _validateCotationLive() {
         updated_at:     new Date().toISOString(),
       };
       if (existingIdx >= 0) {
+        // Cotation existante → mise à jour stricte
         p.cotations[existingIdx] = cotEntry;
-      } else {
+      } else if (!existingInvoice) {
+        // Pas d'invoice existant → première cotation de ce patient aujourd'hui
         p.cotations.push(cotEntry);
       }
+      // existingInvoice présent mais introuvable → NE PAS push (évite doublon)
       p.updated_at = new Date().toISOString();
       await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at });
     } catch(e) { console.warn('[AMI] Sauvegarde cotation IDB KO:', e.message); }
