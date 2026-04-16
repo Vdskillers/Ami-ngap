@@ -26,16 +26,8 @@ if (typeof optimizeTour === 'undefined') {
 }
 
 function storeImportedData(d){
-  APP.importedData=d;
-  // Sauvegarder dans localStorage — REMPLACE complètement l'ancien contenu
-  if (d?.patients?.length || d?.entries?.length) {
-    // Effacer d'abord pour éviter toute fusion parasite avec de vieilles données
-    _clearPlanning();
-    _syncPlanningStorage();
-  } else if (!d) {
-    // null explicite = reset complet
-    _clearPlanning();
-  }
+  // setter APP.importedData déclenche app:update (synchrone) → _clearPlanning + _savePlanning
+  APP.importedData = d;
   // Mettre à jour le banner Planning
   const banner=$('pla-import-banner');
   const info=$('pla-import-info');
@@ -288,7 +280,10 @@ document.addEventListener('app:update', e => {
   if (e.detail.key !== 'importedData') return;
   const d = e.detail.value;
   if (d?.patients?.length || d?.entries?.length) {
+    _clearPlanning();
     _savePlanning(d.patients || d.entries);
+  } else if (d === null || d === undefined) {
+    _clearPlanning();
   }
 });
 
@@ -296,8 +291,17 @@ document.addEventListener('app:update', e => {
 document.addEventListener('ami:login', () => {
   setTimeout(() => {
     _restorePlanningIfNeeded();
-    // Sync depuis le serveur après restauration locale (navigateur ↔ mobile)
-    setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
+    // Sync depuis le serveur SEULEMENT si aucune donnée locale récente (< 30s)
+    // Évite d'écraser un import fraîchement fait avant la fin du login
+    const localSaved = _loadPlanning();
+    const hasRecentLocal = localSaved?.length > 0;
+    if (!hasRecentLocal) {
+      setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
+    }
+    // Si données locales présentes, sync serveur différé de 5s (laisse le temps à l'UI)
+    else {
+      setTimeout(() => _syncPlanningFromServer().catch(() => {}), 5000);
+    }
   }, 200);
 });
 
@@ -623,6 +627,8 @@ async function optimiserTournee(){
 
   const _imp = APP.get('importedData') || APP.importedData || APP.state?.importedData;
   const rawPatients = _imp?.patients || _imp?.entries || [];
+  // Debug — à supprimer après confirmation
+  console.log('[AMI-TUR] importedData:', _imp, 'rawPatients:', rawPatients.length);
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -644,6 +650,31 @@ async function optimiserTournee(){
     $('terr-m').textContent='📍 Définis ton point de départ (bouton GPS ou clic sur la carte)';
     $('res-tur').classList.add('show'); return;
   }
+
+  // ── Géocodage automatique des patients sans GPS mais avec adresse ──────────
+  const needsGeo = rawPatients.filter(p => (!p.lat || !p.lng) && (p.adresse || p.addressFull || p.address));
+  if (needsGeo.length > 0 && typeof _geocodeAdresse === 'function') {
+    _showOptimProgress(`📡 Géocodage de ${needsGeo.length} adresse(s)…`);
+    for (const p of needsGeo) {
+      try {
+        const addr = p.adresse || p.addressFull || p.address || '';
+        if (!addr.trim() || addr.trim() === 'France') continue;
+        const coords = await _geocodeAdresse(addr, p);
+        if (coords?.lat && coords?.lng) {
+          p.lat = coords.lat;
+          p.lng = coords.lng;
+          p.geoScore = coords.geoScore || 70;
+        }
+      } catch { /* silencieux */ }
+    }
+    // Sauvegarder les nouvelles coordonnées dans APP.importedData
+    const _impForGeo = APP.get('importedData') || APP.importedData;
+    if (_impForGeo) {
+      APP.importedData = { ..._impForGeo };
+      _syncPlanningStorage();
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   ld('btn-tur',true); $('res-tur').classList.remove('show');
   _showOptimProgress('🧠 Calcul des temps de trajet réels…');
