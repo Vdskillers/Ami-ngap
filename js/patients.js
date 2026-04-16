@@ -39,17 +39,29 @@ function _getDBName() {
 /* ════════════════════════════════════════════════
    INIT BASE INDEXEDDB
 ════════════════════════════════════════════════ */
+// Verrou d'ouverture : évite les ouvertures simultanées concurrentes
+let _patientsDBOpeningPromise = null;
+
 async function initPatientsDB() {
   const currentUserId = S?.user?.id || S?.user?.email || 'local';
-  // Si la DB est ouverte pour un autre user (changement de session), la fermer
+
+  // Si la DB est ouverte pour un autre user, la fermer proprement
   if (_patientsDB && _patientsDBUserId !== currentUserId) {
-    _patientsDB.close();
+    // Attendre la fin des transactions en cours avant de fermer
+    try { _patientsDB.close(); } catch (_) {}
     _patientsDB = null;
     _patientsDBUserId = null;
+    _patientsDBOpeningPromise = null;
   }
+
+  // DB déjà ouverte et saine pour le bon user → retourner directement
   if (_patientsDB) return _patientsDB;
+
+  // Si une ouverture est déjà en cours, attendre qu'elle termine (évite la race)
+  if (_patientsDBOpeningPromise) return _patientsDBOpeningPromise;
+
   const dbName = _getDBName();
-  return new Promise((resolve, reject) => {
+  _patientsDBOpeningPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(dbName, DB_VERSION);
     req.onupgradeneeded = e => {
       const db = e.target.result;
@@ -65,12 +77,30 @@ async function initPatientsDB() {
     req.onsuccess = e => {
       _patientsDB = e.target.result;
       _patientsDBUserId = S?.user?.id || S?.user?.email || 'local';
+      _patientsDBOpeningPromise = null;
+
+      // Détecter une fermeture inattendue (ex: navigateur qui force la fermeture)
+      _patientsDB.onclose = () => {
+        console.warn('[AMI] IDB fermée de façon inattendue — réouverture au prochain accès');
+        _patientsDB = null;
+        _patientsDBUserId = null;
+        _patientsDBOpeningPromise = null;
+      };
+
       resolve(_patientsDB);
       // Migration silencieuse clé de chiffrement
       _migratePatientKeyIfNeeded().catch(()=>{});
     };
-    req.onerror   = () => reject(req.error);
+    req.onerror = () => {
+      _patientsDBOpeningPromise = null;
+      reject(req.error);
+    };
+    req.onblocked = () => {
+      console.warn('[AMI] IDB bloquée — une autre instance a la DB ouverte');
+    };
   });
+
+  return _patientsDBOpeningPromise;
 }
 
 /* ── Chiffrement AES simple (clé dérivée de l'userId stable) ── */
@@ -115,42 +145,62 @@ async function _migratePatientKeyIfNeeded() {
 }
 
 
+/* Exécute une opération IDB avec retry automatique si la connexion se ferme */
+async function _idbExec(fn, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const db = await initPatientsDB();
+      return await fn(db);
+    } catch (e) {
+      const isClosing = e?.name === 'InvalidStateError'
+        || (e?.message || '').includes('closing')
+        || (e?.message || '').includes('closed');
+      if (isClosing && attempt < retries) {
+        // Forcer la réouverture
+        try { if (_patientsDB) { _patientsDB.close(); } } catch (_) {}
+        _patientsDB = null;
+        _patientsDBUserId = null;
+        _patientsDBOpeningPromise = null;
+        await new Promise(r => setTimeout(r, 80 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 async function _idbPut(store, val) {
-  const db = await initPatientsDB();
-  return new Promise((res, rej) => {
+  return _idbExec(db => new Promise((res, rej) => {
     const tx  = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).put(val);
     req.onsuccess = () => res(req.result);
     req.onerror   = () => rej(req.error);
-  });
+  }));
 }
 async function _idbGetAll(store) {
-  const db = await initPatientsDB();
-  return new Promise((res, rej) => {
+  return _idbExec(db => new Promise((res, rej) => {
     const tx  = db.transaction(store, 'readonly');
     const req = tx.objectStore(store).getAll();
     req.onsuccess = () => res(req.result || []);
     req.onerror   = () => rej(req.error);
-  });
+  }));
 }
 async function _idbDelete(store, key) {
-  const db = await initPatientsDB();
-  return new Promise((res, rej) => {
+  return _idbExec(db => new Promise((res, rej) => {
     const tx  = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).delete(key);
     req.onsuccess = () => res();
     req.onerror   = () => rej(req.error);
-  });
+  }));
 }
 async function _idbGetByIndex(store, indexName, val) {
-  const db = await initPatientsDB();
-  return new Promise((res, rej) => {
+  return _idbExec(db => new Promise((res, rej) => {
     const tx    = db.transaction(store, 'readonly');
     const index = tx.objectStore(store).index(indexName);
     const req   = index.getAll(val);
     req.onsuccess = () => res(req.result || []);
     req.onerror   = () => rej(req.error);
-  });
+  }));
 }
 
 /* ════════════════════════════════════════════════
@@ -1911,22 +1961,11 @@ document.addEventListener('ami:login', () => {
    Permet de sélectionner un patient depuis le carnet
    pour pré-remplir automatiquement les champs
 ════════════════════════════════════════════════ */
-let _cotPatientList     = [];   // cache patients pour recherche
+let _cotPatientList = [];    // cache des patients pour la recherche
 let _cotSelectedPatient = null;
-let _cotDropdownIdx     = -1;   // navigation clavier
-let _cotCloseHandler    = null; // référence unique au handler de fermeture
+let _cotDropdownIdx = -1;    // navigation clavier
 
-/* Ferme le dropdown et retire le handler de clic extérieur */
-function _cotCloseDropdown() {
-  const dd = document.getElementById('cot-patient-dropdown');
-  if (dd) dd.style.display = 'none';
-  if (_cotCloseHandler) {
-    document.removeEventListener('click', _cotCloseHandler);
-    _cotCloseHandler = null;
-  }
-}
-
-/* Charge les patients en mémoire */
+/* Charge les patients en mémoire (appelé à l'ouverture de la vue cotation) */
 async function cotLoadPatientCache() {
   try {
     await initPatientsDB();
@@ -1940,7 +1979,7 @@ async function cotLoadPatientCache() {
   } catch { _cotPatientList = []; }
 }
 
-/* Ouvre le dropdown au focus */
+/* Ouvre le dropdown (au focus ou au clic) */
 async function cotOpenDropdown() {
   if (!_cotPatientList.length) await cotLoadPatientCache();
   const q = (document.getElementById('cot-patient-search')?.value || '').trim();
@@ -1969,45 +2008,41 @@ function cotRenderDropdown(q) {
   if (!results.length) {
     dd.innerHTML = '<div style="padding:12px 14px;font-size:12px;opacity:.5;color:var(--t)">Aucun patient trouvé dans le carnet</div>';
   } else {
-    dd.innerHTML = results.map(p => {
-      const ddn = p.data.ddn ? ' \u00b7 ' + new Date(p.data.ddn).toLocaleDateString('fr-FR') : '';
-      const med = p.data.medecin ? ' \u00b7 Dr ' + p.data.medecin : '';
-      const safId = p.id.replace(/'/g, "\\'");
-      return '<div class="cot-dd-item" data-id="' + p.id + '"'
-        + ' onclick="cotSelectPatient(\'' + safId + '\')"'
-        + ' onmouseenter="cotDDHover(this)"'
-        + ' style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--b);font-size:13px;transition:background .15s">'
-        + '<strong style="color:var(--t)">' + p.nom + ' ' + p.prenom + '</strong>'
-        + '<span style="font-size:11px;opacity:.55;margin-left:6px">' + ddn + med + '</span>'
-        + '</div>';
+    dd.innerHTML = results.map((p, i) => {
+      const ddn = p.data.ddn ? ` · ${new Date(p.data.ddn).toLocaleDateString('fr-FR')}` : '';
+      const med = p.data.medecin ? ` · Dr ${p.data.medecin}` : '';
+      return `<div class="cot-dd-item" data-idx="${i}" data-id="${p.id}"
+        onclick="cotSelectPatient('${p.id}')"
+        onmouseenter="cotDDHover(this)"
+        style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--b);font-size:13px;transition:background .15s">
+        <strong style="color:var(--t)">${p.nom} ${p.prenom}</strong>
+        <span style="font-size:11px;opacity:.55;margin-left:6px">${ddn}${med}</span>
+      </div>`;
     }).join('');
   }
 
   _cotDropdownIdx = -1;
   dd.style.display = 'block';
 
-  // Retirer l'ancien handler avant d'en ajouter un nouveau (évite accumulation)
-  if (_cotCloseHandler) {
-    document.removeEventListener('click', _cotCloseHandler);
-    _cotCloseHandler = null;
-  }
+  // Fermer au clic extérieur
   setTimeout(() => {
-    _cotCloseHandler = (e) => {
+    const closeHandler = (e) => {
       if (!e.target.closest('#cot-patient-selector')) {
-        _cotCloseDropdown();
+        dd.style.display = 'none';
+        document.removeEventListener('click', closeHandler);
       }
     };
-    document.addEventListener('click', _cotCloseHandler);
+    document.addEventListener('click', closeHandler);
   }, 10);
 }
 
-/* Hover souris */
+/* Hover clavier */
 function cotDDHover(el) {
   document.querySelectorAll('.cot-dd-item').forEach(i => i.style.background = '');
   el.style.background = 'rgba(0,212,170,.08)';
 }
 
-/* Navigation clavier */
+/* Navigation clavier dans le dropdown */
 function cotKeyNav(e) {
   const items = document.querySelectorAll('.cot-dd-item');
   if (!items.length) return;
@@ -2019,11 +2054,11 @@ function cotKeyNav(e) {
     _cotDropdownIdx = Math.max(_cotDropdownIdx - 1, 0);
   } else if (e.key === 'Enter' && _cotDropdownIdx >= 0) {
     e.preventDefault();
-    const pid = items[_cotDropdownIdx]?.dataset?.id;
-    if (pid) cotSelectPatient(pid);
+    const id = items[_cotDropdownIdx]?.dataset?.id;
+    if (id) cotSelectPatient(id);
     return;
   } else if (e.key === 'Escape') {
-    _cotCloseDropdown();
+    document.getElementById('cot-patient-dropdown').style.display = 'none';
     return;
   }
   items.forEach((item, i) => {
@@ -2032,37 +2067,35 @@ function cotKeyNav(e) {
   items[_cotDropdownIdx]?.scrollIntoView({ block: 'nearest' });
 }
 
-/* Sélectionne un patient et pré-remplit tous les champs */
-async function cotSelectPatient(patientId) {
-  const p = _cotPatientList.find(x => x.id === patientId);
+/* Sélectionne un patient et pré-remplit les champs */
+async function cotSelectPatient(id) {
+  const p = _cotPatientList.find(x => x.id === id);
   if (!p) return;
   _cotSelectedPatient = p;
 
-  _cotCloseDropdown();
-
-  const badge     = document.getElementById('cot-patient-badge');
+  // Fermer dropdown, mettre à jour la recherche
+  const dd = document.getElementById('cot-patient-dropdown');
+  const search = document.getElementById('cot-patient-search');
+  const badge = document.getElementById('cot-patient-badge');
   const badgeText = document.getElementById('cot-patient-badge-text');
-  const search    = document.getElementById('cot-patient-search');
 
-  if (search)    search.value = '';
-  if (badge)     badge.style.display = 'flex';
-  if (badgeText) {
-    const ddnStr = p.data.ddn ? ' — ' + new Date(p.data.ddn).toLocaleDateString('fr-FR') : '';
-    badgeText.textContent = '\uD83D\uDC64 ' + p.prenom + ' ' + p.nom + ddnStr;
-  }
+  if (dd) dd.style.display = 'none';
+  if (search) search.value = '';
+  if (badge) badge.style.display = 'flex';
+  if (badgeText) badgeText.textContent = `👤 ${p.prenom} ${p.nom}${p.data.ddn ? ' — ' + new Date(p.data.ddn).toLocaleDateString('fr-FR') : ''}`;
 
   // Pré-remplir les champs patient
   const d = p.data;
-  const setV = (elId, val) => { const el = document.getElementById(elId); if (el && val) el.value = val; };
-  setV('f-pt',  (p.prenom + ' ' + p.nom).trim());
-  setV('f-ddn', d.ddn     || '');
-  setV('f-sec', d.nir     || d.secu || '');
-  setV('f-amo', d.amo     || '');
-  setV('f-amc', d.amc     || '');
-  setV('f-exo', d.exo     || '');
-  setV('f-pr',  d.medecin || '');
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  set('f-pt',  (p.prenom + ' ' + p.nom).trim());
+  set('f-ddn', d.ddn || '');
+  set('f-sec', d.nir || d.secu || '');
+  set('f-amo', d.amo || '');
+  set('f-amc', d.amc || '');
+  set('f-exo', d.exo || '');
+  set('f-pr',  d.medecin || '');
 
-  // Pré-remplir les actes récurrents dans le textarea
+  // Pré-remplir les actes récurrents si définis
   const fTxt = document.getElementById('f-txt');
   if (fTxt && d.actes_recurrents) {
     fTxt.value = d.actes_recurrents;
@@ -2070,28 +2103,22 @@ async function cotSelectPatient(patientId) {
   }
 
   if (typeof showToast === 'function') {
-    const msg = '\uD83D\uDC64 ' + p.prenom + ' ' + p.nom
-      + ' \u2014 fiche chargée' + (d.actes_recurrents ? ' avec actes récurrents' : '');
-    showToast(msg);
+    showToast(`👤 ${p.prenom} ${p.nom} — fiche chargée${d.actes_recurrents ? ' avec actes récurrents' : ''}`);
   }
 }
 
-/* Désélectionne le patient — sans déclencher cotOpenDropdown */
+/* Désélectionne le patient et vide le badge */
 function cotClearPatient() {
   _cotSelectedPatient = null;
-  _cotCloseDropdown();
-  const badge  = document.getElementById('cot-patient-badge');
+  const badge = document.getElementById('cot-patient-badge');
+  if (badge) badge.style.display = 'none';
   const search = document.getElementById('cot-patient-search');
-  if (badge)  badge.style.display = 'none';
-  if (search) search.value = '';
-  // NE PAS appeler .focus() : déclencherait cotOpenDropdown()
+  if (search) { search.value = ''; search.focus(); }
 }
 
-/* Recharge le cache à chaque ouverture de la vue cotation */
+/* Recharge le cache à l'ouverture de la vue cotation */
 document.addEventListener('ui:navigate', (e) => {
   if (e.detail?.view === 'cot') {
-    _cotPatientList = []; // forcer rechargement frais
     cotLoadPatientCache().catch(() => {});
   }
 });
-
