@@ -27,6 +27,14 @@
     background-size: 32px 32px !important;
   }
 
+  /* ── Masquer greeting en mode admin ── */
+  .top.admin-active #mobile-greeting { display: none !important; }
+
+  /* ── Header admin : annuler sticky pour éviter chevauchement ── */
+  .top.admin-active {
+    position: relative !important;
+  }
+
   /* ── TOPBAR ── */
   .top {
     background: rgba(8,12,16,.96) !important;
