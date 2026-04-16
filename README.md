@@ -153,7 +153,7 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 | Fichier | Rôle |
 |---|---|
 | `copilote.js` | Interface chat Copilote IA — historique, suggestions, contexte patient, mode plein écran |
-| `ai-assistant.js` | Assistant vocal IA — NLP avancé, détection d'intention, LLM, commandes vocales, mode mains-libres |
+| `ai-assistant.js` | Assistant vocal IA — NLP embarqué (WebLLM supprimé), détection d'intention, commandes vocales, mode mains-libres, TTS |
 | `voice.js` | Dictée médicale vocale — normalisation texte médical, toggle, cache dashboard |
 
 ### Rapports & Administration
@@ -171,6 +171,13 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 |---|---|
 | `profil.js` | Modale profil — modification infos, changement mot de passe, suppression compte |
 | `pwa.js` | PWA — install prompt, banner offline, sync patients hors-ligne, téléchargement tiles carte, estimation route offline |
+| `onboarding.js` | Onboarding premier lancement — intro tournée, guide interactif étapes, modal intro VRPTW |
+
+### Outils professionnels
+
+| Fichier | Rôle |
+|---|---|
+| `infirmiere-tools.js` | Outils IDEL — simulateur charges/net réel, journal kilométrique (CEREMA barème), modèles de soins, simulateur majorations, suivi ordonnances & renouvellements |
 
 ### Styles
 
@@ -202,7 +209,8 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 |---|---|---|
 | `POST /webhook/ami-calcul` | Calcul cotation NGAP via N8N (+ fallback) | `create_invoice` — infirmières uniquement |
 | `POST /webhook/ami-historique` | Historique cotations de l'infirmière connectée | `view_own_data` |
-| `POST /webhook/ami-supprimer` | Suppression d'une cotation | `view_own_data` |
+| `POST /webhook/ami-supprimer` | Suppression cotation unitaire (`force:true` bypass verrou CPAM) | `view_own_data` — propres données uniquement |
+| `POST /webhook/ami-supprimer-tout` | Suppression en masse par période (`force:true` requis) | `view_own_data` — propres données uniquement |
 | `POST /webhook/ami-live` | Cotation en direct (mode live tournée) | Auth |
 
 ### Tournée & Calendrier
@@ -312,22 +320,24 @@ admin:  ['view_users_list', 'view_stats', 'manage_tournee',
 <!-- Cotation & Finances -->
 <script src="cotation.js"></script>      <!-- 17. Cotation NGAP -->
 <script src="tresorerie.js"></script>    <!-- 18. Trésorerie + comptabilité -->
-<script src="offline-queue.js"></script> <!-- 19. File attente offline + onboarding -->
+<script src="offline-queue.js"></script> <!-- 19. File attente offline -->
+<script src="onboarding.js"></script>      <!-- 32. Onboarding premier lancement -->
+<script src="infirmiere-tools.js"></script> <!-- 33. Outils professionnels IDEL -->
 
 <!-- IA & Vocal -->
-<script src="voice.js"></script>         <!-- 20. Dictée vocale médicale -->
-<script src="ai-assistant.js"></script>  <!-- 21. Assistant vocal IA + NLP -->
-<script src="copilote.js"></script>      <!-- 22. Copilote IA chat -->
+<script src="voice.js"></script>         <!-- 32. Dictée vocale médicale -->
+<script src="ai-assistant.js"></script>  <!-- 33. Assistant vocal IA + NLP -->
+<script src="copilote.js"></script>      <!-- 32. Copilote IA chat -->
 
 <!-- Rapports & Admin -->
-<script src="rapport.js"></script>       <!-- 23. Rapport mensuel PDF + NGAP -->
-<script src="dashboard.js"></script>     <!-- 24. Dashboard + statistiques -->
-<script src="admin.js"></script>         <!-- 25. Panneau administration -->
-<script src="contact.js"></script>       <!-- 26. Messagerie infirmière→admin -->
-<script src="profil.js"></script>        <!-- 27. Profil utilisateur -->
+<script src="rapport.js"></script>       <!-- 33. Rapport mensuel PDF + NGAP -->
+<script src="dashboard.js"></script>     <!-- 32. Dashboard + statistiques -->
+<script src="admin.js"></script>         <!-- 33. Panneau administration -->
+<script src="contact.js"></script>       <!-- 32. Messagerie infirmière→admin -->
+<script src="profil.js"></script>        <!-- 33. Profil utilisateur -->
 
 <!-- PWA -->
-<script src="pwa.js"></script>           <!-- 28. Install + offline + tiles -->
+<script src="pwa.js"></script>           <!-- 32. Install + offline + tiles -->
 ```
 
 ---
@@ -392,6 +402,39 @@ Si hors-ligne → queueCotation() → syncOfflineQueue() au retour en ligne
 
 ---
 
+
+---
+
+## Heuristique trafic temporelle
+
+Intégrée dans `ai-tournee.js` — zéro API externe, fonctionne hors-ligne.
+
+Les temps OSRM (trafic idéal) sont corrigés par des coefficients basés sur les patterns CEREMA/INSEE :
+
+| Créneau | Jours | Coefficient | Label |
+|---|---|---|---|
+| 7h15–9h30 | Lun–Ven | ×1.65 | 🔴 Pointe matin |
+| 11h45–14h15 | Lun–Ven | ×1.30 | 🟡 Déjeuner |
+| 16h30–19h30 | Lun–Ven | ×1.75 | 🔴 Pointe soir |
+| 19h30–21h | Lun–Ven | ×1.20 | 🟡 Après pointe |
+| 9h30–12h30 | Sam | ×1.25 | 🟡 Sam. matin |
+| Reste | Tous | ×1.0 | 🟢 Fluide |
+
+Le coefficient USER_STATS (retard moyen constaté) s'applique en supplément.
+Propagé dans : `trafficAwareCachedTravel()`, `optimizeTour()`, `simulateLookahead()`, `recomputeRoute()`.
+
+---
+
+## Outils professionnels (`infirmiere-tools.js`)
+
+| Outil | Fonctionnalité |
+|---|---|
+| Charges & net réel | Simulateur annuel URSSAF + CARPIMKO + IR — barème 2024/2026 |
+| Journal kilométrique | Saisie trajets, barème IK par CV (3→7+), véhicule électrique, export CSV |
+| Modèles de soins | Bibliothèque CRUD de descriptions pré-remplies, cotation 1 clic |
+| Simulateur majorations | Calcul instantané AMI/AIS/BSx + IFD/IK/MIE/MCI selon heure/jour |
+| Suivi ordonnances | Enregistrement, alertes expiration 30j, lien carnet patient |
+
 ## Codes postaux — étendre la base
 
 Le fichier `patient-form.js` contient `CP_DATA`. Pour ajouter un département :
@@ -412,8 +455,8 @@ https://datanova.laposte.fr/datasets/laposte-hexasmal
 | Composant | Version |
 |---|---|
 | Worker backend | v6.1 |
-| Moteur tournée IA | v5.0 |
-| Assistant vocal IA | v1.0 |
+| Moteur tournée IA | v5.1 (heuristique trafic) |
+| Assistant vocal IA | v1.1 (WebLLM retiré — NLP embarqué) |
 | PWA / Service Worker | v3.6 |
 | Sécurité RGPD | v2.0 |
 | Admin panel | v4.0 |

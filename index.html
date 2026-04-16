@@ -1256,20 +1256,23 @@
         <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Quels modules composent l'application ?</div><div class="accord-arrow">▼</div></div>
           <div class="accord-body">
             <ul>
-              <li>🏠 <strong>Dashboard</strong> — statistiques, anomalies IA, prévisions revenus</li>
-              <li>⚡ <strong>Cotation NGAP</strong> — saisie, vérification IA, génération facture, impression</li>
-              <li>👥 <strong>Carnet patients</strong> — CRUD local chiffré, notes soins, ordonnances, export</li>
-              <li>📋 <strong>Import calendrier</strong> — ICS, CSV, JSON, texte libre, géocodage auto</li>
-              <li>🗺️ <strong>Tournée IA</strong> — optimisation OSRM, carte Leaflet, GPS, estimation CA</li>
-              <li>🚦 <strong>Pilotage live</strong> — suivi en temps réel, auto-facturation, détection retard</li>
+              <li>🏠 <strong>Dashboard & Statistiques</strong> — KPIs revenus, anomalies IA, prévisions, analyse horaire</li>
+              <li>⚡ <strong>Cotation NGAP</strong> — saisie, calcul IA, vérification, génération facture, impression</li>
+              <li>📋 <strong>Historique des soins</strong> — toutes les cotations, recherche, réinitialisation par période</li>
+              <li>👥 <strong>Carnet patients</strong> — CRUD local chiffré AES-256, notes soins, ordonnances, cotations, export</li>
+              <li>📅 <strong>Planning hebdomadaire</strong> — organisation semaine, génération IA depuis l'import ou saisie libre</li>
+              <li>📂 <strong>Import calendrier</strong> — ICS, CSV, JSON, texte libre, géocodage automatique</li>
+              <li>🗺️ <strong>Tournée optimisée IA</strong> — VRPTW, OSRM, trafic temps réel heuristique, carte Leaflet, GPS</li>
+              <li>🚦 <strong>Pilotage de journée</strong> — suivi temps réel, auto-facturation, détection retard</li>
               <li>🚗 <strong>Mode Uber médical</strong> — patient suivant dynamique, tracking GPS continu</li>
-              <li>✍️ <strong>Signatures électroniques</strong> — canvas tactile/souris, stockage chiffré local</li>
-              <li>🤖 <strong>Copilote IA</strong> — assistant conversationnel contextuel</li>
-              <li>📊 <strong>Rapport mensuel</strong> — génération HTML/PDF, santé système</li>
+              <li>✍️ <strong>Signatures électroniques</strong> — canvas tactile/souris/stylet, stockage chiffré local</li>
+              <li>🤖 <strong>Copilote IA</strong> — assistant conversationnel contextuel NGAP</li>
+              <li>📊 <strong>Rapport mensuel</strong> — génération HTML/PDF, santé système, nomenclature NGAP</li>
               <li>💶 <strong>Trésorerie</strong> — suivi paiements, export comptable, checklist CPAM</li>
-              <li>🎤 <strong>Assistant vocal</strong> — NLP avancé, commandes mains-libres, dictée médicale</li>
+              <li>🎤 <strong>Assistant vocal</strong> — NLP embarqué, commandes mains-libres, dictée médicale</li>
               <li>📬 <strong>Contact admin</strong> — messagerie infirmière → administrateur</li>
               <li>🔐 <strong>Sécurité RGPD</strong> — consentement, PIN, export/purge données</li>
+              <li>⚙️ <strong>Outils professionnels</strong> — charges & net réel, journal km, modèles de soins, simulateur majorations, suivi ordonnances</li>
             </ul>
           </div>
         </div>
@@ -1683,6 +1686,130 @@
             <strong>Sur iPhone (Safari) :</strong> Bouton Partager → "Sur l'écran d'accueil"<br>
             <strong>Sur desktop :</strong> Cliquez le bouton <strong>"📱 Installer AMI"</strong> dans la barre du haut si disponible.<br><br>
             Une fois installée, AMI fonctionne <strong>hors-ligne</strong> pour consulter vos patients et gérer votre tournée.
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Section Historique & Dashboard -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">📋 Historique & Dashboard</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Historique des soins — fonctionnement</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">L'historique centralise toutes vos cotations NGAP enregistrées sur le serveur :
+            <ul>
+              <li><strong>Filtres</strong> : ce mois, mois précédent, 3 derniers mois, cette année</li>
+              <li><strong>Recherche</strong> : par acte, date ou montant</li>
+              <li><strong>Réinitialiser</strong> : supprime toutes les cotations de la période sélectionnée (double confirmation requise)</li>
+              <li><strong>Isolation RGPD</strong> : seules vos propres cotations sont visibles — les autres comptes sont inaccessibles</li>
+            </ul>
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Dashboard & Statistiques — que contient-il ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">
+            <ul>
+              <li>💶 <strong>KPIs revenus</strong> : CA total, part AMO, part AMC, part patient, revenus du jour, meilleure facture, moyenne par passage</li>
+              <li>📊 <strong>Graphique 30 jours</strong> : évolution quotidienne du CA</li>
+              <li>🕐 <strong>Analyse horaire</strong> : répartition des passages par tranche horaire</li>
+              <li>🏆 <strong>Actes les plus fréquents</strong> : classement des codes NGAP</li>
+              <li>📈 <strong>Comparatif mois/mois</strong> : évolution par rapport au mois précédent</li>
+              <li>🚗 <strong>Km du mois</strong> : total et déduction fiscale estimée</li>
+              <li>🔮 <strong>Prévision revenus</strong> : projection fin de mois basée sur le rythme actuel</li>
+              <li>⚠️ <strong>Anomalies IA</strong> : détection des écarts inhabituels</li>
+            </ul>
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Planning hebdomadaire — comment l'utiliser ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Le planning hebdomadaire permet d'organiser votre semaine :
+            <ul>
+              <li><strong>Depuis l'import</strong> : si vous avez importé un calendrier, cliquez "Générer depuis l'import" pour que l'IA structure automatiquement votre semaine</li>
+              <li><strong>Saisie manuelle</strong> : décrivez vos patients et fréquences en texte libre (ex : "Patient A : injection 2×/jour, Patient B : toilette lundi/mercredi")</li>
+              <li>Le planning généré est exportable et utilisable comme base pour la tournée IA</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Outils professionnels -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">⚙️ Outils professionnels</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Charges & net réel — simulateur annuel</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Saisissez votre CA annuel brut pour obtenir une estimation de :
+            <ul>
+              <li><strong>URSSAF</strong> (cotisations sociales IDEL ~47% du CA)</li>
+              <li><strong>CARPIMKO</strong> (retraite complémentaire ~892 €/an forfait)</li>
+              <li><strong>IR estimé</strong> — avec abattement forfaitaire 10% ou frais réels si supérieurs</li>
+              <li><strong>Revenu net réel</strong> après toutes charges</li>
+            </ul>
+            Repères 2024/2026 intégrés. Résultat indicatif — consultez un expert-comptable pour une analyse précise.
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Journal kilométrique — déduction fiscale</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Enregistrez chaque déplacement professionnel pour maximiser votre déduction fiscale :
+            <ul>
+              <li><strong>Saisie</strong> : date, distance, départ/arrivée (optionnel), motif (visite patient, prélèvement, pharmacie…)</li>
+              <li><strong>Puissance fiscale</strong> : barème IK adapté de 3 à 7 CV, véhicule électrique inclus</li>
+              <li><strong>Export CSV</strong> : compatible comptabilité et déclaration fiscale</li>
+              <li><strong>Barème 2025/2026</strong> : 0,636 €/km pour 5 CV thermique</li>
+            </ul>
+            Les km OSRM de la tournée sont automatiquement proposés à l'ajout en fin de journée.
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Modèles de soins — cotation en 1 clic</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Créez et gérez une bibliothèque de descriptions de soins pré-remplies :
+            <ul>
+              <li><strong>Catégories</strong> : injection, pansement, toilette, prélèvement, perfusion, bilan, autre</li>
+              <li><strong>Recherche rapide</strong> : trouvez votre modèle en quelques lettres</li>
+              <li><strong>Cotation 1 clic</strong> : le modèle sélectionné est inséré directement dans le formulaire de cotation</li>
+              <li><strong>CRUD complet</strong> : créer, modifier, supprimer vos modèles personnels</li>
+            </ul>
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Simulateur de majoration — calcul instantané</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Calculez le montant exact d'une cotation avant de la saisir :
+            <ul>
+              <li><strong>Paramètres</strong> : heure du soin, jour (lundi→dimanche + férié), acte principal, distance km</li>
+              <li><strong>Options</strong> : visite domicile (IFD automatique), patient enfant &lt; 7 ans (MIE), coordination (MCI)</li>
+              <li><strong>Résultat instantané</strong> : détail de chaque composante + total</li>
+              <li>Utile pour vérifier un tarif avant d'appeler l'IA de cotation</li>
+            </ul>
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Suivi des ordonnances & renouvellements</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">Suivez la validité des ordonnances de vos patients :
+            <ul>
+              <li><strong>Enregistrement</strong> : patient, médecin prescripteur, date de prescription, durée de validité (30j → 1 an)</li>
+              <li><strong>Alertes expiration</strong> : notification visuelle 30 jours avant l'expiration</li>
+              <li><strong>Tableau de bord</strong> : vue globale de toutes les ordonnances en cours et expirées</li>
+              <li><strong>Lien carnet patient</strong> : les ordonnances sont aussi accessibles depuis la fiche individuelle du patient</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Trafic & Tournée avancée -->
+      <div class="faq-section" data-faq-section style="margin-top:20px">
+        <div class="lbl" style="margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--a)">🚦 Trafic & Tournée avancée</div>
+        <div class="accord open"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Heuristique trafic — comment ça fonctionne ?</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">L'application intègre une <strong>heuristique trafic temporelle locale</strong> — sans API externe ni téléchargement. Les temps de trajet OSRM (trafic idéal) sont corrigés par des coefficients basés sur les patterns de congestion urbaine française (données CEREMA/INSEE) :
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin:12px 0;font-size:12px">
+              <div style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:8px;padding:8px 10px">🔴 <strong>Lun–Ven 7h15–9h30</strong><br>Pointe matin ×1.65</div>
+              <div style="background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.2);border-radius:8px;padding:8px 10px">🟡 <strong>Lun–Ven 11h45–14h15</strong><br>Déjeuner ×1.30</div>
+              <div style="background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.2);border-radius:8px;padding:8px 10px">🔴 <strong>Lun–Ven 16h30–19h30</strong><br>Pointe soir ×1.75</div>
+              <div style="background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.2);border-radius:8px;padding:8px 10px">🟡 <strong>Sam 9h30–12h30</strong><br>Samedi matin ×1.25</div>
+              <div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:8px 10px">🟢 <strong>Reste du temps</strong><br>Fluide ×1.0</div>
+            </div>
+            Un badge coloré indique la condition trafic au moment de l'optimisation. Les coefficients s'appliquent sur tout le moteur : VRPTW greedy, lookahead, recalcul live.
+          </div>
+        </div>
+        <div class="accord"><div class="accord-hdr" onclick="this.closest('.accord').classList.toggle('open')"><div class="accord-hdr-txt">Signatures électroniques — flux complet</div><div class="accord-arrow">▼</div></div>
+          <div class="accord-body">
+            <ol style="padding-left:1.2rem;margin:.5rem 0">
+              <li>Après chaque cotation validée, un bouton <strong>"✍️ Faire signer le patient"</strong> apparaît automatiquement</li>
+              <li>Le patient signe sur l'écran tactile (ou souris/stylet) — la signature est horodatée</li>
+              <li>La signature est chiffrée AES-256 et stockée uniquement sur votre appareil (jamais transmise au serveur)</li>
+              <li>Lors de l'impression de la facture, la signature est automatiquement intégrée dans le PDF</li>
+              <li>L'historique des signatures est consultable dans la vue <strong>Signatures électroniques</strong></li>
+            </ol>
           </div>
         </div>
       </div>
