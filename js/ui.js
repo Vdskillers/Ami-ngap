@@ -98,6 +98,14 @@ document.addEventListener('ui:navigate', e => {
     }, 120);
   }
 
+  /* Sécurité → initialiser la checkbox préférence tournée */
+  if (v === 'sec') {
+    setTimeout(() => {
+      const cb = document.getElementById('pref-clear-tournee');
+      if (cb) cb.checked = localStorage.getItem('ami_pref_clear_tournee') === '1';
+    }, 80);
+  }
+
   /* Historique → charger les cotations */
   if (v === 'his') {
     setTimeout(() => {

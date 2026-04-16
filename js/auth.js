@@ -252,6 +252,8 @@ async function register(){
   try{
     const d=await wpost('/webhook/infirmiere-register',{prenom:fn,nom:ln,email:em,password:pw,adeli:sanitize(gv('r-ad')),rpps:sanitize(gv('r-rp')),structure:sanitize(gv('r-st'))});
     if(!d.ok)throw new Error(d.error||'Erreur');
+    // Activer par défaut la préférence "Vider la tournée à la déconnexion"
+    try { localStorage.setItem('ami_pref_clear_tournee', '1'); } catch(_) {}
     showM('ro','✅ Compte créé ! Vous pouvez vous connecter.','o');
     setTimeout(()=>switchTab('l'),2000);
   }catch(e){showM('re',e.message);}finally{ld('btn-r',false);}
@@ -262,6 +264,13 @@ function logout(){
   APP.userPos=null;
   APP.importedData=null;
   APP.uberPatients=[];
+  // Vider la tournée si la préférence est activée
+  if (localStorage.getItem('ami_pref_clear_tournee') === '1') {
+    try { wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }).catch(()=>{}); } catch(_) {}
+    try { Object.keys(localStorage).filter(k=>k.startsWith('ami_planning')).forEach(k=>localStorage.removeItem(k)); } catch(_) {}
+    APP.importedData = null;
+    APP.uberPatients = [];
+  }
   if(typeof stopVoice==='function') stopVoice();
   /* ── Fermer les connexions IndexedDB ouvertes (sans supprimer les données) ──
      Les données patients/signatures restent intactes sur l'appareil.
