@@ -27,8 +27,15 @@ if (typeof optimizeTour === 'undefined') {
 
 function storeImportedData(d){
   APP.importedData=d;
-  // Sauvegarder dans localStorage (persistance entre sessions)
-  if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
+  // Sauvegarder dans localStorage — REMPLACE complètement l'ancien contenu
+  if (d?.patients?.length || d?.entries?.length) {
+    // Effacer d'abord pour éviter toute fusion parasite avec de vieilles données
+    _clearPlanning();
+    _syncPlanningStorage();
+  } else if (!d) {
+    // null explicite = reset complet
+    _clearPlanning();
+  }
   // Mettre à jour le banner Planning
   const banner=$('pla-import-banner');
   const info=$('pla-import-info');
@@ -285,8 +292,21 @@ function _restorePlanningIfNeeded() {
   }
   const saved = _loadPlanning();
   if (saved?.length) {
+    // Valider que les données restaurées sont bien des patients (pas des cotations NGAP)
+    // Un vrai patient a un nom/prénom ou un patient_id — pas seulement des codes d'actes
+    const validPatients = saved.filter(p =>
+      (p.nom && p.nom.trim()) ||
+      (p.prenom && p.prenom.trim()) ||
+      (p.patient_id && String(p.patient_id).startsWith('P')) ||
+      (p.description && !/^(AMI|IFD|IK|BSC|MN|AIS|DI)\d*/i.test(p.description.trim()))
+    );
+    if (!validPatients.length) {
+      // Données corrompues (actes NGAP sans noms) — purger silencieusement
+      _clearPlanning();
+      return;
+    }
     // Utiliser le setter réactif pour déclencher app:update correctement
-    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    APP.importedData = { patients: validPatients, total: validPatients.length, source: 'planning_sauvegardé' };
     _renderPlanningIfVisible();
   }
 }
@@ -1514,13 +1534,8 @@ window.startDay=async function(){
   liveStatusCore().catch(()=>{});
 };
 
-/* ── Alias — le bouton HTML appelle startJourneeUnifiee() ───────────────
-   Pointe vers window.startDay qui contient toute la logique de démarrage.
-   Séparé pour permettre des surcharges futures sans casser l'existant.
-────────────────────────────────────────────────────────────────────── */
-window.startJourneeUnifiee = async function() {
-  await window.startDay();
-};
+/* Alias bouton HTML → startDay */
+window.startJourneeUnifiee = async function() { await window.startDay(); };
 
 /* liveStatusCore = contenu de liveStatus original */
 async function liveStatusCore(){
@@ -2068,6 +2083,12 @@ function resetTourneeJour() {
   APP.importedData  = null;
   APP.uberPatients  = [];
   APP.nextPatient   = null;
+
+  // ── Vider le localStorage planning (sinon les anciens patients reviennent au rechargement) ──
+  _clearPlanning();
+
+  // ── Vider aussi la sync serveur (planning hebdo) ──
+  try { wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }).catch(()=>{}); } catch {}
 
   // Arrêter le timer live
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
