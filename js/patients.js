@@ -584,7 +584,10 @@ function _patTabRender(tab, id, p, notes) {
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <div class="ct" style="margin-bottom:0">🧾 Historique des cotations</div>
-          <button class="btn bp bsm" style="font-size:11px" onclick="coterMoisPatient('${id}')">⚡ Coter le mois</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn bp bsm" style="font-size:11px" onclick="coterMoisPatient('${id}')">⚡ Coter le mois</button>
+            <button class="btn bs bsm" style="font-size:11px" onclick="facturePatientMois('${id}')">📄 Facture du mois</button>
+          </div>
         </div>
         ${p.cotations?.length ? `
         <div style="display:flex;flex-direction:column;gap:8px">
@@ -916,8 +919,8 @@ async function deleteCotationPatient(patientId, cotationIdx) {
 
 
 /* ════════════════════════════════════════════════
-   COTER LE MOIS — génère une cotation par jour ouvré
-   pour tous les actes récurrents du patient
+   COTER LE MOIS — récupère toutes les cotations IDB
+   du patient pour le mois et les envoie vers Supabase
 ════════════════════════════════════════════════ */
 async function coterMoisPatient(patientId) {
   // Charger la fiche patient
@@ -926,109 +929,262 @@ async function coterMoisPatient(patientId) {
   if (!row) return;
   const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
 
-  const nomAff = `${p.prenom||''} ${p.nom}`.trim();
-  const texte  = p.actes_recurrents || p.notes || p.pathologies || '';
-
-  if (!texte.trim()) {
-    if (typeof showToastSafe === 'function') showToastSafe('⚠️ Aucun acte récurrent défini pour ce patient. Renseignez les actes dans la fiche Infos.', 'warn');
-    return;
-  }
-
-  // Période : mois courant
-  const now       = new Date();
-  const annee     = now.getFullYear();
-  const mois      = now.getMonth(); // 0-indexed
-  const nbJours   = new Date(annee, mois + 1, 0).getDate();
+  const nomAff   = `${p.prenom||''} ${p.nom}`.trim();
+  const now      = new Date();
+  const annee    = now.getFullYear();
+  const mois     = now.getMonth(); // 0-indexed
   const moisLabel = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
-  if (!confirm(`Générer les cotations de ${moisLabel} pour ${nomAff} ?
+  // Récupérer toutes les cotations du mois courant pour ce patient
+  const cotationsMois = (p.cotations || []).filter(c => {
+    const d = new Date(c.date);
+    return d.getFullYear() === annee && d.getMonth() === mois;
+  });
 
-📋 Actes : ${texte.slice(0, 80)}${texte.length > 80 ? '…' : ''}
-📅 ${nbJours} jours (tous les jours, dimanches inclus)
-
-Les cotations existantes pour ce mois ne seront pas dupliquées.`)) return;
-
-  // Tous les jours du mois — dimanches inclus (les infirmières travaillent 7j/7)
-  const jours = [];
-  for (let j = 1; j <= nbJours; j++) {
-    jours.push(new Date(annee, mois, j));
-  }
-
-  // Dates déjà cotées ce mois pour ce patient (éviter doublons)
-  const existingDates = new Set(
-    (p.cotations || [])
-      .filter(c => { const d = new Date(c.date); return d.getFullYear() === annee && d.getMonth() === mois; })
-      .map(c => new Date(c.date).toISOString().slice(0, 10))
-  );
-
-  const joursACoter = jours.filter(d => !existingDates.has(d.toISOString().slice(0, 10)));
-
-  if (joursACoter.length === 0) {
-    if (typeof showToastSafe === 'function') showToastSafe(`ℹ️ Toutes les cotations de ${moisLabel} existent déjà.`);
+  if (!cotationsMois.length) {
+    if (typeof showToastSafe === 'function') showToastSafe(`ℹ️ Aucune cotation enregistrée pour ${nomAff} en ${moisLabel}.`);
     return;
   }
 
-  // Toast de progression
-  if (typeof showToastSafe === 'function') showToastSafe(`⏳ Génération de ${joursACoter.length} cotations…`);
+  // Calculer le total et résumer les actes
+  const totalMois  = cotationsMois.reduce((s, c) => s + parseFloat(c.total || 0), 0);
+  const nbCot      = cotationsMois.length;
+  const actesUniq  = [...new Set(cotationsMois.flatMap(c => (c.actes||[]).map(a => a.code||a.nom||'')).filter(Boolean))];
+  const actesLabel = actesUniq.slice(0, 5).join(', ') + (actesUniq.length > 5 ? '…' : '');
 
-  let generated = 0, errors = 0;
+  // Cotations déjà envoyées ce mois (_synced = true)
+  const dejaSynced = cotationsMois.filter(c => c._synced).length;
+  const aEnvoyer   = cotationsMois.filter(c => !c._synced);
 
-  for (const jour of joursACoter) {
-    const dateStr  = jour.toISOString().slice(0, 10);
-    const heureStr = p.heure_soin || '08:00';
-    const isWeekend = jour.getDay() === 0 || jour.getDay() === 6;
+  if (!confirm(
+    `📋 Cotations de ${moisLabel} — ${nomAff}
 
-    try {
-      // Utiliser autoCotationLocale si disponible (moteur IA local), sinon fallback simple
-      let cot;
-      if (typeof autoCotationLocale === 'function') {
-        cot = autoCotationLocale(texte, { date: dateStr, heure: heureStr, dimanche: jour.getDay() === 0, samedi: jour.getDay() === 6 });
-      } else {
-        // Fallback : cotation minimale avec le texte des actes
-        cot = { actes: [{ code: 'AMI 1', nom: texte.slice(0, 60), total: 3.15 }], total: 3.15 };
-      }
+` +
+    `📅 ${nbCot} séance(s) · Total : ${totalMois.toFixed(2)} €
+` +
+    (actesLabel ? `🩺 Actes : ${actesLabel}
+` : '') +
+    (dejaSynced > 0 ? `✅ ${dejaSynced} déjà envoyée(s)
+` : '') +
+    `📤 ${aEnvoyer.length} à envoyer vers l'historique
 
-      if (!cot || (!cot.actes?.length && !cot.total)) continue;
+` +
+    `Confirmer l'envoi vers votre Historique des soins ?`
+  )) return;
 
-      const cotEntry = {
-        date:   dateStr,
-        heure:  heureStr,
-        actes:  cot.actes || [],
-        total:  parseFloat(cot.total || 0),
-        soin:   texte.slice(0, 80),
-        source: 'carnet_mois',
-      };
-
-      if (!p.cotations) p.cotations = [];
-      p.cotations.push(cotEntry);
-      generated++;
-    } catch(e) {
-      console.warn('[coterMois] Erreur jour', dateStr, e.message);
-      errors++;
-    }
+  if (!aEnvoyer.length) {
+    if (typeof showToastSafe === 'function') showToastSafe(`✅ Toutes les cotations de ${moisLabel} ont déjà été envoyées.`);
+    return;
   }
 
-  // Sauvegarder en IDB
-  if (generated > 0) {
+  if (typeof showToastSafe === 'function') showToastSafe(`⏳ Envoi de ${aEnvoyer.length} cotation(s)…`);
+
+  try {
+    // Construire le payload pour ami-save-cotation
+    const cotations = aEnvoyer.map(c => ({
+      actes:      c.actes || [],
+      total:      parseFloat(c.total || 0),
+      date_soin:  (c.date || '').slice(0, 10),
+      heure_soin: c.heure || null,
+      soin:       (c.soin || '').slice(0, 200),
+      source:     'carnet_mois',
+      dre_requise: !!c.dre_requise,
+    })).filter(c => c.total > 0);
+
+    if (!cotations.length) {
+      if (typeof showToastSafe === 'function') showToastSafe('⚠️ Aucune cotation avec un montant à envoyer.');
+      return;
+    }
+
+    const apiCall = typeof wpost === 'function' ? wpost : (url, body) =>
+      fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
+
+    const result = await apiCall('/webhook/ami-save-cotation', { cotations });
+    if (!result?.ok) throw new Error(result?.error || result?.message || 'Erreur serveur');
+
+    // Marquer toutes les cotations envoyées comme _synced dans IDB
+    aEnvoyer.forEach(c => { c._synced = true; });
     const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
     await _idbPut(PATIENTS_STORE, toStore);
 
-    // Sync Supabase en arrière-plan
-    if (typeof _syncCotationsToSupabase === 'function') {
-      _syncCotationsToSupabase([]).catch(() => {});
-    }
+    // Invalider le cache dashboard si disponible
+    try {
+      const cacheKey = typeof _dashCacheKey === 'function' ? _dashCacheKey() : null;
+      if (cacheKey) localStorage.removeItem(cacheKey);
+    } catch {}
 
-    // Rafraîchir l'onglet cotations
+    if (typeof showToastSafe === 'function')
+      showToastSafe(`✅ ${result.saved || cotations.length} cotation(s) envoyée(s) vers l'Historique des soins.`, 'ok');
+
+    // Rafraîchir l'onglet
     await openPatientDetail(patientId);
     _patTab('cotations', patientId);
 
-    const msg = errors > 0
-      ? `⚡ ${generated} cotation(s) générée(s) · ${errors} erreur(s).`
-      : `✅ ${generated} cotation(s) générée(s) pour ${moisLabel}.`;
-    if (typeof showToastSafe === 'function') showToastSafe(msg, 'ok');
-  } else {
-    if (typeof showToastSafe === 'function') showToastSafe('⚠️ Aucune cotation générée. Vérifiez les actes récurrents.', 'warn');
+  } catch(e) {
+    console.error('[coterMois]', e);
+    if (typeof showToastSafe === 'function') showToastSafe('❌ ' + e.message);
   }
+}
+
+/* ════════════════════════════════════════════════
+   FACTURE DU MOIS — génère une facture HTML consolidée
+   à partir de toutes les cotations IDB du patient
+   pour le mois en cours
+════════════════════════════════════════════════ */
+async function facturePatientMois(patientId) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+
+  const now      = new Date();
+  const annee    = now.getFullYear();
+  const mois     = now.getMonth();
+  const moisLabel = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const nomAff   = `${p.prenom||''} ${p.nom}`.trim();
+
+  // Récupérer les cotations du mois
+  const cotationsMois = (p.cotations || []).filter(c => {
+    const d = new Date(c.date);
+    return d.getFullYear() === annee && d.getMonth() === mois;
+  });
+
+  if (!cotationsMois.length) {
+    if (typeof showToastSafe === 'function') showToastSafe(`ℹ️ Aucune cotation enregistrée pour ${nomAff} en ${moisLabel}.`);
+    return;
+  }
+
+  // Agréger tous les actes du mois — regrouper par code et sommer les totaux
+  const actesMap = {};
+  for (const cot of cotationsMois) {
+    for (const acte of (cot.actes || [])) {
+      const key = acte.code || acte.nom || 'Acte';
+      if (!actesMap[key]) {
+        actesMap[key] = { code: acte.code || '', nom: acte.nom || acte.code || '', coefficient: acte.coefficient || 1, total: 0, nb: 0 };
+      }
+      actesMap[key].total += parseFloat(acte.total || 0);
+      actesMap[key].nb++;
+    }
+  }
+
+  const actesAgreg = Object.values(actesMap).map(a => ({
+    code:        a.code,
+    nom:         `${a.nom}${a.nb > 1 ? ' × ' + a.nb : ''}`,
+    coefficient: a.coefficient,
+    total:       a.total,
+  }));
+
+  const totalMois     = cotationsMois.reduce((s, c) => s + parseFloat(c.total || 0), 0);
+  const part_amo      = totalMois * 0.6;
+  const part_amc      = 0;
+  const part_patient  = totalMois * 0.4;
+
+  // Plage de dates
+  const dates = cotationsMois.map(c => c.date).sort();
+  const dateDebut = new Date(dates[0]).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const dateFin   = new Date(dates[dates.length - 1]).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const periodeLabel = dates.length === 1 ? dateDebut : `${dateDebut} → ${dateFin}`;
+
+  // Construire l'objet facture compatible avec _doPrint
+  const factureData = {
+    actes:         actesAgreg,
+    total:         totalMois,
+    part_amo,
+    part_amc,
+    part_patient,
+    invoice_number: `M-${annee}${String(mois + 1).padStart(2,'0')}-${String(patientId).slice(-4)}`,
+    date_soin:     periodeLabel,
+    patient:       nomAff,
+    dre_requise:   cotationsMois.some(c => c.dre_requise),
+    _mois:         moisLabel,
+    _nb_seances:   cotationsMois.length,
+  };
+
+  // Utiliser _doPrint si disponible (cotation.js chargé), sinon fallback autonome
+  if (typeof _doPrint === 'function') {
+    const u = (typeof S !== 'undefined') ? S?.user || {} : {};
+    _doPrint(factureData, u);
+    return;
+  }
+
+  // Fallback autonome : générer le HTML directement
+  const u   = (typeof S !== 'undefined') ? S?.user || {} : {};
+  const inf = ((u.prenom || '') + ' ' + (u.nom || '')).trim() || 'Infirmier(ère) libéral(e)';
+  const num = factureData.invoice_number;
+  const fmt = v => (parseFloat(v) || 0).toFixed(2) + ' €';
+
+  const infoPro = [
+    u.structure ? `<div style="font-weight:600;margin-bottom:2px">${u.structure}</div>` : '',
+    `<div>${inf}</div>`,
+    u.adeli  ? `<div style="font-size:12px;color:#6b7a99">N° ADELI : <strong>${u.adeli}</strong></div>` : '',
+    u.rpps   ? `<div style="font-size:12px;color:#6b7a99">N° RPPS : <strong>${u.rpps}</strong></div>` : '',
+  ].filter(Boolean).join('');
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>Facture mensuelle ${num}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',sans-serif;padding:40px;font-size:14px;color:#1a1a2e}
+  h1{font-size:26px;color:#0b3954;margin-bottom:4px}
+  .meta{font-size:12px;color:#6b7a99}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:18px;border-bottom:2px solid #e0e7ef;gap:20px}
+  .badge{display:inline-block;background:#e8f4ff;color:#2563eb;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;margin-top:6px}
+  table{width:100%;border-collapse:collapse;margin:20px 0}
+  th{background:#f0f4fa;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px}
+  td{padding:10px 12px;border-bottom:1px solid #e8edf5}
+  tfoot td{font-weight:700;border-top:2px solid #ccd5e0;background:#f7f9fc}
+  .rep{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  .rc{background:#f7f9fc;padding:14px;border-radius:8px;text-align:center}
+  .rl{font-size:11px;text-transform:uppercase;color:#6b7a99;margin-bottom:4px}
+  .rv{font-size:22px;font-weight:700;color:#0b3954}
+  .footer{margin-top:30px;padding-top:16px;border-top:1px solid #e0e7ef;font-size:11px;color:#9ca3af;text-align:center}
+  .print-btn{display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;padding:10px 20px;background:#0b3954;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer}
+  @media print{.print-btn,.no-print{display:none!important}body{padding:20px}}
+</style></head><body>
+<button class="print-btn no-print" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+<div class="hdr">
+  <div>
+    <h1>Facture mensuelle</h1>
+    <div class="meta">N° ${num} · ${now.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})}</div>
+    <div class="meta">Période : ${periodeLabel}</div>
+    <div class="meta">Patient : <strong>${nomAff}</strong></div>
+    <div class="badge">📅 ${cotationsMois.length} séance(s) — ${moisLabel}</div>
+  </div>
+  <div style="text-align:right;line-height:1.7">${infoPro}</div>
+</div>
+<table>
+  <thead><tr><th>Code</th><th>Acte médical</th><th style="text-align:right">Coef.</th><th style="text-align:right">Montant</th></tr></thead>
+  <tbody>
+    ${actesAgreg.map(x => `<tr>
+      <td style="font-weight:600;font-size:13px;color:#0b3954">${x.code||''}</td>
+      <td>${x.nom||''}</td>
+      <td style="text-align:right;color:#6b7a99">×${(x.coefficient||1).toFixed(1)}</td>
+      <td style="text-align:right;font-weight:600">${fmt(x.total)}</td>
+    </tr>`).join('')}
+  </tbody>
+  <tfoot>
+    <tr><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right;font-size:16px">${fmt(totalMois)}</td></tr>
+  </tfoot>
+</table>
+<div class="rep">
+  <div class="rc"><div class="rl">Part AMO (SS)</div><div class="rv">${fmt(part_amo)}</div></div>
+  <div class="rc"><div class="rl">Part AMC</div><div class="rv">${fmt(part_amc)}</div></div>
+  <div class="rc"><div class="rl">Part Patient</div><div class="rv">${fmt(part_patient)}</div></div>
+</div>
+${factureData.dre_requise ? '<div style="margin-top:16px;padding:10px 14px;background:#e8f4ff;border-radius:6px;font-size:13px;color:#2563eb">📋 <strong>DRE requise</strong> — Demande de Remboursement Exceptionnel</div>' : ''}
+<div class="footer">AMI NGAP · N° ${num} · Cotation NGAP métropole en vigueur · Généré le ${now.toLocaleDateString('fr-FR')}</div>
+</body></html>`;
+
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `facture-mensuelle-${nomAff.replace(/\s+/g,'-')}-${annee}${String(mois+1).padStart(2,'0')}.html`;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); if (a.parentNode) document.body.removeChild(a); }, 3000);
+  if (typeof showToastSafe === 'function') showToastSafe(`📄 Facture ${moisLabel} générée — ${cotationsMois.length} séance(s) · ${totalMois.toFixed(2)} €`, 'ok');
 }
 
 /* Vérification expiration ordonnances */
