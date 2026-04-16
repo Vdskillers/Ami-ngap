@@ -103,6 +103,15 @@ const _onNavLive = e => {
 document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
 
+/* Recharger le planning hebdomadaire quand on navigue vers la vue "pla" */
+const _onNavPla = e => {
+  if (e.detail?.view === 'pla') {
+    setTimeout(_restorePlanningIfNeeded, 100);
+  }
+};
+document.addEventListener('app:nav',     _onNavPla);
+document.addEventListener('ui:navigate', _onNavPla);
+
 function showCaFromImport(){
   if(!APP.importedData)return;
   const patients=APP.importedData.patients||APP.importedData.entries||[];
@@ -268,11 +277,11 @@ document.addEventListener('app:update', e => {
   }
 });
 
-/* Restauration du planning au login (après hydratation de S = bonne clé userId) */
+/* Restauration du planning au login */
 document.addEventListener('ami:login', () => {
   setTimeout(() => {
-    _restorePlanningIfNeeded();
-    // Sync depuis le serveur après restauration locale (navigateur ↔ mobile)
+    // importedData = tournée du jour (éphémère) — on ne la restaure PAS au login.
+    // Le Planning hebdomadaire se recharge à la navigation vers la vue "pla".
     setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
   }, 200);
 });
