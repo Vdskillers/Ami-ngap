@@ -27,15 +27,8 @@ if (typeof optimizeTour === 'undefined') {
 
 function storeImportedData(d){
   APP.importedData=d;
-  // Sauvegarder dans localStorage — REMPLACE complètement l'ancien contenu
-  if (d?.patients?.length || d?.entries?.length) {
-    // Effacer d'abord pour éviter toute fusion parasite avec de vieilles données
-    _clearPlanning();
-    _syncPlanningStorage();
-  } else if (!d) {
-    // null explicite = reset complet
-    _clearPlanning();
-  }
+  // Sauvegarder dans localStorage (persistance entre sessions)
+  if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
   const banner=$('pla-import-banner');
   const info=$('pla-import-info');
@@ -292,23 +285,8 @@ function _restorePlanningIfNeeded() {
   }
   const saved = _loadPlanning();
   if (saved?.length) {
-    // Valider que les données restaurées sont bien des patients (pas des cotations NGAP)
-    // Un vrai patient a un nom/prénom ou un patient_id — pas seulement des codes d'actes
-    // Filtre minimal : exclure uniquement les entrées qui sont PUREMENT des codes NGAP
-    // (pas de nom, pas de prenom, pas d'id valide, description = code court NGAP seul)
-    const validPatients = saved.filter(p => {
-      const hasName = (p.nom && p.nom.trim()) || (p.prenom && p.prenom.trim());
-      const hasId   = p.patient_id || p.id;
-      const hasAddr = p.adresse || p.address || p.addressFull;
-      const descIsPureNgap = p.description && /^(AMI\d*|IFD|IK|BSC|MN\d?|AIS|DI)(\s*\+\s*(AMI\d*|IFD|IK|BSC|MN\d?|AIS|DI))*$/i.test(p.description.trim());
-      // Garder si : a un nom OU un id OU une adresse OU description non-NGAP pure
-      return hasName || hasId || hasAddr || !descIsPureNgap;
-    });
-    if (!validPatients.length) {
-      _clearPlanning();
-      return;
-    }
-    APP.importedData = { patients: validPatients, total: validPatients.length, source: 'planning_sauvegardé' };
+    // Utiliser le setter réactif pour déclencher app:update correctement
+    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
     _renderPlanningIfVisible();
   }
 }
@@ -606,8 +584,7 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const _imp = APP.get('importedData') || APP.importedData || APP.state?.importedData;
-  const rawPatients = _imp?.patients || _imp?.entries || [];
+  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -750,8 +727,7 @@ function _showOptimProgress(msg) {
 
 /* Rendu HTML de la route optimisée */
 function _renderRouteHTML(route, osrm, ca, rentab, mode) {
-  const total    = route.length;
-  const totalGps = route.filter(p=>p.lat&&p.lng).length;
+  const total = route.filter(p=>p.lat&&p.lng).length;
   const modeBadge = mode === 'heure'
     ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 10px;border-radius:20px;letter-spacing:1px">🕐 Heures préférées</span>`
     : mode === 'mixte'
@@ -771,8 +747,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
       🗺️ Tournée optimisée — ${total} patients ${modeBadge} ${trafficBadge}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
-      <div class="dreb">📍 ${total} patient${total>1?'s':''}</div>
-      ${totalGps < total ? `<div class="dreb" style="background:rgba(255,181,71,.1);border-color:rgba(255,181,71,.3);color:var(--w)">⚠️ ${total-totalGps} sans GPS</div>` : ''}
+      <div class="dreb">📍 ${total} patients</div>
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
       <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
       ${rentab?`<div class="ca-pill" style="background:rgba(79,168,255,.1);border-color:rgba(79,168,255,.3);color:var(--a2)">📊 ${rentab.euro_heure}€/h</div>`:''}
@@ -1496,8 +1471,7 @@ function autoCotationLocale(texte) {
 /* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
-  const _impSD = APP.get('importedData') || APP.importedData || APP.state?.importedData;
-  const patients = _impSD?.patients || _impSD?.entries || [];
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   if (!patients.length) {
     if(typeof showToast==='function') showToast('⚠️ Importez des patients avant de démarrer la journée.');
     return;
@@ -1535,9 +1509,6 @@ window.startDay=async function(){
   // Tenter appel API, mais ne pas bloquer si indisponible
   liveStatusCore().catch(()=>{});
 };
-
-/* Alias bouton HTML → startDay */
-window.startJourneeUnifiee = async function() { await window.startDay(); };
 
 /* liveStatusCore = contenu de liveStatus original */
 async function liveStatusCore(){
@@ -2085,12 +2056,6 @@ function resetTourneeJour() {
   APP.importedData  = null;
   APP.uberPatients  = [];
   APP.nextPatient   = null;
-
-  // ── Vider le localStorage planning (sinon les anciens patients reviennent au rechargement) ──
-  _clearPlanning();
-
-  // ── Vider aussi la sync serveur (planning hebdo) ──
-  try { wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }).catch(()=>{}); } catch {}
 
   // Arrêter le timer live
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }

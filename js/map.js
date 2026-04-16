@@ -793,12 +793,12 @@ async function useLiveMyLocation() {
         if (APP._routePolyline) { try { APP.map.removeLayer(APP._routePolyline); } catch(_){} APP._routePolyline = null; }
         if (APP._startMarker)   { try { APP.map.removeLayer(APP._startMarker);   } catch(_){} APP._startMarker = null; }
 
-        const withCoords = patients.filter(p => parseFloat(p.lat) && parseFloat(p.lng));
+        const withCoords = patients.filter(p => p.lat && p.lng);
         if (!withCoords.length) { resolve(); return; }
 
         // Marker point de départ
         if (startPoint && startPoint.lat && startPoint.lng) {
-          APP._startMarker = L.marker([parseFloat(startPoint.lat), parseFloat(startPoint.lng)], {
+          APP._startMarker = L.marker([startPoint.lat, startPoint.lng], {
             icon: L.divIcon({
               className: '',
               html: '<div style="width:36px;height:36px;background:#00d4aa;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(0,212,170,0.5);">🏠</div>',
@@ -816,7 +816,7 @@ async function useLiveMyLocation() {
                       : (p.geoScore >= 50) ? '#EF9F27'
                       : '#00d4aa';
 
-          const marker = L.marker([parseFloat(p.lat), parseFloat(p.lng)], {
+          const marker = L.marker([p.lat, p.lng], {
             icon: L.divIcon({
               className: '',
               html: '<div style="width:32px;height:32px;background:' + color + ';border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;box-shadow:0 2px 8px rgba(0,0,0,0.3);">' + (idx+1) + '</div>',
@@ -846,13 +846,8 @@ async function useLiveMyLocation() {
 
         // ── Tracé de la route sur route réelle (OSRM) ──────────────────────
         var allPts = [];
-        if (startPoint && startPoint.lat && startPoint.lng) allPts.push([parseFloat(startPoint.lat), parseFloat(startPoint.lng)]);
-        withCoords.forEach(function(p) { allPts.push([parseFloat(p.lat), parseFloat(p.lng)]); });
-
-        // Centrer la carte — même pour 1 seul point
-        if (allPts.length === 1) {
-          APP.map.setView(allPts[0], 14);
-        }
+        if (startPoint && startPoint.lat && startPoint.lng) allPts.push([startPoint.lat, startPoint.lng]);
+        withCoords.forEach(function(p) { allPts.push([p.lat, p.lng]); });
 
         if (allPts.length >= 2) {
           // Toujours afficher une polyline droite immédiatement (fallback visible)
