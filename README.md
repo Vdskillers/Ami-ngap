@@ -5,6 +5,56 @@
 
 ---
 
+## ⚠️ Points de vigilance N8N v7 (audit 17 avril 2026)
+
+### ✅ Routes alignées frontend ↔ N8N v7
+| Route N8N | Méthode | Frontend | Statut |
+|---|---|---|---|
+| `/webhook/ami-calcul` | POST | `cotation.js`, `tournee.js`, `extras.js`, `offline-queue.js` | ✅ OK |
+| `/webhook/ami-historique` | GET | `dashboard.js`, `rapport.js`, `tresorerie.js`, `offline-queue.js` | ✅ OK (bypassed Supabase direct) |
+| `/webhook/ami-supprimer` | POST | `worker.js` route interne | ✅ OK |
+
+### ⚠️ Nouveau champ v7 — `preuve_soin` non encore envoyé
+Le workflow N8N v7 introduit un champ `preuve_soin` (type, timestamp, hash, force_probante).  
+**Actuellement `cotation.js` ne l'envoie pas** → N8N utilise le défaut `auto_declaration` (force_probante: STANDARD).  
+À intégrer dans `cotation.js` payload pour activer le bouclier anti-redressement CPAM complet.
+
+```javascript
+// À ajouter dans cotation.js — payload apiCall('/webhook/ami-calcul', {...})
+preuve_soin: {
+  type: 'auto_declaration',       // ou 'signature_patient' / 'photo'
+  timestamp: new Date().toISOString(),
+  certifie_ide: true,
+  geo_zone: 'Finistère-29'        // département uniquement — jamais coordonnées précises
+}
+```
+
+### ℹ️ `invoice_number` absent de l'INSERT N8N
+Le nœud **"Sauvegarder en BDD"** dans N8N n'insère pas `invoice_number` dans la table `cotations`.  
+Ce champ est géré côté **worker.js via Supabase** (`planning_patients`). Les deux bases restent cohérentes — pas de bug, mais la table N8N ne permet pas de lier une cotation à son numéro de facture. À corriger si un accès direct à la table `cotations` N8N est prévu.
+
+### ✅ Règles cotation() — logique upsert validée
+```
+Patient existe dans le carnet ?
+├── OUI → Upsert (mise à jour de la cotation existante)
+│         Jamais de push(), jamais de doublon
+│         Résolution index : cotationIdx > invoice_number > invoice_number original
+│         Si aucun index trouvé ET mode édition (_editRef) → ne rien faire
+│
+└── NON → Créer la fiche patient + la cotation (une seule fois)
+          Uniquement si ce n'est PAS une correction (_editRef absent)
+```
+
+| Situation | Comportement |
+|---|---|
+| Patient existant + mode édition + index trouvé | Mise à jour de la cotation |
+| Patient existant + pas de mode édition | Ajout de la cotation (1ère fois) |
+| Patient existant + mode édition + index introuvable | Rien (évite doublon) |
+| Patient absent + pas de mode édition | Crée la fiche patient + la cotation |
+| Patient absent + mode édition | Rien (ne crée pas de fiche fantôme) |
+
+---
+
 ## Modèle de sécurité & isolation des données
 
 ### Rôles utilisateurs
@@ -19,7 +69,7 @@
 - Chaque infirmière ne voit **que ses propres données** — isolation par `infirmiere_id` côté backend (`worker.js`)
 - Les admins peuvent tester toutes les fonctionnalités avec **leurs propres patients de test** sans voir les données des infirmières
 - Les admins sont **invisibles entre eux** — le panneau admin n'affiche que les comptes infirmières
-- Le panneau admin affiche les statistiques globales, noms et prénoms des infirmières uniquement (pas des admins)
+- Le panneau admin affiche les statistiques globales, noms et prénoms des **infirmières uniquement** (jamais les admins)
 - La vue Signatures en mode admin masque les `invoiceId` réels et désactive la suppression
 
 ### Architecture Privacy by Design
@@ -30,7 +80,124 @@ Données de santé → chiffrées AES-256 → stockage local (IndexedDB)
 
 Serveur (Cloudflare Worker) → métadonnées & cotations uniquement
 Supabase → données non-sensibles + cotations chiffrées côté champ
+N8N (Render) → traitement IA stateless — ne stocke aucune donnée patient
 ```
+
+---
+
+## Architecture N8N v7 — Agent IA AMI
+
+> Workflow ID : `f13PXDr0OAbRTqky` · Instance : `https://n8n-6fyl.onrender.com`  
+> Tag : `AMI NGAP` + `Admin` · Statut : `active`
+
+### Vue d'ensemble du pipeline (flux principal)
+
+```
+[Webhook POST /ami-calcul]
+        ↓
+[NLP Médical v6]          ← extraction actes, contexte, distance km
+        ↓                    + nouveau v7 : extraction preuve_soin
+[RAG NGAP Retriever]      ← base documentaire NGAP BM25
+        ↓
+[AI Agent — xAI Grok]     ← raisonnement NGAP + historique patient
+        ↓
+[Parser résultat IA]      ← normalisation JSON, détection hallucinations
+        ↓
+[Validateur NGAP V1]      ← règles d'exclusion (AIS+BSI, IFD unique, etc.)
+        ↓
+[Optimisateur €]          ← ajout MCI / IFD / IK / MIE manquants
+        ↓
+[Validateur NGAP V2]      ← second passage validation post-optimisation
+        ↓
+[Recalcul NGAP Officiel]  ← tarifs 2026 officiels, source de vérité
+        ↓
+[Analyse Pattern Patient] ← historique répétitif, évolution dépendance
+        ↓
+[Suggestions alternatives]← gains potentiels, preuve soin
+        ↓
+[Fraude Detector v7]      ← score 0-N, preuve soin intégrée
+        ↓
+[CPAM Simulator v5]       ← simulation contrôle, défense preuve forte
+        ↓
+[Scoring Infirmière v4]   ← score global IDE, metrics historique
+        ↓
+[Blocage FSE si HIGH]     ← bloque si fraude=HIGH ou MEDIUM+CRITIQUE
+        ↓
+[FSE Generator v6]        ← génération FSE-1.40, justification horodatée
+        ↓
+[Mode spécial ?]──────────→ [Sauvegarder en BDD] ← INSERT PostgreSQL
+        ↓                                                    ↓
+[Fusionner réponse]←─────────────────────────────────────────
+        ↓
+[Respond to Webhook]      ← réponse JSON finale au worker
+```
+
+### Flux secondaires
+
+| Webhook | Méthode | Chemin | Description |
+|---|---|---|---|
+| Webhook Historique | GET | `/ami-historique` | Requête cotations par `user_id` + `limit` |
+| Webhook Supprimer | POST | `/ami-supprimer` | Suppression par `id` (delete_one) ou `patient_id` |
+| Créer table si absente | — | Déclenché manuellement | Migration DDL PostgreSQL |
+
+### Nœuds N8N — détail
+
+| Nœud | Type | Rôle |
+|---|---|---|
+| **NLP Médical v6** | Code | Extraction actes/contexte par regex médicale, hash texte, preuve_soin v7 |
+| **RAG NGAP Retriever** | Code | Retrieval BM25 sur base NGAP 2026 pour enrichir le prompt IA |
+| **AI Agent** | LangChain Agent | Grok-3 (xAI) — raisonnement NGAP avec historique patient |
+| **Parser résultat IA** | Code | Parse JSON Grok, détection hallucinations, normalisation `normalizeAI()` |
+| **Validateur NGAP V1** | Code | AIS+BSI exclusion, IFD unique, nuit+dimanche interdit, IK sans distance |
+| **Optimisateur €** | Code | Ajout automatique MCI/IFD/IK/MIE si critères présents et absents |
+| **Validateur NGAP V2** | Code | Second passage identique V1 post-optimisation |
+| **Recalcul NGAP Officiel** | Code | Tarifs 2026 officiels (AMI=3.15€, BSA=13€, BSB=18.20€, BSC=28.70€…) |
+| **Analyse Pattern Patient** | Code | Répétition ≥7j, dépendance statique, incohérence pathologie |
+| **Suggestions alternatives** | Code | Gains € non réalisés, conseils preuve soin |
+| **Fraude Detector v7** | Code | Score multicritères — **nouveau v7** : preuve absente +3pts, preuve forte -3pts |
+| **CPAM Simulator v5** | Code | Simulation contrôle CPAM — **nouveau v7** : preuve forte supprime 1 anomalie |
+| **Scoring Infirmière v4** | Code | Score global IDE — **nouveau v7** : preuve impacte score |
+| **Blocage FSE si HIGH** | Code | Bloque si fraud=HIGH ou (MEDIUM + CPAM=CRITIQUE) |
+| **FSE Generator v6** | Code | FSE-1.40, justification médicale horodatée, **nouveau v7** : preuve_soin dans FSE |
+| **Mode spécial ?** | IF | Bypass DB si `_mode ≠ ngap` ou `_skip_db=true` ou `blocked=true` |
+| **Sauvegarder en BDD** | PostgreSQL | INSERT dans `cotations` (table Supabase via Postgres direct) |
+| **Fusionner réponse** | Code | Assemblage réponse finale normalisée |
+
+### Tarifs NGAP 2026 (intégrés dans le nœud "Recalcul NGAP Officiel")
+
+| Code | Libellé | Tarif |
+|---|---|---|
+| AMI | Acte infirmier de soins | 3,15 € × coefficient |
+| AIS | Aide infirmier soins | 2,65 € |
+| BSA | Bilan soins infirmiers A (dépendance légère) | 13,00 € |
+| BSB | Bilan soins infirmiers B (dépendance intermédiaire) | 18,20 € |
+| BSC | Bilan soins infirmiers C (dépendance lourde) | 28,70 € |
+| IFD | Indemnité forfaitaire déplacement | 2,75 € |
+| MCI | Majoration coordination infirmière | 5,00 € |
+| MIE | Majoration enfant (< 7 ans) | 3,15 € |
+| NUIT | Majoration nuit (20h–23h, 5h–7h) | 9,15 € |
+| NUIT_PROF | Majoration nuit profonde (23h–5h) | 18,30 € |
+| DIM | Majoration dimanche/férié | 8,50 € |
+| IK | Indemnité kilométrique | dist_km × 2 × 0,35 € |
+
+### Règles CPAM intégrées (Validateurs V1 + V2)
+- **AIS + BSI** → AIS supprimé (incompatibles)
+- **Plusieurs BSI** → seul le plus élevé conservé
+- **IFD multiple** → réduit à 1 par séance
+- **Nuit + Dimanche** → Dimanche supprimé
+- **IK sans distance** → IK exclue
+- **Coefficient demi-tarif** → tous les actes techniques après le principal à 0,5 (sauf majorations)
+
+### Système de preuve soin (nouveau v7)
+
+| Type | Force probante | Impact fraude | Impact CPAM |
+|---|---|---|---|
+| `auto_declaration` | STANDARD | neutre | Accepté |
+| `signature_patient` | FORTE | -3 pts fraude | Supprime 1 anomalie |
+| `photo` (hash uniquement) | FORTE | -3 pts fraude | Supprime 1 anomalie |
+| Absent | ABSENTE | +3 pts fraude | Anomalie ajoutée |
+
+> **Vie privée** : seul le hash de la preuve est transmis, jamais la photo ou la signature brute.
 
 ---
 
@@ -43,7 +210,8 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 
 ### B. Sécurité
 - ✅ HTTPS partout (Cloudflare Worker + GitHub Pages)
-- ✅ Chiffrement données AES-256-GCM (`security.js` + `worker.js`)
+- ✅ Chiffrement données AES-256-GCM (`security.js` + `worker.js`)  
+  → Côté backend : `crypto.createCipheriv('aes-256-gcm', key, iv)`
 - ✅ Mots de passe hashés bcrypt (côté Supabase Auth)
 - ✅ JWT sécurisé avec vérification de session
 - ✅ Firewall VPS / WAF Cloudflare
@@ -101,7 +269,7 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 
 | Fichier | Rôle |
 |---|---|
-| `worker.js` | Cloudflare Worker v6.1 — toutes les routes API, auth, isolation des données, chiffrement côté serveur, logs |
+| `worker.js` | Cloudflare Worker v6.1 — toutes les routes API, auth, isolation des données, chiffrement côté serveur, proxy N8N, logs |
 | `sw.js` | Service Worker PWA v3.6 — cache statique, stratégie tiles, offline |
 
 ### Authentification & Sécurité
@@ -123,16 +291,16 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 
 | Fichier | Rôle |
 |---|---|
-| `patients.js` | Carnet patients chiffré AES-256 (IndexedDB local) — CRUD, notes soins, cotations patient, ordonnances, export |
+| `patients.js` | Carnet patients chiffré AES-256 (IndexedDB local, par user `ami_patients_db_<userId>`) — CRUD, notes soins, cotations patient, ordonnances, export |
 | `patient-form.js` | Formulaire nouveau/édition patient — adresse structurée, suggestions CP/ville, géocodage, sauvegarde |
 | `notes.js` | Notes par patient (général / accès / médical / urgent) — CRUD avec confirmation |
-| `signature.js` | Signatures électroniques — canvas tactile/souris/stylet, stockage chiffré local, liste admin masquée |
+| `signature.js` | Signatures électroniques — canvas tactile/souris/stylet, stockage chiffré local (`ami_sig_db_<userId>`), liste admin masquée |
 
 ### Cotation & Finances
 
 | Fichier | Rôle |
 |---|---|
-| `cotation.js` | Cotation NGAP — appel API calcul, rendu résultat, vérification IA, impression facture, modale infos pro |
+| `cotation.js` | Cotation NGAP — appel `/webhook/ami-calcul`, rendu résultat, vérification IA, impression facture, modale infos pro, logique upsert |
 | `tresorerie.js` | Suivi trésorerie — statut paiements, statistiques remboursements, export comptable, checklist CPAM |
 | `offline-queue.js` | File d'attente cotations hors-ligne — sync automatique au retour en ligne, badge compteur |
 
@@ -153,16 +321,16 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 | Fichier | Rôle |
 |---|---|
 | `copilote.js` | Interface chat Copilote IA — historique, suggestions, contexte patient, mode plein écran |
-| `ai-assistant.js` | Assistant vocal IA — NLP embarqué (WebLLM supprimé), détection d'intention, commandes vocales, mode mains-libres, TTS |
+| `ai-assistant.js` | Assistant vocal IA — NLP embarqué, détection d'intention, commandes vocales, mode mains-libres, TTS |
 | `voice.js` | Dictée médicale vocale — normalisation texte médical, toggle, cache dashboard |
 
 ### Rapports & Administration
 
 | Fichier | Rôle |
 |---|---|
-| `rapport.js` | Rapport mensuel PDF — génération HTML, prévisualisation, santé système, nomenclature NGAP |
-| `dashboard.js` | Dashboard & statistiques — cache, détection anomalies, IA explicative, prévisions revenus, pertes estimées |
-| `admin.js` | Panneau administration — liste comptes infirmières, stats globales, logs, actions (bloquer/débloquer/supprimer), messagerie admin→infirmière |
+| `rapport.js` | Rapport mensuel PDF — génération HTML, prévisualisation, santé système N8N/IA, nomenclature NGAP |
+| `dashboard.js` | Dashboard & statistiques — cache par userId, détection anomalies, IA explicative, prévisions revenus, pertes estimées |
+| `admin.js` | Panneau administration — liste comptes infirmières uniquement (admins invisibles), stats globales, logs, actions, messagerie |
 | `contact.js` | Messagerie infirmière → admin — envoi message, consultation historique |
 
 ### Profil & PWA
@@ -179,91 +347,64 @@ Supabase → données non-sensibles + cotations chiffrées côté champ
 |---|---|
 | `infirmiere-tools.js` | Outils IDEL — simulateur charges/net réel, journal kilométrique (CEREMA barème), modèles de soins, simulateur majorations, suivi ordonnances & renouvellements |
 
-### Styles
-
-| Fichier | Rôle |
-|---|---|
-| `style.css` | Styles principaux de l'application |
-| `notes.css` | Styles notes patient, formulaire adresse, suggestions CP |
-
 ---
 
 ## Routes API (Cloudflare Worker)
 
 ### Authentification
-| Route | Rôle | Permissions |
-|---|---|---|
-| `POST /webhook/auth-login` | Connexion, retourne JWT + rôle | Public |
-| `POST /webhook/infirmiere-register` | Inscription infirmière | Public |
-| `POST /webhook/change-password` | Changement mot de passe | `change_password` |
-| `POST /webhook/delete-account` | Suppression compte | `delete_account` |
+| Route | Méthode | Rôle | Permissions |
+|---|---|---|---|
+| `/webhook/auth-login` | POST | Connexion, retourne JWT + rôle | Public |
+| `/webhook/infirmiere-register` | POST | Inscription infirmière | Public |
+| `/webhook/change-password` | POST | Changement mot de passe | `change_password` |
+| `/webhook/delete-account` | POST | Suppression compte | `delete_account` |
 
 ### Profil
-| Route | Rôle | Permissions |
-|---|---|---|
-| `POST /webhook/profil-get` | Récupération profil | Auth |
-| `POST /webhook/profil-save` | Sauvegarde profil | Auth |
+| Route | Méthode | Rôle | Permissions |
+|---|---|---|---|
+| `/webhook/profil-get` | POST | Récupération profil | Auth |
+| `/webhook/profil-save` | POST | Mise à jour profil | Auth |
 
-### Cotations & Historique
-| Route | Rôle | Permissions |
-|---|---|---|
-| `POST /webhook/ami-calcul` | Calcul cotation NGAP via N8N (+ fallback) | `create_invoice` — infirmières uniquement |
-| `POST /webhook/ami-historique` | Historique cotations de l'infirmière connectée | `view_own_data` |
-| `POST /webhook/ami-supprimer` | Suppression cotation unitaire (`force:true` bypass verrou CPAM) | `view_own_data` — propres données uniquement |
-| `POST /webhook/ami-supprimer-tout` | Suppression en masse par période (`force:true` requis) | `view_own_data` — propres données uniquement |
-| `POST /webhook/ami-live` | Cotation en direct (mode live tournée) | Auth |
+### Patients
+| Route | Méthode | Rôle | Permissions |
+|---|---|---|---|
+| `/webhook/patients-push` | POST | Backup patients chiffrés → serveur | Auth |
+| `/webhook/patients-pull` | GET | Restauration patients depuis serveur | Auth |
 
-### Tournée & Calendrier
-| Route | Rôle | Permissions |
-|---|---|---|
-| `POST /webhook/ami-tournee-ia` | Optimisation tournée IA — retourne route + alertes + adresses GPS | `manage_tournee` |
-| `POST /webhook/import-calendar` | Import calendrier ICS/CSV avec géocodage | `import_calendar` — infirmières uniquement |
+### Cotation NGAP (proxy → N8N v7)
+| Route | Méthode | Cible N8N | Rôle |
+|---|---|---|---|
+| `/webhook/ami-calcul` | POST | `POST /ami-calcul` | Cotation NGAP complète — pipeline IA 14 nœuds |
+| `/webhook/ami-historique` | GET | Supabase direct (bypass N8N) | Historique cotations par user_id |
+| `/webhook/ami-supprimer` | POST | `POST /ami-supprimer` | Suppression cotation par ID ou patient_id |
+| `/webhook/ami-supprimer-tout` | POST | — | Suppression groupée (worker gère) |
+| `/webhook/ami-save-cotation` | POST | — | Sauvegarde cotation depuis tournée live |
 
-### Patients (sync)
-| Route | Rôle | Permissions |
+### Tournée & Pilotage
+| Route | Méthode | Rôle |
 |---|---|---|
-| `POST /webhook/patients-push` | Sync patients local → serveur (sauvegarde chiffrée) | Auth |
-| `POST /webhook/patients-pull` | Sync patients serveur → local (restauration) | Auth |
-| `POST /webhook/patients-delete` | Suppression patient | Auth |
+| `/webhook/ami-tournee-ia` | POST | Optimisation tournée IA → retourne route ordonnée |
+| `/webhook/ami-live` | POST | Actions pilotage live (recalcul, get_status, patient_done, etc.) |
 
-### Prescripteurs
-| Route | Rôle | Permissions |
+### IA
+| Route | Méthode | Rôle |
 |---|---|---|
-| `POST /webhook/prescripteur-get` | Récupération liste prescripteurs | `manage_prescripteurs` — infirmières |
-| `POST /webhook/prescripteur-liste` | Liste prescripteurs | `manage_prescripteurs` — infirmières |
-| `POST /webhook/prescripteur-add` | Ajout prescripteur | `manage_prescripteurs` — infirmières |
+| `/webhook/ami-copilot` | POST | Copilote IA conversationnel (questions métier NGAP) |
+| `/webhook/ami-week-analytics` | POST | Analyse hebdomadaire IA |
 
-### Messagerie
-| Route | Rôle | Permissions |
+### Admin
+| Route | Méthode | Rôle |
 |---|---|---|
-| `POST /webhook/contact-send` | Infirmière → envoi message admin | Auth |
-| `POST /webhook/contact-mes-messages` | Infirmière → consultation de ses messages | Auth |
-| `POST /webhook/admin-messages` | Admin → lecture messages entrants | `view_users_list` |
-| `POST /webhook/admin-message-read` | Admin → marquer message lu | `view_users_list` |
-| `POST /webhook/admin-message-reply` | Admin → répondre à un message | `view_users_list` |
-
-### Administration
-| Route | Rôle | Permissions |
-|---|---|---|
-| `POST /webhook/admin-liste` | Liste des comptes infirmières (admins exclus) | `view_users_list` |
-| `POST /webhook/admin-stats` | Statistiques globales tous utilisateurs | `view_stats` |
-| `POST /webhook/admin-logs` | Logs audit + système | `view_stats` |
-| `POST /webhook/admin-security-stats` | Statistiques sécurité (fraudes, anomalies) | `view_stats` |
-| `POST /webhook/admin-bloquer` | Blocage d'un compte infirmière | `view_users_list` |
-| `POST /webhook/admin-debloquer` | Déblocage d'un compte infirmière | `view_users_list` |
-| `POST /webhook/admin-supprimer` | Suppression d'un compte infirmière | `view_users_list` |
-| `POST /webhook/admin-system-reset` | Reset logs système | `view_stats` |
-
-### IA & Analytics
-| Route | Rôle | Permissions |
-|---|---|---|
-| `POST /webhook/ami-copilot` | Copilote IA conversationnel | Auth |
-| `POST /webhook/ami-week-analytics` | Analyse hebdomadaire IA | Auth |
+| `/webhook/admin-stats` | GET | Statistiques globales — infirmières uniquement, codes NGAP validés |
+| `/webhook/admin-users` | GET | Liste utilisateurs (rôle=infirmière) |
+| `/webhook/admin-action` | POST | Bloquer/débloquer/supprimer compte |
+| `/webhook/admin-message` | POST | Messagerie admin → infirmière |
 
 ### Monitoring
-| Route | Rôle | Permissions |
+| Route | Méthode | Rôle |
 |---|---|---|
-| `POST /webhook/log` | Log frontend → `system_logs` | Sans auth requise |
+| `/webhook/log` | POST | Log frontend → `system_logs` |
+| `/webhook/system-logs` | GET | Consultation logs + stats N8N (admin) |
 
 ---
 
@@ -280,101 +421,40 @@ admin:  ['view_users_list', 'view_stats', 'manage_tournee',
 
 ---
 
-## Ordre d'inclusion dans le HTML
+## Stockage local — isolation multi-utilisateurs
 
-```html
-<!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+| Données | Base | Clé | Chiffrement |
+|---|---|---|---|
+| Patients | IndexedDB `ami_patients_db_<userId>` | Par user — isolation stricte | AES-256 (clé JWT) |
+| Signatures | IndexedDB `ami_sig_db_<userId>` | Par user — isolation stricte | AES-256 |
+| Corrections GPS | IndexedDB `geocodeDB` | Partagé (données non-sensibles) | Non |
+| Historique cotations | Supabase `planning_patients` | `infirmiere_id` | Chiffrement champ |
+| Cache dashboard | localStorage `ami_dash_<userId>_*` | Par user | Non |
+| Historique copilote | localStorage | Partagé session | Non |
+| Logs audit | IndexedDB | Partagé local | Non (métadonnées) |
 
-<!-- Styles -->
-<link rel="stylesheet" href="style.css" />
-<link rel="stylesheet" href="notes.css" />
-
-<!-- Couche de base -->
-<script src="utils.js"></script>         <!-- 1. Store APP + helpers -->
-<script src="security.js"></script>      <!-- 2. Crypto + consentement + PIN -->
-
-<!-- Auth & UI -->
-<script src="auth.js"></script>          <!-- 3. Login / register / session -->
-<script src="ui.js"></script>            <!-- 4. Navigation + layout -->
-
-<!-- Patients & données santé -->
-<script src="geocode.js"></script>       <!-- 5. Géocodage pipeline -->
-<script src="patient-form.js"></script>  <!-- 6. Formulaire patient -->
-<script src="patients.js"></script>      <!-- 7. CRUD patients chiffré -->
-<script src="notes.js"></script>         <!-- 8. Notes par patient -->
-<script src="signature.js"></script>     <!-- 9. Signatures électroniques -->
-
-<!-- Cartographie -->
-<script src="map.js"></script>           <!-- 10. Carte Leaflet + corrections -->
-<script src="navigation.js"></script>    <!-- 11. GPS navigation -->
-
-<!-- Tournée IA -->
-<script src="ai-tournee.js"></script>    <!-- 12. Moteur optimisation tournée -->
-<script src="ai-layer.js"></script>      <!-- 13. Couche IA silencieuse (APRÈS ai-tournee.js) -->
-<script src="uber.js"></script>          <!-- 14. Mode Uber médical -->
-<script src="extras.js"></script>        <!-- 15. Helpers carte départ + scoring -->
-<script src="tournee.js"></script>       <!-- 16. Tournée UI + import calendrier -->
-
-<!-- Cotation & Finances -->
-<script src="cotation.js"></script>      <!-- 17. Cotation NGAP -->
-<script src="tresorerie.js"></script>    <!-- 18. Trésorerie + comptabilité -->
-<script src="offline-queue.js"></script> <!-- 19. File attente offline -->
-<script src="onboarding.js"></script>      <!-- 32. Onboarding premier lancement -->
-<script src="infirmiere-tools.js"></script> <!-- 33. Outils professionnels IDEL -->
-
-<!-- IA & Vocal -->
-<script src="voice.js"></script>         <!-- 32. Dictée vocale médicale -->
-<script src="ai-assistant.js"></script>  <!-- 33. Assistant vocal IA + NLP -->
-<script src="copilote.js"></script>      <!-- 32. Copilote IA chat -->
-
-<!-- Rapports & Admin -->
-<script src="rapport.js"></script>       <!-- 33. Rapport mensuel PDF + NGAP -->
-<script src="dashboard.js"></script>     <!-- 32. Dashboard + statistiques -->
-<script src="admin.js"></script>         <!-- 33. Panneau administration -->
-<script src="contact.js"></script>       <!-- 32. Messagerie infirmière→admin -->
-<script src="profil.js"></script>        <!-- 33. Profil utilisateur -->
-
-<!-- PWA -->
-<script src="pwa.js"></script>           <!-- 32. Install + offline + tiles -->
-```
+> **Règle fondamentale** : la fermeture de session ne supprime jamais les données d'une infirmière. Seule la connexion d'un autre compte ferme la connexion DB précédente (sans effacement).
 
 ---
 
-## Flux données patient (du formulaire à la navigation)
-
-```
-Saisie formulaire (patient-form.js)
-    ↓ buildPatientObject()
-    → patient.street / .extra / .zip / .city / .addressFull
-    ↓
-Géocodage (geocode.js)
-    → processAddressBeforeGeocode() — corrections apprises
-    → smartGeocode() : Photon → Nominatim → cache IndexedDB
-    → patient.lat / .lng / .geoScore
-    ↓
-Chiffrement local (security.js)
-    → encryptData() → stockage IndexedDB (patients.js)
-    ↓
-Sync optionnelle (pwa.js / patients-push)
-    → données chiffrées envoyées au serveur pour backup
-    ↓
-Navigation (navigation.js)
-    → geoScore ≥ 70 : coordonnées GPS directes
-    → sinon : addressFull → Google Maps géocode
-```
-
----
-
-## Flux cotation NGAP
+## Flux cotation NGAP (avec N8N v7)
 
 ```
 Saisie actes + texte libre (cotation.js)
-    ↓ cotation()
+    ↓ cotation() — résolution mode édition (_editRef)
     → /webhook/ami-calcul (worker.js)
-    → N8N IA → calcul NGAP
-    → fallback local si N8N KO (IK + majorations auto)
+        → vérifie JWT + fraude score front
+        → ajoute invoice_number si nouveau
+        → proxy → N8N /ami-calcul
+            → NLP Médical (extraction actes + preuve_soin)
+            → RAG NGAP + AI Agent Grok-3
+            → Pipeline validation 14 nœuds
+            → Fraude Detector v7 (preuve soin intégrée)
+            → FSE Generator v6
+            → Sauvegarder en BDD (PostgreSQL)
+            → Réponse JSON normalisée
+        ← worker valide / fallback si N8N KO
+    ← résultat : actes, total, AMO/AMC, alerts, fraud, fse
     ↓
 Résultat affiché → vérification IA optionnelle (openVerify)
     ↓
@@ -389,27 +469,9 @@ Si hors-ligne → queueCotation() → syncOfflineQueue() au retour en ligne
 
 ---
 
-## Sécurité du stockage local
-
-| Données | Stockage | Chiffrement |
-|---|---|---|
-| Patients | IndexedDB (`patientsDB`) | AES-256 — clé dérivée du token JWT |
-| Signatures | IndexedDB (`signaturesDB`) | AES-256 — même clé de session |
-| Corrections GPS apprises | IndexedDB (`geocodeDB`) | Non chiffré (données non-sensibles) |
-| Historique cotations | Supabase | Chiffrement de champ AES-256-GCM côté worker |
-| Logs audit locaux | IndexedDB | Non chiffré (métadonnées uniquement) |
-| Historique copilote | localStorage | Non chiffré (conversations IA sans données patient) |
-
----
-
-
----
-
 ## Heuristique trafic temporelle
 
 Intégrée dans `ai-tournee.js` — zéro API externe, fonctionne hors-ligne.
-
-Les temps OSRM (trafic idéal) sont corrigés par des coefficients basés sur les patterns CEREMA/INSEE :
 
 | Créneau | Jours | Coefficient | Label |
 |---|---|---|---|
@@ -420,43 +482,35 @@ Les temps OSRM (trafic idéal) sont corrigés par des coefficients basés sur le
 | 9h30–12h30 | Sam | ×1.25 | 🟡 Sam. matin |
 | Reste | Tous | ×1.0 | 🟢 Fluide |
 
-Le coefficient USER_STATS (retard moyen constaté) s'applique en supplément.
-Propagé dans : `trafficAwareCachedTravel()`, `optimizeTour()`, `simulateLookahead()`, `recomputeRoute()`.
-
 ---
 
 ## Outils professionnels (`infirmiere-tools.js`)
 
 | Outil | Fonctionnalité |
 |---|---|
-| Charges & net réel | Simulateur annuel URSSAF + CARPIMKO + IR — barème 2024/2026 |
+| Charges & net réel | Simulateur annuel URSSAF + CARPIMKO + IR — barème 2026 |
 | Journal kilométrique | Saisie trajets, barème IK par CV (3→7+), véhicule électrique, export CSV |
 | Modèles de soins | Bibliothèque CRUD de descriptions pré-remplies, cotation 1 clic |
 | Simulateur majorations | Calcul instantané AMI/AIS/BSx + IFD/IK/MIE/MCI selon heure/jour |
 | Suivi ordonnances | Enregistrement, alertes expiration 30j, lien carnet patient |
 
-## Codes postaux — étendre la base
-
-Le fichier `patient-form.js` contient `CP_DATA`. Pour ajouter un département :
-
-```javascript
-{cp:"01000", ville:"Bourg-en-Bresse"},
-{cp:"01100", ville:"Oyonnax"},
-// ...
-```
-
-Base complète La Poste (gratuite) :
-https://datanova.laposte.fr/datasets/laposte-hexasmal
-
 ---
 
 ## Versions
 
-| Composant | Version |
-|---|---|
-| Worker backend | v6.1 |
-| Moteur tournée IA | v5.1 (heuristique trafic) |
-| Assistant vocal IA | v1.1 (WebLLM retiré — NLP embarqué) |
-| PWA / Service Worker | v3.6 |
-| Sécurité RGPD | v2.0 |
-| Admin panel | v4.0 |
+| Composant | Version | Notes |
+|---|---|---|
+| Worker backend | v6.1 | Proxy N8N sécurisé, retry 1×, fallback |
+| Agent IA N8N | **v7** | Ajout preuve_soin, bouclier anti-redressement, 14 nœuds |
+| Moteur tournée IA | v5.1 | Heuristique trafic CEREMA |
+| Assistant vocal IA | v1.1 | WebLLM retiré — NLP embarqué |
+| PWA / Service Worker | v3.6 | Cache offline, tiles carte |
+| Sécurité RGPD | v2.0 | Isolation multi-users IndexedDB |
+| Admin panel | v4.0 | Admins invisibles entre eux |
+
+---
+
+## Codes postaux — étendre la base
+
+Le fichier `patient-form.js` contient `CP_DATA`. Base complète La Poste (gratuite) :  
+https://datanova.laposte.fr/datasets/laposte-hexasmal
