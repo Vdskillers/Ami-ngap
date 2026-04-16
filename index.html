@@ -15,8 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/mobile-premium.css">
-<link rel="stylesheet" href="css/desktop-premium.css">
+<link rel="stylesheet" href="mobile-premium.css">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0b0f14">
@@ -27,11 +26,6 @@
   #map-download-panel{background:var(--s,#111827);border:1px solid var(--b,#1e2d3d);border-radius:8px;padding:14px;margin-top:12px;display:none}
   .dl-bar-wrap{height:6px;background:rgba(0,212,170,.15);border-radius:3px;margin-top:8px}
   .dl-bar{height:6px;background:#00d4aa;border-radius:3px;width:0%;transition:width .3s}
-
-  @media(max-width:768px){
-    #mobile-greeting{display:flex!important}
-    .logo .ltext,.logo .lsub{display:none}
-  }
 </style>
 </head>
 <body>
@@ -337,7 +331,6 @@
       <div id="admin-header-controls" style="display:none;align-items:center;gap:8px">
         <div class="admin-mode-badge" id="admin-mode-badge">🛡️ MODE ADMIN SÉCURISÉ</div>
         <button class="bout" style="font-size:11px;padding:5px 12px" onclick="logout()">⏻ Déconnexion</button>
-        <div id="mobile-greeting" style="display:none;flex-direction:column;line-height:1.1;margin-left:4px"><span id="mobile-greeting-hello" style="font-size:9px;color:rgba(255,255,255,.5);font-family:var(--fm);letter-spacing:.06em;text-transform:uppercase">Bonjour</span><span id="mobile-greeting-name" style="font-size:12px;font-weight:700;color:#F0F4F8;letter-spacing:-.2px">—</span></div>
       </div>
       <!-- Mode normal : profil + déconnexion -->
       <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
@@ -535,7 +528,7 @@
         </div>
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
         </div>
@@ -2159,7 +2152,7 @@
       <p class="ps">AES-256 · Privacy by Design · HDS ready</p>
 
       <!-- Statut protection + PIN — 1 col mobile, 2 col desktop -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:16px">
         <div class="card">
           <div class="ct">🛡️ Protection active</div>
           <div class="secrow"><div class="secdot ok"></div><div><strong style="font-size:13px;display:block">Chiffrement AES-256-GCM</strong><span style="font-size:12px;color:var(--m)">Données locales chiffrées en mémoire</span></div></div>
