@@ -240,18 +240,35 @@ async function _syncPlanningFromServer() {
     } catch {}
     if (!Array.isArray(remote) || !remote.length) return;
 
+    // ── Validation stricte : refuser les données corrompues (actes NGAP sans noms) ──
+    // Un vrai patient de tournée a un nom OU un patient_id OU une description non-NGAP
+    const isRealPatient = p =>
+      (p.nom && p.nom.trim().length > 1) ||
+      (p.prenom && p.prenom.trim().length > 1) ||
+      (p.patient_id && /^P\d+/i.test(String(p.patient_id))) ||
+      (p.description && p.description.trim().length > 3 &&
+        !/^(AMI|IFD|IK|BSC|MN|AIS|DI|BSA|BSB)\b/i.test(p.description.trim()));
+
+    const validRemote = remote.filter(isRealPatient);
+
+    // Si aucun patient valide → les données sont des cotations NGAP mal pushées → ignorer + purger
+    if (!validRemote.length) {
+      console.warn('[AMI] Planning serveur ignoré : données NGAP sans noms patients');
+      // Purger le serveur pour éviter la répétition
+      try { await wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }); } catch {}
+      return;
+    }
+
     // Utiliser les données distantes seulement si le local est vide
-    // (la version locale fait foi si elle existe — évite d'écraser un travail en cours)
     const localSaved = _loadPlanning();
     if (!localSaved || !localSaved.length) {
-      _savePlanning(remote);
-      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur' };
+      _savePlanning(validRemote);
+      APP.importedData = { patients: validRemote, total: validRemote.length, source: 'planning_serveur' };
       _renderPlanningIfVisible();
-      console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
+      console.info('[AMI] Planning sync depuis serveur :', validRemote.length, 'patient(s)');
     } else {
-      // Fusion : ajouter les entrées distantes absentes localement (par id)
       const localIds = new Set(localSaved.map(p => p.id || p.patient_id || ''));
-      const toAdd = remote.filter(p => {
+      const toAdd = validRemote.filter(p => {
         const pid = p.id || p.patient_id || '';
         return pid && !localIds.has(pid);
       });
@@ -2083,6 +2100,12 @@ function resetTourneeJour() {
   APP.importedData  = null;
   APP.uberPatients  = [];
   APP.nextPatient   = null;
+
+  // Vider localStorage planning (sinon les anciens patients reviennent au rechargement)
+  _clearPlanning();
+
+  // Vider aussi weekly_planning sur le serveur
+  try { wpost('/webhook/planning-push', { encrypted_data: '', updated_at: new Date().toISOString() }).catch(()=>{}); } catch {}
 
   // ── Vider le localStorage planning (sinon les anciens patients reviennent au rechargement) ──
   _clearPlanning();
