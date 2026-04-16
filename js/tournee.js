@@ -2028,21 +2028,66 @@ function _openCotationComplete() {
   const modal   = document.getElementById('cot-modal-live');
   if (modal) modal.remove();
 
-  // Pré-remplir le textarea de cotation si disponible
-  const textarea = document.getElementById('f-txt');
-  if (textarea && patient) textarea.value = patient.texte || patient.description || '';
-
   if (typeof navTo === 'function') navTo('cot', null);
-  if (typeof showToast === 'function') showToast('💡 Description pré-remplie — ajustez et cotez');
+
+  // Pré-remplir TOUS les champs patient + description après navigation
+  setTimeout(() => {
+    if (!patient) return;
+
+    const setV = (elId, val) => {
+      const el = document.getElementById(elId);
+      if (el && val) el.value = val;
+    };
+
+    // Champs identité patient
+    const nomComplet = ([patient.prenom, patient.nom].filter(Boolean).join(' ')
+      || patient._nomAff || patient.patient || '').trim();
+    setV('f-pt',  nomComplet);
+    setV('f-ddn', patient.ddn  || patient.date_naissance || '');
+    setV('f-sec', patient.nir  || patient.secu || '');
+    setV('f-amo', patient.amo  || '');
+    setV('f-amc', patient.amc  || '');
+    setV('f-exo', patient.exo  || '');
+    setV('f-pr',  patient.medecin || '');
+
+    // Description soins : actes_recurrents > texte importé
+    const desc = (patient.actes_recurrents || patient.texte || patient.description || '').trim();
+    const fTxt = document.getElementById('f-txt');
+    if (fTxt && desc) {
+      fTxt.value = desc;
+      if (typeof renderLiveReco === 'function') renderLiveReco(desc);
+    }
+
+    // Réinitialiser le sélecteur patient (badge) pour éviter conflit visuel
+    if (typeof cotClearPatient === 'function') cotClearPatient();
+
+    // Afficher le badge patient si nom disponible
+    const badge     = document.getElementById('cot-patient-badge');
+    const badgeText = document.getElementById('cot-patient-badge-text');
+    if (badge && badgeText && nomComplet) {
+      badgeText.textContent = '\uD83D\uDC64 ' + nomComplet
+        + (patient.ddn ? ' \u2014 ' + new Date(patient.ddn).toLocaleDateString('fr-FR') : '');
+      badge.style.display = 'flex';
+    }
+
+    if (typeof showToast === 'function') {
+      showToast('\uD83D\uDC64 ' + (nomComplet || 'Patient') + ' \u2014 fiche pré-remplie');
+    }
+  }, 220);
 }
 
 /* Ouvre la modale de cotation pour un patient spécifique depuis la liste tournée */
 async function openCotationPatient(patientIndex) {
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Cherche d'abord dans uberPatients (tournée en cours / bilan),
+  // puis dans importedData (planning hebdomadaire)
+  const uberPats = APP.get('uberPatients') || [];
+  const impPats  = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Priorité uberPatients si disponibles (bilan de tournée), sinon importedData
+  const patients = uberPats.length ? uberPats : impPats;
   const patient  = patients[patientIndex];
   if (!patient) return;
 
-  // Si cotation déjà validée, proposer de la re-consulter
+  // Si cotation déjà validée, proposer de la re-consulter / corriger
   if (patient._cotation?.validated) {
     showCotationModal(patient, patient._cotation, null);
     return;
