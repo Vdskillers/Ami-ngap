@@ -86,7 +86,7 @@ function showApp(){
     loadPrescripteurs();
 
     // ── Notices admin pour toutes les sections accessibles ──
-    ['dash-admin-notice','copilote-admin-notice','stats-admin-notice','sig-admin-notice','his-admin-notice'].forEach(id => {
+    ['dash-admin-notice','copilote-admin-notice','sig-admin-notice','his-admin-notice'].forEach(id => {
       const el = $(id); if(el) el.style.display = 'flex';
     });
 
