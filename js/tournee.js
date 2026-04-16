@@ -44,10 +44,28 @@ function loadTourneeData() {
   return null;
 }
 
+/* Import depuis le Carnet patients → écrit dans tourneeData (pas dans importedData/planning) */
+function importTourneePatients(d) {
+  storeTourneeData(d);
+  // Mettre à jour le banner + CA
+  if (typeof showCaFromImport === 'function') showCaFromImport();
+  const banner = $('pla-import-banner');
+  const info   = $('pla-import-info');
+  if (banner && d) {
+    const n = d.total || d.patients?.length || 0;
+    if (info) info.innerHTML = `✅ <strong>${n}</strong> patient(s) prêt(s) pour la tournée.`;
+    banner.style.display = 'block';
+  }
+}
+
 function storeImportedData(d){
   APP.importedData=d;
-  // Sauvegarder aussi dans la clé tournée (séparée du Planning hebdomadaire)
-  storeTourneeData(d);
+  // Si c'est un import depuis le Carnet patients → aussi dans tourneeData (Tournée IA)
+  // Si c'est depuis weekly_planning/serveur → NE PAS écrire dans tourneeData
+  const src = d?.source || '';
+  if (d && /carnet_patients|import|calendrier/i.test(src)) {
+    storeTourneeData(d);
+  }
   // Sauvegarder dans localStorage (persistance entre sessions)
   if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
   // Mettre à jour le banner Planning
@@ -125,7 +143,7 @@ document.addEventListener('app:nav',     _onNavLive);
 document.addEventListener('ui:navigate', _onNavLive);
 
 function showCaFromImport(){
-  const _tdCa = loadTourneeData() || APP.importedData;
+  const _tdCa = loadTourneeData();
   if(!_tdCa)return;
   const patients=_tdCa.patients||_tdCa.entries||[];
   if(!patients.length)return;
@@ -152,7 +170,7 @@ function estimateRevenue(patients){
 }
 
 function showImportedPatients(){
-  const _tdShow = loadTourneeData() || APP.importedData;
+  const _tdShow = loadTourneeData();
   if(!_tdShow){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
   const patients=_tdShow.patients||_tdShow.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
@@ -607,7 +625,7 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const _td = loadTourneeData(); const rawPatients = _td?.patients || _td?.entries || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+  const _td = loadTourneeData(); const rawPatients = _td?.patients || _td?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -811,7 +829,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
 /* Retirer un patient de la tournée optimisée */
 function removeFromTournee(encodedId, fallbackIndex) {
   const id = decodeURIComponent(encodedId);
-  const data = loadTourneeData() || APP.get('importedData') || APP.importedData;
+  const data = loadTourneeData();
   if (!data) return;
   const patients = data.patients || data.entries || [];
   const idx = patients.findIndex((p, i2) =>
