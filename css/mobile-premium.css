@@ -84,7 +84,7 @@
 
   #mobile-greeting-hello {
     font-size: 9px !important;
-    color: rgba(255,255,255,.35) !important;
+    color: rgba(255,255,255,.7) !important;
     font-family: var(--fm) !important;
     letter-spacing: .08em !important;
     text-transform: uppercase !important;
@@ -109,7 +109,7 @@
   }
 
   .bn-item {
-    color: rgba(255,255,255,.28) !important;
+    color: rgba(255,255,255,.7) !important;
     font-size: 9px !important;
     letter-spacing: .04em !important;
     border-radius: 12px !important;
@@ -162,7 +162,7 @@
 
   .ps {
     font-size: 13px !important;
-    color: rgba(255,255,255,.35) !important;
+    color: rgba(255,255,255,.7) !important;
   }
 
   /* ── CARDS ── */
@@ -181,7 +181,7 @@
   .ct {
     font-size: 13px !important;
     font-weight: 700 !important;
-    color: rgba(255,255,255,.5) !important;
+    color: rgba(255,255,255,.82) !important;
     letter-spacing: .04em !important;
   }
 
@@ -252,7 +252,7 @@
 
   label {
     font-size: 10px !important;
-    color: rgba(255,255,255,.35) !important;
+    color: rgba(255,255,255,.7) !important;
     letter-spacing: .1em !important;
     text-transform: uppercase !important;
     font-weight: 700 !important;
@@ -273,7 +273,7 @@
 
   .sv { font-size: 30px !important; letter-spacing: -.6px !important; }
   .si { font-size: 20px !important; }
-  .sn { font-size: 11px !important; color: rgba(255,255,255,.35) !important; }
+  .sn { font-size: 11px !important; color: rgba(255,255,255,.7) !important; }
 
   /* ── KPI ── */
   .kpi {
@@ -288,7 +288,7 @@
   .kpi-v.b { color: var(--mp-accent2) !important; }
   .kpi-v.o { color: #FFB830 !important; }
   .kpi-v.r { color: #FF6B6B !important; }
-  .kpi-l   { font-size: 10px !important; color: rgba(255,255,255,.35) !important; }
+  .kpi-l   { font-size: 10px !important; color: rgba(255,255,255,.7) !important; }
 
   /* ── ACTES ROWS ── */
   .ar {
@@ -357,7 +357,7 @@
 
   th {
     background: rgba(255,255,255,.03) !important;
-    color: rgba(255,255,255,.35) !important;
+    color: rgba(255,255,255,.7) !important;
     font-size: 10px !important;
     letter-spacing: .08em !important;
     padding: 10px 12px !important;
@@ -395,7 +395,7 @@
   .atab {
     border-radius: 9px !important;
     font-size: 13px !important;
-    color: rgba(255,255,255,.35) !important;
+    color: rgba(255,255,255,.7) !important;
     padding: 8px 20px !important;
     transition: all .15s !important;
   }

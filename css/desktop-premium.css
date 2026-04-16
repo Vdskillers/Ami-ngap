@@ -7,6 +7,8 @@
 @media (min-width: 769px) {
 
   :root {
+    --dp-muted: rgba(255,255,255,.7);
+
     --dp-teal:  #00E5B8;
     --dp-blue:  #5B8EFF;
     --dp-amber: #FFB830;
@@ -14,7 +16,7 @@
     --dp-card:  rgba(255,255,255,.03);
     --dp-border:rgba(255,255,255,.07);
     --dp-hover: rgba(255,255,255,.045);
-    --dp-muted: rgba(255,255,255,.3);
+    --dp-muted: rgba(255,255,255,.7);
     --dp-sub:   rgba(255,255,255,.55);
   }
 
@@ -104,7 +106,7 @@
 
   .slbl {
     font-size: 9px !important;
-    color: rgba(255,255,255,.15) !important;
+    color: rgba(255,255,255,.5) !important;
     letter-spacing: .14em !important;
     padding: 10px 8px 4px !important;
   }
@@ -113,7 +115,7 @@
     padding: 7px 9px !important;
     border-radius: 9px !important;
     font-size: 12px !important;
-    color: rgba(255,255,255,.3) !important;
+    color: rgba(255,255,255,.7) !important;
     gap: 8px !important;
     transition: all .12s !important;
   }
@@ -295,7 +297,7 @@
   .acard { background: rgba(10,12,18,.97) !important; border: 1px solid rgba(255,255,255,.08) !important; border-radius: 22px !important; }
   .amark { background: linear-gradient(135deg, var(--dp-teal), var(--dp-blue)) !important; box-shadow: 0 0 28px rgba(0,229,184,.3) !important; }
   .atabs { background: rgba(255,255,255,.04) !important; border: 1px solid rgba(255,255,255,.08) !important; border-radius: 11px !important; }
-  .atab { border-radius: 8px !important; font-size: 13px !important; color: rgba(255,255,255,.3) !important; }
+  .atab { border-radius: 8px !important; font-size: 13px !important; color: rgba(255,255,255,.7) !important; }
   .atab.on { background: rgba(0,229,184,.1) !important; color: var(--dp-teal) !important; border: 1px solid rgba(0,229,184,.2) !important; }
   .abtn { background: linear-gradient(135deg, var(--dp-teal), var(--dp-blue)) !important; color: #fff !important; border-radius: 12px !important; font-size: 14px !important; font-weight: 700 !important; box-shadow: 0 4px 18px rgba(0,229,184,.22) !important; }
 
