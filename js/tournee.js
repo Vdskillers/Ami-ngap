@@ -160,9 +160,8 @@ function estimateRevenue(patients){
 
 function showImportedPatients(){
   const _tdShow = loadTourneeData();
-  if(!_tdShow){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
-  const patients=_tdShow.patients||_tdShow.entries||[];
-  if(!patients.length){alert('Aucun patient dans les données importées.');return;}
+  const patients=(_tdShow?.patients||_tdShow?.entries||APP.importedData?.patients||APP.importedData?.entries||[]);
+  if(!patients.length){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier d\'abord.');return;}
   $('tbody').innerHTML=`<div class="card">
     <div class="ct">👥 Patients importés (${patients.length})</div>
     ${patients.map((p,i)=>`<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info">
@@ -2162,6 +2161,18 @@ function resetTourneeJour() {
   if (uberRoute) uberRoute.textContent = '';
 
   LIVE_PATIENT_ID = null;
+
+  // Vider la carte (trajet + markers patients)
+  try {
+    if (typeof _turRouteLine !== 'undefined' && _turRouteLine && APP.map) {
+      APP.map.removeLayer(_turRouteLine);
+      window._turRouteLine = null;
+    }
+    if (APP.markers && APP.map) {
+      APP.markers.forEach(m => { try { APP.map.removeLayer(m); } catch(_){} });
+      APP.markers = [];
+    }
+  } catch(_) {}
 
   if (typeof showToast === 'function') showToast('🗑️ Tournée du jour réinitialisée.');
 }
