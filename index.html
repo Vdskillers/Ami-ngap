@@ -310,12 +310,12 @@
   <div style="font-size:10px;color:var(--m);margin-top:4px">Dites "stop assistant" pour désactiver</div>
   <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
     <button class="btn bs bsm" onclick="typeof muteVoice==='function'?muteVoice():null" style="font-size:10px;padding:3px 8px">🔇 Mute</button>
-    <button class="btn bp bsm" onclick="typeof initLLM==='function'?initLLM():null" style="font-size:10px;padding:3px 8px">🤖 Activer IA locale</button>
+    <button class="btn bp bsm" onclick="typeof initLLM==='function'?initLLM():null" style="font-size:10px;padding:3px 8px" title="NLP NGAP embarqué — zéro téléchargement">🤖 IA locale NLP</button>
   </div>
 </div>
 <!-- Bandeau hors-ligne -->
 <div id="offline-banner" style="display:none;position:fixed;top:64px;left:0;right:0;z-index:200;background:rgba(255,181,71,.12);border-bottom:1px solid rgba(255,181,71,.3);padding:6px 20px;font-size:12px;color:var(--w);font-family:var(--fm);align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"></div>
-<div id="llm-progress">🤖 IA locale prête</div>
+<div id="llm-progress">🤖 IA locale active</div>
 
 <!-- APP SHELL -->
 <div id="app" style="display:none">
@@ -446,7 +446,7 @@
         </div>
         <div class="lbl">Facturation</div>
         <div class="fg" style="margin-bottom:20px">
-          <div class="f"><label for="f-exo">Exonération</label><select id="f-exo" name="exoneration"><option value="">Régime général — ticket modérateur (40%)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
+          <div class="f"><label for="f-exo">Exonération</label><select id="f-exo" name="exoneration"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
           <div class="f"><label for="f-regl">Mode règlement</label><select id="f-regl" name="reglement"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
           <div class="f"><label for="f-ds">Date du soin</label><input type="date" id="f-ds" name="date_soin"></div>
           <div class="f"><label for="f-hs">Heure du soin</label><input type="time" id="f-hs" name="heure_soin" onchange="this._userEdited=!!this.value"></div>
