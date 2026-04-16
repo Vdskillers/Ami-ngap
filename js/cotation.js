@@ -84,61 +84,101 @@ async function cotation() {
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
 
-    // ── Sauvegarder la cotation dans le carnet patient (IDB) ────────────────
-    // Synchronise IDB ↔ Supabase pour que Dashboard et Carnet patient affichent
-    // le même nombre de cotations.
+    // ── Upsert cotation dans le carnet patient (IDB) ───────────────────────
+    // RÈGLE STRICTE :
+    //   • Patient existant → toujours upsert (mise à jour), jamais de doublon
+    //   • Patient absent du carnet → créer la fiche + la cotation (1 seule fois)
     try {
       const _patNom = (gv('f-pt') || '').trim();
       if (_patNom && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
         const _patRows = await _idbGetAll(PATIENTS_STORE);
-        // Chercher le patient par nom (correspondance partielle insensible à la casse)
-        const _patNomLower = _patNom.toLowerCase();
-        const _patRow = _patRows.find(r =>
-          ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_patNomLower) ||
-          ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_patNomLower)
-        );
+
+        // Recherche par ID (mode édition) puis par nom exact/partiel
+        let _patRow = _editRef?.patientId
+          ? _patRows.find(r => r.id === _editRef.patientId)
+          : null;
+        if (!_patRow) {
+          const _nomLow = _patNom.toLowerCase();
+          _patRow = _patRows.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+          );
+        }
+
+        const _invNum = d.invoice_number || _editRef?.invoice_number || null;
+        const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
+        const _newCot = {
+          date:           _cotDate,
+          heure:          gv('f-hs') || '',
+          actes:          d.actes || [],
+          total:          parseFloat(d.total || 0),
+          part_amo:       parseFloat(d.part_amo || 0),
+          part_amc:       parseFloat(d.part_amc || 0),
+          part_patient:   parseFloat(d.part_patient || 0),
+          soin:           txt.slice(0, 120),
+          invoice_number: _invNum,
+          source:         _editRef ? 'cotation_edit' : 'cotation_form',
+          _synced:        true,
+        };
+
         if (_patRow) {
+          // ── Patient existant → upsert strict ──────────────────────────
           const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
           if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
 
-          const _newCot = {
-            date:           gv('f-ds') || new Date().toISOString().slice(0,10),
-            heure:          gv('f-hs') || '',
-            actes:          d.actes || [],
-            total:          parseFloat(d.total || 0),
-            part_amo:       parseFloat(d.part_amo || 0),
-            part_amc:       parseFloat(d.part_amc || 0),
-            part_patient:   parseFloat(d.part_patient || 0),
-            soin:           txt.slice(0, 120),
-            invoice_number: d.invoice_number || (_editRef?.invoice_number) || null,
-            source:         _editRef ? 'cotation_edit' : 'cotation_form',
-            _synced:        true,
-          };
+          // Résoudre l'index à mettre à jour (ordre de priorité)
+          let _idx = -1;
+          // 1. cotationIdx direct (depuis fiche patient)
+          if (typeof _editRef?.cotationIdx === 'number' && _editRef.cotationIdx >= 0)
+            _idx = _editRef.cotationIdx;
+          // 2. Par invoice_number (tournée ou re-cotation)
+          if (_idx < 0 && _invNum)
+            _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
+          // 3. Par invoice_number original du ref (cas correction post-tournée)
+          if (_idx < 0 && _editRef?.invoice_number)
+            _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
 
-          // Mode édition : remplacer la cotation existante
-          // Index résolu par cotationIdx direct OU par invoice_number (tournée)
-          let _editIdx = (typeof _editRef?.cotationIdx === 'number') ? _editRef.cotationIdx : -1;
-          if (_editIdx < 0 && _editRef?.invoice_number) {
-            _editIdx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
+          if (_idx >= 0) {
+            // Cotation existante trouvée → mettre à jour
+            _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
+          } else if (!_editRef) {
+            // Aucun index ET pas en mode édition → première cotation pour ce patient (OK d'ajouter)
+            _pat.cotations.push(_newCot);
           }
-          if (_editRef && _editIdx >= 0 && _pat.cotations[_editIdx]) {
-            _pat.cotations[_editIdx] = {
-              ..._pat.cotations[_editIdx],
-              ..._newCot,
-              date_edit: new Date().toISOString(),
-            };
-          } else {
-            // Nouvelle cotation : vérifier l'absence de doublon par invoice_number
-            const _alreadySaved = _newCot.invoice_number &&
-              _pat.cotations.some(c => c.invoice_number === _newCot.invoice_number);
-            if (!_alreadySaved) _pat.cotations.push(_newCot);
-          }
+          // Si _editRef mais pas d'index → ne rien faire (eviter les doublons)
 
           _pat.updated_at = new Date().toISOString();
+          await _idbPut(PATIENTS_STORE, { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at });
+
+        } else if (!_editRef) {
+          // ── Patient absent du carnet → créer la fiche + la cotation ──
+          // Uniquement si ce n'est pas une correction (mode édition)
+          const _parts = _patNom.trim().split(/\s+/);
+          const _prenom = _parts.slice(0, -1).join(' ') || _patNom;
+          const _nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
+          const _newPat = {
+            id:         'pat_' + Date.now(),
+            nom:        _nom,
+            prenom:     _prenom,
+            ddn:        gv('f-ddn') || '',
+            amo:        gv('f-amo') || '',
+            amc:        gv('f-amc') || '',
+            exo:        gv('f-exo') || '',
+            medecin:    gv('f-pr')  || '',
+            cotations:  [_newCot],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            source:     'cotation_auto',
+          };
           await _idbPut(PATIENTS_STORE, {
-            id: _pat.id, nom: _pat.nom, prenom: _pat.prenom,
-            _data: _enc(_pat), updated_at: _pat.updated_at,
+            id:         _newPat.id,
+            nom:        _nom,
+            prenom:     _prenom,
+            _data:      _enc(_newPat),
+            updated_at: _newPat.updated_at,
           });
+          if (typeof showToast === 'function')
+            showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
         }
       }
     } catch(_idbErr) { console.warn('[cotation] IDB save KO:', _idbErr.message); }
@@ -240,81 +280,176 @@ function renderCot(d) {
 async function _saveEditedCotation(d) {
   const ref = window._editingCotation;
   if (!ref) return;
-  const { patientId, cotationIdx } = ref;
+
+  const { patientId, cotationIdx, invoice_number: refInvoice, _fromTournee } = ref;
+  // invoice_number final : préférer celui retourné par l'IA (PATCH Supabase),
+  // sinon celui stocké dans ref (tournée sans re-cotation)
+  const invNum = d.invoice_number || refInvoice || null;
 
   try {
-    const rows = await _idbGetAll(PATIENTS_STORE);
-    const row  = rows.find(r => r.id === patientId);
-    if (!row) throw new Error('Patient non trouvé');
+    // ── 1. Mise à jour IDB carnet patient ───────────────────────────────────
+    if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+      // Chercher la fiche patient : par ID direct si dispo, sinon par nom dans f-pt
+      let row = null;
+      const allRows = await _idbGetAll(PATIENTS_STORE);
 
-    const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
-    if (!p.cotations?.[cotationIdx]) throw new Error('Cotation introuvable');
-
-    // Mettre à jour avec les nouvelles données IA
-    p.cotations[cotationIdx] = {
-      ...p.cotations[cotationIdx],
-      actes:     d.actes || [],
-      total:     d.total || 0,
-      part_amo:  d.part_amo,
-      part_amc:  d.part_amc,
-      part_patient: d.part_patient,
-      dre_requise:  d.dre_requise || false,
-      date_edit: new Date().toISOString(),
-      source:    'edit',
-    };
-
-    const toStore = {
-      id:         row.id,
-      nom:        row.nom,
-      prenom:     row.prenom,
-      _data:      _enc(p),
-      updated_at: new Date().toISOString(),
-    };
-    await _idbPut(PATIENTS_STORE, toStore);
-
-    // Synchroniser vers Supabase (PATCH si invoice_number connu)
-    try {
-      const invNum = p.cotations[cotationIdx].invoice_number || null;
-      if (invNum && typeof apiCall === 'function') {
-        // Utiliser ami-save-cotation avec invoice_number → le worker fait un PATCH
-        apiCall('/webhook/ami-save-cotation', {
-          cotations: [{
-            actes:          d.actes || [],
-            total:          d.total || 0,
-            part_amo:       d.part_amo || 0,
-            part_amc:       d.part_amc || 0,
-            part_patient:   d.part_patient || 0,
-            dre_requise:    d.dre_requise || false,
-            source:         'cotation_edit',
-            invoice_number: invNum, // déclenche PATCH côté worker
-          }]
-        }).catch(() => {}); // silencieux — IDB fait foi
+      if (patientId) {
+        row = allRows.find(r => r.id === patientId);
       }
-    } catch (_syncErr) {}
+      if (!row) {
+        // Fallback : recherche par nom dans le champ f-pt
+        const nomField = (typeof gv === 'function' ? gv('f-pt') : '') || '';
+        const nomLow   = nomField.toLowerCase().trim();
+        if (nomLow) {
+          row = allRows.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(nomLow) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(nomLow)
+          );
+        }
+      }
 
-    // Invalider le cache dashboard
+      // Si aucune fiche trouvée et qu'on vient de la tournée (pas depuis fiche patient)
+      // → créer la fiche patient automatiquement avec cette cotation
+      if (!row && _fromTournee && typeof _enc === 'function') {
+        const nomField = (typeof gv === 'function' ? gv('f-pt') : '') || '';
+        if (nomField.trim()) {
+          const parts  = nomField.trim().split(/\s+/);
+          const prenom = parts.slice(0, -1).join(' ') || nomField.trim();
+          const nom    = parts.length > 1 ? parts[parts.length - 1] : '';
+          const newPat = {
+            id: 'pat_' + Date.now(), nom, prenom,
+            ddn:        (typeof gv === 'function' ? gv('f-ddn') : '') || '',
+            amo:        (typeof gv === 'function' ? gv('f-amo') : '') || '',
+            cotations: [{
+              date:           new Date().toISOString(),
+              actes:          d.actes || [],
+              total:          parseFloat(d.total || 0),
+              invoice_number: invNum,
+              source:         'cotation_edit',
+              _synced:        false,
+            }],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            source:     'tournee_auto',
+          };
+          if (typeof _idbPut === 'function') {
+            await _idbPut(PATIENTS_STORE, {
+              id: newPat.id, nom, prenom,
+              _data: _enc(newPat), updated_at: newPat.updated_at,
+            });
+          }
+          const toast = typeof showToast === 'function' ? showToast : (typeof showToastSafe === 'function' ? showToastSafe : null);
+          if (toast) toast('👤 Fiche patient créée : ' + nomField.trim());
+        }
+      }
+
+      if (row) {
+        const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+        if (!Array.isArray(p.cotations)) p.cotations = [];
+
+        // Résoudre l'index de la cotation à mettre à jour :
+        // 1. cotationIdx direct (fiche patient)
+        // 2. Recherche par invoice_number (tournée)
+        // 3. Recherche par source tournee + date du jour (dernier fallback)
+        let idx = (typeof cotationIdx === 'number' && cotationIdx >= 0) ? cotationIdx : -1;
+        if (idx < 0 && invNum) {
+          idx = p.cotations.findIndex(c => c.invoice_number === invNum);
+        }
+        if (idx < 0 && invNum && refInvoice) {
+          idx = p.cotations.findIndex(c => c.invoice_number === refInvoice);
+        }
+        if (idx < 0 && _fromTournee) {
+          const today = new Date().toISOString().slice(0, 10);
+          idx = p.cotations.findIndex(c =>
+            (c.source === 'tournee' || c.source === 'tournee_auto' ||
+             c.source === 'tournee_live' || c.source === 'cotation_edit') &&
+            (c.date || '').slice(0, 10) === today
+          );
+        }
+
+        const updatedCot = {
+          ...(idx >= 0 ? p.cotations[idx] : {}),
+          actes:        d.actes || [],
+          total:        parseFloat(d.total || 0),
+          part_amo:     parseFloat(d.part_amo || 0),
+          part_amc:     parseFloat(d.part_amc || 0),
+          part_patient: parseFloat(d.part_patient || 0),
+          dre_requise:  !!d.dre_requise,
+          invoice_number: invNum || (idx >= 0 ? p.cotations[idx]?.invoice_number : null),
+          source:       'cotation_edit',
+          date_edit:    new Date().toISOString(),
+          // Conserver la date originale du soin
+          date: (idx >= 0 && p.cotations[idx]?.date)
+            ? p.cotations[idx].date
+            : (typeof gv === 'function' ? gv('f-ds') : '') || new Date().toISOString().slice(0, 10),
+          heure: (idx >= 0 && p.cotations[idx]?.heure)
+            ? p.cotations[idx].heure
+            : (typeof gv === 'function' ? gv('f-hs') : '') || '',
+          soin: (idx >= 0 && p.cotations[idx]?.soin)
+            ? p.cotations[idx].soin
+            : (typeof gv === 'function' ? (gv('f-txt') || '').slice(0, 120) : ''),
+        };
+
+        if (idx >= 0) {
+          // Cotation existante → mise à jour stricte
+          p.cotations[idx] = updatedCot;
+        }
+        // Si idx < 0 : cotation introuvable mais patient existe
+        // → NE PAS créer de doublon. L'upsert Supabase (bloc 2) gérera la synchro.
+
+        p.updated_at = new Date().toISOString();
+        await _idbPut(PATIENTS_STORE, {
+          id: row.id, nom: row.nom, prenom: row.prenom,
+          _data: _enc(p), updated_at: p.updated_at,
+        });
+      }
+    }
+
+    // ── 2. Sync Supabase (PATCH si invoice_number connu) ────────────────────
+    if (invNum && typeof apiCall === 'function') {
+      apiCall('/webhook/ami-save-cotation', {
+        cotations: [{
+          actes:          d.actes || [],
+          total:          d.total || 0,
+          part_amo:       d.part_amo || 0,
+          part_amc:       d.part_amc || 0,
+          part_patient:   d.part_patient || 0,
+          dre_requise:    !!d.dre_requise,
+          source:         'cotation_edit',
+          invoice_number: invNum,
+        }]
+      }).catch(() => {});
+    }
+
+    // ── 3. Invalider le cache dashboard ─────────────────────────────────────
     try {
       const _key = (typeof _dashCacheKey === 'function') ? _dashCacheKey()
-        : ('ami_dash_cache_' + (typeof S !== 'undefined' ? (S?.user?.id || '') : ''));
+        : 'ami_dash_cache_' + ((typeof S !== 'undefined' ? S?.user?.id : '') || '');
       localStorage.removeItem(_key);
     } catch {}
 
-    // Réinitialiser le mode édition
+    // ── 4. Réinitialiser + feedback ─────────────────────────────────────────
     window._editingCotation = null;
 
-    if (typeof showToastSafe === 'function')
-      showToastSafe(`✅ Cotation mise à jour — ${(d.total||0).toFixed(2)} €`);
+    const toast = typeof showToast === 'function' ? showToast
+      : (typeof showToastSafe === 'function' ? showToastSafe : null);
+    if (toast) toast('✅ Cotation mise à jour — ' + (d.total||0).toFixed(2) + ' €');
 
-    // Retourner sur la fiche patient
-    setTimeout(() => {
-      if (typeof navTo === 'function') navTo('patients', null);
+    // Retourner sur la fiche patient si on vient de la fiche (pas de la tournée)
+    if (!_fromTournee && patientId) {
       setTimeout(() => {
-        if (typeof openPatientDetail === 'function') openPatientDetail(patientId);
-      }, 200);
-    }, 800);
+        if (typeof navTo === 'function') navTo('patients', null);
+        setTimeout(() => {
+          if (typeof openPatientDetail === 'function') openPatientDetail(patientId);
+        }, 200);
+      }, 800);
+    }
 
   } catch(e) {
-    if (typeof showToastSafe === 'function') showToastSafe('❌ ' + e.message);
+    const toast = typeof showToast === 'function' ? showToast
+      : (typeof showToastSafe === 'function' ? showToastSafe : null);
+    if (toast) toast('❌ ' + e.message);
+    console.warn('[AMI] _saveEditedCotation KO:', e.message);
   }
 }
 
