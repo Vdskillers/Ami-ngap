@@ -1098,20 +1098,41 @@
         document.body.style.overflow = '';
       }
 
-      /* ── Ouvrir la cotation d'un patient depuis la modale ── */
+      /* ── Ouvrir la cotation d'un patient depuis la modale état/bilan ── */
       function ouvrirCotationDepuisEtat(idx) {
         fermerEtatTournee();
-        /* Utiliser le snapshot stocké dans la modale (data attr) */
-        const patients = APP.get('uberPatients') || APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+
+        // uberPatients est la source autoritaire pour le bilan tournée
+        const uberPats = (typeof APP !== 'undefined') ? (APP.get('uberPatients') || []) : [];
+        const impPats  = (typeof APP !== 'undefined')
+          ? (APP.importedData?.patients || APP.importedData?.entries || [])
+          : [];
+        const patients = uberPats.length ? uberPats : impPats;
+        const patient  = patients[idx];
+
         if (typeof openCotationPatient === 'function') {
+          // openCotationPatient gère lui-même la source (uberPatients en priorité)
           openCotationPatient(idx);
-        } else {
-          const p = patients[idx];
-          if (p) {
-            const txt = document.getElementById('f-txt');
-            if (txt) txt.value = p.description || p.texte || '';
-          }
+        } else if (patient) {
+          // Fallback manuel : pré-remplir les champs directement
           if (typeof navTo === 'function') navTo('cot', null);
+          setTimeout(() => {
+            const setV = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+            const nom = ([patient.prenom, patient.nom].filter(Boolean).join(' ') || patient._nomAff || '').trim();
+            setV('f-pt',  nom);
+            setV('f-ddn', patient.ddn  || '');
+            setV('f-sec', patient.nir  || patient.secu || '');
+            setV('f-amo', patient.amo  || '');
+            setV('f-amc', patient.amc  || '');
+            setV('f-exo', patient.exo  || '');
+            setV('f-pr',  patient.medecin || '');
+            const desc = (patient.actes_recurrents || patient.texte || patient.description || '').trim();
+            const fTxt = document.getElementById('f-txt');
+            if (fTxt && desc) {
+              fTxt.value = desc;
+              if (typeof renderLiveReco === 'function') renderLiveReco(desc);
+            }
+          }, 200);
         }
       }
 
