@@ -2554,28 +2554,9 @@ async function resetAllHist() {
   if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
 
   try {
-    const url = `/webhook/ami-historique?period=${period}`;
-    const d   = typeof fetchAPI === 'function' ? await fetchAPI(url) : await wpost('/webhook/ami-historique', { period });
-    const rows = Array.isArray(d?.data) ? d.data : (Array.isArray(d) ? d : []);
-
-    if (!rows.length) {
-      if (typeof showToast === 'function') showToast('ℹ️ Aucune cotation à supprimer.', 'ok');
-      hist();
-      return;
-    }
-
-    // Suppression séquentielle avec délai pour ne pas surcharger l'API
-    let deleted = 0, errors = 0;
-    for (const r of rows) {
-      try {
-        // force:true = suppression confirmée explicitement par l'utilisateur (double confirm)
-        await wpost('/webhook/ami-supprimer', { id: r.id, force: true });
-        deleted++;
-      } catch(e) {
-        console.warn('[resetAllHist] erreur suppression id', r.id, e?.message);
-        errors++;
-      }
-    }
+    // ── Suppression en masse — un seul appel Supabase, plus fiable que N appels séquentiels ──
+    const res = await wpost('/webhook/ami-supprimer-tout', { period, force: true });
+    if (!res?.ok) throw new Error(res?.message || res?.error || 'Erreur serveur');
 
     // Invalider le cache dashboard
     try {
@@ -2583,16 +2564,17 @@ async function resetAllHist() {
       if (cacheKey) localStorage.removeItem(cacheKey);
     } catch {}
 
-    const msg = errors > 0
-      ? `✅ ${deleted} cotation(s) supprimée(s) · ⚠️ ${errors} erreur(s)`
-      : `✅ ${deleted} cotation(s) supprimée(s).`;
-    if (typeof showToast === 'function') showToast(msg, errors > 0 ? 'warn' : 'ok');
+    const msg = res.deleted > 0
+      ? `✅ ${res.deleted} cotation(s) supprimée(s).`
+      : 'ℹ️ Aucune cotation à supprimer pour cette période.';
+    if (typeof showToast === 'function') showToast(msg, 'ok');
+
     hist();
-    // Recharger le dashboard si ouvert
     if (document.getElementById('view-dash')?.classList.contains('on') && typeof loadDash === 'function') loadDash();
 
   } catch(e) {
-    if (typeof showToast === 'function') showToast('⚠️ ' + e.message, 'err');
+    console.error('[resetAllHist]', e);
+    if (typeof showToast === 'function') showToast('❌ ' + e.message, 'err');
     hist();
   }
 }
