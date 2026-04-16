@@ -750,7 +750,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
       <div class="dreb">📍 ${total} patient${total>1?'s':''}</div>
-      ${totalGps < total ? `<div class="dreb" style="background:rgba(255,181,71,.1);border-color:rgba(255,181,71,.3);color:var(--w)" title="${total-totalGps} sans GPS — s'affiche quand même">⚠️ ${total-totalGps} sans GPS</div>` : ''}
+      ${totalGps < total ? `<div class="dreb" style="background:rgba(255,181,71,.1);border-color:rgba(255,181,71,.3);color:var(--w)">⚠️ ${total-totalGps} sans GPS</div>` : ''}
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
       <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
       ${rentab?`<div class="ca-pill" style="background:rgba(79,168,255,.1);border-color:rgba(79,168,255,.3);color:var(--a2)">📊 ${rentab.euro_heure}€/h</div>`:''}
@@ -1474,7 +1474,8 @@ function autoCotationLocale(texte) {
 /* Patch startDay pour démarrer timer + optimisation live */
 const _origStartDay=window.startDay||(()=>{});
 window.startDay=async function(){
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const _impSD = APP.get('importedData') || APP.importedData || APP.state?.importedData;
+  const patients = _impSD?.patients || _impSD?.entries || [];
   if (!patients.length) {
     if(typeof showToast==='function') showToast('⚠️ Importez des patients avant de démarrer la journée.');
     return;
@@ -1511,6 +1512,14 @@ window.startDay=async function(){
 
   // Tenter appel API, mais ne pas bloquer si indisponible
   liveStatusCore().catch(()=>{});
+};
+
+/* ── Alias — le bouton HTML appelle startJourneeUnifiee() ───────────────
+   Pointe vers window.startDay qui contient toute la logique de démarrage.
+   Séparé pour permettre des surcharges futures sans casser l'existant.
+────────────────────────────────────────────────────────────────────── */
+window.startJourneeUnifiee = async function() {
+  await window.startDay();
 };
 
 /* liveStatusCore = contenu de liveStatus original */
