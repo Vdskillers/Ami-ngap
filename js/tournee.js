@@ -1070,7 +1070,8 @@ async function autoFacturation(patient){
       adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
       date_soin:new Date().toISOString().split('T')[0],
       heure_soin:patient.heure_soin||patient.heure_preferee||new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
-      _live_auto:true
+      _live_auto:true,
+      preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     return d;
   }catch(e){console.warn('Auto-facturation: ',e.message);}
@@ -1872,20 +1873,20 @@ function _renderCotModal(patient, cotationOriginal) {
   const heure = patient.heure_soin || patient.heure_preferee || patient.heure || '';
   const desc  = (patient.description || patient.texte || 'Soin infirmier').slice(0, 100);
 
-  /* Catalogue d'actes courants pour ajout rapide */
+  /* Catalogue d'actes courants pour ajout rapide — Tarifs NGAP 2026 */
   const ACTES_RAPIDES = [
-    { code:'AMI1',  nom:'Soin infirmier',        total: 3.15 },
-    { code:'AMI2',  nom:'Acte infirmier ×2',     total: 6.30 },
-    { code:'AMI3',  nom:'Acte infirmier ×3',     total: 9.45 },
-    { code:'AMI4',  nom:'Pansement complexe',    total:12.60 },
-    { code:'BSA',   nom:'Bilan soins A',         total:13.00 },
-    { code:'BSB',   nom:'Bilan soins B',         total:18.20 },
-    { code:'BSC',   nom:'Bilan soins C',         total:28.70 },
-    { code:'IFD',   nom:'Indemnité déplacement', total: 2.75 },
-    { code:'IK5',   nom:'Indemnité km (5 km)',   total: 1.75 },
-    { code:'MAU',   nom:'Majoration urgence',    total: 9.15 },
-    { code:'MN',    nom:'Majoration nuit',       total: 9.15 },
-    { code:'MDD',   nom:'Majoration dim./férié', total: 9.15 },
+    { code:'AMI1',      nom:'Soin infirmier',         total: 3.15 },
+    { code:'AMI2',      nom:'Acte infirmier ×2',      total: 6.30 },
+    { code:'AMI4',      nom:'Pansement complexe',     total:12.60 },
+    { code:'BSA',       nom:'Bilan soins A (dép. légère)',   total:13.00 },
+    { code:'BSB',       nom:'Bilan soins B (dép. modérée)',  total:18.20 },
+    { code:'BSC',       nom:'Bilan soins C (dép. lourde)',   total:28.70 },
+    { code:'IFD',       nom:'Forfait déplacement',    total: 2.75 },
+    { code:'MCI',       nom:'Majoration coordination',total: 5.00 },
+    { code:'MIE',       nom:'Majoration enfant < 7 ans', total: 3.15 },
+    { code:'NUIT',      nom:'Majoration nuit (20h-23h/5h-8h)', total: 9.15 },
+    { code:'NUIT_PROF', nom:'Majoration nuit profonde (23h-5h)', total:18.30 },
+    { code:'DIM',       nom:'Majoration dim./férié',  total: 8.50 },
   ];
 
   const modal = document.createElement('div');
@@ -2225,7 +2226,8 @@ async function openCotationPatient(patientIndex) {
       adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
       date_soin: new Date().toISOString().split('T')[0],
       heure_soin: patient.heure_soin || patient.heure_preferee || '',
-      _live_auto: true
+      _live_auto: true,
+      preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     cotation = d;
   } catch (_) {

@@ -782,6 +782,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
             infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
             adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
             date_soin:new Date().toISOString().split('T')[0],
+            preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
           });
         }catch(err){ console.warn('Auto-cotation locale:', err.message); }
         window._liveIndex++;

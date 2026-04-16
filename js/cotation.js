@@ -1,15 +1,30 @@
 /* ════════════════════════════════════════════════
-   cotation.js — AMI NGAP
+   cotation.js — AMI NGAP v7
    ────────────────────────────────────────────────
    Cotation NGAP + Vérification IA
-   - cotation() — appel API calcul NGAP
-   - renderCot() — affiche la feuille de soins
+   - cotation() — appel API calcul NGAP (N8N v7)
+     → preuve_soin (auto_declaration / signature_patient)
+     → upsert IDB : cotationIdx > invoice_number > invoice_number original
+     → mode édition (_editRef) : jamais de doublon
+   - renderCot() — affiche résultat N8N v7
+     → fraud (score, level, flags)
+     → preuve_soin (force_probante)
+     → cpam_simulation (anomalies, décision)
+     → suggestions_optimisation
+     → infirmiere_scoring
    - printInv() — vérifie infos pro → modale si manquantes → PDF
    - closeProInfoModal() — ferme la modale infos pro
    - clrCot() — réinitialise le formulaire
    - coterDepuisRoute() — cotation depuis tournée
    - openVerify() / closeVM() / applyVerify()
    - verifyStandalone() — vérification indépendante
+
+   Tarifs NGAP 2026 (référence — calcul officiel côté N8N) :
+   AMI=3,15€ · AIS=2,65€ · BSA=13€ · BSB=18,20€ · BSC=28,70€
+   IFD=2,75€ · MCI=5€ · MIE=3,15€ · NUIT=9,15€ · NUIT_PROF=18,30€
+   DIM=8,50€ · IK=km×2×0,35€
+   Règles : acte principal×1, secondaires×0,5, majorations×1
+   AIS+BSx : INTERDIT — BSA/BSB/BSC : mutuellement exclusifs
 ════════════════════════════════════════════════ */
 
 let VM_DATA = null;
@@ -46,6 +61,14 @@ async function cotation() {
     const prescripteur_id = prescSel?.value || null;
     // Si mode édition, passer l'invoice_number original pour upsert Supabase
     const _editRef = window._editingCotation || null;
+    // ── Preuve soin (N8N v7) — bouclier anti-redressement CPAM ──
+    // La photo / signature ne sont JAMAIS transmises — uniquement leur hash
+    // La géolocalisation est floue (département uniquement — RGPD compatible)
+    const _sigEl = document.querySelector('[data-last-sig-hash]');
+    const _sigHash = _sigEl?.dataset?.lastSigHash || '';
+    const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
+    const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
+
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
@@ -59,6 +82,14 @@ async function cotation() {
       ...(prescripteur_id ? { prescripteur_id } : {}),
       // invoice_number existant → le worker fera un PATCH au lieu d'un POST
       ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
+      // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
+      preuve_soin: {
+        type:         _preuveType,
+        timestamp:    new Date().toISOString(),
+        hash_preuve:  _sigHash,
+        certifie_ide: true,
+        force_probante: _preuveForce,
+      },
     });
     if (d.error) throw new Error(d.error);
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
@@ -218,61 +249,143 @@ async function cotation() {
 }
 
 function renderCot(d) {
-  const a = d.actes || [], al = d.alerts || [], op = d.optimisations || [];
-  const aiQualBadge = d.ai_quality
-    ? `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${d.ai_quality==='high'?'rgba(0,212,170,.15)':d.ai_quality==='medium'?'rgba(251,191,36,.15)':'rgba(239,68,68,.15)'};color:${d.ai_quality==='high'?'#00d4aa':d.ai_quality==='medium'?'#f59e0b':'#ef4444'}">
-        ${d.ai_quality==='high'?'🟢 IA haute qualité':d.ai_quality==='medium'?'🟡 IA qualité moyenne':'🔴 IA incertaine'}
-        ${d.ai_score!=null?` — ${d.ai_score}/100`:''}
-      </div>` : '';
-  const gainBadge = d.gain_potentiel > 0
-    ? `<div class="ai in" style="margin-top:8px">💰 Gain potentiel non coté : <strong>+${d.gain_potentiel.toFixed(2)} €</strong></div>`
+  const a   = d.actes  || [];
+  const al  = d.alerts || [];
+  const op  = d.optimisations || [];
+  const sugg = d.suggestions_optimisation || [];
+
+  // ── Badge NGAP version ──────────────────────────────────────────────────────
+  const ngapBadge = d.ngap_version
+    ? `<span style="font-size:10px;color:var(--m);background:var(--s);border:1px solid var(--b);padding:2px 8px;border-radius:20px">NGAP v${d.ngap_version}</span>`
     : '';
-  const rentBadge = d.rentabilite_minute > 0
-    ? `<div style="font-size:11px;color:var(--m);margin-top:4px">⏱️ Rentabilité estimée : ${d.rentabilite_minute.toFixed(2)} €/min · Temps ~${d.temps_estime||'?'}min</div>`
+
+  // ── Badge fraud N8N v7 ──────────────────────────────────────────────────────
+  const fraud = d.fraud || {};
+  const fraudBadge = fraud.level ? (() => {
+    const cfg = {
+      LOW:    { bg: 'rgba(0,212,170,.12)',  col: '#00b894', icon: '🟢', label: 'Faible risque CPAM' },
+      MEDIUM: { bg: 'rgba(251,191,36,.15)', col: '#f59e0b', icon: '🟡', label: 'Risque CPAM modéré' },
+      HIGH:   { bg: 'rgba(239,68,68,.15)',  col: '#ef4444', icon: '🔴', label: 'RISQUE CPAM ÉLEVÉ' },
+    }[fraud.level] || { bg: '', col: 'var(--m)', icon: 'ℹ️', label: fraud.level };
+    return `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${cfg.bg};color:${cfg.col}">
+      ${cfg.icon} ${cfg.label}${fraud.score != null ? ` (${fraud.score} pts)` : ''}
+    </div>`;
+  })() : '';
+
+  // ── Badge preuve soin N8N v7 ────────────────────────────────────────────────
+  const preuve = d.preuve_soin || {};
+  const preuveBadge = preuve.force_probante ? (() => {
+    const cfg = {
+      FORTE:    { bg: 'rgba(0,212,170,.12)',  col: '#00b894', icon: '🛡️', label: preuve.type === 'signature_patient' ? 'Preuve forte — Signature' : 'Preuve forte — Photo' },
+      STANDARD: { bg: 'rgba(99,102,241,.1)',  col: '#6366f1', icon: '📋', label: 'Auto-déclaration IDE' },
+      ABSENTE:  { bg: 'rgba(239,68,68,.1)',   col: '#ef4444', icon: '⚠️', label: 'Aucune preuve terrain' },
+    }[preuve.force_probante] || null;
+    if (!cfg) return '';
+    return `<div style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:11px;background:${cfg.bg};color:${cfg.col}">
+      ${cfg.icon} ${cfg.label}
+    </div>`;
+  })() : '';
+
+  // ── Badge horaire ───────────────────────────────────────────────────────────
+  const horaireBadge = d.horaire_type && d.horaire_type !== 'jour'
+    ? `<div style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;background:rgba(99,102,241,.1);color:#6366f1">
+        ${d.horaire_type === 'nuit' ? '🌙 Nuit' : d.horaire_type === 'nuit_profonde' ? '🌑 Nuit profonde' : d.horaire_type === 'dimanche' ? '☀️ Dimanche/Férié' : ''}
+      </div>`
     : '';
+
+  // ── Bloc simulation CPAM N8N v7 ─────────────────────────────────────────────
+  const cpam = d.cpam_simulation || {};
+  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK') ? (() => {
+    const isKO = cpam.niveau === 'CRITIQUE';
+    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}">
+      <div style="font-size:11px;font-weight:700;color:${isKO ? '#ef4444' : '#f59e0b'};margin-bottom:6px">
+        ${isKO ? '🚨' : '⚠️'} Simulation CPAM — ${cpam.decision || cpam.niveau}
+      </div>
+      ${(cpam.anomalies||[]).map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
+    </div>`;
+  })() : '';
+
+  // ── Suggestions alternatives N8N v7 ─────────────────────────────────────────
+  const suggBloc = sugg.length ? `<div style="margin-top:12px">
+    <div class="lbl" style="font-size:10px;margin-bottom:6px;color:#22c55e">💰 Suggestions de valorisation</div>
+    <div class="aic">${sugg.map(s =>
+      `<div class="ai su" style="border-left:3px solid #22c55e">
+        ${s.gain ? `<strong style="color:var(--a)">${s.gain}</strong> — ` : ''}${s.reason || ''}
+        ${s.action ? `<span style="font-size:10px;opacity:.7"> → ${s.action}</span>` : ''}
+      </div>`
+    ).join('')}</div>
+  </div>` : '';
+
+  // ── Scoring infirmière N8N v7 ────────────────────────────────────────────────
+  const scoring = d.infirmiere_scoring || {};
+  const scoringBloc = (scoring.level && scoring.level !== 'SAFE') ? (() => {
+    const col = scoring.level === 'DANGER' ? '#ef4444' : '#f59e0b';
+    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px">
+      <span style="color:${col};font-weight:700">${scoring.level === 'DANGER' ? '🚨' : '⚠️'} Scoring IDE : ${scoring.level}</span>
+      ${scoring.score != null ? ` (${scoring.score} pts)` : ''}
+    </div>`;
+  })() : '';
+
+  // ── Alertes NGAP ────────────────────────────────────────────────────────────
+  const alertsBloc = al.length
+    ? `<div class="aic" style="margin-top:12px">${al.map(x => {
+        const isErr = x.startsWith('🚨') || x.startsWith('❌');
+        const isOk  = x.startsWith('✅');
+        return `<div class="ai ${isErr ? 'er' : isOk ? 'su' : 'wa'}">${x}</div>`;
+      }).join('')}</div>`
+    : `<div class="ai su" style="margin-top:12px">✅ Aucune alerte NGAP</div>`;
+
+  // ── Optimisations ajoutées par N8N ──────────────────────────────────────────
+  const opBloc = op.length ? `<div style="margin-top:12px">
+    <div class="lbl" style="font-size:10px;margin-bottom:6px">⬆️ Optimisations appliquées</div>
+    <div class="aic">${op.map(o => {
+      const msg = typeof o === 'string' ? o : (o.msg || JSON.stringify(o));
+      return `<div class="ai su">💰 ${msg}</div>`;
+    }).join('')}</div>
+  </div>` : '';
+
   return `<div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
-    <div><div class="lbl">Total cotation</div>
-    <div style="display:flex;align-items:baseline;gap:6px"><div class="ta">${(d.total || 0).toFixed(2)}</div><div class="tu">€</div></div>
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">${d.dre_requise ? '<div class="dreb">📋 DRE requise</div>' : ''}</div>
-    ${aiQualBadge}
-    ${rentBadge}
+    <div>
+      <div class="lbl">Total cotation</div>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <div class="ta">${(d.total || 0).toFixed(2)}</div><div class="tu">€</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        ${d.dre_requise ? '<div class="dreb">📋 DRE requise</div>' : ''}
+        ${ngapBadge}
+        ${horaireBadge}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        ${fraudBadge}
+        ${preuveBadge}
+      </div>
     </div>
-    <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g, "&#39;")})'>📥 Télécharger facture</button>
-  ${window._editingCotation ? `<button class="btn bp bsm" onclick='_saveEditedCotation(${JSON.stringify(d).replace(/'/g, "&#39;")})' style="background:var(--a);color:#fff;border-color:var(--a)">💾 Mettre à jour la cotation patient</button>` : ''}
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+      <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g, "&#39;")})'>📥 Télécharger facture</button>
+      ${window._editingCotation ? `<button class="btn bp bsm" onclick='_saveEditedCotation(${JSON.stringify(d).replace(/'/g, "&#39;")})' style="background:var(--a);color:#fff;border-color:var(--a)">💾 Mettre à jour la cotation patient</button>` : ''}
+    </div>
   </div>
   <div class="rg">
     <div class="rc am"><div class="rl">Part AMO (SS)</div><div class="ra">${fmt(d.part_amo)}</div><div class="rp">${d.taux_amo ? Math.round(d.taux_amo * 100) + '%' : '60%'}</div></div>
     <div class="rc mc"><div class="rl">Part AMC</div><div class="ra">${fmt(d.part_amc)}</div><div class="rp">Complémentaire</div></div>
     <div class="rc pa"><div class="rl">Part Patient</div><div class="ra">${fmt(d.part_patient)}</div><div class="rp">Ticket modérateur</div></div>
   </div>
-  <div class="lbl" style="margin-bottom:10px">Détail des actes</div>
-  <div class="al">${a.length ? a.map(x => `<div class="ar"><div class="ac ${cc(x.code)}">${x.code || '?'}</div><div class="an">${x.nom || ''}</div><div class="ao">×${(x.coefficient || 1).toFixed(1)}</div><div class="at">${fmt(x.total)}</div></div>`).join('') : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}</div>
-  ${al.length ? `<div class="aic" style="margin-top:12px">${al.map(x => `<div class="ai ${x.startsWith('⚠️')?'wa':'er'}">⚠️ ${x.replace(/^⚠️\s*/,'')}</div>`).join('')}</div>` : '<div class="ai su" style="margin-top:12px">✅ Aucune alerte NGAP</div>'}
-  ${gainBadge}
-  ${op.length ? (() => {
-    // Séparer upgrades (valorisation), pertes de revenus, incompatibilités, optimisations générales
-    const upgrades      = op.filter(o => (typeof o === 'object' ? o.type : '') === 'upgrade');
-    const lostRevenue   = op.filter(o => (typeof o === 'object' ? o.type : '') === 'lost_revenue');
-    const incompats     = op.filter(o => (typeof o === 'object' ? o.type : '') === 'incompatibilite');
-    const others        = op.filter(o => !['upgrade','lost_revenue','incompatibilite'].includes(typeof o === 'object' ? o.type : 'optimization'));
-    const getMsg  = o => typeof o === 'string' ? o : (o.msg || '');
-    const getGain = o => typeof o === 'object' && o.gain > 0 ? ` <strong style="color:var(--a)">+${o.gain.toFixed(2)} €</strong>` : '';
-    const getCode = o => typeof o === 'object' && o.code_suggere ? ` <span style="font-family:var(--fm);font-size:10px;background:var(--ad);color:var(--a);padding:1px 7px;border-radius:20px;margin-left:6px">${o.code_suggere}</span>` : '';
-    let html = '<div style="margin-top:14px">';
-    if (upgrades.length) html += `<div class="lbl" style="font-size:10px;margin-bottom:6px;color:#22c55e">⬆️ Valorisations légales possibles</div>`
-      + `<div class="aic">${upgrades.map(o => `<div class="ai su" style="border-left:3px solid #22c55e">`
-        + `⬆️ ${getMsg(o)}${getGain(o)}${getCode(o)}</div>`).join('')}</div>`;
-    if (lostRevenue.length) html += `<div class="lbl" style="font-size:10px;margin-bottom:6px;margin-top:10px;color:var(--w)">💰 Revenus non cotés détectés</div>`
-      + `<div class="aic">${lostRevenue.map(o => `<div class="ai wa">`
-        + `💰 ${getMsg(o)}${getGain(o)}${getCode(o)}</div>`).join('')}</div>`;
-    if (incompats.length) html += `<div class="aic" style="margin-top:8px">${incompats.map(o =>`<div class="ai er">${getMsg(o)}</div>`).join('')}</div>`;
-    if (others.length) html += `<div class="lbl" style="font-size:10px;margin-bottom:6px;margin-top:${upgrades.length||lostRevenue.length?10:0}px">💡 Optimisations</div>`
-      + `<div class="aic">${others.map(o => `<div class="ai in">💡 ${getMsg(o)}${getGain(o)}</div>`).join('')}</div>`;
-    html += '</div>';
-    return html;
-  })() : ''}
-  ${d.ai_issues && d.ai_issues.length ? `<div class="aic" style="margin-top:8px">${d.ai_issues.map(x=>`<div class="ai wa">🔍 ${x}</div>`).join('')}</div>` : ''}
+  <div class="lbl" style="margin-bottom:10px;margin-top:16px">Détail des actes</div>
+  <div class="al">${a.length
+    ? a.map(x => `<div class="ar">
+        <div class="ac ${cc(x.code)}">${x.code || '?'}</div>
+        <div class="an">${x.nom || ''}</div>
+        <div class="ao">×${(x.coefficient || 1).toFixed(1)}</div>
+        <div class="at">${fmt(x.total)}</div>
+      </div>`).join('')
+    : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}
+  </div>
+  ${alertsBloc}
+  ${opBloc}
+  ${suggBloc}
+  ${cpamBloc}
+  ${scoringBloc}
   </div>`;
 }
 
@@ -678,7 +791,7 @@ ${missingWarning}
 ${d.dre_requise ? '<div class="dre">📋 <strong>DRE requise</strong> — Demande de Remboursement Exceptionnel</div>' : ''}
 
 <div class="footer">
-  AMI NGAP · N° facture : ${num} · Cotation NGAP métropole en vigueur · Généré le ${new Date().toLocaleDateString('fr-FR')}
+  AMI NGAP · N° facture : ${num} · Tarifs NGAP 2026 — AMI 3,15 € · BSA 13,00 € · BSB 18,20 € · BSC 28,70 € · IFD 2,75 € · MCI 5,00 € · MIE 3,15 € · Nuit 9,15 € · Nuit prof. 18,30 € · Dim./Fér. 8,50 € · Généré le ${new Date().toLocaleDateString('fr-FR')}
 </div>
 </body>
 </html>`;
@@ -745,7 +858,7 @@ function renderVM(d) {
   $('vm-loading').style.display = 'none';
   $('vm-result').style.display = 'block';
   const corrige = d.texte_corrige || '', fixes = d.corrections || [],
-        alerts = d.alertes_urssaf || d.alertes || [], sugg = d.optimisations || d.suggestions || [];
+        alerts = d.alerts || [], sugg = d.optimisations || [];
   const hasChanges = corrige || fixes.length || alerts.length || sugg.length;
   if (corrige && corrige !== gv('f-txt')) {
     $('vm-corr-wrap').style.display = 'block';
@@ -769,7 +882,7 @@ async function verifyStandalone() {
   $('res-ver').classList.remove('show');
   try {
     const d = await apiCall('/webhook/ami-calcul', { mode: 'verify', texte: txt, date_soin: gv('v-ds'), heure_soin: gv('v-hs'), exo: gv('v-exo') });
-    const corrige = d.texte_corrige || '', fixes = d.corrections || [], alerts = d.alertes_urssaf || d.alertes || [], sugg = d.optimisations || d.suggestions || [];
+    const corrige = d.texte_corrige || '', fixes = d.corrections || [], alerts = d.alerts || [], sugg = d.optimisations || [];
     $('vbody').innerHTML = `<div class="card"><div class="ct">🔍 Résultat</div>
     ${corrige ? `<div style="margin-bottom:16px"><div class="lbl" style="color:var(--ok)">Texte normalisé</div><div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;font-style:italic;font-size:14px;line-height:1.7">${corrige}</div></div>` : ''}
     ${fixes.length  ? `<div class="aic" style="margin-bottom:14px">${fixes.map(f  => `<div class="ai su">✏️ ${f}</div>`).join('')}</div>` : ''}
