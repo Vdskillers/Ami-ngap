@@ -205,12 +205,16 @@ function _clearPlanning() {
   try { localStorage.removeItem(_planningKey()); } catch {}
 }
 
-/* Sauvegarder le planning chaque fois qu'importedData change */
+/* Sauvegarder le planning chaque fois que les données changent */
 function _syncPlanningStorage() {
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Source : _planningData en priorité (source de vérité pour renderPlanning)
+  const patients = window.APP._planningData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries
+    || [];
   if (patients.length) {
     _savePlanning(patients);
-    _syncPlanningToServer(patients).catch(() => {}); // sync serveur silencieux
+    _syncPlanningToServer(patients).catch(() => {});
   }
 }
 
@@ -232,8 +236,13 @@ async function _syncPlanningToServer(patients) {
   } catch (e) { console.warn('[AMI] Planning push KO (silencieux):', e.message); }
 }
 
+// Flag positionné à true après un effacement volontaire — bloque la re-sync serveur
+let _planningManuallyCleared = false;
+
 async function _syncPlanningFromServer() {
   if (typeof S === 'undefined' || !S?.token) return;
+  // Ne pas restaurer depuis le serveur si l'utilisateur vient d'effacer volontairement
+  if (_planningManuallyCleared) return;
   try {
     const res = await wpost('/webhook/planning-pull', {});
     if (!res?.ok || !res.data?.encrypted_data) return;
@@ -279,7 +288,10 @@ document.addEventListener('app:update', e => {
   if (e.detail.key !== 'importedData') return;
   const d = e.detail.value;
   if (d?.patients?.length || d?.entries?.length) {
-    _savePlanning(d.patients || d.entries);
+    const pats = d.patients || d.entries;
+    // Maintenir _planningData en sync avec importedData
+    window.APP._planningData = { patients: pats, total: pats.length, source: 'import' };
+    _savePlanning(pats);
   }
 });
 
@@ -551,26 +563,71 @@ function _planningDeleteCotation(idx) {
 
 /* Retirer un patient du planning */
 function _planningRemovePatient(idx) {
-  if (!APP.importedData) return;
-  const arr = APP.importedData.patients || APP.importedData.entries || [];
+  // Source unique de vérité : APP._planningData (utilisée par renderPlanning)
+  const planData = window.APP._planningData;
+  const arr = planData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries
+    || [];
+  if (!arr.length) return;
+
   const p = arr[idx];
-  const nom = [p?.prenom, p?.nom].filter(Boolean).join(' ') || p?.description?.split(' ').slice(0,3).join(' ') || 'ce patient';
+  if (!p) return;
+  const nom = [p?.prenom, p?.nom].filter(Boolean).join(' ')
+    || p?.description?.split(' ').slice(0,3).join(' ')
+    || 'ce patient';
   if (!confirm(`Retirer ${nom} du planning ?`)) return;
-  const key = APP.importedData.patients ? 'patients' : 'entries';
-  APP.importedData[key] = arr.filter((_, i) => i !== idx);
-  APP.importedData.total = APP.importedData[key].length;
-  _syncPlanningStorage();
-  renderPlanning({}).catch(()=>{});
+
+  const newArr = arr.filter((_, i) => i !== idx);
+
+  // Mettre à jour APP._planningData (source que renderPlanning utilise)
+  if (planData) {
+    planData.patients = newArr;
+    planData.total    = newArr.length;
+  }
+  // Mettre à jour APP.importedData en miroir si présent
+  if (APP.importedData) {
+    const key = APP.importedData.patients ? 'patients' : 'entries';
+    APP.importedData[key] = newArr;
+    APP.importedData.total = newArr.length;
+  }
+
+  // Persister localement + serveur
+  if (newArr.length) {
+    _savePlanning(newArr);
+    _syncPlanningToServer(newArr).catch(() => {});
+  } else {
+    // Plus aucun patient : vider complètement
+    _clearPlanning();
+    _syncPlanningToServer([]).catch(() => {});
+  }
+
+  renderPlanning({}).catch(() => {});
   if (typeof showToast === 'function') showToast('✅ Patient retiré du planning.');
 }
 
 /* Effacer tout le planning hebdomadaire */
 function _planningResetAll() {
-  const n = (APP.importedData?.patients || APP.importedData?.entries || []).length;
+  const arr = window.APP._planningData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries
+    || [];
+  const n = arr.length;
   if (!confirm(`Réinitialiser le planning ?\n\n${n} patient(s) seront supprimés.\nCette action ne supprime PAS les fiches du carnet patient.`)) return;
-  APP.importedData = null;
+
+  // Vider les DEUX sources pour éviter toute résurrection
+  window.APP._planningData = null;
+  APP.importedData          = null;
+
+  // Bloquer la re-sync serveur pour cette session
+  _planningManuallyCleared = true;
+
+  // Vider le stockage local + serveur
   _clearPlanning();
+  _syncPlanningToServer([]).catch(() => {});
+
   $('pbody').innerHTML = '<div class="ai in" style="margin-top:12px">Planning effacé. Importez de nouvelles données depuis "Import calendrier".</div>';
+  $('res-pla').classList.add('show');
   const banner = $('pla-import-banner');
   if (banner) banner.style.display = 'none';
   if (typeof showToast === 'function') showToast('🗑️ Planning effacé.');
@@ -2028,66 +2085,21 @@ function _openCotationComplete() {
   const modal   = document.getElementById('cot-modal-live');
   if (modal) modal.remove();
 
+  // Pré-remplir le textarea de cotation si disponible
+  const textarea = document.getElementById('f-txt');
+  if (textarea && patient) textarea.value = patient.texte || patient.description || '';
+
   if (typeof navTo === 'function') navTo('cot', null);
-
-  // Pré-remplir TOUS les champs patient + description après navigation
-  setTimeout(() => {
-    if (!patient) return;
-
-    const setV = (elId, val) => {
-      const el = document.getElementById(elId);
-      if (el && val) el.value = val;
-    };
-
-    // Champs identité patient
-    const nomComplet = ([patient.prenom, patient.nom].filter(Boolean).join(' ')
-      || patient._nomAff || patient.patient || '').trim();
-    setV('f-pt',  nomComplet);
-    setV('f-ddn', patient.ddn  || patient.date_naissance || '');
-    setV('f-sec', patient.nir  || patient.secu || '');
-    setV('f-amo', patient.amo  || '');
-    setV('f-amc', patient.amc  || '');
-    setV('f-exo', patient.exo  || '');
-    setV('f-pr',  patient.medecin || '');
-
-    // Description soins : actes_recurrents > texte importé
-    const desc = (patient.actes_recurrents || patient.texte || patient.description || '').trim();
-    const fTxt = document.getElementById('f-txt');
-    if (fTxt && desc) {
-      fTxt.value = desc;
-      if (typeof renderLiveReco === 'function') renderLiveReco(desc);
-    }
-
-    // Réinitialiser le sélecteur patient (badge) pour éviter conflit visuel
-    if (typeof cotClearPatient === 'function') cotClearPatient();
-
-    // Afficher le badge patient si nom disponible
-    const badge     = document.getElementById('cot-patient-badge');
-    const badgeText = document.getElementById('cot-patient-badge-text');
-    if (badge && badgeText && nomComplet) {
-      badgeText.textContent = '\uD83D\uDC64 ' + nomComplet
-        + (patient.ddn ? ' \u2014 ' + new Date(patient.ddn).toLocaleDateString('fr-FR') : '');
-      badge.style.display = 'flex';
-    }
-
-    if (typeof showToast === 'function') {
-      showToast('\uD83D\uDC64 ' + (nomComplet || 'Patient') + ' \u2014 fiche pré-remplie');
-    }
-  }, 220);
+  if (typeof showToast === 'function') showToast('💡 Description pré-remplie — ajustez et cotez');
 }
 
 /* Ouvre la modale de cotation pour un patient spécifique depuis la liste tournée */
 async function openCotationPatient(patientIndex) {
-  // Cherche d'abord dans uberPatients (tournée en cours / bilan),
-  // puis dans importedData (planning hebdomadaire)
-  const uberPats = APP.get('uberPatients') || [];
-  const impPats  = APP.importedData?.patients || APP.importedData?.entries || [];
-  // Priorité uberPatients si disponibles (bilan de tournée), sinon importedData
-  const patients = uberPats.length ? uberPats : impPats;
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   const patient  = patients[patientIndex];
   if (!patient) return;
 
-  // Si cotation déjà validée, proposer de la re-consulter / corriger
+  // Si cotation déjà validée, proposer de la re-consulter
   if (patient._cotation?.validated) {
     showCotationModal(patient, patient._cotation, null);
     return;
