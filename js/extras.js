@@ -254,6 +254,10 @@ function setDepartPoint(lat, lng, label){
   if(tLng) tLng.value = lng.toFixed(6);
   APP.set('startPoint', {lat, lng});
 
+  /* Masquer immédiatement le message "Définis ton point de départ" */
+  const terrEl = document.getElementById('terr');
+  if(terrEl) terrEl.style.display = 'none';
+
   /* Affichage coordonnées — immédiat, pas besoin d'attendre la carte */
   const coordsEl = $('dep-coords') || $('tur-coords-txt');
   if(coordsEl) {
