@@ -235,7 +235,7 @@ async function recalcRouteUber() {
 function loadUberPatients() {
   if (!requireAuth()) return;
   const data = APP.get('importedData');
-  if (!data) {
+  if (!data || data._planningOnly) {
     const el = $('uber-next-patient');
     if (el) el.innerHTML = '<div class="ai wa" style="margin-bottom:10px">⚠️ Aucune donnée importée.</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +

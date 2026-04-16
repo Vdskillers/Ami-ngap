@@ -26,6 +26,8 @@ if (typeof optimizeTour === 'undefined') {
 }
 
 function storeImportedData(d){
+  // Un vrai import utilisateur efface le flag planning-only
+  if (d) delete d._planningOnly;
   APP.importedData=d;
   // Sauvegarder dans localStorage (persistance entre sessions)
   if (d?.patients?.length || d?.entries?.length) _syncPlanningStorage();
@@ -247,7 +249,7 @@ async function _syncPlanningFromServer() {
     const localSaved = _loadPlanning();
     if (!localSaved || !localSaved.length) {
       _savePlanning(remote);
-      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur' };
+      APP.importedData = { patients: remote, total: remote.length, source: 'planning_serveur', _planningOnly: true };
       _renderPlanningIfVisible();
       console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
     } else {
@@ -260,7 +262,7 @@ async function _syncPlanningFromServer() {
       if (toAdd.length) {
         const merged = [...localSaved, ...toAdd];
         _savePlanning(merged);
-        APP.importedData = { patients: merged, total: merged.length, source: 'planning_fusionné' };
+        APP.importedData = { patients: merged, total: merged.length, source: 'planning_fusionné', _planningOnly: true };
         _renderPlanningIfVisible();
         console.info('[AMI] Planning fusion :', toAdd.length, 'patient(s) ajouté(s) depuis le serveur');
       }
@@ -277,11 +279,11 @@ document.addEventListener('app:update', e => {
   }
 });
 
-/* Restauration du planning au login */
+/* Restauration du planning au login (après hydratation de S = bonne clé userId) */
 document.addEventListener('ami:login', () => {
   setTimeout(() => {
-    // importedData = tournée du jour (éphémère) — on ne la restaure PAS au login.
-    // Le Planning hebdomadaire se recharge à la navigation vers la vue "pla".
+    _restorePlanningIfNeeded();
+    // Sync depuis le serveur après restauration locale (navigateur ↔ mobile)
     setTimeout(() => _syncPlanningFromServer().catch(() => {}), 800);
   }, 200);
 });
@@ -294,8 +296,9 @@ function _restorePlanningIfNeeded() {
   }
   const saved = _loadPlanning();
   if (saved?.length) {
-    // Utiliser le setter réactif pour déclencher app:update correctement
-    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé' };
+    // _planningOnly : signale que ces données viennent du planning hebdomadaire.
+    // Elles alimentent la vue Planning mais PAS la Tournée IA ni le Pilotage.
+    APP.importedData = { patients: saved, total: saved.length, source: 'planning_sauvegardé', _planningOnly: true };
     _renderPlanningIfVisible();
   }
 }
@@ -1483,6 +1486,11 @@ window.startDay=async function(){
   // Tenter de restaurer depuis localStorage si importedData est vide
   if (!APP.importedData?.patients?.length && !APP.importedData?.entries?.length) {
     if (typeof _restorePlanningIfNeeded === 'function') _restorePlanningIfNeeded();
+  }
+  // Bloquer si les données viennent uniquement du planning hebdomadaire (pas d'import tournée)
+  if (APP.importedData?._planningOnly) {
+    if(typeof showToast==='function') showToast('⚠️ Importez des patients via Import calendrier ou Carnet patients pour démarrer la tournée.');
+    return;
   }
   // Fallback : utiliser uberPatients déjà chargés par loadUberPatients()
   let patients = APP.importedData?.patients || APP.importedData?.entries || [];
