@@ -1500,6 +1500,20 @@ window.startDay=async function(){
     $('live-info').textContent = `Soin 1/${patients.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
   }
 
+  /* ── Synchroniser uberPatients depuis importedData si pas déjà peuplé ── */
+  const uberCurrent = APP.get('uberPatients') || [];
+  if (!uberCurrent.length && patients.length) {
+    APP.set('uberPatients', patients.map((p, i) => ({
+      ...p,
+      id:      p.patient_id || p.id || i,
+      label:   p.description || p.texte || 'Patient ' + (i + 1),
+      done:    false, absent: false, late: false,
+      urgence: !!(p.urgent || p.urgence),
+      time:    p.heure_soin ? (function(h){ const [hh,mm]=(h||'').split(':').map(Number); const t=new Date(); t.setHours(hh||0,mm||0,0,0); return t.getTime(); })(p.heure_soin) : null,
+      amount:  parseFloat(p.total || p.montant || p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30),
+    })));
+  }
+
   /* ── Démarrer le moteur IA temps réel ── */
   if(typeof startLiveOptimization==='function') startLiveOptimization();
 
@@ -2118,6 +2132,37 @@ function resetTourneeJour() {
 
   // Arrêter GPS Uber si actif
   if (typeof stopLiveTracking === 'function') stopLiveTracking();
+
+  // ── Nettoyer la carte Leaflet (markers patients + tracé de route) ──────────
+  try {
+    const mapInst = APP.map?.instance || APP.map;
+    if (mapInst && typeof mapInst.removeLayer === 'function') {
+      // Markers patients
+      if (APP.markers && Array.isArray(APP.markers)) {
+        APP.markers.forEach(m => { try { mapInst.removeLayer(m); } catch(_){} });
+        APP.markers = [];
+      }
+      // Tracé de route
+      if (APP._routePolyline) {
+        try { mapInst.removeLayer(APP._routePolyline); } catch(_){}
+        APP._routePolyline = null;
+      }
+      // Marker point de départ
+      if (APP._startMarker) {
+        try { mapInst.removeLayer(APP._startMarker); } catch(_){}
+        APP._startMarker = null;
+      }
+      // Marker GPS live infirmière (uber.js)
+      if (window._liveMarker) {
+        try { mapInst.removeLayer(window._liveMarker); } catch(_){}
+        window._liveMarker = null;
+      }
+    }
+  } catch(e) { console.warn('[AMI] Reset carte KO:', e.message); }
+  // Arrêter l'optimisation live IA si active
+  if (typeof stopLiveOptimization === 'function') stopLiveOptimization();
+  // Effacer le planning local sauvegardé
+  if (typeof _clearPlanning === 'function') _clearPlanning();
 
   // Reset affichage Mode Uber Médical
   const uberNext = $('uber-next-patient');
