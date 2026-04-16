@@ -462,8 +462,7 @@ function suggestOptimizationsFront(){
 function updateCAEstimate(){
   const box = $('ca-box');
   if(!box) return;
-  const _tdCA = (typeof loadTourneeData === 'function') ? loadTourneeData() : null;
-  const data = _tdCA?.patients || _tdCA?.entries || window.IMPORTED_DATA || [];
+  const data = APP.get('importedData')?.patients || window.IMPORTED_DATA || [];
   if(!data.length){ box.style.display='none'; return; }
   const ca = estimateRevenue(data);
   box.style.display='block';

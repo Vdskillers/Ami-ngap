@@ -1394,16 +1394,12 @@ async function _importSinglePatient(id) {
     geoScore: resolvedGeoScore,
   };
 
-  // Fusionner avec les patients déjà dans la tournée (tourneeData, pas importedData/planning)
-  const _tdExist = (typeof loadTourneeData === 'function') ? loadTourneeData() : null;
-  const existing = _tdExist?.patients || APP.importedData?.patients || [];
+  // Fusionner avec les patients déjà importés
+  const existing = APP.importedData?.patients || [];
   const alreadyIn = existing.some(e => e.id === id);
   if (alreadyIn) { showToastSafe('ℹ️ Ce patient est déjà dans la tournée.'); return; }
 
   const merged = [...existing, entry];
-  if (typeof storeTourneeData === 'function') {
-    storeTourneeData({ patients: merged, total: merged.length, source: 'Carnet patients' });
-  }
   if (typeof storeImportedData === 'function') {
     storeImportedData({ patients: merged, total: merged.length, source: 'Carnet patients' });
   } else {
