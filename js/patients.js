@@ -1015,6 +1015,7 @@ async function syncCotationsPatient(patientId) {
         invoice_number: c.invoice_number || null,
         source:         c.source || 'carnet_sync',
         dre_requise:    !!c.dre_requise,
+        patient_id:     patientId,  // rattachement IDB ↔ planning_patients
       }));
       const pushRes = await api('/webhook/ami-save-cotation', { cotations: payload });
       if (pushRes?.ok) aEnvoyer.forEach(c => { c._synced = true; });

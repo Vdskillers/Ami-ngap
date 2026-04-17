@@ -110,6 +110,24 @@ async function cotation() {
 
     // Si mode édition, passer l'invoice_number original pour upsert Supabase
     const _editRef = window._editingCotation || null;
+
+    // ── Pré-résolution patient IDB ─────────────────────────────────────────
+    // Nécessaire pour envoyer patient_id à planning_patients AVANT le résultat IA
+    let _prePatientId = _editRef?.patientId || null;
+    if (!_prePatientId) {
+      try {
+        const _patNomPre = (gv('f-pt') || '').trim();
+        if (_patNomPre && typeof _idbGetAll === 'function') {
+          const _preRows = await _idbGetAll(PATIENTS_STORE);
+          const _nomPre  = _patNomPre.toLowerCase();
+          const _preRow  = _preRows.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomPre) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomPre)
+          );
+          if (_preRow) _prePatientId = _preRow.id;
+        }
+      } catch (_) {}
+    }
     // ── Preuve soin (N8N v7) — bouclier anti-redressement CPAM ──
     // La photo / signature ne sont JAMAIS transmises — uniquement leur hash
     // La géolocalisation est floue (département uniquement — RGPD compatible)
@@ -129,6 +147,9 @@ async function cotation() {
       prescripteur_rpps: gv('f-pr-rp') || '',
       date_prescription: gv('f-pr-dt') || '',
       ...(prescripteur_id ? { prescripteur_id } : {}),
+      // patient_id IDB → rattachement cotation ↔ fiche dans planning_patients
+      // Note : _prePatientId est résolu juste avant cet appel
+      ...(_prePatientId ? { patient_id: _prePatientId } : {}),
       // invoice_number existant → le worker fera un PATCH au lieu d'un POST
       ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
       // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
