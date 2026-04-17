@@ -34,20 +34,7 @@ let _pendingPrintData = null; // données facture en attente d'impression
    COTATION
 ════════════════════════════════════════════════ */
 async function cotation() {
-  // ── Conversion pathologies → actes NGAP si le champ ne contient pas d'actes médicaux ──
-  // Ex : "Diabète" → "Injection insuline SC, glycémie capillaire"
-  let txt = gv('f-txt');
-  if (txt && typeof pathologiesToActes === 'function') {
-    const _hasActe = /injection|pansement|perfusion|prélèvement|prelevement|insuline|nursing|toilette|bilan|soins|soin|escarre|plaie|ECG|AMI|AIS|BSA|BSB|BSC/i.test(txt);
-    if (!_hasActe) {
-      const _converti = pathologiesToActes(txt.trim());
-      if (_converti && _converti !== txt.trim()) {
-        txt = _converti;
-        const _elTxt = document.getElementById('f-txt');
-        if (_elTxt) _elTxt.value = txt; // mise à jour visible dans l'interface
-      }
-    }
-  }
+  const txt = gv('f-txt');
   if (!txt) { alert('Veuillez saisir une description.'); return; }
   ld('btn-cot', true);
   $('res-cot').classList.remove('show');
@@ -72,6 +59,46 @@ async function cotation() {
     // Récupérer le prescripteur sélectionné (select ou champ texte libre)
     const prescSel = $('f-prescripteur-select');
     const prescripteur_id = prescSel?.value || null;
+
+    // ── Auto-détection mode édition ─────────────────────────────────────────
+    // Si _editingCotation n'est pas encore positionné, vérifier dans l'IDB
+    // si une cotation existe déjà pour ce patient à cette date.
+    // Si oui → forcer le mode édition pour éviter tout doublon.
+    if (!window._editingCotation) {
+      try {
+        const _patNomCheck = (gv('f-pt') || '').trim();
+        const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
+        if (_patNomCheck && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          const _allRows = await _idbGetAll(PATIENTS_STORE);
+          const _nomLow  = _patNomCheck.toLowerCase();
+          const _foundRow = _allRows.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+          );
+          if (_foundRow && typeof _dec === 'function') {
+            const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+            if (Array.isArray(_foundPat.cotations)) {
+              // Chercher une cotation existante à la même date
+              const _existIdx = _foundPat.cotations.findIndex(c => c.date === _dateCheck);
+              if (_existIdx >= 0) {
+                const _existCot = _foundPat.cotations[_existIdx];
+                // Renseigner automatiquement _editingCotation
+                window._editingCotation = {
+                  patientId:    _foundRow.id,
+                  cotationIdx:  _existIdx,
+                  invoice_number: _existCot.invoice_number || null,
+                  _autoDetected: true, // flag : positionné automatiquement (pas par l'utilisateur)
+                };
+              }
+            }
+          }
+        }
+      } catch (_autoDetectErr) {
+        // Non bloquant — si la détection échoue, comportement normal
+        console.warn('[cotation] auto-détection doublon:', _autoDetectErr.message);
+      }
+    }
+
     // Si mode édition, passer l'invoice_number original pour upsert Supabase
     const _editRef = window._editingCotation || null;
     // ── Preuve soin (N8N v7) — bouclier anti-redressement CPAM ──
@@ -248,7 +275,16 @@ async function cotation() {
       // Dispatch pour tout listener externe
       document.dispatchEvent(new CustomEvent('ami:cotation_done', { detail: { invoice_number: _invoiceId } }));
     }
+    // ── Nettoyer _editingCotation auto-détecté (ne doit pas persister) ──
+    if (window._editingCotation?._autoDetected) {
+      window._editingCotation = null;
+    }
+
   } catch (e) {
+    // Nettoyer aussi en cas d'erreur
+    if (window._editingCotation?._autoDetected) {
+      window._editingCotation = null;
+    }
     _clearSlowTimers();
     $('cerr').style.display = 'flex';
     // Message plus clair pour timeout IA
