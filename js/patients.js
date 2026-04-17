@@ -979,6 +979,16 @@ async function deleteCotationPatient(patientId, cotationIdx) {
 
   await openPatientDetail(patientId);
   showToastSafe('🗑️ Cotation supprimée.');
+
+  // Rafraîchir l'Historique des soins s'il est actuellement affiché
+  try {
+    if (typeof hist === 'function' &&
+        (document.querySelector('#his-section:not(.hidden)') ||
+         document.querySelector('[data-v="his"].active') ||
+         document.querySelector('.nav-item.active[data-v="his"]'))) {
+      hist();
+    }
+  } catch (_) {}
 }
 
 
