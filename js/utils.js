@@ -205,7 +205,77 @@ function requireAuth(){
   return true;
 }
 
-/* ── 10. ÉCOUTES RÉACTIVES GLOBALES ─────────────
+/* ── 10. CONVERSION PATHOLOGIES → ACTES NGAP ────
+   Utilisée quand actes_recurrents est vide.
+   Traduit un champ Pathologies (ex : "Diabète type 2, HTA")
+   en description d'actes médicaux réels applicables,
+   directement exploitable par l'IA NGAP pour la cotation.
+─────────────────────────────────────────────── */
+const _PATHO_MAP = [
+  /* ── Diabète ── */
+  { re: /diab[eè]te?\s*(type\s*[12]|insulino|instable)?/i,
+    actes: 'Injection insuline SC, surveillance glycémie capillaire, éducation thérapeutique' },
+  /* ── Plaies / pansements ── */
+  { re: /plaie|ulc[eè]re|escarre|pansement|cicatric|d[eé]bridement/i,
+    actes: 'Pansement complexe (BSB), détersion, surveillance plaie' },
+  /* ── Anticoagulants ── */
+  { re: /anticoagul|héparin|[lL]ovenox|HBPM|AVK|warfarin|rivaroxaban/i,
+    actes: 'Injection sous-cutanée HBPM, surveillance INR, éducation anticoagulant' },
+  /* ── Perfusions / voie veineuse ── */
+  { re: /perfus|antibio\w+|chimio|voie\s*vein|KT\s*perf/i,
+    actes: 'Perfusion intraveineuse à domicile, IFD, surveillance tolérance' },
+  /* ── Nursing / dépendance ── */
+  { re: /nursing|grabataire|d[eé]pendance|ALD\s*\d*\s*perte|d[eé]mence|Alzheimer/i,
+    actes: 'Soins de nursing complets, AMI 4, aide à la toilette, prévention escarre' },
+  /* ── HTA / cardio ── */
+  { re: /HTA|hypertension|insuffisance\s*cardiaque|cardio/i,
+    actes: 'Prise de tension artérielle, surveillance cardiaque, éducation traitement' },
+  /* ── Soins palliatifs ── */
+  { re: /palliatif|fin\s*de\s*vie|soins\s*confort/i,
+    actes: 'Soins palliatifs à domicile, AMI 4, gestion douleur, nursing complet' },
+  /* ── Prise de sang / bilan ── */
+  { re: /bilan\s*sanguin|prise\s*de\s*sang|NFS|CRP|HbA1c|prélévement/i,
+    actes: 'Prélèvement veineux à domicile, BSA, IFD' },
+  /* ── Sonde / appareillage ── */
+  { re: /sonde\s*urinaire|SAD|stomie|trachéo|gastrostomie|PEG/i,
+    actes: 'Soin sur appareillage, surveillance sonde, AMI 2' },
+  /* ── Douleur / morphine ── */
+  { re: /douleur|morphine|antalgique|PCA/i,
+    actes: 'Injection antalgique, surveillance douleur, évaluation EVA' },
+  /* ── Asthme / BPCO / respiratoire ── */
+  { re: /asthme|BPCO|insuffisance\s*resp|aérosol|nébulisation/i,
+    actes: 'Aérosol médicamenteux, surveillance saturation, IFD' },
+  /* ── Post-op / rééducation ── */
+  { re: /post.op|chirurgi|rééducation|kiné|phlébite/i,
+    actes: 'Soins post-opératoires, pansement, surveillance cicatrice' },
+  /* ── Psychiatrie / troubles cognitifs ── */
+  { re: /psychiatr|dépression|schizophrénie|trouble\s*bipolaire|psychose/i,
+    actes: 'Suivi infirmier psychiatrique, surveillance traitement, éducation thérapeutique' },
+];
+
+/**
+ * Convertit un champ Pathologies en description d'actes médicaux
+ * exploitable pour la cotation NGAP.
+ * @param {string} pathologies — ex : "Diabète type 2, HTA, plaie pied"
+ * @returns {string} — texte prêt pour l'IA NGAP (vide si pas de correspondance)
+ */
+function pathologiesToActes(pathologies) {
+  if (!pathologies || !pathologies.trim()) return '';
+  const matches = [];
+  const seen = new Set();
+  for (const entry of _PATHO_MAP) {
+    if (entry.re.test(pathologies) && !seen.has(entry.actes)) {
+      matches.push(entry.actes);
+      seen.add(entry.actes);
+    }
+  }
+  if (matches.length) return matches.join(', ');
+  // Aucune correspondance → retourner les pathologies brutes
+  // pour que l'IA NGAP tente quand même une cotation par contexte
+  return 'Soins infirmiers pour : ' + pathologies.trim();
+}
+
+/* ── 11. ÉCOUTES RÉACTIVES GLOBALES ─────────────
    Effets de bord déclenchés par APP.set().
    Chaque module peut ajouter les siens via APP.on().
 ─────────────────────────────────────────────── */

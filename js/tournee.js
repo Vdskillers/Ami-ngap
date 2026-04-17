@@ -2210,11 +2210,14 @@ async function openCotationPatient(patientIndex) {
     }
   } catch (_) {}
 
-  /* Priorité : actes_recurrents > texte importé > pathologies */
+  /* Priorité : actes_recurrents > texte importé > pathologies (converties en actes réels) */
   const texteImport = (patient.texte || patient.description || '').trim();
+  const _pathoConverti = patient.pathologies
+    ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(patient.pathologies) : patient.pathologies)
+    : '';
   const texteForCot = actesRecurrents
     ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
-    : (texteImport || patient.pathologies || '');
+    : (texteImport || _pathoConverti);
 
   let cotation = null;
   try {
