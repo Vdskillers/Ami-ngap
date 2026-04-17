@@ -1003,8 +1003,36 @@ async function syncCotationsPatient(patientId) {
 
     if (!Array.isArray(p.cotations)) p.cotations = [];
 
-    // ── 1. Push : cotations locales non encore sync → Supabase ──────────
-    const aEnvoyer = p.cotations.filter(c => !c._synced && parseFloat(c.total||0) > 0);
+    // ── 1. Récupérer les cotations Supabase EN PREMIER ───────────────────
+    // Avant tout push, on connaît l'état du serveur pour éviter les doublons
+    const histRes = await api('/webhook/ami-historique', { period: 'year' });
+    const remote  = histRes?.data || (Array.isArray(histRes) ? histRes : []);
+
+    // Index serveur par invoice_number (toutes cotations, sans filtre patient_id)
+    const serverByInvoice = new Map(
+      remote.filter(r => r.invoice_number).map(r => [r.invoice_number, r])
+    );
+    const serverInvoices = new Set(serverByInvoice.keys());
+
+    // Cotations de CE patient sur le serveur :
+    // - celles avec patient_id correct
+    // - celles dont l'invoice_number est dans l'IDB local (cotations sans patient_id dans Supabase)
+    const localInvoicesSet = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
+    const serverCots = remote.filter(r =>
+      r.patient_id === patientId ||
+      (r.invoice_number && localInvoicesSet.has(r.invoice_number))
+    );
+
+    // ── 2. Push : cotations IDB non présentes sur le serveur → Supabase ──
+    // Inclut les non-synced ET celles dont patient_id est manquant côté serveur
+    const aEnvoyer = p.cotations.filter(c => {
+      if (!parseFloat(c.total||0)) return false;
+      if (!c.invoice_number) return !c._synced; // pas d'invoice → envoyer si non sync
+      const srv = serverByInvoice.get(c.invoice_number);
+      if (!srv) return true;            // absente du serveur → envoyer
+      if (!srv.patient_id) return true; // présente mais sans patient_id → mettre à jour
+      return false;
+    });
     if (aEnvoyer.length) {
       const payload = aEnvoyer.map(c => ({
         actes:          c.actes || [],
@@ -1015,25 +1043,20 @@ async function syncCotationsPatient(patientId) {
         invoice_number: c.invoice_number || null,
         source:         c.source || 'carnet_sync',
         dre_requise:    !!c.dre_requise,
-        patient_id:     patientId,  // rattachement IDB ↔ planning_patients
+        patient_id:     patientId,
       }));
       const pushRes = await api('/webhook/ami-save-cotation', { cotations: payload });
       if (pushRes?.ok) aEnvoyer.forEach(c => { c._synced = true; });
     }
 
-    // ── 2. Pull : cotations Supabase → IDB ──────────────────────────────
-    const histRes        = await api('/webhook/ami-historique', { period: 'year' });
-    const remote         = histRes?.data || (Array.isArray(histRes) ? histRes : []);
-    const serverInvoices = new Set(remote.map(r => r.invoice_number).filter(Boolean));
-    const serverCots     = remote.filter(r => r.patient_id === patientId);
-
-    // Purger les cotations locales supprimées sur le serveur
+    // ── 3. Purge + injection depuis serveur ──────────────────────────────
+    // Purger les cotations IDB dont l'invoice_number est absent du serveur
     p.cotations = p.cotations.filter(c => !c.invoice_number || serverInvoices.has(c.invoice_number));
 
-    // Ajouter les cotations serveur absentes localement
-    const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
+    // Ajouter les cotations serveur de ce patient absentes localement
+    const localInvoicesAfterPurge = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
     for (const sc of serverCots) {
-      if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
+      if (!sc.invoice_number || localInvoicesAfterPurge.has(sc.invoice_number)) continue;
       let actes = [];
       try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
       p.cotations.push({
@@ -1044,10 +1067,10 @@ async function syncCotationsPatient(patientId) {
         source: sc.source || 'sync_server', ngap_version: sc.ngap_version || null,
         dre_requise: !!sc.dre_requise, _synced: true,
       });
-      localInvoices.add(sc.invoice_number);
+      localInvoicesAfterPurge.add(sc.invoice_number);
     }
 
-    // ── 3. Sauvegarder + push carnet_patients ───────────────────────────
+    // ── 4. Sauvegarder + push carnet_patients ────────────────────────────
     p.updated_at = new Date().toISOString();
     const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
     await _idbPut(PATIENTS_STORE, toStore);
@@ -1977,17 +2000,45 @@ async function syncCotationsFromServer() {
     const localIds  = new Set(localRows.map(r => r.id));
     let changed = 0;
 
+    // Index global invoice_number → cotation serveur (sans restriction patient_id)
+    const serverByInvoiceGlobal = new Map(
+      remote.filter(r => r.invoice_number).map(r => [r.invoice_number, r])
+    );
+
     for (const row of localRows) {
       const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
       if (!Array.isArray(p.cotations)) p.cotations = [];
       const before = p.cotations.length;
 
+      // Purger les cotations IDB absentes du serveur
       p.cotations = p.cotations.filter(c => !c.invoice_number || serverInvoices.has(c.invoice_number));
 
+      // Cotations serveur de ce patient :
+      // - par patient_id (nouvelles cotations avec fix)
+      // - par invoice_number présent dans l'IDB (cotations sans patient_id dans Supabase)
       const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
-      for (const sc of (serverCotsByPid.get(row.id) || [])) {
+      const extraCots = [...localInvoices]
+        .map(inv => serverByInvoiceGlobal.get(inv))
+        .filter(sc => sc && !sc.patient_id); // cotations sans patient_id à rattacher
+
+      const patientServerCots = [
+        ...(serverCotsByPid.get(row.id) || []),
+        ...extraCots.filter(sc => !(serverCotsByPid.get(row.id)||[]).some(x => x.invoice_number === sc.invoice_number)),
+      ];
+
+      for (const sc of patientServerCots) {
         if (sc.invoice_number && !localInvoices.has(sc.invoice_number)) {
-          p.cotations.push(sc); localInvoices.add(sc.invoice_number);
+          let actes = [];
+          try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
+          p.cotations.push({
+            date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
+            total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
+            part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
+            soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
+            source: sc.source || 'sync_server', ngap_version: sc.ngap_version || null,
+            dre_requise: !!sc.dre_requise, _synced: true,
+          });
+          localInvoices.add(sc.invoice_number);
         }
       }
 
