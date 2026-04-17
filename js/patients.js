@@ -1292,16 +1292,23 @@ async function coterDepuisPatient(id) {
     const fAmc= $('f-amc'); if(fAmc && p.amc) fAmc.value = p.amc;
     const fExo= $('f-exo'); if(fExo && p.exo) fExo.value = p.exo;
     const fPr = $('f-pr'); if(fPr && p.medecin) fPr.value = p.medecin;
-    // Pré-remplir la description avec les actes récurrents si définis
+    // Pré-remplir la description : actes_recurrents en priorité,
+    // sinon pathologies converties en actes NGAP applicables
     const fTxt = $('f-txt');
     if (fTxt) {
-      if (p.actes_recurrents) {
-        fTxt.value = p.actes_recurrents;
-        if (typeof renderLiveReco === 'function') renderLiveReco(p.actes_recurrents);
+      const _txtVal = p.actes_recurrents
+        || (p.pathologies && typeof pathologiesToActes === 'function'
+            ? pathologiesToActes(p.pathologies) : '');
+      if (_txtVal) {
+        fTxt.value = _txtVal;
+        if (typeof renderLiveReco === 'function') renderLiveReco(_txtVal);
       }
       fTxt.focus();
     }
-    showToastSafe(`👤 Fiche de ${p.prenom||''} ${p.nom} chargée${p.actes_recurrents ? ' — actes récurrents pré-remplis' : ''}.`);
+    const _srcLabel = p.actes_recurrents
+      ? ' — actes récurrents pré-remplis'
+      : (p.pathologies ? ' — pathologies converties en actes NGAP' : '');
+    showToastSafe(`👤 Fiche de ${p.prenom||''} ${p.nom} chargée${_srcLabel}.`);
   }, 200);
 }
 
@@ -2096,15 +2103,22 @@ async function cotSelectPatient(id) {
   set('f-exo', d.exo || '');
   set('f-pr',  d.medecin || '');
 
-  // Pré-remplir les actes récurrents si définis
+  // Pré-remplir la description : actes_recurrents en priorité,
+  // sinon pathologies converties en actes NGAP applicables
   const fTxt = document.getElementById('f-txt');
-  if (fTxt && d.actes_recurrents) {
-    fTxt.value = d.actes_recurrents;
-    if (typeof renderLiveReco === 'function') renderLiveReco(d.actes_recurrents);
+  const _txtVal2 = d.actes_recurrents
+    || (d.pathologies && typeof pathologiesToActes === 'function'
+        ? pathologiesToActes(d.pathologies) : '');
+  if (fTxt && _txtVal2) {
+    fTxt.value = _txtVal2;
+    if (typeof renderLiveReco === 'function') renderLiveReco(_txtVal2);
   }
 
   if (typeof showToast === 'function') {
-    showToast(`👤 ${p.prenom} ${p.nom} — fiche chargée${d.actes_recurrents ? ' avec actes récurrents' : ''}`);
+    const _lbl2 = d.actes_recurrents
+      ? ' avec actes récurrents'
+      : (d.pathologies ? ' — pathologies → actes NGAP' : '');
+    showToast(`👤 ${p.prenom} ${p.nom} — fiche chargée${_lbl2}`);
   }
 }
 
