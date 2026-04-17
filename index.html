@@ -32,164 +32,9 @@
     #mobile-greeting{display:flex!important}
     .logo .ltext,.logo .lsub{display:none}
   }
-
-  /* ── LANDING PAGE ───────────────────────── */
-  #lp-ov{position:fixed;inset:0;z-index:1100;background:#0b0f14;overflow-y:auto;display:flex;flex-direction:column}
-  #lp-ov.lp-hide{display:none}
-  .lp-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
-    background-image:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(0,212,170,.12) 0%,transparent 70%),
-      linear-gradient(rgba(0,212,170,.018) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(0,212,170,.018) 1px,transparent 1px);
-    background-size:100% 100%,48px 48px,48px 48px}
-  .lp-wrap{position:relative;z-index:1;max-width:680px;margin:0 auto;padding:48px 24px 80px;width:100%}
-  /* Hero */
-  .lp-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.25);border-radius:20px;padding:5px 14px;font-family:var(--fm);font-size:10px;letter-spacing:2px;color:var(--a);text-transform:uppercase;margin-bottom:28px}
-  .lp-h1{font-family:var(--fs);font-size:clamp(32px,6vw,52px);line-height:1.1;color:#e8f0f8;margin-bottom:18px}
-  .lp-h1 em{font-style:italic;color:var(--a)}
-  .lp-lead{font-size:17px;color:#8fabb8;line-height:1.65;max-width:560px;margin-bottom:40px}
-  .lp-lead strong{color:#c8dce8;font-weight:600}
-  /* Accroche choc */
-  .lp-shout{background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(79,168,255,.05));border:1px solid rgba(0,212,170,.2);border-radius:16px;padding:22px 28px;margin-bottom:40px;position:relative;overflow:hidden}
-  .lp-shout::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:linear-gradient(180deg,var(--a),var(--a2))}
-  .lp-shout p{font-family:var(--fs);font-size:19px;color:#e8f0f8;line-height:1.4;font-style:italic}
-  .lp-shout small{display:block;margin-top:8px;font-family:var(--fm);font-size:10px;color:#d0e8e0;letter-spacing:1.5px;text-transform:uppercase}
-  /* Features grid */
-  .lp-sec-title{font-family:var(--fm);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--m);margin-bottom:16px}
-  .lp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:40px}
-  @media(max-width:520px){.lp-grid{grid-template-columns:1fr}}
-  .lp-card{background:rgba(17,23,32,.85);border:1px solid #1e2d3d;border-radius:14px;padding:18px 20px;transition:border-color .2s}
-  .lp-card:hover{border-color:rgba(0,212,170,.3)}
-  .lp-card-icon{font-size:22px;margin-bottom:10px;display:block}
-  .lp-card-t{font-size:14px;font-weight:600;color:#c8dce8;margin-bottom:6px}
-  .lp-card-d{font-size:13px;color:#6a8099;line-height:1.55}
-  /* Résultat */
-  .lp-result{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:40px}
-  @media(max-width:480px){.lp-result{grid-template-columns:1fr 1fr}}
-  .lp-stat{background:rgba(17,23,32,.85);border:1px solid #1e2d3d;border-radius:12px;padding:16px;text-align:center}
-  .lp-stat-v{font-family:var(--fs);font-size:30px;color:var(--a);line-height:1}
-  .lp-stat-l{font-size:11px;color:#6a8099;margin-top:6px;line-height:1.4}
-  /* Sécurité */
-  .lp-sec{background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.12);border-radius:14px;padding:20px 24px;margin-bottom:40px}
-  .lp-sec-row{display:flex;flex-wrap:wrap;gap:10px 20px}
-  .lp-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:#8fabb8;white-space:nowrap}
-  .lp-pill::before{content:'✓';color:var(--a);font-weight:700;font-size:12px}
-  /* CTA */
-  .lp-cta-wrap{text-align:center}
-  .lp-cta{display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,#00e6b8,#00c49a);color:#ffffff;border:none;border-radius:16px;padding:20px 52px;font-family:var(--ff);font-size:18px;font-weight:800;cursor:pointer;transition:all .2s;margin-bottom:12px;letter-spacing:.3px;text-shadow:0 1px 3px rgba(0,0,0,.35);box-shadow:0 4px 24px rgba(0,212,170,.45)}
-  .lp-cta:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,212,170,.4)}
-  .lp-cta-sub{font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1px;text-transform:uppercase}
-  .lp-logo{display:flex;align-items:center;gap:10px;margin-bottom:40px}
-  .lp-mark{width:44px;height:44px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:13px;display:grid;place-items:center;font-family:var(--fs);font-size:22px;color:#00d4aa;text-shadow:0 0 12px rgba(0,212,170,.8);box-shadow:0 0 28px rgba(0,212,170,.35);flex-shrink:0}
-  .lp-app-name{font-family:var(--fs);font-size:22px;color:#ffffff}.lp-app-sub{font-family:var(--fm);font-size:9px;color:#ffffff;letter-spacing:2.5px;text-transform:uppercase;opacity:.85}
-  /* animation entrée */
-  @keyframes lpFadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-  .lp-wrap > *{animation:lpFadeUp .5s ease both}
-  .lp-wrap > *:nth-child(1){animation-delay:.05s}
-  .lp-wrap > *:nth-child(2){animation-delay:.1s}
-  .lp-wrap > *:nth-child(3){animation-delay:.15s}
-  .lp-wrap > *:nth-child(4){animation-delay:.2s}
-  .lp-wrap > *:nth-child(5){animation-delay:.25s}
-  .lp-wrap > *:nth-child(6){animation-delay:.3s}
-  .lp-wrap > *:nth-child(7){animation-delay:.35s}
-  .lp-wrap > *:nth-child(8){animation-delay:.38s}
-  .lp-wrap > *:nth-child(9){animation-delay:.4s}
 </style>
 </head>
 <body>
-
-<!-- LANDING PAGE -->
-<div id="lp-ov">
-  <div class="lp-bg"></div>
-  <div class="lp-wrap">
-    <!-- Logo -->
-    <div class="lp-logo">
-      <div class="lp-mark">A</div>
-      <div><div class="lp-app-name">AMI</div><div class="lp-app-sub">Système expert médico-légal prédictif</div></div>
-    </div>
-
-    <!-- Badge -->
-    <div><span class="lp-badge">✦ Assistant Médical Infirmier</span></div>
-
-    <!-- Hero -->
-    <h1 class="lp-h1">Tu fais le soin.<br><em>AMI s'occupe du reste.</em></h1>
-
-    <p class="lp-lead">
-      Tu écris ce que tu as fait — <strong>AMI cote automatiquement</strong>, optimise ta facturation, détecte les erreurs NGAP, et garde une preuve de chaque soin.<br>
-      <strong>Zéro paperasse. Zéro risque CPAM.</strong>
-    </p>
-
-    <!-- Accroche -->
-    <div class="lp-shout">
-      <p>« Un logiciel qui te dit comment coter, t'évite les erreurs, et te protège si la CPAM te tombe dessus. »</p>
-      <small>Conçu pour les infirmier(e)s libérales</small>
-    </div>
-
-    <!-- Features -->
-    <div class="lp-sec-title">Ce qu'AMI fait pour toi</div>
-    <div class="lp-grid">
-      <div class="lp-card">
-        <span class="lp-card-icon">🧠</span>
-        <div class="lp-card-t">Cotation automatique</div>
-        <div class="lp-card-d">Décris ton soin en français. AMI sélectionne les bons codes NGAP, optimise et te signale si tu oublies un acte facturable.</div>
-      </div>
-      <div class="lp-card">
-        <span class="lp-card-icon">🛡️</span>
-        <div class="lp-card-t">Protection CPAM</div>
-        <div class="lp-card-d">Simulation de contrôle en temps réel. AMI bloque les cotations risquées et t'alerte avant qu'il soit trop tard.</div>
-      </div>
-      <div class="lp-card">
-        <span class="lp-card-icon">✍️</span>
-        <div class="lp-card-t">Preuve de soin</div>
-        <div class="lp-card-d">Signature électronique et photo du soin pour chaque acte. Ta défense est prête si tu reçois un courrier CPAM.</div>
-      </div>
-      <div class="lp-card">
-        <span class="lp-card-icon">🗺️</span>
-        <div class="lp-card-t">Tournée optimisée</div>
-        <div class="lp-card-d">L'IA calcule la meilleure route pour ta journée. Moins de kilomètres, plus de patients, moins de fatigue.</div>
-      </div>
-      <div class="lp-card">
-        <span class="lp-card-icon">📊</span>
-        <div class="lp-card-t">Tableau de bord</div>
-        <div class="lp-card-d">Suivi de ta facturation en temps réel : revenus, actes réalisés, alertes manquantes. Tout d'un coup d'œil.</div>
-      </div>
-      <div class="lp-card">
-        <span class="lp-card-icon">📴</span>
-        <div class="lp-card-t">100% hors-ligne</div>
-        <div class="lp-card-d">Fonctionne sans connexion. Tes données patients restent sur ton appareil, chiffrées. Jamais sur nos serveurs.</div>
-      </div>
-    </div>
-
-    <!-- Stats -->
-    <div class="lp-sec-title">Résultats concrets</div>
-    <div class="lp-result">
-      <div class="lp-stat"><div class="lp-stat-v">−80%</div><div class="lp-stat-l">d'erreurs de cotation</div></div>
-      <div class="lp-stat"><div class="lp-stat-v">+15%</div><div class="lp-stat-l">de revenus en moyenne</div></div>
-      <div class="lp-stat"><div class="lp-stat-v">0€</div><div class="lp-stat-l">de pénalité CPAM</div></div>
-    </div>
-
-    <!-- Sécurité RGPD -->
-    <div class="lp-sec">
-      <div class="lp-sec-title" style="margin-bottom:14px">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
-      <div class="lp-sec-row">
-        <span class="lp-pill">Données stockées uniquement sur ton appareil</span>
-        <span class="lp-pill">Chiffrement AES-256</span>
-        <span class="lp-pill">Mots de passe bcrypt</span>
-        <span class="lp-pill">HTTPS partout</span>
-        <span class="lp-pill">Consentement explicite</span>
-        <span class="lp-pill">Droit à l'effacement</span>
-        <span class="lp-pill">Export de tes données</span>
-        <span class="lp-pill">Logs d'accès</span>
-        <span class="lp-pill">Hébergement sécurisé</span>
-      </div>
-    </div>
-
-    <!-- CTA -->
-    <div class="lp-cta-wrap">
-      <button class="lp-cta" onclick="closeLanding()">✦ Commencer gratuitement</button>
-      <div class="lp-cta-sub">Connexion · Création de compte · Aucune CB requise</div>
-    </div>
-  </div>
-</div>
 
 <!-- AUTH -->
 <div id="auth-ov">
@@ -2178,7 +2023,7 @@ async function hist() {
         <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
         <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
         <td>${alertes}</td>
-        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id})" title="Supprimer cette cotation">🗑️</button></td>
+        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, ${JSON.stringify(r.invoice_number||'')})" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
 
@@ -2187,12 +2032,34 @@ async function hist() {
   }
 }
 
-async function delHist(id) {
+async function delHist(id, invoiceNumber) {
   if (!confirm(`Supprimer la cotation #${id} ?`)) return;
   try {
     await (typeof wpost === 'function'
       ? wpost('/webhook/ami-supprimer', { id })
       : fetchAPI('/webhook/ami-supprimer', { method:'POST', body: JSON.stringify({ id }) }));
+
+    // Synchroniser la suppression dans le carnet patient IDB
+    // La cotation sera retirée de l'IDB via invoice_number (si disponible)
+    if (invoiceNumber && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+      try {
+        const allRows = await _idbGetAll(PATIENTS_STORE);
+        for (const row of allRows) {
+          const p = { ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
+          if (!Array.isArray(p.cotations)) continue;
+          const idx = p.cotations.findIndex(c => c.invoice_number === invoiceNumber);
+          if (idx < 0) continue;
+          p.cotations.splice(idx, 1);
+          p.updated_at = new Date().toISOString();
+          const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: (typeof _enc === 'function' ? _enc(p) : p), updated_at: p.updated_at };
+          if (typeof _idbPut === 'function') await _idbPut(PATIENTS_STORE, toStore);
+          // Push fiche mise à jour vers carnet_patients
+          if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+          break; // une cotation ne peut appartenir qu'à un seul patient
+        }
+      } catch (e) { console.warn('[delHist] sync IDB KO:', e?.message); }
+    }
+
     hist();
     if (typeof showToast === 'function') showToast('✅ Cotation supprimée.');
   } catch(e) {
@@ -2258,22 +2125,3 @@ async function resetAllHist() {
 </script>
 
 <script src="js/infirmiere-tools.js"></script>
-<script>
-/* ── LANDING PAGE ─────────────────────────────── */
-(function(){
-  const LP_KEY = 'ami_landing_seen';
-  function closeLanding(){
-    var ov = document.getElementById('lp-ov');
-    if(ov){ ov.style.transition='opacity .35s'; ov.style.opacity='0'; setTimeout(function(){ ov.classList.add('lp-hide'); ov.style.opacity=''; }, 350); }
-    try{ localStorage.setItem(LP_KEY,'1'); }catch(e){}
-  }
-  window.closeLanding = closeLanding;
-  /* Si déjà vu : masquer immédiatement */
-  try{
-    if(localStorage.getItem(LP_KEY)){
-      var ov = document.getElementById('lp-ov');
-      if(ov) ov.classList.add('lp-hide');
-    }
-  }catch(e){}
-})();
-</script>
