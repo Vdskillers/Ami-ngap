@@ -805,7 +805,10 @@ async function addOrdonnance() {
         if (!pat.ordonnances) pat.ordonnances = [];
         pat.ordonnances.push(ordo);
         pat.updated_at = new Date().toISOString();
-        await _idbPut(STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+        const _tsOrdo = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at };
+        await _idbPut(STORE, _tsOrdo);
+        // Sync immédiate vers carnet_patients — propagation inter-appareils
+        if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsOrdo).catch(() => {});
         savedToCarnet = true;
       }
     }

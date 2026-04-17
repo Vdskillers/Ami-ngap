@@ -1016,7 +1016,9 @@ async function _syncCotationsToSupabase(patients) {
             if (c) c._synced = true;
           }
           pat.updated_at = new Date().toISOString();
-          await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+          const _ts1 = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at };
+          await _idbPut(PATIENTS_STORE, _ts1);
+          if (typeof _syncPatientNow === 'function') _syncPatientNow(_ts1).catch(() => {});
         } catch {}
       }
       console.info(`[AMI] ${result.saved} cotation(s) synchronisées vers Supabase.`);
@@ -1280,13 +1282,9 @@ async function _autoAddImportedToCarnet(patients) {
       };
 
       const id = p.patient_id || p.id || ('imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
-      await _idbPut(PATIENTS_STORE, {
-        id,
-        nom:        fiche.nom,
-        prenom:     fiche.prenom,
-        _data:      _enc(fiche),
-        updated_at: fiche.updated_at,
-      });
+      const _tsImp = { id, nom: fiche.nom, prenom: fiche.prenom, _data: _enc(fiche), updated_at: fiche.updated_at };
+      await _idbPut(PATIENTS_STORE, _tsImp);
+      if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsImp).catch(() => {});
 
       existIndex.add(key); // évite les doublons dans la même passe
       added++;
@@ -2090,7 +2088,10 @@ function _validateCotationLive() {
       }
       // existingInvoice présent mais introuvable → NE PAS push (évite doublon)
       p.updated_at = new Date().toISOString();
-      await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at });
+      const _tsLive = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at };
+      await _idbPut(PATIENTS_STORE, _tsLive);
+      // Sync immédiate vers carnet_patients — propagation inter-appareils
+      if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsLive).catch(() => {});
     } catch(e) { console.warn('[AMI] Sauvegarde cotation IDB KO:', e.message); }
   })();
 

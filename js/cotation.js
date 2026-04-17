@@ -240,7 +240,10 @@ async function cotation() {
           // Si _editRef mais pas d'index → ne rien faire (eviter les doublons)
 
           _pat.updated_at = new Date().toISOString();
-          await _idbPut(PATIENTS_STORE, { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at });
+          const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+          await _idbPut(PATIENTS_STORE, _toStore1);
+          // Sync immédiate vers carnet_patients — propagation inter-appareils
+          if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore1).catch(() => {});
 
         } else if (!_editRef) {
           // ── Patient absent du carnet → créer la fiche + la cotation ──
@@ -262,13 +265,16 @@ async function cotation() {
             updated_at: new Date().toISOString(),
             source:     'cotation_auto',
           };
-          await _idbPut(PATIENTS_STORE, {
+          const _toStore2 = {
             id:         _newPat.id,
             nom:        _nom,
             prenom:     _prenom,
             _data:      _enc(_newPat),
             updated_at: _newPat.updated_at,
-          });
+          };
+          await _idbPut(PATIENTS_STORE, _toStore2);
+          // Sync immédiate vers carnet_patients — propagation inter-appareils
+          if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore2).catch(() => {});
           if (typeof showToast === 'function')
             showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
         }
@@ -518,10 +524,10 @@ async function _saveEditedCotation(d) {
             source:     'tournee_auto',
           };
           if (typeof _idbPut === 'function') {
-            await _idbPut(PATIENTS_STORE, {
-              id: newPat.id, nom, prenom,
-              _data: _enc(newPat), updated_at: newPat.updated_at,
-            });
+            const _toStoreTN = { id: newPat.id, nom, prenom, _data: _enc(newPat), updated_at: newPat.updated_at };
+            await _idbPut(PATIENTS_STORE, _toStoreTN);
+            // Sync immédiate vers carnet_patients — propagation inter-appareils
+            if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStoreTN).catch(() => {});
           }
           const toast = typeof showToast === 'function' ? showToast : (typeof showToastSafe === 'function' ? showToastSafe : null);
           if (toast) toast('👤 Fiche patient créée : ' + nomField.trim());
@@ -583,10 +589,10 @@ async function _saveEditedCotation(d) {
         // → NE PAS créer de doublon. L'upsert Supabase (bloc 2) gérera la synchro.
 
         p.updated_at = new Date().toISOString();
-        await _idbPut(PATIENTS_STORE, {
-          id: row.id, nom: row.nom, prenom: row.prenom,
-          _data: _enc(p), updated_at: p.updated_at,
-        });
+        const _toStoreTE = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+        await _idbPut(PATIENTS_STORE, _toStoreTE);
+        // Sync immédiate vers carnet_patients — propagation inter-appareils
+        if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStoreTE).catch(() => {});
       }
     }
 
