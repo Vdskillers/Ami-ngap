@@ -32,9 +32,145 @@
     #mobile-greeting{display:flex!important}
     .logo .ltext,.logo .lsub{display:none}
   }
+
+  /* ══ LANDING PAGE ══════════════════════════════ */
+  #lp-ov{position:fixed;inset:0;z-index:1100;background:#0b0f14;overflow-y:auto;display:flex;flex-direction:column;align-items:center}
+  #lp-ov.lp-hide{display:none}
+  .lp-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:radial-gradient(ellipse 90% 55% at 50% -5%,rgba(0,212,170,.14) 0%,transparent 65%),radial-gradient(ellipse 40% 40% at 85% 70%,rgba(79,168,255,.06) 0%,transparent 60%),linear-gradient(rgba(0,212,170,.016) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,170,.016) 1px,transparent 1px);
+    background-size:100% 100%,100% 100%,48px 48px,48px 48px}
+  .lp-wrap{position:relative;z-index:1;max-width:700px;width:100%;padding:52px 28px 100px}
+  .lp-logo{display:flex;align-items:center;gap:13px;margin-bottom:44px}
+  .lp-mark{width:48px;height:48px;background:linear-gradient(135deg,#0b1a14,#102a1e);border:2px solid rgba(0,212,170,.5);border-radius:14px;display:grid;place-items:center;font-family:var(--fs);font-size:24px;color:#00d4aa;text-shadow:0 0 16px rgba(0,212,170,.9);box-shadow:0 0 24px rgba(0,212,170,.3),inset 0 1px 0 rgba(0,212,170,.15);flex-shrink:0}
+  .lp-app-name{font-family:var(--fs);font-size:24px;color:#ffffff;line-height:1}
+  .lp-app-sub{font-family:var(--fm);font-size:9px;color:#ffffff;opacity:.7;letter-spacing:2px;text-transform:uppercase;margin-top:3px}
+  .lp-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.22);border-radius:20px;padding:5px 15px;font-family:var(--fm);font-size:10px;letter-spacing:2px;color:#00d4aa;text-transform:uppercase;margin-bottom:24px}
+  .lp-h1{font-family:var(--fs);font-size:clamp(34px,6.5vw,56px);line-height:1.08;color:#ffffff;margin-bottom:20px}
+  .lp-h1 em{font-style:italic;color:#00d4aa}
+  .lp-lead{font-size:17px;color:#d0dfe8;line-height:1.68;max-width:580px;margin-bottom:36px}
+  .lp-lead strong{color:#ffffff;font-weight:700}
+  .lp-shout{background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.18);border-left:3px solid #00d4aa;border-radius:0 14px 14px 0;padding:20px 26px;margin-bottom:44px}
+  .lp-shout p{font-family:var(--fs);font-size:20px;color:#ffffff;line-height:1.38;font-style:italic}
+  .lp-shout small{display:block;margin-top:9px;font-family:var(--fm);font-size:10px;color:#d0e8e0;letter-spacing:1.5px;text-transform:uppercase}
+  .lp-sec-title{font-family:var(--fm);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#a0bbd0;margin-bottom:14px}
+  .lp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:44px}
+  @media(max-width:520px){.lp-grid{grid-template-columns:1fr}}
+  .lp-card{background:rgba(14,20,30,.9);border:1px solid rgba(30,45,61,.9);border-radius:14px;padding:20px 22px;transition:border-color .2s,transform .2s}
+  .lp-card:hover{border-color:rgba(0,212,170,.28);transform:translateY(-1px)}
+  .lp-card-icon{font-size:22px;margin-bottom:10px;display:block}
+  .lp-card-t{font-size:14px;font-weight:700;color:#ffffff;margin-bottom:6px}
+  .lp-card-d{font-size:13px;color:#b8cdd8;line-height:1.56}
+  .lp-result{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:44px}
+  @media(max-width:480px){.lp-result{grid-template-columns:1fr 1fr}}
+  .lp-stat{background:rgba(14,20,30,.9);border:1px solid rgba(30,45,61,.9);border-radius:12px;padding:18px 12px;text-align:center}
+  .lp-stat-v{font-family:var(--fs);font-size:32px;color:#ffffff;line-height:1}
+  .lp-stat-l{font-size:11px;color:#b8cdd8;margin-top:7px;line-height:1.4}
+  .lp-sec{background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12);border-radius:14px;padding:22px 26px;margin-bottom:44px}
+  .lp-sec-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:12px}
+  .lp-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:#d0e4ee;white-space:nowrap}
+  .lp-pill::before{content:'✓';color:#00d4aa;font-weight:800;font-size:12px}
+  .lp-cta-wrap{text-align:center;padding-top:4px}
+  .lp-cta{display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,#00e0b5,#00c49a);color:#ffffff;border:none;border-radius:16px;padding:19px 56px;font-family:var(--ff);font-size:18px;font-weight:800;cursor:pointer;transition:all .22s;margin-bottom:14px;letter-spacing:.3px;text-shadow:0 1px 4px rgba(0,0,0,.4);box-shadow:0 6px 28px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.3)}
+  .lp-cta:hover{transform:translateY(-2px);box-shadow:0 10px 36px rgba(0,212,170,.55),0 2px 8px rgba(0,0,0,.3)}
+  .lp-cta:active{transform:translateY(0);box-shadow:0 4px 16px rgba(0,212,170,.35)}
+  .lp-cta-sub{font-family:var(--fm);font-size:10px;color:#a0bbd0;letter-spacing:1px;text-transform:uppercase}
+  @keyframes lpFadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+  .lp-wrap>*{animation:lpFadeUp .5s ease both}
+  .lp-wrap>*:nth-child(1){animation-delay:.04s}.lp-wrap>*:nth-child(2){animation-delay:.09s}.lp-wrap>*:nth-child(3){animation-delay:.14s}.lp-wrap>*:nth-child(4){animation-delay:.19s}.lp-wrap>*:nth-child(5){animation-delay:.23s}.lp-wrap>*:nth-child(6){animation-delay:.27s}.lp-wrap>*:nth-child(7){animation-delay:.31s}.lp-wrap>*:nth-child(8){animation-delay:.34s}.lp-wrap>*:nth-child(9){animation-delay:.37s}.lp-wrap>*:nth-child(10){animation-delay:.4s}
 </style>
 </head>
 <body>
+
+<!-- LANDING PAGE -->
+<div id="lp-ov">
+  <div class="lp-bg"></div>
+  <div class="lp-wrap">
+
+    <div class="lp-logo">
+      <div class="lp-mark">A</div>
+      <div>
+        <div class="lp-app-name">AMI</div>
+        <div class="lp-app-sub">Système expert médico-légal prédictif</div>
+      </div>
+    </div>
+
+    <div><span class="lp-badge">✦ Assistant Médical Infirmier</span></div>
+
+    <h1 class="lp-h1">Tu fais le soin.<br><em>AMI s'occupe du reste.</em></h1>
+
+    <p class="lp-lead">
+      Tu écris ce que tu as fait — <strong>AMI cote automatiquement</strong>, optimise ta facturation, détecte les erreurs NGAP et garde une preuve de chaque soin.<br>
+      <strong>Zéro paperasse. Zéro risque CPAM.</strong>
+    </p>
+
+    <div class="lp-shout">
+      <p>« Un logiciel qui te dit comment coter, t'évite les erreurs, et te protège si la CPAM te tombe dessus. »</p>
+      <small>Conçu pour les infirmier(e)s libérales</small>
+    </div>
+
+    <div class="lp-sec-title">Ce qu'AMI fait pour toi</div>
+    <div class="lp-grid">
+      <div class="lp-card">
+        <span class="lp-card-icon">🧠</span>
+        <div class="lp-card-t">Cotation automatique</div>
+        <div class="lp-card-d">Décris ton soin en français. AMI sélectionne les bons codes NGAP, optimise et te signale si tu oublies un acte facturable.</div>
+      </div>
+      <div class="lp-card">
+        <span class="lp-card-icon">🛡️</span>
+        <div class="lp-card-t">Protection CPAM</div>
+        <div class="lp-card-d">Simulation de contrôle en temps réel. AMI bloque les cotations risquées et t'alerte avant qu'il soit trop tard.</div>
+      </div>
+      <div class="lp-card">
+        <span class="lp-card-icon">✍️</span>
+        <div class="lp-card-t">Preuve de soin</div>
+        <div class="lp-card-d">Signature électronique et photo pour chaque acte. Ta défense est prête si tu reçois un courrier CPAM.</div>
+      </div>
+      <div class="lp-card">
+        <span class="lp-card-icon">🗺️</span>
+        <div class="lp-card-t">Tournée optimisée</div>
+        <div class="lp-card-d">L'IA calcule la meilleure route pour ta journée. Moins de kilomètres, plus de patients, moins de fatigue.</div>
+      </div>
+      <div class="lp-card">
+        <span class="lp-card-icon">📊</span>
+        <div class="lp-card-t">Tableau de bord</div>
+        <div class="lp-card-d">Revenus, actes réalisés, alertes manquantes. Toute ta facturation d'un seul coup d'œil.</div>
+      </div>
+      <div class="lp-card">
+        <span class="lp-card-icon">📴</span>
+        <div class="lp-card-t">100% hors-ligne</div>
+        <div class="lp-card-d">Fonctionne sans connexion. Tes données patients restent sur ton appareil, chiffrées. Jamais sur nos serveurs.</div>
+      </div>
+    </div>
+
+    <div class="lp-sec-title">Résultats concrets</div>
+    <div class="lp-result">
+      <div class="lp-stat"><div class="lp-stat-v">−80%</div><div class="lp-stat-l">d'erreurs de cotation</div></div>
+      <div class="lp-stat"><div class="lp-stat-v">+15%</div><div class="lp-stat-l">de revenus en moyenne</div></div>
+      <div class="lp-stat"><div class="lp-stat-v">0€</div><div class="lp-stat-l">de pénalité CPAM</div></div>
+    </div>
+
+    <div class="lp-sec">
+      <div class="lp-sec-title">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
+      <div class="lp-sec-row">
+        <span class="lp-pill">Données stockées sur ton appareil uniquement</span>
+        <span class="lp-pill">Chiffrement AES-256</span>
+        <span class="lp-pill">Mots de passe bcrypt</span>
+        <span class="lp-pill">HTTPS partout</span>
+        <span class="lp-pill">Consentement explicite</span>
+        <span class="lp-pill">Droit à l'effacement</span>
+        <span class="lp-pill">Export de tes données</span>
+        <span class="lp-pill">Logs d'accès</span>
+        <span class="lp-pill">Hébergement sécurisé</span>
+      </div>
+    </div>
+
+    <div class="lp-cta-wrap">
+      <button class="lp-cta" onclick="closeLanding()">✦ Commencer gratuitement</button>
+      <div class="lp-cta-sub">Connexion · Création de compte · Aucune CB requise</div>
+    </div>
+
+  </div>
+</div>
 
 <!-- AUTH -->
 <div id="auth-ov">
@@ -2125,3 +2261,18 @@ async function resetAllHist() {
 </script>
 
 <script src="js/infirmiere-tools.js"></script>
+<script>
+(function(){
+  var LP='ami_landing_seen';
+  function closeLanding(){
+    var o=document.getElementById('lp-ov');
+    if(!o)return;
+    o.style.transition='opacity .35s ease';
+    o.style.opacity='0';
+    setTimeout(function(){o.classList.add('lp-hide');o.style.opacity='';},360);
+    try{localStorage.setItem(LP,'1');}catch(e){}
+  }
+  window.closeLanding=closeLanding;
+  try{if(localStorage.getItem(LP)){var o=document.getElementById('lp-ov');if(o)o.classList.add('lp-hide');}}catch(e){}
+})();
+</script>
