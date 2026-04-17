@@ -1898,7 +1898,9 @@ async function syncPatientsFromServer() {
       const remoteDate = new Date(rp.updated_at || 0).getTime();
       const localDate  = local ? new Date(local.updated_at || 0).getTime() : 0;
 
-      if (!local || remoteDate > localDate) {
+      // Toujours prendre la version serveur si elle est plus récente OU si l'IDB est vide
+      // carnet_patients est la source de vérité pour les fiches patients et leurs cotations
+      if (!local || remoteDate >= localDate) {
         let nom = '', prenom = '';
         try {
           const decoded = _dec(rp.encrypted_data);
@@ -1964,16 +1966,21 @@ async function _syncPatientNow(row) {
 async function syncCotationsFromServer() {
   if (!S?.token) return;
   try {
+    // Source de vérité principale : carnet_patients (géré par syncPatientsFromServer)
+    // Ce module complète uniquement avec les cotations planning_patients
+    // qui auraient été créées sur un autre appareil et absentes de l'IDB.
+    // RÈGLE ABSOLUE : on n'efface jamais une cotation IDB ici.
+
     const res    = await wpost('/webhook/ami-historique', { period: 'year' });
     const remote = res?.data || (Array.isArray(res) ? res : []);
-    const serverInvoices = new Set(remote.map(r => r.invoice_number).filter(Boolean));
+    if (!remote.length) return;
 
-    // Index global invoice_number → row serveur
+    // Index invoice_number → row serveur (planning_patients)
     const serverByInvoice = new Map(
       remote.filter(r => r.invoice_number).map(r => [r.invoice_number, r])
     );
 
-    // Grouper par patient_id (cotations avec patient_id renseigné)
+    // Grouper par patient_id
     const serverCotsByPid = new Map();
     for (const row of remote) {
       const pid = row.patient_id || null;
@@ -1983,31 +1990,20 @@ async function syncCotationsFromServer() {
     }
 
     const localRows = await _idbGetAll(PATIENTS_STORE);
-    const localIds  = new Set(localRows.map(r => r.id));
     let changed = 0;
 
     for (const row of localRows) {
       const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
       if (!Array.isArray(p.cotations)) p.cotations = [];
-      const before = p.cotations.length;
 
-      // Purger les cotations IDB supprimées sur le serveur
-      p.cotations = p.cotations.filter(c => !c.invoice_number || serverInvoices.has(c.invoice_number));
-
-      // Cotations à injecter pour ce patient :
-      // 1. Cotations avec patient_id = row.id
-      // 2. Cotations sans patient_id mais dont invoice_number est dans l'IDB locale
+      // invoice_numbers déjà dans l'IDB — on ne touche pas à ces cotations
       const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
-      const toInject = [
-        ...(serverCotsByPid.get(row.id) || []),
-        // Cotations dont l'invoice_number est présent en IDB mais sans patient_id dans Supabase
-        ...p.cotations
-          .filter(c => c.invoice_number && !serverCotsByPid.get(row.id)?.some(s => s.invoice_number === c.invoice_number))
-          .map(c => serverByInvoice.get(c.invoice_number))
-          .filter(Boolean),
-      ];
 
-      for (const sc of toInject) {
+      // Cotations planning_patients à injecter pour ce patient
+      // (uniquement celles absentes de l'IDB)
+      const serverCots = serverCotsByPid.get(row.id) || [];
+      let added = 0;
+      for (const sc of serverCots) {
         if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
         let actes = [];
         try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
@@ -2020,9 +2016,10 @@ async function syncCotationsFromServer() {
           dre_requise: !!sc.dre_requise, _synced: true,
         });
         localInvoices.add(sc.invoice_number);
+        added++;
       }
 
-      if (p.cotations.length !== before) {
+      if (added > 0) {
         p.updated_at = new Date().toISOString();
         await _idbPut(PATIENTS_STORE, {
           id: row.id, nom: p.nom || row.nom, prenom: p.prenom || row.prenom,
@@ -2032,31 +2029,8 @@ async function syncCotationsFromServer() {
       }
     }
 
-    // Créer fiches minimales pour patients Supabase absents de l'IDB
-    // (appareil neuf ou données effacées — fiches enrichies par syncPatientsFromServer)
-    for (const [pid, cots] of serverCotsByPid) {
-      if (localIds.has(pid)) continue;
-      const minCots = cots.map(sc => {
-        let actes = [];
-        try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
-        return {
-          date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
-          total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
-          part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
-          soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
-          source: sc.source || 'sync_server', _synced: true,
-        };
-      });
-      const minPat = { id: pid, nom: '', prenom: '', cotations: minCots };
-      await _idbPut(PATIENTS_STORE, {
-        id: pid, nom: '', prenom: '',
-        _data: _enc(minPat), updated_at: new Date(0).toISOString(),
-      });
-      changed++;
-    }
-
     if (changed > 0) {
-      console.info(`[AMI] syncCotationsFromServer : ${changed} fiche(s) mise(s) à jour.`);
+      console.info(`[AMI] syncCotationsFromServer : ${changed} fiche(s) complétée(s).`);
       if (document.querySelector('#patients-section:not(.hidden)') ||
           document.querySelector('[data-view="patients"].active')) loadPatients();
     } else {
