@@ -798,11 +798,14 @@
           /* ── Construire le texte de cotation :
              Priorité 1 : actes_recurrents (fiche patient)
              Priorité 2 : description/texte importé (calendrier/texte libre)
-             Priorité 3 : pathologies (rétrocompatibilité) ── */
+             Priorité 3 : pathologies converties en actes médicaux réels (NGAP) ── */
           const texteImport = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
+          const _pathoConverti = p.pathologies
+            ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(p.pathologies) : p.pathologies)
+            : '';
           const texte = actesRecurrents
             ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
-            : (texteImport || p.pathologies || '');
+            : (texteImport || _pathoConverti);
           if (!texte) return;
           /* Fallback local immédiat — appliqué d'abord pour ne pas bloquer */
           let cot = (typeof autoCotationLocale === 'function')
@@ -1319,7 +1322,8 @@
               <span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 8px;border-radius:20px;font-family:var(--fm)">⚡ Utilisé pour les cotations automatiques de la Tournée IA</span>
             </div>
             <div style="grid-column:1/-1;font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:10px;line-height:1.6">
-              Décrivez les soins habituels de ce patient en langage naturel. Ces informations seront utilisées automatiquement pour générer les cotations lors de la <strong style="color:var(--t)">Tournée IA</strong> et du <strong style="color:var(--t)">Pilotage de journée</strong>, en remplacement du champ Pathologies.
+              Décrivez les soins habituels de ce patient en langage naturel. Ces informations seront utilisées automatiquement pour générer les cotations lors de la <strong style="color:var(--t)">Tournée IA</strong> et du <strong style="color:var(--t)">Pilotage de journée</strong>.<br>
+              <span style="color:var(--a)">Si ce champ est vide</span>, le champ <strong>Pathologies</strong> ci-dessous sera automatiquement <strong>converti en actes médicaux NGAP applicables</strong> pour générer la cotation.
             </div>
             <div class="f" style="grid-column:1/-1">
               <label for="pat-actes-recurrents">Soins habituels <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(ex : injection insuline SC matin, pansement complexe, perfusion 3x/semaine…)</span></label>
@@ -1329,7 +1333,13 @@
 
           <div class="fg" style="margin-bottom:16px">
             <div class="f"><label for="pat-allergies" style="color:var(--d)">Allergies ⚠️</label><input type="text" id="pat-allergies" placeholder="Pénicilline, Aspirine..."></div>
-            <div class="f"><label for="pat-pathologies">Pathologies</label><input type="text" id="pat-pathologies" placeholder="Diabète type 2, HTA..."></div>
+            <div class="f">
+              <label for="pat-pathologies">Pathologies <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(converti en actes NGAP si Actes Récurrents vide)</span></label>
+              <input type="text" id="pat-pathologies" placeholder="Diabète type 2, HTA...">
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:4px;line-height:1.5">
+                💡 Si le champ <em>Actes Récurrents</em> est vide, AMI convertira automatiquement ces pathologies en actes médicaux NGAP applicables (injections, pansements, bilans…) pour la Tournée IA et le Pilotage de journée.
+              </div>
+            </div>
             <div class="f"><label for="pat-traitements">Traitements en cours</label><input type="text" id="pat-traitements" placeholder="Metformine, Bisoprolol..."></div>
             <div class="f"><label for="pat-ordo-date">Ordonnance valide jusqu'au</label><input type="date" id="pat-ordo-date"></div>
           </div>

@@ -44,6 +44,30 @@ Utilisez la barre de recherche en haut du carnet. La recherche porte sur le nom,
 ### Puis-je exporter mes données patients ?
 Oui. Dans **Profil** → **Exporter mes données**. Vous obtenez un fichier JSON chiffré que vous pouvez conserver comme sauvegarde.
 
+### À quoi sert le champ « Actes Récurrents à Réaliser » ?
+Ce champ, présent dans chaque fiche patient, permet de décrire en langage naturel les soins habituels du patient (ex. : *"Injection insuline SC 2x/jour + surveillance glycémie"*). Il est utilisé automatiquement par la **Tournée IA** et le **Pilotage de journée** pour générer les cotations sans que vous ayez à retaper la description à chaque passage.
+
+### Que se passe-t-il si le champ « Actes Récurrents » est vide ?
+💡 Si ce champ est vide, AMI utilise automatiquement le champ **Pathologies** et le convertit en actes médicaux NGAP applicables pour générer la cotation lors de la Tournée IA et du Pilotage de journée.
+
+| Pathologie détectée | Actes NGAP générés |
+|---|---|
+| Diabète (type 1/2) | Injection insuline SC, glycémie capillaire |
+| Plaie / ulcère / escarre | Pansement complexe BSB, détersion |
+| Anticoagulants / HBPM | Injection SC, surveillance INR |
+| Perfusion / antibio | Perfusion IV domicile, IFD |
+| Nursing / grabataire / Alzheimer | AMI 4, nursing complet, prévention escarre |
+| HTA / insuffisance cardiaque | Prise TA, surveillance, éducation |
+| Soins palliatifs | AMI 4, gestion douleur, nursing |
+| Bilan sanguin / prélèvement | BSA, IFD |
+| Sonde / stomie / trachéo | AMI 2, surveillance appareillage |
+| Morphine / douleur | Injection antalgique, évaluation EVA |
+| Asthme / BPCO | Aérosol, surveillance saturation, IFD |
+| Post-op / chirurgie | Pansement, surveillance cicatrice |
+| Psychiatrie / dépression | Suivi psychiatrique, éducation traitement |
+
+> **Conseil** : renseignez le champ *Actes Récurrents* dès la création de la fiche patient pour des cotations automatiques encore plus précises. Le champ *Pathologies* reste utile comme filet de sécurité pour les patients dont vous n'avez pas encore détaillé les soins habituels.
+
 ---
 
 ## 💊 Cotation NGAP
