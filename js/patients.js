@@ -961,9 +961,27 @@ async function deleteCotationPatient(patientId, cotationIdx) {
   if (!row) return;
   const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
   if (!p.cotations) return;
+
+  // Récupérer l'invoice_number AVANT le splice pour la suppression Supabase
+  const cotToDelete = p.cotations[cotationIdx];
+  const invoiceNum  = cotToDelete?.invoice_number || null;
+
+  // 1. Suppression locale IDB
   p.cotations.splice(cotationIdx, 1);
   const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
   await _idbPut(PATIENTS_STORE, toStore);
+
+  // 2. Suppression Supabase — évite la resynchronisation inter-appareils
+  // Le worker résout l'id BIGSERIAL depuis l'invoice_number (isolation infirmiere_id garantie)
+  if (invoiceNum && typeof wpost === 'function') {
+    try {
+      await wpost('/webhook/ami-supprimer', { invoice_number: invoiceNum });
+    } catch (e) {
+      // Non bloquant — la suppression locale est déjà effective
+      console.warn('[patients] suppression Supabase échouée :', invoiceNum, e?.message);
+    }
+  }
+
   await openPatientDetail(patientId);
   showToastSafe('🗑️ Cotation supprimée.');
 }
