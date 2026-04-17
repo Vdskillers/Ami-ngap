@@ -60,6 +60,15 @@ async function cotation() {
     const prescSel = $('f-prescripteur-select');
     const prescripteur_id = prescSel?.value || null;
 
+    // ── Correction heure soin ───────────────────────────────────────────────
+    // Si f-hs n'a pas été édité manuellement par l'utilisateur (_userEdited),
+    // utiliser l'heure locale courante (évite le bug "02:00" sur re-cotation).
+    const _fHsEl = document.getElementById('f-hs');
+    if (_fHsEl && !_fHsEl._userEdited) {
+      const _now = new Date();
+      _fHsEl.value = String(_now.getHours()).padStart(2,'0') + ':' + String(_now.getMinutes()).padStart(2,'0');
+    }
+
     // ── Auto-détection mode édition ─────────────────────────────────────────
     // Si _editingCotation n'est pas encore positionné, vérifier dans l'IDB
     // si une cotation existe déjà pour ce patient à cette date.
@@ -135,6 +144,18 @@ async function cotation() {
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
     if (d.invoice_number && typeof displayInvoiceNumber === 'function') {
       displayInvoiceNumber(d.invoice_number);
+    }
+    // ── Mettre à jour _editingCotation avec l'invoice_number final ───────────
+    // Garantit que toute re-cotation (ex : Vérifier→Corriger→Coter) fait un
+    // PATCH Supabase et non un INSERT, évitant les doublons dans l'historique.
+    if (d.invoice_number) {
+      const _existRef = window._editingCotation;
+      window._editingCotation = {
+        patientId:      _existRef?.patientId      || null,
+        cotationIdx:    _existRef?.cotationIdx     ?? -1,
+        invoice_number: d.invoice_number,
+        _autoDetected:  _existRef?._autoDetected   || false,
+      };
     }
     // ── Mémoriser l'heure de soin dans le cache persistant (analyse horaire Dashboard) ──
     // Permet à l'analyse horaire de fonctionner même sans recharger l'historique API.
@@ -275,13 +296,15 @@ async function cotation() {
       // Dispatch pour tout listener externe
       document.dispatchEvent(new CustomEvent('ami:cotation_done', { detail: { invoice_number: _invoiceId } }));
     }
-    // ── Nettoyer _editingCotation auto-détecté (ne doit pas persister) ──
+    // ── Nettoyer _editingCotation auto-détecté (ne doit pas persister entre cotations) ──
+    // UNIQUEMENT si c'était une détection automatique — ne pas toucher aux refs manuelles
+    // posées explicitement depuis la fiche patient (sans _autoDetected)
     if (window._editingCotation?._autoDetected) {
       window._editingCotation = null;
     }
 
   } catch (e) {
-    // Nettoyer aussi en cas d'erreur
+    // Nettoyer aussi en cas d'erreur (auto-détecté seulement)
     if (window._editingCotation?._autoDetected) {
       window._editingCotation = null;
     }
