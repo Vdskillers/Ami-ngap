@@ -1012,9 +1012,9 @@ async function syncCotationsPatient(patientId) {
     const api = typeof wpost === 'function' ? wpost : (url, body) =>
       fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
 
-    // ── 1. Push : cotations IDB → Supabase ───────────────────────────────
-    // Toutes les cotations avec un montant, qu'elles soient sync ou non
-    // Le worker fait un PATCH si invoice_number existe, un POST sinon (pas de doublon)
+    // ── 1. Push TOUTES les cotations avec montant → Supabase ─────────────
+    // Inclut les cotations déjà sync — le worker fait PATCH et écrit patient_id
+    // C'est le seul moyen de garantir que patient_id est en base pour la sync mobile
     const aPush = p.cotations.filter(c => parseFloat(c.total||0) > 0);
     if (aPush.length) {
       const payload = aPush.map(c => ({
@@ -1032,21 +1032,19 @@ async function syncCotationsPatient(patientId) {
       if (pushRes?.ok) aPush.forEach(c => { c._synced = true; });
     }
 
-    // ── 2. Pull : Supabase → IDB (ajout uniquement, jamais de suppression) ─
-    // On ne supprime JAMAIS une cotation IDB ici — la purge est réservée au login
+    // ── 2. Pull : récupérer les cotations Supabase de ce patient ─────────
+    // Maintenant que patient_id est écrit, on peut filtrer dessus
+    // Fallback : invoice_number présent localement (cotations très anciennes)
     const histRes = await api('/webhook/ami-historique', { period: 'year' });
     const remote  = histRes?.data || (Array.isArray(histRes) ? histRes : []);
 
-    // Toutes les cotations du serveur correspondant à ce patient :
-    // - via patient_id direct
-    // - via invoice_number présent dans l'IDB (cotations sans patient_id côté serveur)
     const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
     const serverCots = remote.filter(r =>
       r.patient_id === patientId ||
       (r.invoice_number && localInvoices.has(r.invoice_number))
     );
 
-    // Ajouter uniquement les cotations serveur absentes de l'IDB
+    // Ajouter les cotations serveur absentes de l'IDB
     for (const sc of serverCots) {
       if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
       let actes = [];
@@ -1970,68 +1968,58 @@ async function syncCotationsFromServer() {
     const remote = res?.data || (Array.isArray(res) ? res : []);
     const serverInvoices = new Set(remote.map(r => r.invoice_number).filter(Boolean));
 
+    // Index global invoice_number → row serveur
+    const serverByInvoice = new Map(
+      remote.filter(r => r.invoice_number).map(r => [r.invoice_number, r])
+    );
+
+    // Grouper par patient_id (cotations avec patient_id renseigné)
     const serverCotsByPid = new Map();
     for (const row of remote) {
       const pid = row.patient_id || null;
       if (!pid) continue;
-      let actes = [];
-      try { actes = typeof row.actes === 'string' ? JSON.parse(row.actes) : (row.actes || []); } catch (_) {}
-      const cot = {
-        date: row.date_soin || null, heure: row.heure_soin || '', actes,
-        total: parseFloat(row.total || 0), part_amo: parseFloat(row.part_amo || 0),
-        part_amc: parseFloat(row.part_amc || 0), part_patient: parseFloat(row.part_patient || 0),
-        soin: (row.notes || '').slice(0, 120), invoice_number: row.invoice_number || null,
-        source: row.source || 'sync_server', ngap_version: row.ngap_version || null,
-        dre_requise: !!row.dre_requise, _synced: true,
-      };
       if (!serverCotsByPid.has(pid)) serverCotsByPid.set(pid, []);
-      serverCotsByPid.get(pid).push(cot);
+      serverCotsByPid.get(pid).push(row);
     }
 
     const localRows = await _idbGetAll(PATIENTS_STORE);
     const localIds  = new Set(localRows.map(r => r.id));
     let changed = 0;
 
-    // Index global invoice_number → cotation serveur (sans restriction patient_id)
-    const serverByInvoiceGlobal = new Map(
-      remote.filter(r => r.invoice_number).map(r => [r.invoice_number, r])
-    );
-
     for (const row of localRows) {
       const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
       if (!Array.isArray(p.cotations)) p.cotations = [];
       const before = p.cotations.length;
 
-      // Purger les cotations IDB absentes du serveur
+      // Purger les cotations IDB supprimées sur le serveur
       p.cotations = p.cotations.filter(c => !c.invoice_number || serverInvoices.has(c.invoice_number));
 
-      // Cotations serveur de ce patient :
-      // - par patient_id (nouvelles cotations avec fix)
-      // - par invoice_number présent dans l'IDB (cotations sans patient_id dans Supabase)
+      // Cotations à injecter pour ce patient :
+      // 1. Cotations avec patient_id = row.id
+      // 2. Cotations sans patient_id mais dont invoice_number est dans l'IDB locale
       const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
-      const extraCots = [...localInvoices]
-        .map(inv => serverByInvoiceGlobal.get(inv))
-        .filter(sc => sc && !sc.patient_id); // cotations sans patient_id à rattacher
-
-      const patientServerCots = [
+      const toInject = [
         ...(serverCotsByPid.get(row.id) || []),
-        ...extraCots.filter(sc => !(serverCotsByPid.get(row.id)||[]).some(x => x.invoice_number === sc.invoice_number)),
+        // Cotations dont l'invoice_number est présent en IDB mais sans patient_id dans Supabase
+        ...p.cotations
+          .filter(c => c.invoice_number && !serverCotsByPid.get(row.id)?.some(s => s.invoice_number === c.invoice_number))
+          .map(c => serverByInvoice.get(c.invoice_number))
+          .filter(Boolean),
       ];
 
-      for (const sc of patientServerCots) {
-        if (sc.invoice_number && !localInvoices.has(sc.invoice_number)) {
-          let actes = [];
-          try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
-          p.cotations.push({
-            date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
-            total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
-            part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
-            soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
-            source: sc.source || 'sync_server', ngap_version: sc.ngap_version || null,
-            dre_requise: !!sc.dre_requise, _synced: true,
-          });
-          localInvoices.add(sc.invoice_number);
-        }
+      for (const sc of toInject) {
+        if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
+        let actes = [];
+        try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
+        p.cotations.push({
+          date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
+          total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
+          part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
+          soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
+          source: sc.source || 'sync_server', ngap_version: sc.ngap_version || null,
+          dre_requise: !!sc.dre_requise, _synced: true,
+        });
+        localInvoices.add(sc.invoice_number);
       }
 
       if (p.cotations.length !== before) {
@@ -2044,9 +2032,22 @@ async function syncCotationsFromServer() {
       }
     }
 
+    // Créer fiches minimales pour patients Supabase absents de l'IDB
+    // (appareil neuf ou données effacées — fiches enrichies par syncPatientsFromServer)
     for (const [pid, cots] of serverCotsByPid) {
       if (localIds.has(pid)) continue;
-      const minPat = { id: pid, nom: '', prenom: '', cotations: cots };
+      const minCots = cots.map(sc => {
+        let actes = [];
+        try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
+        return {
+          date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
+          total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
+          part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
+          soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
+          source: sc.source || 'sync_server', _synced: true,
+        };
+      });
+      const minPat = { id: pid, nom: '', prenom: '', cotations: minCots };
       await _idbPut(PATIENTS_STORE, {
         id: pid, nom: '', prenom: '',
         _data: _enc(minPat), updated_at: new Date(0).toISOString(),
