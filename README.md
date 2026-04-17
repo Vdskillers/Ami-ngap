@@ -19,32 +19,6 @@
 
 ---
 
-## Changelog N8N v7 → v8
-
-| Nœud | Modification |
-|---|---|
-| **Sauvegarder en BDD** | `invoice_number` ajouté dans les colonnes INSERT + dans le `RETURNING` |
-| **Fusionner réponse** | Récupère `invoice_number` du RETURNING → expose `db_invoice_number` dans la réponse finale |
-| *Autres nœuds* | Inchangés (v7) |
-
-### Correction bug cotation (worker.js)
-
-Le NLP N8N v7/v8 renvoie le code `"AMI"` (générique) avec un coefficient (`coeff: 1`, `coeff: 4`…) au lieu de `AMI1`, `AMI4`. Le `normalizeNGAPCodes()` du worker marquait ces actes `_unknown` → total = 0 → `isHallucination()` → fallback systématique avec le message *"Réponse IA incohérente corrigée automatiquement"*.
-
-**Correction :** `normalizeNGAPCodes` détecte `code === "AMI"` + `coeff: N` et convertit en `AMI{N}` avant tout traitement.
-
-```
-AMI coeff:1 → AMI1  (3,15 €)
-AMI coeff:2 → AMI2  (6,30 €)
-AMI coeff:3 → AMI3  (9,45 €)
-AMI coeff:4 → AMI4  (12,60 €)
-AMI coeff:6 → AMI6  (18,90 €)
-AIS coeff:1 → AIS1  (2,65 €)
-AIS coeff:3+ → AIS3 (7,95 €)
-```
-
----
-
 ## Modèle de sécurité & isolation des données
 
 ### Rôles utilisateurs
