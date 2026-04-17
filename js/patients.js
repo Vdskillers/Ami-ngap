@@ -962,23 +962,27 @@ async function deleteCotationPatient(patientId, cotationIdx) {
   const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
   if (!p.cotations) return;
 
-  // Récupérer l'invoice_number AVANT le splice pour la suppression Supabase
+  // Récupérer l'invoice_number AVANT le splice pour la suppression Supabase (planning_patients)
   const cotToDelete = p.cotations[cotationIdx];
   const invoiceNum  = cotToDelete?.invoice_number || null;
 
-  // 1. Suppression locale IDB
+  // 1. Suppression locale IDB + mise à jour updated_at (doit être > version serveur pour gagner au pull)
   p.cotations.splice(cotationIdx, 1);
-  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+  p.updated_at = new Date().toISOString();
+  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
   await _idbPut(PATIENTS_STORE, toStore);
 
-  // 2. Suppression Supabase — évite la resynchronisation inter-appareils
-  // Le worker résout l'id BIGSERIAL depuis l'invoice_number (isolation infirmiere_id garantie)
+  // 2. Push immédiat de la fiche mise à jour vers carnet_patients
+  //    Garantit que les autres appareils récupèrent la version sans la cotation supprimée
+  await _syncPatientNow(toStore);
+
+  // 3. Suppression Supabase (planning_patients) via invoice_number
+  //    Le worker résout l'id BIGSERIAL depuis l'invoice_number, isolation infirmiere_id garantie
   if (invoiceNum && typeof wpost === 'function') {
     try {
       await wpost('/webhook/ami-supprimer', { invoice_number: invoiceNum });
     } catch (e) {
-      // Non bloquant — la suppression locale est déjà effective
-      console.warn('[patients] suppression Supabase échouée :', invoiceNum, e?.message);
+      console.warn('[patients] suppression planning_patients échouée :', invoiceNum, e?.message);
     }
   }
 
@@ -1958,6 +1962,139 @@ async function _syncAfterSave() {
   _syncAfterSave._t = setTimeout(syncPatientsToServer, 1500);
 }
 
+/* ════════════════════════════════════════════════
+   SYNC COTATIONS DEPUIS SUPABASE → IDB
+   ────────────────────────────────────────────────
+   Récupère les cotations de planning_patients et les
+   injecte dans les fiches IDB locales (carnet patient).
+   Appelé au login pour garantir la cohérence inter-appareils.
+   Règles de fusion :
+   • invoice_number = clé de déduplication
+   • Si cotation absente de l'IDB → ajout
+   • Si cotation présente → on garde la version la plus récente (updated_at)
+   • Si fiche patient absente de l'IDB → on crée une fiche minimale
+════════════════════════════════════════════════ */
+async function syncCotationsFromServer() {
+  if (!S?.token) return;
+  try {
+    // ── 1. Source de vérité : cotations Supabase (planning_patients) ────────
+    const res    = await wpost('/webhook/ami-historique', { period: 'year' });
+    const remote = res?.data || (Array.isArray(res) ? res : []);
+    // Continuer même si remote est vide : permet de purger des cotations orphelines
+
+    // Set des invoice_number présents sur le serveur
+    // Toute cotation IDB avec invoice_number ABSENT de ce Set sera supprimée
+    const serverInvoices = new Set(remote.map(r => r.invoice_number).filter(Boolean));
+
+    // ── 2. Grouper les cotations serveur par patient_id ──────────────────────
+    const serverCotsByPid = new Map();
+    for (const row of remote) {
+      const pid = row.patient_id || null;
+      if (!pid) continue;
+      let actes = [];
+      try { actes = typeof row.actes === 'string' ? JSON.parse(row.actes) : (row.actes || []); } catch (_) {}
+      const cot = {
+        date:           row.date_soin   || null,
+        heure:          row.heure_soin  || '',
+        actes,
+        total:          parseFloat(row.total        || 0),
+        part_amo:       parseFloat(row.part_amo     || 0),
+        part_amc:       parseFloat(row.part_amc     || 0),
+        part_patient:   parseFloat(row.part_patient || 0),
+        soin:           (row.notes || '').slice(0, 120),
+        invoice_number: row.invoice_number || null,
+        source:         row.source        || 'sync_server',
+        ngap_version:   row.ngap_version  || null,
+        dre_requise:    !!row.dre_requise,
+        _synced:        true,
+      };
+      if (!serverCotsByPid.has(pid)) serverCotsByPid.set(pid, []);
+      serverCotsByPid.get(pid).push(cot);
+    }
+
+    // ── 3. Mettre à jour chaque fiche IDB locale ─────────────────────────────
+    const localRows  = await _idbGetAll(PATIENTS_STORE);
+    const localIds   = new Set(localRows.map(r => r.id));
+    let changed = 0;
+
+    for (const row of localRows) {
+      const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
+      if (!Array.isArray(p.cotations)) p.cotations = [];
+
+      const countBefore = p.cotations.length;
+
+      // a) Purger les cotations supprimées sur le serveur
+      //    Conserver : cotations sans invoice_number (locales non sync) + celles présentes sur serveur
+      p.cotations = p.cotations.filter(c => !c.invoice_number || serverInvoices.has(c.invoice_number));
+
+      // b) Ajouter les cotations serveur absentes localement
+      const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
+      const serverCots    = serverCotsByPid.get(row.id) || [];
+      for (const sc of serverCots) {
+        if (sc.invoice_number && !localInvoices.has(sc.invoice_number)) {
+          p.cotations.push(sc);
+          localInvoices.add(sc.invoice_number);
+        }
+      }
+
+      const countAfter = p.cotations.length;
+      if (countAfter !== countBefore) {
+        p.updated_at = new Date().toISOString();
+        await _idbPut(PATIENTS_STORE, {
+          id:         row.id,
+          nom:        p.nom    || row.nom,
+          prenom:     p.prenom || row.prenom,
+          _data:      _enc(p),
+          updated_at: p.updated_at,
+        });
+        changed++;
+      }
+    }
+
+    // ── 4. Créer les fiches minimales pour les patients Supabase absents IDB ─
+    //       (appareil neuf ou données effacées)
+    for (const [pid, cots] of serverCotsByPid) {
+      if (localIds.has(pid)) continue;
+      const minPat = { id: pid, nom: '', prenom: '', cotations: cots };
+      await _idbPut(PATIENTS_STORE, {
+        id: pid, nom: '', prenom: '',
+        _data: _enc(minPat),
+        updated_at: new Date(0).toISOString(), // date ancienne → enrichie par syncPatientsFromServer
+      });
+      changed++;
+    }
+
+    if (changed > 0) {
+      console.info(`[AMI] syncCotationsFromServer : ${changed} fiche(s) mise(s) à jour.`);
+      if (document.querySelector('#patients-section:not(.hidden)') ||
+          document.querySelector('[data-view="patients"].active')) {
+        loadPatients();
+      }
+    } else {
+      console.info('[AMI] syncCotationsFromServer : IDB déjà synchronisée.');
+    }
+
+  } catch (e) {
+    console.warn('[AMI] syncCotationsFromServer KO :', e.message);
+  }
+}
+
+/* Pousse immédiatement UNE fiche patient vers carnet_patients (sync immédiate).
+   Utilisé après suppression/ajout de cotation pour éviter la résurgence inter-appareils.
+   row = { id, nom, prenom, _data, updated_at }                                      */
+async function _syncPatientNow(row) {
+  if (!S?.token || !row?.id || !row?._data) return;
+  try {
+    const nomEnc = btoa(unescape(encodeURIComponent((row.nom||'') + ' ' + (row.prenom||'')))).slice(0, 64);
+    await wpost('/webhook/patients-push', {
+      patients: [{ id: row.id, encrypted_data: row._data, nom_enc: nomEnc, updated_at: row.updated_at || new Date().toISOString() }]
+    });
+    console.info('[AMI] _syncPatientNow OK :', row.id);
+  } catch(e) {
+    console.warn('[AMI] _syncPatientNow KO :', e?.message);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Écouter les deux events (ui.js dispatche 'ui:navigate', certains modules 'app:nav')
   const _onPatNav = e => {
@@ -1978,7 +2115,11 @@ document.addEventListener('DOMContentLoaded', () => {
 // auth.js dispatche 'ami:login' dans showApp() après hydratation complète de S.
 document.addEventListener('ami:login', () => {
   initPatientsDB().then(async () => {
+    // 1. Récupérer les fiches patients chiffrées (carnet_patients)
     await syncPatientsFromServer();
+    // 2. Récupérer les cotations Supabase et les injecter dans les fiches IDB
+    //    Garantit la cohérence inter-appareils même après effacement des données locales
+    await syncCotationsFromServer();
   }).catch(() => {});
 });
 
