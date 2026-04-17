@@ -275,6 +275,9 @@ function pathologiesToActes(pathologies) {
   return 'Soins infirmiers pour : ' + pathologies.trim();
 }
 
+/* Exposer globalement pour cotation.js, extras.js, tournee.js, index.html */
+window.pathologiesToActes = pathologiesToActes;
+
 /* ── 11. ÉCOUTES RÉACTIVES GLOBALES ─────────────
    Effets de bord déclenchés par APP.set().
    Chaque module peut ajouter les siens via APP.on().

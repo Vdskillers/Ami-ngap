@@ -773,7 +773,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
         /* Auto-cotation */
         try{
           const u=S?.user||{};
-          const texteForCot = (p.actes_recurrents || p.acte || p.description || 'soin infirmier')
+          // Priorité : actes_recurrents > texte > pathologies converties en actes NGAP
+          const _pathoExtra = (p.pathologies && typeof pathologiesToActes === 'function')
+            ? pathologiesToActes(p.pathologies) : (p.pathologies || '');
+          const texteForCot = (p.actes_recurrents || p.acte || p.description || _pathoExtra || 'soin infirmier')
             + (p.time||p.heure?' à '+(p.time||p.heure):'');
           await apiCall('/webhook/ami-calcul',{
             mode:'ngap',

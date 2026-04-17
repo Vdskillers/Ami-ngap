@@ -34,7 +34,20 @@ let _pendingPrintData = null; // données facture en attente d'impression
    COTATION
 ════════════════════════════════════════════════ */
 async function cotation() {
-  const txt = gv('f-txt');
+  // ── Conversion pathologies → actes NGAP si le champ ne contient pas d'actes médicaux ──
+  // Ex : "Diabète" → "Injection insuline SC, glycémie capillaire"
+  let txt = gv('f-txt');
+  if (txt && typeof pathologiesToActes === 'function') {
+    const _hasActe = /injection|pansement|perfusion|prélèvement|prelevement|insuline|nursing|toilette|bilan|soins|soin|escarre|plaie|ECG|AMI|AIS|BSA|BSB|BSC/i.test(txt);
+    if (!_hasActe) {
+      const _converti = pathologiesToActes(txt.trim());
+      if (_converti && _converti !== txt.trim()) {
+        txt = _converti;
+        const _elTxt = document.getElementById('f-txt');
+        if (_elTxt) _elTxt.value = txt; // mise à jour visible dans l'interface
+      }
+    }
+  }
   if (!txt) { alert('Veuillez saisir une description.'); return; }
   ld('btn-cot', true);
   $('res-cot').classList.remove('show');
