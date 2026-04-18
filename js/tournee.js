@@ -582,21 +582,36 @@ async function renderPlanning(d){
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
-  const cabinetActive = _planningCabinetMode && cab?.id && (cab.members?.length > 1);
-  let cabinetAssignments = {}; // { ide_id: { nom, prenom, patients[] } }
+  // Activer la vue cabinet dès qu'un cabinet existe, même seul (admin en test)
+  const cabinetActive = _planningCabinetMode && !!(cab?.id);
+  let cabinetAssignments = {};
 
-  if (cabinetActive && typeof cabinetGeoCluster === 'function') {
-    const clusters = cabinetGeoCluster(patientsToShow, cab.members.length);
-    cab.members.forEach((m, i) => {
-      const ideId = m.id || m.infirmiere_id || `ide_${i}`;
-      cabinetAssignments[ideId] = {
-        nom:      m.nom    || '',
-        prenom:   m.prenom || '',
-        role:     m.role   || 'membre',
-        patients: (clusters[i] || []),
-        color:    ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'][i % 5],
+  if (cabinetActive) {
+    // Membres réels ou membre synthétique si seul (admin solo)
+    const effectiveMembers = (cab.members?.length)
+      ? cab.members
+      : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi', role: 'titulaire' }];
+
+    if (typeof cabinetGeoCluster === 'function') {
+      const clusters = cabinetGeoCluster(patientsToShow, effectiveMembers.length);
+      effectiveMembers.forEach((m, i) => {
+        const ideId = m.id || m.infirmiere_id || `ide_${i}`;
+        cabinetAssignments[ideId] = {
+          nom:      m.nom    || '',
+          prenom:   m.prenom || '',
+          role:     m.role   || 'membre',
+          patients: (clusters[i] || []),
+          color:    ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'][i % 5],
+        };
+      });
+    } else {
+      // Fallback sans cabinetGeoCluster : mettre tous les patients dans un seul IDE
+      const solo = (cab.members?.[0]) || { id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' };
+      cabinetAssignments[solo.id || 'ide_0'] = {
+        nom: solo.nom || '', prenom: solo.prenom || 'Moi', role: 'titulaire',
+        patients: patientsToShow, color: '#00d4aa',
       };
-    });
+    }
   }
 
   // ── KPIs semaine ─────────────────────────────────────────────────────────
@@ -754,7 +769,7 @@ async function renderPlanning(d){
   const cabinetBar = cabinetActive ? `
     <div style="margin-bottom:16px;padding:10px 14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px">🏥 <strong>${cab.nom}</strong></span>
-      <span style="font-size:12px;color:var(--m)">${cab.members.length} IDE(s) · Vue cabinet active</span>
+      <span style="font-size:12px;color:var(--m)">${Object.keys(cabinetAssignments).length} IDE(s) · Vue cabinet active</span>
       <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="margin-left:auto"><span>⚡</span> Optimiser la répartition</button>
     </div>` : '';
 
@@ -774,7 +789,7 @@ async function renderPlanning(d){
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
         ${caWeek ? `<div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CA ESTIMÉ SEMAINE</div><div style="color:var(--a);font-weight:700">${caWeek.toFixed(2)} €</div></div>` : ''}
         ${nbCot > 0 ? `<div style="background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">COTATIONS VALIDÉES</div><div style="color:#22c55e;font-weight:700">${totalCot.toFixed(2)} €</div></div>` : ''}
-        ${cabinetActive ? `<div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CABINET</div><div style="color:var(--a);font-weight:700">${cab.members.length} IDE(s)</div></div>` : ''}
+        ${cabinetActive ? `<div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CABINET</div><div style="color:var(--a);font-weight:700">${Object.keys(cabinetAssignments).length} IDE(s)</div></div>` : ''}
       </div>
 
       ${cabinetBar}
@@ -2807,12 +2822,33 @@ function _openCotationComplete() {
 
 /* Ouvre la modale de cotation pour un patient spécifique depuis la liste tournée */
 async function openCotationPatient(patientIndex) {
-  // Priorité uberPatients (bilan tournée), fallback importedData (planning)
-  const uberPats = APP.get('uberPatients') || [];
-  const impPats  = APP.importedData?.patients || APP.importedData?.entries || [];
-  const patients = uberPats.length ? uberPats : impPats;
-  const patient  = patients[patientIndex];
-  if (!patient) return;
+  // Sources par priorité :
+  // 1. uberPatients   — tournée du jour en cours
+  // 2. _planningData  — planning hebdomadaire (source du bouton "Coter" dans le planning)
+  // 3. importedData   — import direct
+  const uberPats     = APP.get('uberPatients') || [];
+  const planningPats = window.APP._planningData?.patients || [];
+  const impPats      = APP.importedData?.patients || APP.importedData?.entries || [];
+
+  let patient;
+  if (uberPats.length && uberPats[patientIndex] !== undefined) {
+    patient = uberPats[patientIndex];
+  } else if (planningPats[patientIndex] !== undefined) {
+    patient = planningPats[patientIndex];
+  } else {
+    patient = impPats[patientIndex];
+  }
+
+  // Filet de sécurité : chercher par _planIdx dans toutes les sources
+  if (!patient) {
+    const all = [...planningPats, ...impPats, ...uberPats];
+    patient = all.find(p => p._planIdx === patientIndex);
+  }
+
+  if (!patient) {
+    if (typeof showToast === 'function') showToast('Patient introuvable.', 'wa');
+    return;
+  }
 
   // Si cotation déjà validée, proposer de la re-consulter / corriger
   if (patient._cotation?.validated) {
