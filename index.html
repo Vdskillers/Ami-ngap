@@ -1307,7 +1307,23 @@
         <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin:20px 0 24px"></div>
 
         <!-- ── Bandeau kilométrique ── -->
-        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:20px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
+        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:8px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
+
+        <!-- Sélecteur barème km (affiché uniquement si bandeau km visible) -->
+        <div class="km-prefs-bar" id="dash-km-prefs" style="display:none;margin-bottom:16px">
+          <span class="km-prefs-lbl">🚗 Barème km</span>
+          <select class="km-cv-select" id="dash-km-cv" onchange="saveKmPrefsDash()" title="Puissance fiscale">
+            <option value="3">3 CV — 0.529 €/km</option>
+            <option value="4">4 CV — 0.606 €/km</option>
+            <option value="5" selected>5 CV — 0.636 €/km</option>
+            <option value="6">6 CV — 0.665 €/km</option>
+            <option value="7">7 CV et + — 0.697 €/km</option>
+          </select>
+          <label class="km-elec-label">
+            <input type="checkbox" id="dash-km-elec" onchange="saveKmPrefsDash()"> ⚡ Électrique <span style="font-size:10px;color:var(--a2)">(+20%)</span>
+          </label>
+          <span class="km-prefs-info" id="dash-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
+        </div>
 
         <!-- ── LAYOUT 2 COLONNES ── -->
         <div class="dash-2col">
@@ -1602,6 +1618,22 @@
       <h1 class="pt">Trésorerie <em>& Comptabilité</em></h1>
       <p class="ps">Suivi remboursements AMO/AMC · Export CSV · Checklist CPAM</p>
 
+      <!-- Sélecteur barème kilométrique -->
+      <div class="km-prefs-bar" id="tresor-km-prefs">
+        <span class="km-prefs-lbl">🚗 Barème km</span>
+        <select class="km-cv-select" id="tresor-km-cv" onchange="saveKmPrefsTresor()" title="Puissance fiscale de votre véhicule">
+          <option value="3">3 CV — 0.529 €/km</option>
+          <option value="4">4 CV — 0.606 €/km</option>
+          <option value="5" selected>5 CV — 0.636 €/km</option>
+          <option value="6">6 CV — 0.665 €/km</option>
+          <option value="7">7 CV et + — 0.697 €/km</option>
+        </select>
+        <label class="km-elec-label">
+          <input type="checkbox" id="tresor-km-elec" onchange="saveKmPrefsTresor()"> ⚡ Électrique <span style="font-size:10px;color:var(--a2)">(+20%)</span>
+        </label>
+        <span class="km-prefs-info" id="tresor-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
+      </div>
+
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
         <select id="tresor-period" onchange="loadTresorerie()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
           <option value="month">Ce mois</option>
@@ -1631,7 +1663,7 @@
       <p class="ps">Rapport mensuel complet · Export PDF · Pour votre comptable et l'URSSAF</p>
 
       <!-- Sélecteur période pill -->
-      <div class="dash-period-pill" style="margin-bottom:18px;display:inline-flex">
+      <div class="dash-period-pill" style="margin-bottom:14px;display:inline-flex">
         <button class="dpp-btn active" onclick="setRapportPeriod(this,'month')">Ce mois</button>
         <button class="dpp-btn" onclick="setRapportPeriod(this,'lastmonth')">Mois préc.</button>
         <button class="dpp-btn" onclick="setRapportPeriod(this,'3month')">3 mois</button>
@@ -1643,6 +1675,22 @@
         <option value="3month">3 derniers mois</option>
         <option value="year">Cette année</option>
       </select>
+
+      <!-- Sélecteur barème kilométrique -->
+      <div class="km-prefs-bar" style="margin-bottom:16px">
+        <span class="km-prefs-lbl">🚗 Barème km</span>
+        <select class="km-cv-select" id="rapport-km-cv" onchange="saveKmPrefsRapport()" title="Puissance fiscale de votre véhicule">
+          <option value="3">3 CV — 0.529 €/km</option>
+          <option value="4">4 CV — 0.606 €/km</option>
+          <option value="5" selected>5 CV — 0.636 €/km</option>
+          <option value="6">6 CV — 0.665 €/km</option>
+          <option value="7">7 CV et + — 0.697 €/km</option>
+        </select>
+        <label class="km-elec-label">
+          <input type="checkbox" id="rapport-km-elec" onchange="saveKmPrefsRapport()"> ⚡ Électrique <span style="font-size:10px;color:var(--a2)">(+20%)</span>
+        </label>
+        <span class="km-prefs-info" id="rapport-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
+      </div>
 
       <!-- Carte hero rapport -->
       <div class="rapport-hero" style="margin-bottom:18px">
@@ -2563,6 +2611,7 @@ document.addEventListener('click', function(e) {
     window.showApp = function() {
       if (typeof _origShowApp === 'function') _origShowApp.apply(this, arguments);
       if (typeof window._initTopbarExtras === 'function') window._initTopbarExtras();
+      if (typeof _initKmPrefsSelectors === 'function') _initKmPrefsSelectors();
       setTimeout(function() {
         if (typeof showToast === 'function' && typeof S !== 'undefined' && S?.user) {
           const prenom = S.user.prenom || S.user.user_metadata?.prenom || '';
@@ -2577,6 +2626,10 @@ document.addEventListener('click', function(e) {
       if (view === 'rapport') {
         const period = document.getElementById('rapport-period')?.value || 'month';
         if (typeof _loadRapportKpis === 'function') setTimeout(() => _loadRapportKpis(period), 150);
+        if (typeof _initKmPrefsSelectors === 'function') _initKmPrefsSelectors();
+      }
+      if (view === 'tresor') {
+        if (typeof _initKmPrefsSelectors === 'function') _initKmPrefsSelectors();
       }
       if (view === 'his') {
         // Réinitialiser les filtres pills à l'ouverture
