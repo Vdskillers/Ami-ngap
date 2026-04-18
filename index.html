@@ -1381,36 +1381,49 @@
 
         <!-- ══ DASHBOARD CABINET ══ -->
         <div id="dash-cabinet-section" style="display:none">
+
+          <!-- ── Séparateur + titre cabinet ── -->
           <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-            <div class="lbl" style="margin-bottom:0">🏥 Statistiques cabinet</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+            <div class="dash-section-title" style="margin-bottom:0">
+              Statistiques cabinet
+              <span class="dash-section-badge b" style="margin-left:8px">🏥 Multi-IDE</span>
+            </div>
             <button class="btn bs bsm" onclick="loadDashCabinet()">↻ Actualiser</button>
           </div>
-          <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:20px"></div>
-          <div class="card" style="margin-bottom:16px">
-            <div class="ct">💶 Revenus par infirmière</div>
-            <div id="dash-cabinet-ide-revenues"></div>
+
+          <!-- KPIs cabinet — même grille .sc que le haut -->
+          <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin-bottom:24px"></div>
+
+          <!-- Revenus par IDE -->
+          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
+          <div class="dash-section-title" style="margin-bottom:14px">Revenus par infirmière</div>
+          <div id="dash-cabinet-ide-revenues" style="margin-bottom:24px"></div>
+
+          <!-- Simulateur revenus cabinet -->
+          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
+          <div class="dash-section-title" style="margin-bottom:14px">
+            Simulateur revenus cabinet
+            <span class="dash-section-badge">IA</span>
           </div>
-          <div class="card" style="margin-bottom:16px">
-            <div class="ct">📈 Simulateur revenus cabinet</div>
-            <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant le nombre de patients et d'actes par jour.</p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
-              <div class="af"><label>Patients/jour/IDE</label><input type="number" id="sim-patients-jour" value="12" min="1" max="30" oninput="runCabinetSimulator()"></div>
-              <div class="af"><label>Nb IDEs</label><input type="number" id="sim-nb-ide" value="2" min="1" max="10" oninput="runCabinetSimulator()"></div>
-              <div class="af"><label>Montant moyen/acte (€)</label><input type="number" id="sim-montant-moyen" value="8.50" step="0.5" oninput="runCabinetSimulator()"></div>
-              <div class="af"><label>Jours travaillés/mois</label><input type="number" id="sim-jours" value="22" min="1" max="31" oninput="runCabinetSimulator()"></div>
-            </div>
-            <div id="dash-cabinet-simulator-result"></div>
+          <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant les paramètres.</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:16px">
+            <div class="af"><label>Patients/jour/IDE</label><input type="number" id="sim-patients-jour" value="12" min="1" max="30" oninput="runCabinetSimulator()"></div>
+            <div class="af"><label>Nb IDEs</label><input type="number" id="sim-nb-ide" value="2" min="1" max="10" oninput="runCabinetSimulator()"></div>
+            <div class="af"><label>Montant moyen/acte (€)</label><input type="number" id="sim-montant-moyen" value="8.50" step="0.5" oninput="runCabinetSimulator()"></div>
+            <div class="af"><label>Jours travaillés/mois</label><input type="number" id="sim-jours" value="22" min="1" max="31" oninput="runCabinetSimulator()"></div>
           </div>
-          <div class="card" style="margin-bottom:16px">
-            <div class="ct">🎯 Objectif CA mensuel</div>
-            <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-              <input type="number" id="cab-ca-target" placeholder="Ex: 8000" style="width:150px" oninput="runCabinetCATarget()">
-              <span style="font-size:13px;color:var(--m)">€/mois</span>
-              <button class="btn bp bsm" onclick="runCabinetCATarget()"><span>🎯</span> Simuler</button>
-            </div>
-            <div id="dash-cabinet-ca-target-result"></div>
+          <div id="dash-cabinet-simulator-result" style="margin-bottom:24px"></div>
+
+          <!-- Objectif CA mensuel -->
+          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
+          <div class="dash-section-title" style="margin-bottom:14px">Objectif CA mensuel 🎯</div>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+            <input type="number" id="cab-ca-target" placeholder="Ex: 8000" style="width:150px" oninput="runCabinetCATarget()">
+            <span style="font-size:13px;color:var(--m)">€/mois</span>
+            <button class="btn bp bsm" onclick="runCabinetCATarget()"><span>🎯</span> Simuler</button>
           </div>
+          <div id="dash-cabinet-ca-target-result"></div>
         </div>
       </div><!-- /dash-body -->
 
