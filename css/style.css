@@ -656,3 +656,184 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
 .cot-dd-item:first-child{border-radius:10px 10px 0 0}
 .cot-dd-item:last-child{border-radius:0 0 10px 10px}
 .cot-dd-item:only-child{border-radius:10px}
+
+/* ═══════════════════════════════════════════════
+   MODULE CABINET MULTI-IDE — v1.0
+   Styles pour la section cabinet et synchronisation
+═══════════════════════════════════════════════ */
+
+/* Badge nav cabinet */
+#cabinet-nav-badge {
+  display: inline-block;
+  background: rgba(0,212,170,.2);
+  color: var(--a);
+  border-radius: 20px;
+  font-size: 9px;
+  padding: 1px 7px;
+  margin-left: 4px;
+  font-family: var(--fm);
+}
+
+/* Carte membre cabinet */
+.cab-member-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--b);
+  border-radius: 10px;
+  background: var(--s);
+  transition: border-color .15s;
+}
+.cab-member-card:hover { border-color: rgba(0,212,170,.3); }
+
+/* Avatar membre */
+.cab-member-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(0,212,170,.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* Badge rôle */
+.cab-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-family: var(--fm);
+}
+.cab-role-badge.titulaire {
+  background: rgba(255,181,71,.12);
+  color: var(--w);
+  border: 1px solid rgba(255,181,71,.25);
+}
+.cab-role-badge.membre {
+  background: rgba(0,212,170,.08);
+  color: var(--a);
+  border: 1px solid rgba(0,212,170,.2);
+}
+
+/* Carte préférence sync */
+.cab-sync-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--b);
+  border-radius: 10px;
+  cursor: pointer;
+  background: var(--s);
+  transition: border-color .15s, background .15s;
+}
+.cab-sync-card:hover {
+  border-color: rgba(0,212,170,.3);
+  background: rgba(0,212,170,.03);
+}
+.cab-sync-card.active {
+  border-color: rgba(0,212,170,.4);
+  background: rgba(0,212,170,.06);
+}
+.cab-sync-card input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--a);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Status sync dot */
+.cab-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cab-sync-dot.online  { background: var(--a); box-shadow: 0 0 6px rgba(0,212,170,.5); }
+.cab-sync-dot.offline { background: #555; }
+.cab-sync-dot.syncing { background: var(--w); animation: cab-pulse .8s infinite; }
+
+@keyframes cab-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .3; }
+}
+
+/* Bannière cabinet dans la cotation */
+#cot-cabinet-banner {
+  display: none;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(0,212,170,.06);
+  border: 1px solid rgba(0,212,170,.2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--a);
+  font-family: var(--fm);
+  align-items: center;
+  gap: 8px;
+}
+#cot-cabinet-banner.active { display: flex; }
+
+/* Sélecteur IDE dans la cotation cabinet */
+.cab-ide-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.cab-ide-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  background: var(--s);
+  transition: border-color .12s;
+}
+.cab-ide-option:hover         { border-color: rgba(0,212,170,.3); }
+.cab-ide-option input[type=radio] { accent-color: var(--a); width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Résultat cotation cabinet — par IDE */
+.cab-cot-result {
+  border: 1px solid var(--b);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.cab-cot-header {
+  padding: 10px 14px;
+  background: rgba(0,212,170,.06);
+  border-bottom: 1px solid var(--b);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cab-cot-body {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--m);
+}
+.cab-cot-total {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--a);
+  font-family: var(--fs);
+}
+
+/* ── Responsive cabinet ── */
+@media (max-width: 768px) {
+  .cab-sync-card { padding: 12px; }
+  .cab-member-card { padding: 8px 10px; }
+}
