@@ -576,6 +576,114 @@ function renderCotCabinet(d) {
 /* ════════════════════════════════════════════════
    COTATION SOLO — pipeline principal
 ════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════
+   VÉRIFICATION DOUBLON AVANT COTATION
+   Affiche une modale de choix si une cotation existe déjà pour ce patient/date.
+   Retourne true si on peut continuer, false si on attend le choix utilisateur.
+════════════════════════════════════════════════ */
+async function _cotationCheckDoublon(onUpdate, onNew) {
+  // Si _editingCotation est déjà positionné manuellement (pas auto-détecté),
+  // l'utilisateur sait ce qu'il fait → pas de modale
+  if (window._editingCotation && !window._editingCotation._autoDetected) return true;
+
+  try {
+    const _patNomCheck = (gv('f-pt') || '').trim();
+    const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
+    if (!_patNomCheck || typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') return true;
+
+    const _allRows = await _idbGetAll(PATIENTS_STORE);
+    const _nomLow  = _patNomCheck.toLowerCase();
+    const _foundRow = _allRows.find(r =>
+      ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+      ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+    );
+    if (!_foundRow || typeof _dec !== 'function') return true;
+
+    const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+    if (!Array.isArray(_foundPat.cotations)) return true;
+
+    const _existIdx = _foundPat.cotations.findIndex(c => c.date === _dateCheck);
+    if (_existIdx < 0) return true; // Pas de cotation existante → continuer normalement
+
+    // ── Cotation existante détectée → afficher modale de choix ──
+    const _existCot = _foundPat.cotations[_existIdx];
+    const _total    = parseFloat(_existCot.total || 0).toFixed(2);
+    const _invNum   = _existCot.invoice_number || '—';
+    const _nomAff   = (_foundPat.prenom || '') + ' ' + (_foundPat.nom || '');
+    const _dateAff  = new Date(_dateCheck).toLocaleDateString('fr-FR');
+
+    // Créer la modale de choix
+    const _existMod = document.createElement('div');
+    _existMod.id = 'cot-doublon-modal';
+    _existMod.style.cssText = `
+      position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.55);backdrop-filter:blur(4px);padding:20px;
+    `;
+    _existMod.innerHTML = `
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:16px;padding:24px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+          <div style="width:42px;height:42px;border-radius:50%;background:rgba(251,191,36,.15);border:2px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">⚠️</div>
+          <div>
+            <div style="font-weight:700;font-size:15px;color:var(--t)">Cotation déjà existante</div>
+            <div style="font-size:12px;color:var(--m);font-family:var(--fm)">Patient · ${_dateAff}</div>
+          </div>
+        </div>
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px;margin-bottom:18px">
+          <div style="font-size:13px;font-weight:600;color:var(--t);margin-bottom:4px">${_nomAff.trim()}</div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">
+            ${_invNum !== '—' ? `Facture <span style="color:var(--a);font-weight:600">${_invNum}</span> · ` : ''}
+            Montant <span style="color:var(--a);font-weight:700">${_total} €</span>
+          </div>
+          ${(_existCot.actes||[]).length ? `<div style="font-size:11px;color:var(--m);margin-top:4px;font-family:var(--fm)">${(_existCot.actes||[]).map(a=>a.code).join(' + ')}</div>` : ''}
+        </div>
+        <div style="font-size:13px;color:var(--m);margin-bottom:18px">
+          Que souhaitez-vous faire avec cette nouvelle cotation ?
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button id="cot-doublon-update" class="btn bp" style="width:100%;background:var(--a);color:#fff;border-color:var(--a);padding:12px;font-size:14px;font-weight:600;border-radius:10px">
+            💾 Mettre à jour la cotation existante
+          </button>
+          <button id="cot-doublon-new" class="btn bs" style="width:100%;padding:12px;font-size:14px;border-radius:10px">
+            ✨ Créer une nouvelle cotation
+          </button>
+          <button id="cot-doublon-cancel" class="btn" style="width:100%;padding:10px;font-size:13px;color:var(--m);background:transparent;border:1px solid var(--b);border-radius:10px">
+            Annuler
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(_existMod);
+
+    // Handlers boutons
+    _existMod.querySelector('#cot-doublon-update').onclick = () => {
+      _existMod.remove();
+      // Poser _editingCotation → mode mise à jour
+      window._editingCotation = {
+        patientId:     _foundRow.id,
+        cotationIdx:   _existIdx,
+        invoice_number: _existCot.invoice_number || null,
+        _autoDetected: false, // choix explicite de l'utilisateur
+      };
+      onUpdate();
+    };
+    _existMod.querySelector('#cot-doublon-new').onclick = () => {
+      _existMod.remove();
+      // Réinitialiser _editingCotation → mode nouvelle cotation
+      window._editingCotation = null;
+      onNew();
+    };
+    _existMod.querySelector('#cot-doublon-cancel').onclick = () => {
+      _existMod.remove();
+    };
+
+    return false; // On attend le choix utilisateur
+  } catch (_e) {
+    console.warn('[cotation] checkDoublon error:', _e.message);
+    return true; // En cas d'erreur → continuer normalement
+  }
+}
+
 async function cotation() {
   const txt = gv('f-txt');
   if (!txt) { alert('Veuillez saisir une description.'); return; }
@@ -586,6 +694,22 @@ async function cotation() {
     await cotationCabinet(txt);
     return;
   }
+
+  // ── Vérification doublon AVANT l'appel IA ────────────────────────────────
+  // Si une cotation existe déjà pour ce patient à cette date,
+  // proposer Mettre à jour ou Nouvelle cotation.
+  const _canContinue = await _cotationCheckDoublon(
+    () => _cotationPipeline(), // Mettre à jour → pipeline en mode édition
+    () => _cotationPipeline()  // Nouvelle cotation → pipeline sans _editRef
+  );
+  if (!_canContinue) return; // Attend le choix utilisateur
+
+  await _cotationPipeline();
+}
+
+async function _cotationPipeline() {
+  const txt = gv('f-txt');
+  if (!txt) { alert('Veuillez saisir une description.'); return; }
 
   ld('btn-cot', true);
   $('res-cot').classList.remove('show');

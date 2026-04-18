@@ -1288,6 +1288,30 @@ async function coterDepuisPatient(id) {
   if (!row) return;
   const p = { ...(_dec(row._data)||{}), nom: row.nom, prenom: row.prenom };
 
+  // ── Pré-détection cotation existante ────────────────────────────────────
+  // Si une cotation existe déjà pour ce patient aujourd'hui, pré-poser
+  // _editingCotation pour que la modale de choix s'affiche dès le clic sur "Coter".
+  // On efface d'abord toute ref précédente pour repartir propre.
+  window._editingCotation = null;
+  try {
+    const _todayStr = new Date().toISOString().slice(0, 10);
+    if (Array.isArray(p.cotations)) {
+      const _existIdx = p.cotations.findIndex(c => c.date === _todayStr);
+      if (_existIdx >= 0) {
+        const _existCot = p.cotations[_existIdx];
+        window._editingCotation = {
+          patientId:      row.id,
+          cotationIdx:    _existIdx,
+          invoice_number: _existCot.invoice_number || null,
+          _fromPatient:   true,
+          _autoDetected:  true, // sera remplacé par le choix explicite de l'utilisateur
+        };
+        if (typeof showToast === 'function')
+          showToast(`⚠️ Cotation du ${new Date(_todayStr).toLocaleDateString('fr-FR')} déjà existante — mise à jour proposée`, 'wa');
+      }
+    }
+  } catch (_) {}
+
   navTo('cot', null);
   setTimeout(() => {
     const fPt = $('f-pt'); if(fPt) fPt.value = (p.prenom+' '+p.nom).trim();

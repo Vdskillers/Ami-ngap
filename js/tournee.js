@@ -2856,6 +2856,100 @@ async function openCotationPatient(patientIndex) {
     return;
   }
 
+  // ── Vérification doublon IDB avant l'appel IA ────────────────────────────
+  // Si une cotation existe déjà dans le carnet pour ce patient à cette date,
+  // proposer de la mettre à jour ou d'en créer une nouvelle.
+  const _todayCheck = new Date().toISOString().slice(0, 10);
+  try {
+    if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+      const _patId  = patient.patient_id || patient.id;
+      const _patNom = ([patient.prenom, patient.nom].filter(Boolean).join(' ') || patient._nomAff || '').toLowerCase();
+      const _allRows = await _idbGetAll(PATIENTS_STORE);
+      const _row = _patId
+        ? _allRows.find(r => r.id === _patId)
+        : _allRows.find(r => (((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_patNom) || ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_patNom)));
+
+      if (_row && typeof _dec === 'function') {
+        const _pat = { ...(_dec(_row._data) || {}), id: _row.id };
+        if (Array.isArray(_pat.cotations)) {
+          const _existIdx = _pat.cotations.findIndex(c => c.date === _todayCheck);
+          if (_existIdx >= 0) {
+            const _existCot = _pat.cotations[_existIdx];
+            const _total    = parseFloat(_existCot.total || 0).toFixed(2);
+            const _invNum   = _existCot.invoice_number || '—';
+            const _nomAff   = ([_pat.prenom, _pat.nom].filter(Boolean).join(' ') || _patNom).trim();
+
+            // Modale de choix : Mettre à jour ou Nouvelle cotation
+            const _choice = await new Promise(resolve => {
+              const _mod = document.createElement('div');
+              _mod.id = 'cot-doublon-modal-tournee';
+              _mod.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);padding:20px';
+              _mod.innerHTML = `
+                <div style="background:var(--c,#0b0f14);border:1px solid var(--b,#1e2d3d);border-radius:16px;padding:24px;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+                  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                    <div style="width:40px;height:40px;border-radius:50%;background:rgba(251,191,36,.15);border:2px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚠️</div>
+                    <div>
+                      <div style="font-weight:700;font-size:15px;color:var(--t,#e2e8f0)">Cotation déjà existante</div>
+                      <div style="font-size:11px;color:var(--m,#64748b);font-family:var(--fm,'monospace')">Aujourd'hui · ${new Date().toLocaleDateString('fr-FR')}</div>
+                    </div>
+                  </div>
+                  <div style="background:var(--s,#111827);border:1px solid var(--b,#1e2d3d);border-radius:10px;padding:10px 14px;margin-bottom:16px">
+                    <div style="font-size:13px;font-weight:600;color:var(--t,#e2e8f0)">${_nomAff}</div>
+                    <div style="font-size:11px;color:var(--m,#64748b);font-family:var(--fm,'monospace');margin-top:3px">
+                      ${_invNum !== '—' ? `Facture <span style="color:#00d4aa;font-weight:600">${_invNum}</span> · ` : ''}
+                      Montant <span style="color:#00d4aa;font-weight:700">${_total} €</span>
+                    </div>
+                    ${(_existCot.actes||[]).length ? `<div style="font-size:11px;color:var(--m,#64748b);margin-top:4px">${(_existCot.actes||[]).map(a=>a.code).join(' + ')}</div>` : ''}
+                  </div>
+                  <div style="font-size:13px;color:var(--m,#64748b);margin-bottom:16px">Que souhaitez-vous faire ?</div>
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <button id="cdt-update" style="width:100%;padding:12px;background:#00d4aa;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
+                      💾 Mettre à jour la cotation existante
+                    </button>
+                    <button id="cdt-new" style="width:100%;padding:12px;background:var(--s,#111827);color:var(--t,#e2e8f0);border:1px solid var(--b,#1e2d3d);border-radius:10px;font-size:14px;cursor:pointer">
+                      ✨ Créer une nouvelle cotation
+                    </button>
+                    <button id="cdt-cancel" style="width:100%;padding:10px;background:transparent;color:var(--m,#64748b);border:1px solid var(--b,#1e2d3d);border-radius:10px;font-size:13px;cursor:pointer">
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(_mod);
+
+              _mod.querySelector('#cdt-update').onclick = () => {
+                _mod.remove();
+                window._editingCotation = {
+                  patientId:      _row.id,
+                  cotationIdx:    _existIdx,
+                  invoice_number: _existCot.invoice_number || null,
+                  _fromTournee:   true,
+                };
+                showCotationModal(patient, _existCot, null);
+                resolve('update');
+              };
+              _mod.querySelector('#cdt-new').onclick = () => {
+                _mod.remove();
+                window._editingCotation = null;
+                resolve('new');
+              };
+              _mod.querySelector('#cdt-cancel').onclick = () => {
+                _mod.remove();
+                resolve('cancel');
+              };
+            });
+
+            // Mettre à jour → showCotationModal déjà appelé, sortir
+            if (_choice === 'update' || _choice === 'cancel') return;
+            // Nouvelle cotation → continuer le flux normal (appel API ci-dessous)
+          }
+        }
+      }
+    }
+  } catch (_doubErr) {
+    console.warn('[openCotationPatient] doublon check:', _doubErr.message);
+  }
+
   // Sinon générer une cotation automatique via API ou fallback local
   if (typeof showToast === 'function') showToast('⚡ Génération de la cotation…');
 
