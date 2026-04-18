@@ -1413,6 +1413,20 @@
           <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
         </div>
 
+        <!-- ══ STATISTIQUES AVANCÉES (ex view-stats) ══ -->
+        <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
+        <div class="lbl" style="margin-bottom:16px">📊 Statistiques avancées</div>
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <select id="stats-period" onchange="loadStatsAvancees()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+            <option value="month">Ce mois</option>
+            <option value="lastmonth">Mois précédent</option>
+            <option value="3month">3 derniers mois</option>
+            <option value="year">Cette année</option>
+          </select>
+          <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
+        </div>
+        <div id="stats-avancees-body"></div>
+
         <!-- ══ DASHBOARD CABINET ══ -->
         <div id="dash-cabinet-section" style="display:none">
           <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
@@ -1450,19 +1464,6 @@
             <div id="dash-cabinet-ca-target-result"></div>
           </div>
         </div>
-        <!-- ══ STATISTIQUES AVANCÉES (ex view-stats) ══ -->
-        <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
-        <div class="lbl" style="margin-bottom:16px">📊 Statistiques avancées</div>
-        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-          <select id="stats-period" onchange="loadStatsAvancees()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
-            <option value="month">Ce mois</option>
-            <option value="lastmonth">Mois précédent</option>
-            <option value="3month">3 derniers mois</option>
-            <option value="year">Cette année</option>
-          </select>
-          <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
-        </div>
-        <div id="stats-avancees-body"></div>
       </div>
       <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
         <div style="font-size:40px;margin-bottom:12px">📊</div>
