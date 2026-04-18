@@ -483,18 +483,31 @@
 <div id="app" style="display:none">
   <header class="top">
     <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
+    <!-- Séparateur + statut sync (desktop uniquement) -->
+    <div class="top-sep" id="top-sep-status" style="display:none"></div>
+    <div class="top-status" id="top-sync-status" style="display:none">
+      <div class="top-status-dot" id="top-status-dot"></div>
+      <span id="top-status-text">En ligne</span>
+    </div>
     <div id="mobile-header-fabs"></div>
     <div class="tr">
       <button id="btn-install-header" onclick="installApp()" style="display:none;background:var(--ad);border:1px solid var(--a);color:var(--a);font-family:var(--fm);font-size:10px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:all .15s">📱 Installer AMI</button>
       <div class="badge">NGAP 2026</div>
+      <!-- Recherche globale (desktop) -->
+      <button class="top-search-btn" id="top-search-btn" onclick="openGlobalSearch()" style="display:none">🔍 Rechercher <kbd>⌘K</kbd></button>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
-      <!-- Mode admin : badge + déconnexion (visible desktop ET mobile, géré par CSS/JS) -->
+      <!-- Notifications -->
+      <button class="top-notif-btn" id="top-notif-btn" onclick="toggleNotifPanel()" style="display:none" title="Notifications">
+        🔔
+        <div class="top-notif-dot" id="top-notif-dot"></div>
+      </button>
+      <!-- Mode admin -->
       <div id="admin-header-controls" style="display:none;align-items:center;gap:8px">
         <div class="admin-mode-badge" id="admin-mode-badge">🛡️ MODE ADMIN SÉCURISÉ</div>
         <button class="bout" style="font-size:11px;padding:5px 12px" onclick="logout()">⏻ Déconnexion</button>
         <div id="mobile-greeting" style="display:none;flex-direction:column;line-height:1.1;margin-left:4px"><span id="mobile-greeting-hello" style="font-size:9px;color:rgba(255,255,255,.5);font-family:var(--fm);letter-spacing:.06em;text-transform:uppercase">Bonjour</span><span id="mobile-greeting-name" style="font-size:12px;font-weight:700;color:#F0F4F8;letter-spacing:-.2px">—</span></div>
       </div>
-      <!-- Mode normal : profil + déconnexion -->
+      <!-- Mode normal -->
       <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
       <button class="bout" id="btn-logout-normal" onclick="logout()">⏻ Déconnexion</button>
     </div>
@@ -508,7 +521,7 @@
       <div class="ni nurse-only" data-v="tur"><span class="nic">🗺️</span> Tournée IA</div>
       <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
-      <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique</div>
+      <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique <span class="ni-alert-badge orange" id="nav-his-badge" style="display:none"></span></div>
       <div class="ni nurse-only" data-v="outils-ordos"><span class="nic">💊</span> Ordonnances <span id="ordo-nav-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
       <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
@@ -517,7 +530,7 @@
       <div class="slbl">Outils pratiques</div>
       <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
-      <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques</div>
+      <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques <span class="ni-alert-badge red" id="nav-dash-badge" style="display:none"></span></div>
       <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
@@ -1216,8 +1229,8 @@
         </div>
         <div id="hstats" class="sg"></div>
         <div class="ht"><table>
-          <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th><th></th></tr></thead>
-          <tbody id="htb"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
+          <thead><tr><th>Patient</th><th>Date</th><th>Actes</th><th>Total</th><th>Statut</th><th>Alertes</th><th></th><th></th></tr></thead>
+          <tbody id="htb"><tr><td colspan="8" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -1225,63 +1238,134 @@
     <!-- DASHBOARD -->
     <section class="view" id="view-dash">
       <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
-      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Comparatif mois/mois · Analyse horaire</p>
+      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Analyse horaire</p>
+
+      <!-- Barre de contrôle header -->
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-        <select id="dash-period" onchange="loadDash()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+        <!-- Période pill -->
+        <div class="dash-period-pill">
+          <button class="dpp-btn active" onclick="setDashPeriod(this,'month')">Mois</button>
+          <button class="dpp-btn" onclick="setDashPeriod(this,'lastmonth')">M-1</button>
+          <button class="dpp-btn" onclick="setDashPeriod(this,'3month')">3 mois</button>
+          <button class="dpp-btn" onclick="setDashPeriod(this,'year')">Année</button>
+        </div>
+        <!-- select hidden pour compatibilité JS -->
+        <select id="dash-period" style="display:none" onchange="loadDash()">
           <option value="month">Ce mois</option>
           <option value="lastmonth">Mois précédent</option>
           <option value="3month">3 derniers mois</option>
           <option value="year">Cette année</option>
         </select>
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
-        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
-        <button class="btn bs bsm nurse-only" onclick="if(typeof navTo==='function')navTo('tur',null);setTimeout(()=>typeof toggleHeatmap==='function'&&toggleHeatmap(),500)">🔥 Zones rentables</button>
+        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel</button>
+        <button class="btn bs bsm nurse-only" onclick="if(typeof navTo==='function')navTo('tur',null);setTimeout(()=>typeof toggleHeatmap==='function'&&toggleHeatmap(),500)">🔥 Zones</button>
       </div>
-      <!-- Notice admin (masquée pour les infirmières) -->
-      <div id="dash-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
-        🛡️ <strong>Mode admin — données isolées</strong> · Les statistiques et l'analyse horaire affichées sont issues de vos propres données de test. Les données des infirmières (stockage local chiffré par compte) sont physiquement inaccessibles depuis votre session.
+
+      <!-- Notice admin -->
+      <div id="dash-admin-notice" style="display:none;margin-bottom:12px" class="ai in">
+        🛡️ <strong>Mode admin — données isolées</strong> · Statistiques issues de vos données de test uniquement. Les données infirmières sont physiquement inaccessibles.
       </div>
       <!-- Badge cache / hors-ligne -->
-      <div id="dash-cache-info" style="display:none;font-size:12px;margin-bottom:10px;padding:6px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
+      <div id="dash-cache-info" style="display:none;font-size:11px;margin-bottom:10px;padding:5px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
+
+      <!-- Loading -->
       <div id="dash-loading" style="text-align:center;padding:60px 20px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="color:var(--m);font-size:13px">Chargement des statistiques...</p></div>
+
       <div id="dash-body" style="display:none">
-        <!-- KPIs -->
-        <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:28px"></div>
-        <!-- Bandeau kilométrique — rempli par renderDashboard si des trajets existent -->
-        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:20px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
-        <!-- Graphique 30j -->
-        <div class="card" style="margin-bottom:20px">
-          <div class="ct">📈 Revenus — 30 derniers jours</div>
-          <div id="dash-chart" style="height:160px;display:flex;align-items:flex-end;gap:4px;padding:8px 0"></div>
-          <div id="dash-chart-labels" style="display:flex;gap:4px;margin-top:6px;overflow:hidden"></div>
-        </div>
-        <!-- Top actes -->
-        <div class="card" style="margin-bottom:20px">
-          <div class="ct">🏆 Actes les plus fréquents</div>
-          <div id="dash-top-actes" class="al"></div>
-        </div>
-        <!-- Prévision -->
-        <div class="card" style="margin-bottom:20px">
-          <div class="ct">🔮 Prévision & Tendance</div>
-          <div id="dash-prevision" class="ai in" style="font-size:14px">—</div>
-        </div>
-        <!-- Alerte perte -->
-        <div class="card" style="margin-bottom:20px" id="dash-loss-card">
-          <div class="ct">🔔 Alertes revenus manqués</div>
-          <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
-        </div>
-        <!-- Anomalies -->
-        <div class="card" style="margin-bottom:20px">
-          <div class="ct">💸 Détection d'anomalies</div>
-          <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
-        </div>
-        <!-- IA analyse -->
-        <div class="card" style="margin-bottom:20px">
-          <div class="ct">🧠 Analyse IA & Optimisations NGAP</div>
-          <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+
+        <!-- ── ALERT STRIP — pertes détectées ── -->
+        <div id="dash-alert-strip-loss" class="dash-alert-strip" style="display:none;margin-bottom:0">
+          <div class="dash-alert-dot"></div>
+          <div class="dash-alert-text" id="dash-alert-strip-text">Revenus manqués détectés</div>
+          <div class="dash-alert-action" onclick="document.getElementById('dash-loss-card').scrollIntoView({behavior:'smooth'})">Voir détails →</div>
         </div>
 
-        <!-- ══ STATISTIQUES AVANCÉES (ex view-stats) ══ -->
+        <!-- ── KPIs ── -->
+        <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin:20px 0 24px"></div>
+
+        <!-- ── Bandeau kilométrique ── -->
+        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:20px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
+
+        <!-- ── LAYOUT 2 COLONNES ── -->
+        <div class="dash-2col">
+
+          <!-- COLONNE PRINCIPALE -->
+          <div class="dash-2col-main">
+
+            <!-- Graphique 30j -->
+            <div class="dash-2col-section">
+              <div class="dash-section-title">
+                Revenus — 30 derniers jours
+                <span class="dash-section-badge" id="dash-chart-trend-badge">↑ tendance</span>
+              </div>
+              <div id="dash-chart" style="height:130px;display:flex;align-items:flex-end;gap:3px;padding:4px 0"></div>
+              <div id="dash-chart-labels" style="display:flex;gap:3px;margin-top:6px;overflow:hidden"></div>
+              <div class="dash-chart-stats" id="dash-chart-stats">
+                <div class="dash-chart-stat">Moy. <strong id="cs-avg">—</strong></div>
+                <div class="dash-chart-stat">Pic <strong id="cs-peak">—</strong></div>
+                <div class="dash-chart-stat">Moy./passage <strong id="cs-mpp">—</strong></div>
+                <div class="dash-chart-stat">Passages <strong id="cs-count">—</strong></div>
+              </div>
+            </div>
+
+            <!-- Top actes -->
+            <div class="dash-2col-section">
+              <div class="dash-section-title">Actes les plus fréquents</div>
+              <div id="dash-top-actes"></div>
+            </div>
+
+            <!-- Alertes revenus manqués -->
+            <div class="dash-2col-section" id="dash-loss-card">
+              <div class="dash-section-title">
+                Alertes revenus manqués
+                <span class="dash-section-badge r" id="dash-loss-badge" style="display:none">● perte</span>
+              </div>
+              <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+            </div>
+
+            <!-- Anomalies -->
+            <div class="dash-2col-section">
+              <div class="dash-section-title">Détection d'anomalies</div>
+              <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+            </div>
+
+            <!-- Analyse IA 3 colonnes -->
+            <div class="dash-2col-section" style="border-bottom:none">
+              <div class="dash-section-title">
+                Analyse IA & Optimisations NGAP
+                <span class="dash-section-badge b">IA</span>
+              </div>
+              <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+            </div>
+
+          </div><!-- /dash-2col-main -->
+
+          <!-- COLONNE SIDEBAR -->
+          <div class="dash-2col-side">
+
+            <!-- Prévision anneau -->
+            <div class="dash-side-section">
+              <div class="dash-section-title" style="margin-bottom:12px">Prévision du mois</div>
+              <div id="dash-prevision">
+                <div style="text-align:center;padding:20px 0;color:var(--m);font-size:13px">Calcul en cours...</div>
+              </div>
+            </div>
+
+            <!-- Heatmap horaire -->
+            <div class="dash-side-section">
+              <div class="dash-section-title" style="margin-bottom:8px">Activité horaire</div>
+              <div class="dash-heatmap" id="dash-heatmap"></div>
+              <div class="dash-heatmap-labels">
+                <span>6h</span><span>10h</span><span>14h</span><span>18h</span>
+              </div>
+              <div style="font-size:10px;color:var(--m);margin-top:6px;font-family:var(--fm)">Intensité par tranche d'1h</div>
+            </div>
+
+          </div><!-- /dash-2col-side -->
+
+        </div><!-- /dash-2col -->
+
+        <!-- ══ STATISTIQUES AVANCÉES ══ -->
         <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
         <div class="lbl" style="margin-bottom:16px">📊 Statistiques avancées</div>
         <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
@@ -1302,14 +1386,11 @@
             <div class="lbl" style="margin-bottom:0">🏥 Statistiques cabinet</div>
             <button class="btn bs bsm" onclick="loadDashCabinet()">↻ Actualiser</button>
           </div>
-          <!-- KPIs cabinet -->
           <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:20px"></div>
-          <!-- Revenus par IDE -->
           <div class="card" style="margin-bottom:16px">
             <div class="ct">💶 Revenus par infirmière</div>
             <div id="dash-cabinet-ide-revenues"></div>
           </div>
-          <!-- Simulateur revenus cabinet -->
           <div class="card" style="margin-bottom:16px">
             <div class="ct">📈 Simulateur revenus cabinet</div>
             <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant le nombre de patients et d'actes par jour.</p>
@@ -1321,7 +1402,6 @@
             </div>
             <div id="dash-cabinet-simulator-result"></div>
           </div>
-          <!-- Optimisation CA -->
           <div class="card" style="margin-bottom:16px">
             <div class="ct">🎯 Objectif CA mensuel</div>
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -1332,7 +1412,8 @@
             <div id="dash-cabinet-ca-target-result"></div>
           </div>
         </div>
-      </div>
+      </div><!-- /dash-body -->
+
       <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
         <div style="font-size:40px;margin-bottom:12px">📊</div>
         <p>Aucune donnée. Générez des cotations pour voir vos statistiques.</p>
@@ -2091,7 +2172,7 @@ async function hist() {
   const stats = document.getElementById('hstats');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
 
   const q       = (document.getElementById('hq')?.value || '').toLowerCase().trim();
   const period  = document.getElementById('hp')?.value || '';
@@ -2120,7 +2201,7 @@ async function hist() {
     }
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
       if (stats) stats.innerHTML = '';
       return;
     }
@@ -2133,28 +2214,52 @@ async function hist() {
       <div class="sc b"><div class="si">🏥</div><div class="sv">${totalAMO.toFixed(0)}€</div><div class="sn">AMO</div></div>
       <div class="sc o"><div class="si">📋</div><div class="sv">${rows.length}</div><div class="sn">Actes</div></div>`;
 
-    /* Tableau */
+    /* Palette couleurs avatars en rotation */
+    const _avatarCols = ['col-a','col-b','col-c','col-d','col-e'];
+    const _avatarMap = {};
+    let _avatarIdx = 0;
+
+    /* Tableau premium */
     tbody.innerHTML = rows.map(r => {
-      const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR') : '—';
+      const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}) : '—';
       let actesTxt = '—';
       let actesArr = [];
       try {
-        // r.actes peut être un Array déjà parsé (JSONB) ou une chaîne JSON (TEXT)
         actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
         actesTxt = actesArr.map(a => a.code || '').filter(Boolean).join(', ') || '—';
       } catch {}
-      const alertes = (() => { try { const a = JSON.parse(r.alerts||'[]'); return a.length ? `<span style="color:var(--d);font-size:11px">⚠️ ${a.length}</span>` : ''; } catch { return ''; } })();
-      // Sérialiser les données nécessaires à l'édition via data-attribute (évite les problèmes d'échappement inline)
+
+      // Alertes
+      const alertCount = (() => { try { return JSON.parse(r.alerts||'[]').length; } catch { return 0; } })();
+      const alertsHtml = alertCount ? `<span style="background:rgba(255,95,109,.12);color:var(--d);font-family:var(--fm);font-size:10px;padding:2px 7px;border-radius:10px;border:1px solid rgba(255,95,109,.2)">⚠ ${alertCount}</span>` : `<span style="color:var(--ok);font-size:11px">✓</span>`;
+
+      // Avatar patient
+      const patNom = (r.patient_nom || r.nom || '').trim();
+      const initials = patNom ? patNom.split(/\s+/).map(w=>w.charAt(0)).slice(0,2).join('').toUpperCase() : '#';
+      if (patNom && !_avatarMap[patNom]) { _avatarMap[patNom] = _avatarCols[_avatarIdx++ % 5]; }
+      const avatarCol = _avatarMap[patNom] || 'col-a';
+
+      // Statut DRE
+      const statutHtml = r.dre_requise
+        ? `<span class="pt-status pause"><span class="pt-status-dot pause"></span><span style="font-size:11px">DRE req.</span></span>`
+        : `<span class="pt-status active"><span class="pt-status-dot active"></span><span style="font-size:11px">Conforme</span></span>`;
+
       const _rowId = `hist-row-${r.id}`;
-      // Admin ET infirmière peuvent modifier/supprimer leurs propres cotations
-      // Isolation garantie côté worker : infirmiere_id = user.id
       return `<tr id="${_rowId}">
-        <td style="font-family:var(--fm);font-size:11px;color:var(--m)">#${r.id}</td>
-        <td>${date}</td>
-        <td style="font-family:var(--fm);font-size:11px">${actesTxt}</td>
-        <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
-        <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
-        <td>${alertes}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="pt-avatar ${avatarCol}" style="width:32px;height:32px;font-size:12px">${initials}</div>
+            <div>
+              <div style="font-size:13px;font-weight:500">${patNom || '—'}</div>
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm)">#${r.id}</div>
+            </div>
+          </div>
+        </td>
+        <td style="font-size:13px;color:var(--m)">${date}</td>
+        <td style="font-family:var(--fm);font-size:11px;color:var(--a2)">${actesTxt}</td>
+        <td class="pt-ca">${parseFloat(r.total||0).toFixed(2)} €</td>
+        <td>${statutHtml}</td>
+        <td>${alertsHtml}</td>
         <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
           data-hist-id="${r.id}"
           data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
@@ -2168,7 +2273,7 @@ async function hist() {
     }).join('');
 
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
   }
 }
 
@@ -2205,7 +2310,7 @@ async function delHist(id, btnOrInvoice) {
     }
 
     hist();
-    if (typeof showToast === 'function') showToast('✅ Cotation supprimée.');
+    if (typeof showToast === 'function') showToast('success', 'Cotation supprimée', `#${id} retirée de l'historique`);
   } catch(e) {
     if (typeof showToast === 'function') showToast('❌ ' + e.message);
   }
@@ -2389,6 +2494,21 @@ document.addEventListener('click', function(e) {
     var wrap = document.getElementById('mobile-header-fabs');
     var vbtn = document.getElementById('voicebtn');
     if(wrap && vbtn) wrap.appendChild(vbtn);
+
+    // Hook showApp pour initialiser les extras topbar + toast de bienvenue
+    var _origShowApp = window.showApp;
+    window.showApp = function() {
+      if (typeof _origShowApp === 'function') _origShowApp.apply(this, arguments);
+      // Init topbar enrichie (status + search + notif)
+      if (typeof window._initTopbarExtras === 'function') window._initTopbarExtras();
+      // Toast de bienvenue avec le prénom
+      setTimeout(function() {
+        if (typeof showToast === 'function' && typeof S !== 'undefined' && S?.user) {
+          const prenom = S.user.prenom || S.user.user_metadata?.prenom || '';
+          showToast('success', prenom ? `Bonjour ${prenom} 👋` : 'Connexion réussie', 'Bienvenue sur AMI · NGAP 2026', 3500);
+        }
+      }, 600);
+    };
   });
   // Afficher le bouton install mobile dans menu Plus (sans preventDefault ici)
   // Le preventDefault est géré UNIQUEMENT dans pwa.js
@@ -2400,6 +2520,206 @@ document.addEventListener('click', function(e) {
 </script>
 
 <script src="js/infirmiere-tools.js"></script>
+
+<!-- ══ TOAST CONTAINER ══ -->
+<div id="toast-container"></div>
+
+<!-- ══ GLOBAL SEARCH OVERLAY ══ -->
+<div id="global-search-overlay" style="display:none;position:fixed;inset:0;z-index:1200;background:rgba(11,15,20,.85);backdrop-filter:blur(10px);padding:80px 20px 20px;align-items:flex-start;justify-content:center">
+  <div style="width:100%;max-width:580px;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:12px;background:var(--c);border:1px solid var(--bl);border-radius:16px;padding:14px 18px;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+      <span style="font-size:18px;color:var(--m)">🔍</span>
+      <input type="text" id="global-search-input" placeholder="Rechercher un patient, une cotation, un acte…" autocomplete="off"
+        style="flex:1;background:none;border:none;font-size:16px;color:var(--t);font-family:var(--ff);outline:none"
+        oninput="runGlobalSearch(this.value)" onkeydown="handleSearchKey(event)">
+      <kbd onclick="closeGlobalSearch()" style="font-size:11px;background:var(--s);color:var(--m);padding:2px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--b)">Esc</kbd>
+    </div>
+    <div id="global-search-results" style="margin-top:8px;background:var(--c);border:1px solid var(--b);border-radius:12px;overflow:hidden;display:none;max-height:380px;overflow-y:auto"></div>
+    <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--m);font-family:var(--fm);padding:0 4px">
+      <span>↑↓ Naviguer</span><span>↵ Ouvrir</span><span>Esc Fermer</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ NOTIF PANEL ══ -->
+<div id="notif-panel" style="display:none;position:fixed;top:64px;right:20px;z-index:900;width:320px;background:var(--c);border:1px solid var(--b);border-radius:var(--rl);box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--b)">
+    <div style="font-family:var(--fm);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m)">Notifications</div>
+    <button onclick="clearAllNotifs()" style="background:none;border:none;color:var(--m);font-size:11px;font-family:var(--fm);cursor:pointer;transition:color .15s" onmouseenter="this.style.color='var(--t)'" onmouseleave="this.style.color='var(--m)'">Tout effacer</button>
+  </div>
+  <div id="notif-list" style="max-height:360px;overflow-y:auto"></div>
+</div>
+
+<script>
+/* ══════════════════════════════════════
+   TOAST ENGINE — AMI v2
+══════════════════════════════════════ */
+window.showToast = function(type, title, msg, duration=4000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const icons = { success:'✓', warning:'⚠', error:'✕', info:'💡' };
+  const id = 'toast-' + Date.now();
+  const el = document.createElement('div');
+  el.className = 'toast-item ' + type;
+  el.id = id;
+  el.innerHTML = `
+    <div class="toast-icon">${icons[type]||'ℹ'}</div>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
+    </div>
+    <button class="toast-close" onclick="dismissToast('${id}')">✕</button>
+    <div class="toast-progress" style="animation-duration:${duration}ms"></div>`;
+  container.appendChild(el);
+  // Ajouter dans le panneau notif
+  _addNotifItem(type, title, msg);
+  // Auto-dismiss
+  const t = setTimeout(() => dismissToast(id), duration);
+  el._timer = t;
+};
+
+window.dismissToast = function(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  clearTimeout(el._timer);
+  el.classList.add('removing');
+  setTimeout(() => el.remove(), 200);
+};
+
+// Surcharge showMsg natif si existant pour injecter les toasts
+const _origShowMsg = window.showMsg;
+window.showMsg = function(type, msg, duration) {
+  if (typeof _origShowMsg === 'function') _origShowMsg(type, msg, duration);
+};
+
+/* ══ Notif panel ══ */
+const _notifs = [];
+function _addNotifItem(type, title, msg) {
+  const colors = { success: 'var(--ok)', warning: 'var(--w)', error: 'var(--d)', info: 'var(--a2)' };
+  _notifs.unshift({ type, title, msg, time: new Date() });
+  _renderNotifPanel();
+  // Dot visible
+  const dot = document.getElementById('top-notif-dot');
+  if (dot) dot.classList.add('show');
+}
+function _renderNotifPanel() {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!_notifs.length) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--m);font-size:13px">Aucune notification</div>';
+    return;
+  }
+  const colors = { success: 'var(--ok)', warning: 'var(--w)', error: 'var(--d)', info: 'var(--a2)' };
+  list.innerHTML = _notifs.slice(0, 20).map((n, i) => `
+    <div style="display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(30,45,61,.5);${i===0?'background:rgba(0,212,170,.02)':''}">
+      <div style="width:3px;border-radius:3px;background:${colors[n.type]||'var(--m)'};flex-shrink:0;align-self:stretch"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:${colors[n.type]||'var(--t)'};margin-bottom:2px">${n.title}</div>
+        ${n.msg ? `<div style="font-size:11px;color:var(--m);line-height:1.4">${n.msg}</div>` : ''}
+        <div style="font-size:10px;color:var(--m);margin-top:4px;font-family:var(--fm)">${n.time.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+    </div>`).join('');
+}
+window.toggleNotifPanel = function() {
+  const panel = document.getElementById('notif-panel');
+  if (!panel) return;
+  const open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  if (!open) {
+    _renderNotifPanel();
+    const dot = document.getElementById('top-notif-dot');
+    if (dot) dot.classList.remove('show');
+  }
+};
+window.clearAllNotifs = function() {
+  _notifs.length = 0;
+  _renderNotifPanel();
+};
+// Fermer panel si clic dehors
+document.addEventListener('click', e => {
+  const panel = document.getElementById('notif-panel');
+  const btn = document.getElementById('top-notif-btn');
+  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.style.display = 'none';
+  }
+});
+
+/* ══ Global search ══ */
+window.openGlobalSearch = function() {
+  const ov = document.getElementById('global-search-overlay');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  setTimeout(() => document.getElementById('global-search-input')?.focus(), 50);
+};
+window.closeGlobalSearch = function() {
+  const ov = document.getElementById('global-search-overlay');
+  if (ov) { ov.style.display = 'none'; }
+  const input = document.getElementById('global-search-input');
+  if (input) input.value = '';
+  const res = document.getElementById('global-search-results');
+  if (res) res.style.display = 'none';
+};
+window.handleSearchKey = function(e) {
+  if (e.key === 'Escape') closeGlobalSearch();
+};
+window.runGlobalSearch = function(q) {
+  const res = document.getElementById('global-search-results');
+  if (!res) return;
+  if (!q || q.length < 2) { res.style.display = 'none'; return; }
+  // Recherche dans les sections de navigation
+  const navItems = document.querySelectorAll('.ni[data-v]');
+  const matches = [];
+  navItems.forEach(ni => {
+    const text = ni.textContent.trim();
+    if (text.toLowerCase().includes(q.toLowerCase())) {
+      matches.push({ label: text, view: ni.dataset.v });
+    }
+  });
+  if (!matches.length) {
+    res.innerHTML = '<div style="padding:16px;text-align:center;color:var(--m);font-size:13px">Aucun résultat pour « ' + q + ' »</div>';
+    res.style.display = 'block';
+    return;
+  }
+  res.innerHTML = matches.slice(0,8).map(m => `
+    <div onclick="closeGlobalSearch();if(typeof navTo==='function')navTo('${m.view}',null)"
+      style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:1px solid rgba(30,45,61,.4);transition:background .1s"
+      onmouseenter="this.style.background='var(--s)'" onmouseleave="this.style.background=''">
+      <span style="font-size:13px;color:var(--m)">→</span>
+      <span style="font-size:13px">${m.label.replace(/[^\w\s🏠👤🗺️📊📋💸📄🏥🤖💰📝⚡📚📖💬🛡️▶️📅📂✍️🚗💊]/gu,'').trim()}</span>
+    </div>`).join('');
+  res.style.display = 'block';
+};
+// Raccourci ⌘K / Ctrl+K
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openGlobalSearch(); }
+  if (e.key === 'Escape') closeGlobalSearch();
+});
+// Fermer search si clic en dehors
+document.getElementById('global-search-overlay')?.addEventListener('click', e => {
+  if (e.target.id === 'global-search-overlay') closeGlobalSearch();
+});
+
+/* ══ Topbar status sync ══ */
+window._updateTopStatus = function(state, text) {
+  const dot  = document.getElementById('top-status-dot');
+  const txt  = document.getElementById('top-status-text');
+  if (!dot || !txt) return;
+  dot.className = 'top-status-dot' + (state === 'offline' ? ' offline' : state === 'syncing' ? ' syncing' : '');
+  txt.textContent = text || (state === 'offline' ? 'Hors ligne' : state === 'syncing' ? 'Synchronisation…' : 'En ligne');
+};
+
+/* ══ Init topbar éléments post-login ══ */
+window._initTopbarExtras = function() {
+  const statusWrap = document.getElementById('top-sync-status');
+  const sep  = document.getElementById('top-sep-status');
+  const srch = document.getElementById('top-search-btn');
+  const notif= document.getElementById('top-notif-btn');
+  if (statusWrap) statusWrap.style.display = 'flex';
+  if (sep) sep.style.display = 'block';
+  if (srch) srch.style.display = 'flex';
+  if (notif) notif.style.display = 'flex';
+};
+</script>
 <script>
 (function(){
   var LP='ami_landing_seen';
