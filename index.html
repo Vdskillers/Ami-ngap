@@ -529,6 +529,7 @@
       <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
       <div class="ni nurse-only" data-v="contact"><span class="nic">💬</span> Contact Admin <span id="contact-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:9px;padding:1px 6px;margin-left:4px;font-family:var(--fm)">!</span></div>
       <div class="ni nurse-only" data-v="sec"><span class="nic">🛡️</span> Sécurité</div>
+      <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
     </div>
   </nav>
 
@@ -616,6 +617,34 @@
         <div class="f" style="margin-bottom:4px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..." oninput="if(typeof renderLiveReco==='function')renderLiveReco(this.value)"></textarea></div>
         <!-- Recommandations NGAP temps réel -->
         <div id="live-reco" style="display:none;margin-bottom:12px"></div>
+
+        <!-- ══ TOGGLE MODE CABINET ══ -->
+        <div id="cot-cabinet-toggle-wrap" style="display:none;margin-bottom:14px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1px solid rgba(0,212,170,.25);border-radius:8px;background:rgba(0,212,170,.04)">
+            <input type="checkbox" id="cot-cabinet-mode" onchange="cotationToggleCabinetMode(this.checked)"
+              style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0">
+            <div>
+              <div style="font-weight:600;font-size:13px">🏥 Mode cabinet — cotation multi-IDE</div>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">Répartissez les actes entre les infirmières de votre cabinet pour maximiser les revenus NGAP</div>
+            </div>
+          </label>
+        </div>
+
+        <!-- ══ PANNEAU MULTI-IDE (affiché si mode cabinet actif) ══ -->
+        <div id="cot-cabinet-panel" style="display:none;margin-bottom:14px">
+          <div style="font-size:12px;font-weight:600;color:var(--a);margin-bottom:8px;font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase">👥 Qui réalise chaque acte ?</div>
+          <div id="cot-cabinet-actes-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            <!-- Rempli dynamiquement par cotationRenderCabinetActes() -->
+            <div class="ai in" style="font-size:12px">Saisissez la description des soins ci-dessus pour assigner les actes aux IDEs.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn bs bsm" onclick="cotationOptimizeDistribution()">
+              <span>⚡</span> Optimiser la répartition IA
+            </button>
+            <span id="cot-cabinet-suggestion" style="font-size:12px;color:var(--a);display:none"></span>
+          </div>
+        </div>
+
         <div class="ar-row">
           <button class="btn bp" id="btn-cot" onclick="cotation()"><span>⚡</span> Coter avec l'IA</button>
           <button class="btn bv" id="btn-verify" onclick="openVerify()"><span>🔍</span> Vérifier & corriger</button>
@@ -692,7 +721,20 @@
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
+          <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
+        </div>
+
+        <!-- ══ PANEL CABINET MULTI-IDE ══ -->
+        <div id="tur-cabinet-panel" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(0,212,170,.25);border-radius:10px;background:rgba(0,212,170,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            <div style="font-weight:600;font-size:14px">🏥 Tournée cabinet — <span id="tur-cabinet-nom">—</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn bp bsm" onclick="optimiserTourneeCabinet()"><span>⚡</span> Répartir entre IDEs</button>
+              <button class="btn bs bsm" onclick="optimiserTourneeCabinetCA()"><span>🎯</span> Optimiser revenus</button>
+            </div>
+          </div>
+          <div id="tur-cabinet-result"></div>
         </div>
       </div>
       <!-- Panneau téléchargement cartes offline -->
@@ -1325,6 +1367,7 @@
         </select>
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
         <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
+        <button class="btn bs bsm nurse-only" onclick="if(typeof navTo==='function')navTo('tur',null);setTimeout(()=>typeof toggleHeatmap==='function'&&toggleHeatmap(),500)">🔥 Zones rentables</button>
       </div>
       <!-- Notice admin (masquée pour les infirmières) -->
       <div id="dash-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
@@ -1368,6 +1411,44 @@
         <div class="card" style="margin-bottom:20px">
           <div class="ct">🧠 Analyse IA & Optimisations NGAP</div>
           <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+
+        <!-- ══ DASHBOARD CABINET ══ -->
+        <div id="dash-cabinet-section" style="display:none">
+          <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+            <div class="lbl" style="margin-bottom:0">🏥 Statistiques cabinet</div>
+            <button class="btn bs bsm" onclick="loadDashCabinet()">↻ Actualiser</button>
+          </div>
+          <!-- KPIs cabinet -->
+          <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:20px"></div>
+          <!-- Revenus par IDE -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="ct">💶 Revenus par infirmière</div>
+            <div id="dash-cabinet-ide-revenues"></div>
+          </div>
+          <!-- Simulateur revenus cabinet -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="ct">📈 Simulateur revenus cabinet</div>
+            <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant le nombre de patients et d'actes par jour.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+              <div class="af"><label>Patients/jour/IDE</label><input type="number" id="sim-patients-jour" value="12" min="1" max="30" oninput="runCabinetSimulator()"></div>
+              <div class="af"><label>Nb IDEs</label><input type="number" id="sim-nb-ide" value="2" min="1" max="10" oninput="runCabinetSimulator()"></div>
+              <div class="af"><label>Montant moyen/acte (€)</label><input type="number" id="sim-montant-moyen" value="8.50" step="0.5" oninput="runCabinetSimulator()"></div>
+              <div class="af"><label>Jours travaillés/mois</label><input type="number" id="sim-jours" value="22" min="1" max="31" oninput="runCabinetSimulator()"></div>
+            </div>
+            <div id="dash-cabinet-simulator-result"></div>
+          </div>
+          <!-- Optimisation CA -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="ct">🎯 Objectif CA mensuel</div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+              <input type="number" id="cab-ca-target" placeholder="Ex: 8000" style="width:150px" oninput="runCabinetCATarget()">
+              <span style="font-size:13px;color:var(--m)">€/mois</span>
+              <button class="btn bp bsm" onclick="runCabinetCATarget()"><span>🎯</span> Simuler</button>
+            </div>
+            <div id="dash-cabinet-ca-target-result"></div>
+          </div>
         </div>
         <!-- ══ STATISTIQUES AVANCÉES (ex view-stats) ══ -->
         <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
@@ -2040,10 +2121,7 @@
 
       <!-- Contenu dynamique rendu par cabinet.js -->
       <div id="cabinet-root">
-        <div class="card" style="text-align:center;padding:32px">
-          <div class="spin spinw" style="width:32px;height:32px;margin:0 auto"></div>
-          <p style="margin-top:12px;color:var(--m)">Chargement…</p>
-        </div>
+        <!-- Rempli par renderCabinetSection() à la navigation -->
       </div>
     </section>
 
