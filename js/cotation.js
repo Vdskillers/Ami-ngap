@@ -1118,14 +1118,21 @@ function renderCot(d) {
     }).join('')}</div>
   </div>` : '';
 
-  return `<div class="card">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+  return `<div class="card cot-res-premium">
+
+  <!-- ══ HEADER : total + actions ══ -->
+  <div class="cot-res-header">
     <div>
-      <div class="lbl">Total cotation</div>
-      <div style="display:flex;align-items:baseline;gap:6px">
-        <div class="ta">${(d.total || 0).toFixed(2)}</div><div class="tu">€</div>
+      <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);margin-bottom:6px">Total cotation</div>
+      <div class="cot-res-total-wrap">
+        <div class="ta">${(d.total || 0).toFixed(2)}</div>
+        <div class="tu">€</div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+      <!-- Badges statut : conformité NGAP, DRE, horaire -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center">
+        ${al.every(x => !x.startsWith('🚨') && !x.startsWith('❌')) && !al.some(x=>x.startsWith('⚠️'))
+          ? `<div class="cot-conformite-badge">✓ Conforme NGAP</div>`
+          : `<div class="cot-conformite-badge warn">⚠ Vérification requise</div>`}
         ${d.dre_requise ? '<div class="dreb">📋 DRE requise</div>' : ''}
         ${ngapBadge}
         ${horaireBadge}
@@ -1135,31 +1142,53 @@ function renderCot(d) {
         ${preuveBadge}
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;flex-shrink:0">
       <button class="btn bs bsm" onclick='printInv(${JSON.stringify(d).replace(/'/g, "&#39;")})'>📥 Télécharger facture</button>
-      ${window._editingCotation ? `<button class="btn bp bsm" onclick='_saveEditedCotation(${JSON.stringify(d).replace(/'/g, "&#39;")})' style="background:var(--a);color:#fff;border-color:var(--a)">💾 Mettre à jour la cotation patient</button>` : ''}
+      ${window._editingCotation ? `<button class="btn bp bsm" onclick='_saveEditedCotation(${JSON.stringify(d).replace(/'/g, "&#39;")})'>💾 Mettre à jour</button>` : ''}
     </div>
   </div>
-  <div class="rg">
-    <div class="rc am"><div class="rl">Part AMO (SS)</div><div class="ra">${fmt(d.part_amo)}</div><div class="rp">${d.taux_amo ? Math.round(d.taux_amo * 100) + '%' : '60%'}</div></div>
-    <div class="rc mc"><div class="rl">Part AMC</div><div class="ra">${fmt(d.part_amc)}</div><div class="rp">Complémentaire</div></div>
-    <div class="rc pa"><div class="rl">Part Patient</div><div class="ra">${fmt(d.part_patient)}</div><div class="rp">Ticket modérateur</div></div>
+
+  <!-- ══ DÉCOMPOSITION AMO / AMC / PATIENT ══ -->
+  <div class="rg" style="margin-bottom:20px">
+    <div class="rc am">
+      <div class="rl">Part AMO (SS)</div>
+      <div class="ra">${fmt(d.part_amo)}</div>
+      <div class="rp">${d.taux_amo ? Math.round(d.taux_amo * 100) + '%' : '60%'} Séc. Sociale</div>
+    </div>
+    <div class="rc mc">
+      <div class="rl">Part AMC</div>
+      <div class="ra">${fmt(d.part_amc)}</div>
+      <div class="rp">Complémentaire</div>
+    </div>
+    <div class="rc pa">
+      <div class="rl">Part Patient</div>
+      <div class="ra">${fmt(d.part_patient)}</div>
+      <div class="rp">Ticket modérateur</div>
+    </div>
   </div>
-  <div class="lbl" style="margin-bottom:10px;margin-top:16px">Détail des actes</div>
-  <div class="al">${a.length
+
+  <!-- ══ DÉTAIL DES ACTES ══ -->
+  <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);margin-bottom:10px">Détail des actes</div>
+  <div class="al" style="margin-bottom:0">${a.length
     ? a.map(x => `<div class="ar">
         <div class="ac ${cc(x.code)}">${x.code || '?'}</div>
-        <div class="an">${x.nom || ''}</div>
-        <div class="ao">×${(x.coefficient || 1).toFixed(1)}</div>
-        <div class="at">${fmt(x.total)}</div>
+        <div class="an" style="flex:1">
+          <div style="font-size:13px;color:var(--t)">${x.nom || ''}</div>
+          ${x.description && x.description !== x.nom ? `<div style="font-size:11px;color:var(--m);margin-top:1px">${x.description}</div>` : ''}
+        </div>
+        <div class="ao" style="color:var(--m)">×${(x.coefficient || 1).toFixed(1)}</div>
+        <div class="at" style="color:var(--t);font-weight:700">${fmt(x.total)}</div>
       </div>`).join('')
     : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}
   </div>
+
+  <!-- ══ ALERTES + OPTIMISATIONS + SUGGESTIONS + CPAM + SCORING ══ -->
   ${alertsBloc}
   ${opBloc}
   ${suggBloc}
   ${cpamBloc}
   ${scoringBloc}
+
   </div>`;
 }
 
