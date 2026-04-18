@@ -1216,7 +1216,7 @@
         </div>
         <div id="hstats" class="sg"></div>
         <div class="ht"><table>
-          <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th><th></th></tr></thead>
           <tbody id="htb"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
         </table></div>
       </div>
@@ -2137,21 +2137,32 @@ async function hist() {
     tbody.innerHTML = rows.map(r => {
       const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR') : '—';
       let actesTxt = '—';
+      let actesArr = [];
       try {
         // r.actes peut être un Array déjà parsé (JSONB) ou une chaîne JSON (TEXT)
-        const actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
+        actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
         actesTxt = actesArr.map(a => a.code || '').filter(Boolean).join(', ') || '—';
       } catch {}
       const alertes = (() => { try { const a = JSON.parse(r.alerts||'[]'); return a.length ? `<span style="color:var(--d);font-size:11px">⚠️ ${a.length}</span>` : ''; } catch { return ''; } })();
-      // Admin ET infirmière peuvent supprimer leurs propres cotations
+      // Sérialiser les données nécessaires à l'édition via data-attribute (évite les problèmes d'échappement inline)
+      const _rowId = `hist-row-${r.id}`;
+      // Admin ET infirmière peuvent modifier/supprimer leurs propres cotations
       // Isolation garantie côté worker : infirmiere_id = user.id
-      return `<tr>
+      return `<tr id="${_rowId}">
         <td style="font-family:var(--fm);font-size:11px;color:var(--m)">#${r.id}</td>
         <td>${date}</td>
         <td style="font-family:var(--fm);font-size:11px">${actesTxt}</td>
         <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
         <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
         <td>${alertes}</td>
+        <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
+          data-hist-id="${r.id}"
+          data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
+          data-hist-date="${(r.date_soin||'').replace(/"/g,'&quot;')}"
+          data-hist-heure="${(r.heure_soin||'').replace(/"/g,'&quot;')}"
+          data-hist-patid="${(r.patient_id||'').replace(/"/g,'&quot;')}"
+          data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
+          title="Modifier cette cotation">✏️</button></td>
         <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
@@ -2236,6 +2247,137 @@ async function resetAllHist() {
 }
 
 /* Charger l'historique automatiquement à la navigation — géré par ui.js */
+
+/* ═══════════════════════════════════════════════════════════
+   editFromHist(data) — Modifier une cotation depuis l'historique
+   Pose _editingCotation (sans _autoDetected) avant navigation
+   → bypass de la modale doublon, mode upsert garanti.
+   ═══════════════════════════════════════════════════════════ */
+async function editFromHist(data) {
+  if (!data) return;
+
+  const invNum   = data.invoice_number || null;
+  const dateSoin = data.date_soin ? data.date_soin.slice(0, 10) : null;
+
+  // ── Résoudre patientId + cotationIdx + données patient depuis l'IDB ────
+  let patientId   = data.patient_id || null;
+  let cotationIdx = -1;
+  let patData     = {};
+
+  try {
+    if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+      const allRows = await _idbGetAll(PATIENTS_STORE);
+
+      // Chercher d'abord par patient_id direct, sinon par invoice_number ou date
+      let foundRow = null;
+      if (patientId) {
+        foundRow = allRows.find(r => r.id === patientId);
+      }
+      if (!foundRow) {
+        for (const row of allRows) {
+          if (typeof _dec !== 'function') continue;
+          const p = { ...(_dec(row._data) || {}), id: row.id };
+          if (!Array.isArray(p.cotations)) continue;
+          let idx = -1;
+          if (invNum)   idx = p.cotations.findIndex(c => c.invoice_number === invNum);
+          if (idx < 0 && dateSoin) idx = p.cotations.findIndex(c => (c.date || '').slice(0, 10) === dateSoin);
+          if (idx >= 0) { foundRow = row; cotationIdx = idx; break; }
+        }
+      }
+
+      if (foundRow) {
+        patientId = foundRow.id;
+        const p   = typeof _dec === 'function' ? { ...(_dec(foundRow._data) || {}), id: foundRow.id, nom: foundRow.nom, prenom: foundRow.prenom } : {};
+        patData   = p;
+        // Résoudre cotationIdx si pas encore trouvé
+        if (cotationIdx < 0 && Array.isArray(p.cotations)) {
+          if (invNum)   cotationIdx = p.cotations.findIndex(c => c.invoice_number === invNum);
+          if (cotationIdx < 0 && dateSoin) cotationIdx = p.cotations.findIndex(c => (c.date || '').slice(0, 10) === dateSoin);
+        }
+      }
+    }
+  } catch (_e) { console.warn('[editFromHist] IDB lookup:', _e?.message); }
+
+  // ── Poser _editingCotation explicitement (sans _autoDetected) ──────────
+  // → _cotationCheckDoublon() bypassera la modale, mode upsert garanti
+  window._editingCotation = {
+    patientId:      patientId,
+    cotationIdx:    cotationIdx >= 0 ? cotationIdx : null,
+    invoice_number: invNum,
+    _fromHist:      true,
+    // PAS de _autoDetected → bypass modale doublon
+  };
+
+  // ── Naviguer vers la page cotation ─────────────────────────────────────
+  if (typeof navTo === 'function') navTo('cot', null);
+
+  setTimeout(() => {
+    // Construire le texte des actes pour le champ description
+    const actes    = Array.isArray(data.actes) ? data.actes : [];
+    const actesTxt = actes.map(a => {
+      const code = a.code || '';
+      const desc = a.description || a.label || a.nom || '';
+      return desc ? `${code} ${desc}` : code;
+    }).filter(Boolean).join(' + ') || '';
+
+    const setV = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+
+    // Champ texte principal (actes)
+    const fTxt = document.getElementById('f-txt');
+    if (fTxt) {
+      fTxt.value = actesTxt;
+      if (typeof renderLiveReco === 'function') renderLiveReco(actesTxt);
+      fTxt.focus();
+    }
+
+    // Date et heure du soin d'origine
+    if (data.date_soin) {
+      const _d = new Date(data.date_soin);
+      const fDs = document.getElementById('f-ds');
+      const fHs = document.getElementById('f-hs');
+      if (fDs) fDs.value = _d.toISOString().slice(0, 10);
+      if (fHs) { fHs.value = (data.heure_soin || _d.toTimeString().slice(0, 5)); fHs._userEdited = true; }
+    }
+
+    // Données patient depuis l'IDB (si trouvées)
+    const nomComplet = ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim();
+    setV('f-pt',  nomComplet  || '');
+    setV('f-ddn', patData.ddn     || '');
+    setV('f-amo', patData.amo     || '');
+    setV('f-amc', patData.amc     || '');
+    setV('f-exo', patData.exo     || '');
+    setV('f-pr',  patData.medecin || '');
+
+    // Badge patient
+    if (nomComplet) {
+      const badge     = document.getElementById('cot-patient-badge');
+      const badgeText = document.getElementById('cot-patient-badge-text');
+      if (badge && badgeText) {
+        const ddnStr = patData.ddn ? ' — ' + new Date(patData.ddn).toLocaleDateString('fr-FR') : '';
+        badgeText.textContent = '👤 ' + nomComplet + ddnStr;
+        badge.style.display = 'flex';
+      }
+    }
+
+    if (typeof showToast === 'function')
+      showToast(`✏️ Cotation #${data.id} chargée — modifiez et recotez pour mettre à jour.`);
+  }, 250);
+}
+
+/* Délégué d'événement pour les boutons ✏️ de l'historique */
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.hist-edit-btn');
+  if (!btn) return;
+  const data = {
+    id:             btn.dataset.histId    || '',
+    invoice_number: btn.dataset.histInv   || '',
+    date_soin:      btn.dataset.histDate  || '',
+    heure_soin:     btn.dataset.histHeure || '',
+    patient_id:     btn.dataset.histPatid || '',
+    actes:          (() => { try { return JSON.parse(decodeURIComponent(btn.dataset.histActes || '%5B%5D')); } catch { return []; } })(),
+  };
+  editFromHist(data);
+});
 
 </script>
 
