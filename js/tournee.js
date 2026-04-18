@@ -44,8 +44,6 @@ function storeImportedData(d){
     banner.style.display='block';
     const manual=$('pla-manual');
     if(manual)manual.style.display='none';
-    // Mettre à jour le toggle cabinet et le bouton "Répartir entre IDEs"
-    if (typeof _planningInitCabinetUI === 'function') _planningInitCabinetUI();
   }
   showCaFromImport();
 }
@@ -334,7 +332,7 @@ function _renderPlanningIfVisible() {
 
 /* Actualiser le planning manuellement (bouton Actualiser dans view-pla) */
 function refreshPlanning() {
-  _planningInitCabinetUI(); // toujours mettre à jour le toggle cabinet
+  _planningInitCabinetUI(); // mettre à jour toggle cabinet
   _restorePlanningIfNeeded();
   const patients = window.APP._planningData?.patients
     || APP.importedData?.patients || APP.importedData?.entries
@@ -374,26 +372,20 @@ function _planningInitCabinetUI() {
   const btnCab = document.getElementById('btn-pla-cabinet');
   const cab    = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
 
-  // Afficher dès qu'un cabinet existe — admins inclus, même sans membres (test solo)
-  // Pour la vue multi-IDE, il faut au moins 2 membres, mais le toggle reste visible
-  const hasCab     = !!(cab?.id);
-  const hasMembers = !!(cab?.members?.length > 1);
+  // Visible et cliquable dès qu'un cabinet existe — admin seul inclus
+  const hasCab = !!(cab?.id);
 
   if (wrap) {
     wrap.style.display = hasCab ? 'block' : 'none';
-    // Désactiver (griser) le toggle si pas assez de membres, mais le laisser visible
     const label = wrap.querySelector('label');
-    if (label) {
-      label.style.opacity = hasMembers ? '1' : '0.6';
-      label.title = hasMembers ? '' : 'Invitez des collègues dans votre cabinet pour activer la vue multi-IDE';
-    }
+    if (label) { label.style.opacity = '1'; label.title = ''; }
     const cb = wrap.querySelector('input[type=checkbox]');
-    if (cb) cb.disabled = !hasMembers;
+    if (cb) cb.disabled = false;
   }
   if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
 
-  // Si APP.cabinet pas encore chargé (initCabinet() async), retry dans 1s
-  if (!hasCab && !_planningCabinetInitDone) {
+  // Retry si APP.cabinet pas encore chargé (initCabinet() async)
+  if (!hasCab && !window._planningCabinetInitDone) {
     setTimeout(() => {
       const cabRetry = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
       if (cabRetry?.id) _planningInitCabinetUI();
@@ -401,14 +393,11 @@ function _planningInitCabinetUI() {
   }
 }
 
-// Flag pour éviter les retries infinis une fois le cabinet chargé
 let _planningCabinetInitDone = false;
-APP.on('cabinet', () => {
-  _planningCabinetInitDone = true;
-  _planningInitCabinetUI();
-});
-
-// Exposer globalement pour ui.js
+/** Réagir aux changements de cabinet */
+if (typeof APP !== 'undefined' && APP.on) {
+  APP.on('cabinet', () => { _planningCabinetInitDone = true; _planningInitCabinetUI(); });
+}
 window._planningInitCabinetUI = _planningInitCabinetUI;
 
 /** Génère et affiche un planning multi-IDE depuis les patients importés */
@@ -421,7 +410,7 @@ async function planningGenerateCabinet() {
     return;
   }
   const cab = APP.get ? APP.get('cabinet') : null;
-  if (!cab?.members?.length) {
+  if (!cab?.id) {
     if (typeof showToast === 'function') showToast('Vous n\'êtes pas dans un cabinet.', 'wa');
     return;
   }
@@ -2818,43 +2807,11 @@ function _openCotationComplete() {
 
 /* Ouvre la modale de cotation pour un patient spécifique depuis la liste tournée */
 async function openCotationPatient(patientIndex) {
-  // Priorité uberPatients (bilan tournée)
-  // Fallback : _planningData (planning hebdomadaire) — utilise _planIdx
-  // Fallback final : importedData
-  const uberPats     = APP.get('uberPatients') || [];
-  const planningPats = window.APP._planningData?.patients || [];
-  const impPats      = APP.importedData?.patients || APP.importedData?.entries || [];
-
-  // Choisir la bonne source selon le contexte :
-  // Si uberPatients actifs → tournée du jour
-  // Sinon chercher dans _planningData d'abord (planning hebdo), puis importedData
-  let patients;
-  if (uberPats.length) {
-    patients = uberPats;
-  } else if (planningPats.length && planningPats[patientIndex] !== undefined) {
-    patients = planningPats;
-  } else {
-    patients = impPats;
-  }
-
-  const patient = patients[patientIndex];
-  if (!patient) {
-    // Dernier recours : chercher dans toutes les sources par _planIdx
-    const allSources = [...planningPats, ...impPats];
-    const byIdx = allSources.find(p => p._planIdx === patientIndex);
-    if (!byIdx) { if (typeof showToast==='function') showToast('Patient introuvable.','wa'); return; }
-    return openCotationPatientFromPatient(byIdx);
-  }
-
-  // Déléguer au handler principal
-  return openCotationPatientFromPatient(patient);
-}
-
-/**
- * openCotationPatientFromPatient — génère et affiche la cotation d'un patient
- * Appelé par openCotationPatient() une fois le bon objet patient résolu
- */
-async function openCotationPatientFromPatient(patient) {
+  // Priorité uberPatients (bilan tournée), fallback importedData (planning)
+  const uberPats = APP.get('uberPatients') || [];
+  const impPats  = APP.importedData?.patients || APP.importedData?.entries || [];
+  const patients = uberPats.length ? uberPats : impPats;
+  const patient  = patients[patientIndex];
   if (!patient) return;
 
   // Si cotation déjà validée, proposer de la re-consulter / corriger
@@ -3059,12 +3016,14 @@ async function optimiserTourneeCabinet() {
   if (!result) return;
 
   const cab = APP.get ? APP.get('cabinet') : null;
-  if (!cab?.id || !cab.members?.length) {
-    result.innerHTML = '<div class="ai wa">Vous n\'êtes pas dans un cabinet ou aucun membre.</div>';
+  if (!cab?.id) {
+    result.innerHTML = '<div class="ai wa">Vous n\'êtes pas dans un cabinet.</div>';
     return;
   }
 
-  // Récupérer les patients importés
+  // Accepter même 1 seul membre (admin solo en test)
+  const members = cab.members?.length ? cab.members : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' }];
+
   const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   if (!patients.length) {
     result.innerHTML = '<div class="ai wa">Importez d\'abord vos patients via le Carnet patients.</div>';
@@ -3080,14 +3039,14 @@ async function optimiserTourneeCabinet() {
       const d = await apiCall('/webhook/cabinet-tournee', {
         cabinet_id: cab.id,
         patients,
-        members:    cab.members,
+        members,
       });
       assignments = d.ok ? d.assignments : null;
     } catch {}
 
     // Fallback : calcul client (cabinetPlanDay de ai-tournee.js)
     if (!assignments && typeof cabinetPlanDay === 'function') {
-      assignments = cabinetPlanDay(patients, cab.members);
+      assignments = cabinetPlanDay(patients, members);
     }
 
     if (!assignments?.length) {
@@ -3117,7 +3076,10 @@ async function optimiserTourneeCabinetCA() {
   if (!result) return;
 
   const cab = APP.get ? APP.get('cabinet') : null;
-  if (!cab?.id || !cab.members?.length) return;
+  if (!cab?.id) return;
+
+  // Accepter même 1 seul membre (admin solo en test)
+  const members = cab.members?.length ? cab.members : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' }];
 
   const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   if (!patients.length) {
@@ -3128,9 +3090,9 @@ async function optimiserTourneeCabinetCA() {
   result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Optimisation des revenus…</p></div>';
 
   try {
-    // Calcul initial
+    // Calcul initial avec members corrigé
     let assignments = typeof cabinetPlanDay === 'function'
-      ? cabinetPlanDay(patients, cab.members)
+      ? cabinetPlanDay(patients, members)
       : null;
 
     if (!assignments?.length) {
@@ -3142,9 +3104,9 @@ async function optimiserTourneeCabinetCA() {
       ? cabinetScoreDistribution(assignments)
       : null;
 
-    // Optimisation itérative
+    // Optimisation itérative avec members corrigé
     if (typeof cabinetOptimizeRevenue === 'function') {
-      assignments = cabinetOptimizeRevenue(assignments, cab.members);
+      assignments = cabinetOptimizeRevenue(assignments, members);
     }
 
     const after = typeof cabinetScoreDistribution === 'function'
