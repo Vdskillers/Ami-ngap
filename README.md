@@ -226,30 +226,6 @@
 [21] Respond to Webhook → JSON au worker
 ```
 
-### Changements v10 vs v9
-
-| Nœud | Type | Position | Rôle |
-|---|---|---|---|
-| **RL Decision Logger** | Code JS | Après Merge Cabinet | Calcule reward réel, journalise décision RL |
-| **Heatmap Zone Scorer** | Code JS | Après RL Decision Logger | Score zone géographique estimé, enrichit réponse |
-
-**Connexion modifiée :**
-```
-AVANT v9 : Merge Cabinet → Respond to Webhook
-APRÈS v10 : Merge Cabinet → RL Decision Logger → Heatmap Zone Scorer → Respond to Webhook
-```
-
-> ⚠️ Ces deux nœuds sont **entièrement transparents** : ils n'altèrent pas les actes NGAP, les montants, ni les alertes. Ils ajoutent uniquement des métadonnées `_rl_decision` et `zone_score` exploitées par le Worker v7.
-
-### Flux secondaires (inchangés)
-
-| Webhook | Chemin | Description |
-|---|---|---|
-| Webhook Historique | `/ami-historique` | Cotations par user_id + limit |
-| Webhook Supprimer | `/ami-supprimer` | Suppression par id ou patient_id |
-
----
-
 ## Modèle Smart Engine — détail v7.0
 
 ### Pipeline de décision
