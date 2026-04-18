@@ -604,6 +604,20 @@ function _renderHeureStats(arr) {
 let _toastTimer = null;
 
 function showToast(msg, type='ok') {
+  // ── Adaptateur : traduit l'ancienne signature (msg, type) vers la nouvelle
+  //    window.showToast(type, title, msg, duration) définie dans index.html
+  //    Évite l'affichage "I undefined" quand les deux coexistent.
+  if (typeof window.showToast === 'function' && window.showToast !== showToast) {
+    // Conversion ancienne → nouvelle signature
+    const typeMap = { ok:'success', warn:'warning', err:'error', info:'info' };
+    const newType = typeMap[type] || 'info';
+    // Extraire un titre court depuis le message (avant le premier '—' ou '.')
+    const titleMatch = String(msg || '').match(/^([^—\n]{1,60})/);
+    const title = titleMatch ? titleMatch[1].trim() : (msg || '');
+    window.showToast(newType, title, '', 3500);
+    return;
+  }
+  // ── Fallback : ancienne implémentation si window.showToast n'est pas encore chargée
   let toast = document.getElementById('ami-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -619,7 +633,7 @@ function showToast(msg, type='ok') {
   }
   const colors = { ok:'var(--a)', warn:'var(--w)', err:'var(--d)', info:'var(--a2)' };
   toast.style.borderColor = colors[type]||'var(--b)';
-  toast.textContent = msg;
+  toast.textContent = msg || '';
   toast.style.opacity  = '1';
   toast.style.transform= 'translateX(-50%) translateY(0)';
 
