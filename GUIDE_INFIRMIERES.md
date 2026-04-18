@@ -51,8 +51,7 @@ Ce champ, présent dans chaque fiche patient, permet de décrire en langage natu
 💡 Si ce champ est vide, AMI utilise automatiquement le champ **Pathologies** et le convertit en actes médicaux NGAP applicables pour générer la cotation lors de la Tournée IA et du Pilotage de journée.
 
 | Pathologie détectée | Actes NGAP générés |
-|---|---|
-| Diabète (type 1/2) | Injection insuline SC, glycémie capillaire |
+| Diabète (type 1/2) | Injection insuline SC|
 | Plaie / ulcère / escarre | Pansement complexe BSB, détersion |
 | Anticoagulants / HBPM | Injection SC, surveillance INR |
 | Perfusion / antibio | Perfusion IV domicile, IFD |
@@ -95,7 +94,6 @@ AMI enregistre la cotation dans une file d'attente hors-ligne. Dès que la conne
 ### Quels sont les tarifs 2026 intégrés ?
 
 | Acte | Tarif |
-|---|---|
 | AMI 1 (injection, prélèvement…) | 3,15 € |
 | AMI 4 (pansement complexe, perfusion) | 12,60 € |
 | BSA (dépendance légère) | 13,00 € |
