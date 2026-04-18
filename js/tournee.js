@@ -741,31 +741,45 @@ async function renderPlanning(d){
   }
 
   // ── Rendu vue SOLO (grille jours standard) ────────────────────────────────
+  // ── Rendu vue SOLO — même disposition tableau que la vue cabinet ─────────
   function renderSoloView() {
-    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-      ${JOURS.map((j, ji) => {
-        const dateJ   = weekDates[ji];
-        const isToday = dateJ.toISOString().slice(0,10) === todayISO;
-        const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
-        const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
-        const pDay    = byDay[j].patients;
-        return `<div style="background:var(--s);border:1px solid ${isToday ? 'rgba(0,212,170,.4)' : 'var(--b)'};border-radius:var(--r);padding:12px;min-width:0;overflow:hidden${isToday ? ';box-shadow:0 0 0 1px rgba(0,212,170,.15)' : ''}">
-          <div style="font-weight:600;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px">
-            <div>
-              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</span>
-              <div style="font-size:10px;color:var(--m);font-family:var(--fm);font-weight:400">${dateStr}</div>
-            </div>
-            ${pDay.length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px;flex-shrink:0">${pDay.length}</span>` : ''}
-          </div>
-          ${pDay.length
-            ? pDay.map(p => renderPatientCard(p, null)).join('')
-            : `<div style="font-size:12px;color:var(--m);text-align:center;padding:12px 0">—</div>`}
-        </div>`;
-      }).join('')}
-    </div>`;
+    const headerCols = JOURS.map((j, ji) => {
+      const dateJ   = weekDates[ji];
+      const isToday = dateJ.toISOString().slice(0,10) === todayISO;
+      const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
+      const pDay    = byDay[j].patients;
+      return `<div style="padding:8px 10px;background:${isToday ? 'rgba(0,212,170,.06)' : 'var(--s)'};border-top:2px solid ${isToday ? 'var(--a)' : 'var(--b)'};text-align:center;border-right:1px solid var(--b)">
+        <div style="font-weight:700;font-size:13px;color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
+        <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${dateStr}${isToday ? ' · <span style="color:var(--a)">Auj.</span>' : ''}</div>
+        ${pDay.length ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 6px;border-radius:10px;display:inline-block;margin-top:4px">${pDay.length} patient${pDay.length > 1 ? 's' : ''}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    const dayContent = JOURS.map((j, ji) => {
+      const dateJ   = weekDates[ji];
+      const isToday = dateJ.toISOString().slice(0,10) === todayISO;
+      const pDay    = byDay[j].patients;
+      return `<div style="padding:8px;min-height:60px;border-right:1px solid var(--b);background:${isToday ? 'rgba(0,212,170,.02)' : 'transparent'};vertical-align:top">
+        ${pDay.length
+          ? pDay.map(p => renderPatientCard(p, isToday ? 'var(--a)' : null)).join('')
+          : `<div style="font-size:11px;color:var(--b);text-align:center;padding:16px 0">—</div>`}
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="pla-week-grid-wrap">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--b);border-radius:8px 8px 0 0;overflow:hidden">
+          ${headerCols}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--b);border-top:none;border-radius:0 0 8px 8px;overflow:hidden;align-items:start">
+          ${dayContent}
+        </div>
+      </div>`;
   }
 
   // ── Assemblage final ──────────────────────────────────────────────────────
+  // cabinetBar uniquement en mode cabinet actif — jamais en vue solo
   const cabinetBar = cabinetActive ? `
     <div style="margin-bottom:16px;padding:10px 14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px">🏥 <strong>${cab.nom}</strong></span>
