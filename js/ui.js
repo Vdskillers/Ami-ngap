@@ -91,6 +91,7 @@ document.addEventListener('ui:navigate', e => {
   if (v === 'pla') {
     setTimeout(() => {
       if (typeof _restorePlanningIfNeeded === 'function') _restorePlanningIfNeeded();
+      if (typeof _planningInitCabinetUI === 'function') _planningInitCabinetUI();
       const hasPts = APP.importedData?.patients?.length || APP.importedData?.entries?.length;
       if (hasPts && typeof renderPlanning === 'function') {
         renderPlanning({}).catch(() => {});

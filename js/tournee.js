@@ -344,6 +344,60 @@ function refreshPlanning() {
   }
 }
 
+/* ════════════════════════════════════════════════
+   PLANNING HEBDOMADAIRE CABINET — variables d'état
+════════════════════════════════════════════════ */
+let _planningWeekOffset = 0; // 0 = semaine courante, -1 = précédente, +1 = suivante
+let _planningCabinetMode = false; // true = vue multi-IDE active
+
+/** Naviguer d'une semaine en avant/arrière */
+function planningWeekNav(delta) {
+  _planningWeekOffset += delta;
+  refreshPlanning();
+}
+
+/** Activer / désactiver la vue cabinet */
+function planningToggleCabinetView(active) {
+  _planningCabinetMode = !!active;
+  refreshPlanning();
+}
+
+/** Affiche ou masque le toggle cabinet selon APP.cabinet */
+function _planningInitCabinetUI() {
+  const wrap   = document.getElementById('pla-cabinet-toggle-wrap');
+  const btnCab = document.getElementById('btn-pla-cabinet');
+  const cab    = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
+  const hasCab = !!(cab?.id && cab.members?.length > 1);
+  if (wrap)   wrap.style.display   = hasCab ? 'block' : 'none';
+  if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
+}
+
+/** Réagir aux changements de cabinet */
+if (typeof APP !== 'undefined' && APP.on) {
+  APP.on('cabinet', () => { _planningInitCabinetUI(); });
+}
+
+/** Génère et affiche un planning multi-IDE depuis les patients importés */
+async function planningGenerateCabinet() {
+  const patients = window.APP._planningData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries || [];
+  if (!patients.length) {
+    if (typeof showToast === 'function') showToast('Aucun patient à répartir.', 'wa');
+    return;
+  }
+  const cab = APP.get ? APP.get('cabinet') : null;
+  if (!cab?.members?.length) {
+    if (typeof showToast === 'function') showToast('Vous n\'êtes pas dans un cabinet.', 'wa');
+    return;
+  }
+  // Activer automatiquement le mode cabinet et re-rendre
+  _planningCabinetMode = true;
+  const cb = document.getElementById('pla-cabinet-mode');
+  if (cb) cb.checked = true;
+  renderPlanning({}).catch(() => {});
+}
+
 async function generatePlanningFromImport(){
   if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
@@ -367,13 +421,348 @@ async function generatePlanningFromImport(){
 }
 
 async function renderPlanning(d){
-  // Patients : planning hebdomadaire (_planningData) en priorité, sinon importedData (import direct)
+  // ── Initialiser UI cabinet ──────────────────────────────────────────────
+  _planningInitCabinetUI();
+
+  // ── Patients source ─────────────────────────────────────────────────────
   const rawPatients = window.APP._planningData?.patients
     || APP.importedData?.patients
     || APP.importedData?.entries
     || [];
   const ca = rawPatients.length ? estimateRevenue(rawPatients) : null;
-  const todayISO = new Date().toISOString().split('T')[0];
+
+  // ── Calcul des dates de la semaine affichée ──────────────────────────────
+  const today      = new Date();
+  const dayOfWeek  = today.getDay(); // 0=dim, 1=lun…
+  const mondayThis = new Date(today);
+  mondayThis.setDate(today.getDate() - ((dayOfWeek + 6) % 7) + _planningWeekOffset * 7);
+  mondayThis.setHours(0, 0, 0, 0);
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
+    const d2 = new Date(mondayThis);
+    d2.setDate(mondayThis.getDate() + i);
+    return d2;
+  });
+
+  // Mettre à jour le label de semaine
+  const labelEl = document.getElementById('pla-week-label');
+  if (labelEl) {
+    if (_planningWeekOffset === 0) {
+      labelEl.textContent = 'Cette semaine';
+    } else if (_planningWeekOffset === 1) {
+      labelEl.textContent = 'Semaine prochaine';
+    } else if (_planningWeekOffset === -1) {
+      labelEl.textContent = 'Semaine dernière';
+    } else {
+      const d1s = weekDates[0].toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      const d7s = weekDates[6].toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      labelEl.textContent = `${d1s} – ${d7s}`;
+    }
+  }
+
+  const todayISO = today.toISOString().split('T')[0];
+
+  // ── Enrichir depuis le carnet patient (IDB) par patient_id ──────────────
+  let carnetIndex = {};
+  try {
+    if (typeof _idbGetAll === 'function') {
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      rows.forEach(r => {
+        const decoded = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
+        carnetIndex[r.id] = { nom: r.nom || '', prenom: r.prenom || '', ...decoded };
+      });
+    }
+  } catch(e) { console.warn('[Planning] IDB KO:', e.message); }
+
+  // ── Enrichir depuis uberPatients ─────────────────────────────────────────
+  const uberIndex = {};
+  (APP.get('uberPatients') || []).forEach(p => {
+    const k = p.patient_id || p.id;
+    if (k) uberIndex[k] = p;
+  });
+
+  // ── Construire la liste enrichie ──────────────────────────────────────────
+  const patients = rawPatients.map((p, idx) => {
+    const pid   = p.patient_id || p.id || '';
+    const fiche = carnetIndex[pid] || {};
+    const uber  = uberIndex[pid]   || {};
+
+    const nomFiche  = [fiche.prenom, fiche.nom].filter(Boolean).join(' ').trim();
+    const nomDirect = [p.prenom, p.nom].filter(Boolean).join(' ').trim();
+    const nomUber   = [uber.prenom, uber.nom].filter(Boolean).join(' ').trim();
+    let nom = nomFiche || nomDirect || nomUber;
+
+    if (!nom) {
+      const raw = (p.description || p.texte || '').trim();
+      const sep = raw.match(/^([^—\-:]+?)(?:\s*[—\-:]\s*|\s+(?:injection|pansement|toilette|prélèvement|perfusion|insuline|soin\s|bilan|visite|acte\s))/i);
+      if (sep && sep[1].trim().length > 1) {
+        nom = sep[1].trim();
+      } else {
+        const nameW = [];
+        for (const w of raw.split(/\s+/).slice(0, 4)) {
+          if (/^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ]/.test(w)) nameW.push(w); else break;
+        }
+        nom = nameW.length >= 2 ? nameW.join(' ') : '';
+      }
+    }
+
+    const date = p.date || p.date_soin || p.date_prevue || todayISO;
+
+    return {
+      ...p,
+      nom:              (fiche.nom    || p.nom    || uber.nom    || '').trim(),
+      prenom:           (fiche.prenom || p.prenom || uber.prenom || '').trim(),
+      _nomAff:          nom || 'Patient',
+      date,
+      actes_recurrents: fiche.actes_recurrents || p.actes_recurrents || '',
+      _cotation:        p._cotation || uber._cotation,
+      done:             p.done   || p._done   || uber.done   || false,
+      absent:           p.absent || p._absent || uber.absent || false,
+      _planIdx:         idx,
+    };
+  });
+
+  // ── Filtrer par semaine affichée ──────────────────────────────────────────
+  const weekStart = weekDates[0];
+  const weekEnd   = weekDates[6];
+  const patientsThisWeek = patients.filter(p => {
+    try {
+      const pd = new Date(p.date);
+      return pd >= weekStart && pd <= weekEnd;
+    } catch { return true; }
+  });
+  // Si la semaine filtrée est vide et qu'on est sur la semaine courante → afficher tous
+  const patientsToShow = (patientsThisWeek.length === 0 && _planningWeekOffset === 0)
+    ? patients
+    : patientsThisWeek;
+
+  // ── Distribution par jour de la semaine ──────────────────────────────────
+  const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+  const byDay = {};
+  JOURS.forEach((j, i) => { byDay[j] = { label: j, date: weekDates[i], patients: [] }; });
+
+  patientsToShow.forEach((p, listIdx) => {
+    let jourKey = null;
+    try {
+      const pd = new Date(p.date);
+      if (!isNaN(pd)) {
+        const nomJour = pd.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
+        jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
+      }
+    } catch {}
+    if (!jourKey) {
+      const desc = (p.description || p.texte || '').toLowerCase();
+      jourKey = JOURS.find(j => desc.includes(j)) || null;
+    }
+    if (!jourKey) jourKey = JOURS[listIdx % JOURS.length];
+    byDay[jourKey].patients.push(p);
+  });
+
+  // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
+  const cab = APP.get ? APP.get('cabinet') : null;
+  const cabinetActive = _planningCabinetMode && cab?.id && (cab.members?.length > 1);
+  let cabinetAssignments = {}; // { ide_id: { nom, prenom, patients[] } }
+
+  if (cabinetActive && typeof cabinetGeoCluster === 'function') {
+    const clusters = cabinetGeoCluster(patientsToShow, cab.members.length);
+    cab.members.forEach((m, i) => {
+      const ideId = m.id || m.infirmiere_id || `ide_${i}`;
+      cabinetAssignments[ideId] = {
+        nom:      m.nom    || '',
+        prenom:   m.prenom || '',
+        role:     m.role   || 'membre',
+        patients: (clusters[i] || []),
+        color:    ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'][i % 5],
+      };
+    });
+  }
+
+  // ── KPIs semaine ─────────────────────────────────────────────────────────
+  const totalCot = patientsToShow.reduce((s, p) => s + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
+  const nbCot    = patientsToShow.filter(p => p._cotation?.validated).length;
+  const caWeek   = ca ? ca * (patientsToShow.length / Math.max(patients.length, 1)) : null;
+
+  // ── Rendu carte patient (solo) ────────────────────────────────────────────
+  function renderPatientCard(p, ideColor) {
+    const nom     = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
+    const date    = p.date || todayISO;
+    let dateAff   = '';
+    try {
+      const d2 = new Date(date);
+      if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+    } catch {}
+    const heure   = p.heure_soin || p.heure_preferee || p.heure || '';
+    const actes   = (p.actes_recurrents || '').trim();
+    let soin      = actes || (p.description || p.texte || '').trim();
+    if (!actes && nom !== 'Patient' && soin.toLowerCase().startsWith(nom.toLowerCase())) {
+      soin = soin.slice(nom.length).replace(/^\s*[—\-:]\s*/, '').trim();
+    }
+    soin = soin.slice(0, 80);
+    const cot     = p._cotation?.validated;
+    const idx     = p._planIdx;
+    const borderL = ideColor ? `border-left:3px solid ${ideColor};` : '';
+
+    return `<div style="background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:8px;overflow:hidden;${borderL}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:600;color:var(--t);overflow-wrap:anywhere;word-break:break-word;flex:1;min-width:100px">${nom}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
+          <span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">${dateAff}</span>
+          ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">⏰ ${heure}</span>` : ''}
+          ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px">✅</span>` : ''}
+        </div>
+      </div>
+      ${soin ? `<div style="font-size:11px;color:${actes ? 'var(--a)' : 'var(--m)'};margin-bottom:6px;line-height:1.4">${actes ? '💊 ' : ''}${soin}</div>` : ''}
+      ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        <button onclick="openCotationPatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">${cot ? '✏️ Modifier' : '⚡ Coter'}</button>
+        ${cot ? `<button onclick="_planningDeleteCotation(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">🗑️</button>` : ''}
+        <button onclick="_planningRemovePatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕</button>
+      </div>
+    </div>`;
+  }
+
+  // ── Rendu vue CABINET (colonnes par IDE) ──────────────────────────────────
+  function renderCabinetView() {
+    const ideList = Object.entries(cabinetAssignments);
+    if (!ideList.length) return '<div class="ai in">Aucun membre dans ce cabinet.</div>';
+
+    // En-tête avec noms IDE + stats
+    const headerCols = ideList.map(([, a]) => {
+      const rev = a.patients.reduce((s, p) => {
+        const t = p._cotation?.validated ? (p._cotation.total||0) : 0;
+        return s + t;
+      }, 0);
+      return `<div style="padding:8px 10px;background:${a.color}18;border-top:3px solid ${a.color};border-radius:8px 8px 0 0;text-align:center">
+        <div style="font-weight:700;font-size:13px">${a.prenom} ${a.nom}</div>
+        <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${a.role === 'titulaire' ? '👑' : '👤'} ${a.patients.length} patient(s)${rev > 0 ? ` · ${rev.toFixed(2)} €` : ''}</div>
+      </div>`;
+    }).join('');
+
+    // Grille des jours pour chaque IDE
+    const dayRows = JOURS.map((j, ji) => {
+      const dateJ    = weekDates[ji];
+      const isToday  = dateJ.toISOString().slice(0,10) === todayISO;
+      const dateStr  = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      const jourCap  = j.charAt(0).toUpperCase() + j.slice(1);
+
+      const cols = ideList.map(([, a]) => {
+        const dayPats = a.patients.filter(p => {
+          try {
+            const pd = new Date(p.date);
+            if (!isNaN(pd)) {
+              const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
+              return JOURS.find(jj => nj.startsWith(jj)) === j;
+            }
+          } catch {}
+          return false;
+        });
+        return `<div style="padding:6px 8px;min-height:40px;border-right:1px solid var(--b)">
+          ${dayPats.length
+            ? dayPats.map(p => renderPatientCard(p, a.color)).join('')
+            : `<div style="font-size:11px;color:var(--b);text-align:center;padding:8px 0">—</div>`}
+        </div>`;
+      }).join('');
+
+      return `<div style="display:grid;grid-template-columns:80px repeat(${ideList.length},1fr);border-bottom:1px solid var(--b)${isToday ? ';background:rgba(0,212,170,.03)' : ''}">
+        <div style="padding:8px;border-right:1px solid var(--b);display:flex;flex-direction:column;justify-content:center">
+          <div style="font-size:12px;font-weight:${isToday ? '700' : '600'};color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">${dateStr}</div>
+          ${isToday ? '<div style="font-size:9px;color:var(--a);font-family:var(--fm)">Aujourd\'hui</div>' : ''}
+        </div>
+        ${cols}
+      </div>`;
+    }).join('');
+
+    // Calcul CA cabinet total
+    const cabinetTotal = ideList.reduce((s, [, a]) => {
+      return s + a.patients.reduce((ss, p) => ss + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
+    }, 0);
+
+    return `
+      <!-- Bandeau IDE -->
+      <div style="display:grid;grid-template-columns:80px repeat(${ideList.length},1fr);margin-bottom:0;border-radius:8px 8px 0 0;overflow:hidden">
+        <div style="padding:8px;background:var(--s);border:1px solid var(--b);border-radius:8px 0 0 0;display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;color:var(--m);font-family:var(--fm);text-align:center">Jour</span>
+        </div>
+        ${ideList.map(([, a]) => `
+          <div style="padding:8px 10px;background:${a.color}18;border-top:3px solid ${a.color};border:1px solid var(--b);text-align:center">
+            <div style="font-weight:700;font-size:13px">${a.prenom} ${a.nom}</div>
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${a.patients.length} patient(s)</div>
+          </div>`).join('')}
+      </div>
+      <!-- Grille jours × IDEs -->
+      <div style="border:1px solid var(--b);border-top:none;border-radius:0 0 8px 8px;overflow:hidden">
+        ${dayRows}
+      </div>
+      <!-- Total cabinet -->
+      ${cabinetTotal > 0 ? `
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(0,212,170,.08);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span style="font-size:13px;font-weight:600">💶 Total cotations cabinet cette semaine</span>
+        <strong style="font-size:16px;color:var(--a)">${cabinetTotal.toFixed(2)} €</strong>
+      </div>` : ''}
+    `;
+  }
+
+  // ── Rendu vue SOLO (grille jours standard) ────────────────────────────────
+  function renderSoloView() {
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+      ${JOURS.map((j, ji) => {
+        const dateJ   = weekDates[ji];
+        const isToday = dateJ.toISOString().slice(0,10) === todayISO;
+        const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+        const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
+        const pDay    = byDay[j].patients;
+        return `<div style="background:var(--s);border:1px solid ${isToday ? 'rgba(0,212,170,.4)' : 'var(--b)'};border-radius:var(--r);padding:12px;min-width:0;overflow:hidden${isToday ? ';box-shadow:0 0 0 1px rgba(0,212,170,.15)' : ''}">
+          <div style="font-weight:600;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px">
+            <div>
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</span>
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm);font-weight:400">${dateStr}</div>
+            </div>
+            ${pDay.length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px;flex-shrink:0">${pDay.length}</span>` : ''}
+          </div>
+          ${pDay.length
+            ? pDay.map(p => renderPatientCard(p, null)).join('')
+            : `<div style="font-size:12px;color:var(--m);text-align:center;padding:12px 0">—</div>`}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // ── Assemblage final ──────────────────────────────────────────────────────
+  const cabinetBar = cabinetActive ? `
+    <div style="margin-bottom:16px;padding:10px 14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px">🏥 <strong>${cab.nom}</strong></span>
+      <span style="font-size:12px;color:var(--m)">${cab.members.length} IDE(s) · Vue cabinet active</span>
+      <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="margin-left:auto"><span>⚡</span> Optimiser la répartition</button>
+    </div>` : '';
+
+  $('pbody').innerHTML = `
+    <div class="card">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div>
+          <div class="ct" style="margin-bottom:4px">📅 Planning hebdomadaire${cabinetActive ? ' — Vue cabinet' : ''}</div>
+          <div style="font-size:12px;color:var(--m);font-family:var(--fm)">${patientsToShow.length} patient(s) · ${nbCot} cotation(s) validée(s)${_planningWeekOffset !== 0 ? ` · ${_planningWeekOffset > 0 ? '+' : ''}${_planningWeekOffset} sem.` : ''}</div>
+        </div>
+        <button onclick="_planningResetAll()" style="font-family:var(--fm);font-size:11px;padding:6px 14px;border-radius:20px;border:1px solid rgba(255,95,109,.35);background:rgba(255,95,109,.06);color:var(--d);cursor:pointer;white-space:nowrap">
+          🗑️ Effacer tout le planning
+        </button>
+      </div>
+
+      <!-- KPI bande -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        ${caWeek ? `<div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CA ESTIMÉ SEMAINE</div><div style="color:var(--a);font-weight:700">${caWeek.toFixed(2)} €</div></div>` : ''}
+        ${nbCot > 0 ? `<div style="background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">COTATIONS VALIDÉES</div><div style="color:#22c55e;font-weight:700">${totalCot.toFixed(2)} €</div></div>` : ''}
+        ${cabinetActive ? `<div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CABINET</div><div style="color:var(--a);font-weight:700">${cab.members.length} IDE(s)</div></div>` : ''}
+      </div>
+
+      ${cabinetBar}
+
+      <!-- Vue dynamique : cabinet ou solo -->
+      ${cabinetActive ? renderCabinetView() : renderSoloView()}
+    </div>`;
+
+  const resPla = document.getElementById('res-pla');
+  if (resPla) resPla.classList.add('show');
+}
 
   // ── Enrichir depuis le carnet patient (IDB) par patient_id ──────────────
   // Si le patient a un patient_id qui correspond à une fiche IDB, on récupère nom/prenom
@@ -500,56 +889,37 @@ async function renderPlanning(d){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
         <button onclick="openCotationPatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">${cot ? '✏️ Modifier' : '⚡ Coter'}</button>
         ${cot ? `<button onclick="_planningDeleteCotation(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">🗑️ Suppr. cotation</button>` : ''}
-        <button onclick="_planningRemovePatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕ Retirer</button>
+        <button onclick="_planningRemovePatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕</button>
       </div>
     </div>`;
+  } // fin renderPatientCard
+
+/* Optimiser la répartition cabinet pour la semaine affichée */
+async function planningOptimiseCabinetWeek() {
+  const cab = APP.get ? APP.get('cabinet') : null;
+  if (!cab?.id || !cab.members?.length) return;
+
+  const patients = window.APP._planningData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries || [];
+  if (!patients.length) { if (typeof showToast === 'function') showToast('Aucun patient à optimiser.', 'wa'); return; }
+
+  if (typeof showToast === 'function') showToast('⚡ Optimisation en cours…', 'ok');
+
+  try {
+    // Reclustering intelligent si disponible
+    if (typeof smartCluster === 'function' && typeof cabinetGeoCluster === 'function') {
+      const clusters = smartCluster(patients, cab.members.length);
+      cab.members.forEach((m, i) => {
+        (clusters[i] || []).forEach(p => { p.performed_by = m.id || m.infirmiere_id; });
+      });
+    }
+    renderPlanning({}).catch(() => {});
+    if (typeof showToast === 'function') showToast('✅ Répartition optimisée !', 'ok');
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('❌ ' + e.message, 'err');
   }
-
-  // Total cotations validées
-  const totalCot = patients.reduce((s, p) => s + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
-  const nbCot = patients.filter(p => p._cotation?.validated).length;
-
-  $('pbody').innerHTML = `
-    <div class="card">
-      <!-- En-tête planning -->
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-        <div>
-          <div class="ct" style="margin-bottom:4px">📅 Planning hebdomadaire</div>
-          <div style="font-size:12px;color:var(--m);font-family:var(--fm)">${patients.length} patient(s) · ${nbCot} cotation(s) validée(s)</div>
-        </div>
-        <button onclick="_planningResetAll()" style="font-family:var(--fm);font-size:11px;padding:6px 14px;border-radius:20px;border:1px solid rgba(255,95,109,.35);background:rgba(255,95,109,.06);color:var(--d);cursor:pointer;white-space:nowrap">
-          🗑️ Effacer tout le planning
-        </button>
-      </div>
-
-      <!-- KPI bande -->
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        ${ca ? `<div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CA ESTIMÉ</div><div style="color:var(--a);font-weight:700">${ca.toFixed(2)} €</div></div>` : ''}
-        ${nbCot > 0 ? `<div style="background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">COTATIONS VALIDÉES</div><div style="color:#22c55e;font-weight:700">${totalCot.toFixed(2)} €</div></div>` : ''}
-      </div>
-
-      <!-- Grille des jours -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-        ${JOURS.map(j => `
-          <div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:12px;min-width:0;overflow:hidden">
-            <div style="font-weight:600;text-transform:capitalize;margin-bottom:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px">
-              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${j}</span>
-              ${byDay[j].length ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 8px;border-radius:20px;flex-shrink:0">${byDay[j].length}</span>` : ''}
-            </div>
-            ${byDay[j].length
-              ? byDay[j].map(p => renderPatientCard(p)).join('')
-              : '<div style="font-size:12px;color:var(--m);text-align:center;padding:12px 0">—</div>'}
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
-
-  // Rendre res-pla visible (contient pbody)
-  const resPla = document.getElementById('res-pla');
-  if (resPla) resPla.classList.add('show');
 }
-
-/* Supprimer la cotation d'un patient du planning sans le retirer */
 function _planningDeleteCotation(idx) {
   const patients = APP.importedData?.patients || APP.importedData?.entries || [];
   const p = patients[idx];
