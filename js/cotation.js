@@ -737,10 +737,12 @@ async function _cotationPipeline() {
     const prescripteur_id = prescSel?.value || null;
 
     // ── Correction heure soin ───────────────────────────────────────────────
-    // Si f-hs n'a pas été édité manuellement par l'utilisateur (_userEdited),
-    // utiliser l'heure locale courante (évite le bug "02:00" sur re-cotation).
+    // Si f-hs n'a pas été édité manuellement (_userEdited) ET qu'on n'est PAS
+    // en mode édition d'une cotation existante → utiliser l'heure courante.
+    // En mode édition (_editingCotation posé), on conserve l'heure d'origine.
     const _fHsEl = document.getElementById('f-hs');
-    if (_fHsEl && !_fHsEl._userEdited) {
+    const _isEditMode = !!(window._editingCotation && (window._editingCotation.invoice_number || window._editingCotation.cotationIdx != null));
+    if (_fHsEl && !_fHsEl._userEdited && !_isEditMode) {
       const _now = new Date();
       _fHsEl.value = String(_now.getHours()).padStart(2,'0') + ':' + String(_now.getMinutes()).padStart(2,'0');
     }
