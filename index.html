@@ -842,7 +842,7 @@
         <!-- ── Boutons principaux journée ── -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <button class="btn bp" id="btn-live-start" onclick="startJourneeUnifiee()"><span>▶️</span> Démarrer la journée</button>
-          <button class="btn bs" id="btn-live-stop" onclick="terminerTourneeAvecBilan()" style="display:none"><span>🏁</span> Terminer la tournée</button>
+          <button class="btn bs" id="btn-live-stop" onclick="terminerTourneeAvecBilan()" style="display:none"><span>🏁</span> Clôturer la journée</button>
           <button class="btn bs bsm" onclick="ouvrirEtatTournee()"><span>📊</span> État de la tournée</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()"><span>🗑️</span> Réinitialiser</button>
         </div>
@@ -927,233 +927,72 @@
         startDay();
       }
 
-      /* ── Terminer la tournée + importer cotations dans le carnet ── */
+      /* ── Terminer la tournée : clôture de journée uniquement ── */
       /* ════════════════════════════════════════════════════════════════
-         TERMINER LA TOURNÉE — Bilan complet
+         TERMINER LA TOURNÉE — Clôture simple
          ─────────────────────────────────────────────────────────────
-         1. Génère automatiquement toutes les cotations manquantes
-            (API en parallèle par batch, fallback local immédiat)
-            → sans bloquer, sans confirmation préalable par patient
-         2. Importe toutes les cotations dans le carnet patient (IDB)
-         3. Exporte les km de la journée dans le Journal kilométrique
-         4. Affiche le bilan avec option de correction par patient
+         Les cotations, imports IDB et km ont déjà été traités
+         patient par patient via markUberDone() (bouton ✅ Terminé).
+         Cette fonction se contente de :
+         1. Enregistrer les km restants éventuels (retour cabinet)
+         2. Arrêter le timer et clôturer la journée
+         3. Afficher le bilan final
          ════════════════════════════════════════════════════════════════ */
       async function terminerTourneeAvecBilan() {
         if (!confirm(
-          'Terminer la tournée du jour ?\n\n' +
-          '• Les cotations seront générées automatiquement pour tous les patients visités\n' +
-          '• Vous pourrez corriger chaque cotation depuis le bilan\n' +
-          '• Les km du jour seront enregistrés dans le Journal kilométrique'
+          'Clôturer la journée ?\n\n' +
+          '• Le chronomètre sera arrêté\n' +
+          '• Le bilan de la tournée sera affiché\n' +
+          '• Assurez-vous d\'avoir validé chaque patient avec ✅ Terminé'
         )) return;
 
         const patients  = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
         const snapshot  = patients.map(p => ({ ...p }));
-        const today     = new Date().toISOString();
-        const todayStr  = today.split('T')[0];
-        const u         = (typeof S !== 'undefined' && S?.user) ? S.user : {};
+        const todayStr  = new Date().toISOString().split('T')[0];
 
-        /* ── Enrichir APP.importedData avec les noms/dates des uberPatients
-           pour que le Planning hebdomadaire affiche les vraies infos ── */
-        if (APP.importedData) {
-          const key = APP.importedData.patients ? 'patients' : 'entries';
-          const arr = APP.importedData[key] || [];
-          const uberIndex = {};
-          (APP.get('uberPatients') || []).forEach(p => {
-            const k = p.patient_id || p.id;
-            if (k) uberIndex[k] = p;
-          });
-          APP.importedData[key] = arr.map(p => {
-            const uber = uberIndex[p.patient_id || p.id] || {};
-            return {
-              ...p,
-              nom:      uber.nom    || p.nom    || '',
-              prenom:   uber.prenom || p.prenom || '',
-              date:     p.date || p.date_soin || todayStr,
-              _cotation: p._cotation || uber._cotation,
-              done:     p.done  || p._done  || uber.done  || false,
-              absent:   p.absent || p._absent || uber.absent || false,
-            };
-          });
+        /* ── Traiter les patients visités mais pas encore cotés
+           (cas où ✅ Terminé a été cliqué mais la cotation async était en cours) ── */
+        const encore = snapshot.filter(p => (p.done || p._done) && !p._cotation?.validated);
+        if (encore.length > 0) {
+          if (typeof showToast === 'function') showToast(`⚙️ Finalisation de ${encore.length} cotation(s)…`);
+          const BATCH = 4;
+          for (let i = 0; i < encore.length; i += BATCH) {
+            await Promise.allSettled(encore.slice(i, i + BATCH).map(p =>
+              typeof _autoCoterEtImporterPatient === 'function'
+                ? _autoCoterEtImporterPatient(p)
+                : Promise.resolve()
+            ));
+          }
         }
 
-        /* ── Afficher un toast de progression ── */
-        if (typeof showToast === 'function') showToast('⚙️ Génération des cotations en cours…');
-
-        /* ═══════════════════════════════════════════════════════
-           1. AUTO-COTER tous les patients visités sans cotation
-              — Parallèle par batch de 4, fallback local immédiat
-           ═══════════════════════════════════════════════════════ */
-        const toCoter = snapshot.filter(p =>
-          !p._cotation?.validated && (p.done || p._done)
-        );
-
-        const _autoCoterOne = async (p) => {
-          /* ── Chercher les actes_recurrents dans la fiche patient IDB ── */
-          let actesRecurrents = '';
-          try {
-            if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-              const rows = await _idbGetAll(PATIENTS_STORE);
-              const row  = rows.find(r => r.id === p.patient_id || r.id === p.id);
-              if (row) {
-                const pat = { ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}) };
-                if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
-              }
-            }
-          } catch (_) {}
-
-          /* ── Construire le texte de cotation :
-             Priorité 1 : actes_recurrents (fiche patient)
-             Priorité 2 : description/texte importé (calendrier/texte libre)
-             Priorité 3 : pathologies converties en actes médicaux réels (NGAP) ── */
-          const texteImport = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
-          const _pathoConverti = p.pathologies
-            ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(p.pathologies) : p.pathologies)
-            : '';
-          const texte = actesRecurrents
-            ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
-            : (texteImport || _pathoConverti);
-          if (!texte) return;
-          /* Fallback local immédiat — appliqué d'abord pour ne pas bloquer */
-          let cot = (typeof autoCotationLocale === 'function')
-            ? autoCotationLocale(texte)
-            : { actes: [], total: 0 };
-          /* Tenter l'API en arrière-plan (meilleur résultat si réseau dispo) */
-          try {
-            const d = await (typeof apiCall === 'function' ? apiCall('/webhook/ami-calcul', {
-              mode: 'ngap', texte,
-              infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
-              adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
-              date_soin: todayStr,
-              heure_soin: p.heure_soin || p.heure_preferee || '',
-              _live_auto: true,
-            }) : Promise.reject('no apiCall'));
-            if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
-          } catch { /* silencieux — le fallback local est déjà prêt */ }
-          p._cotation = { actes: cot.actes || [], total: parseFloat(cot.total || 0), auto: true, validated: true };
-        };
-
-        /* Lancer par batch de 4 simultanées */
-        const BATCH = 4;
-        for (let i = 0; i < toCoter.length; i += BATCH) {
-          await Promise.allSettled(toCoter.slice(i, i + BATCH).map(_autoCoterOne));
-        }
-
-        /* ═══════════════════════════════════════════════════════
-           2. IMPORTER TOUTES LES COTATIONS DANS LE CARNET (IDB)
-           ═══════════════════════════════════════════════════════ */
-        let importCount = 0;
-        for (const p of snapshot) {
-          if (!p._cotation?.validated) continue;
-          try {
-            const rows = await _idbGetAll(PATIENTS_STORE);
-            let row    = rows.find(r => r.id === p.patient_id || r.id === p.id);
-            let pat;
-
-            if (row) {
-              pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
-            } else {
-              const newId  = p.patient_id || p.id || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
-              const parts  = (p.nom ? [p.prenom||'', p.nom] : (p.description || p.texte || 'Patient').split(' '));
-              pat = {
-                id: newId,
-                nom:    p.nom    || parts.slice(-1)[0]       || 'Patient',
-                prenom: p.prenom || parts.slice(0,-1).join(' ') || '',
-                adresse: p.adresse || p.addressFull || '',
-                lat: p.lat || null, lng: p.lng || null,
-                created_at: today, updated_at: today, cotations: [],
-              };
-            }
-
-            if (!pat.cotations) pat.cotations = [];
-            pat.cotations.push({
-              date:   today,
-              actes:  p._cotation.actes || [],
-              total:  parseFloat(p._cotation.total || 0),
-              soin:   (p.description || p.texte || '').slice(0, 120),
-              source: p._cotation.auto ? 'tournee_auto' : 'tournee',
-            });
-            pat.updated_at = today;
-
-            await _idbPut(PATIENTS_STORE, {
-              id: pat.id, nom: pat.nom, prenom: pat.prenom,
-              _data: _enc(pat), updated_at: today,
-            });
-            importCount++;
-          } catch (e) { console.warn('[AMI] Import cotation IDB KO:', e.message); }
-        }
-
-        /* ── Synchroniser les cotations locales vers Supabase (arrière-plan) ── */
-        if (typeof _syncCotationsToSupabase === 'function') {
-          _syncCotationsToSupabase(snapshot).catch(() => {});
-        }
-
-        /* ═══════════════════════════════════════════════════════
-           3. EXPORTER LES KM DU JOUR → Journal kilométrique
-           ═══════════════════════════════════════════════════════ */
+        /* ── Enregistrer le km de retour cabinet ── */
         try {
-          const _hav = (la1, lo1, la2, lo2) => {
-            const R = 6371, dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          };
+          const lastPos  = APP.get('_lastVisitedPos');
+          const startPt  = APP.get('startPoint');
+          let kmRetour   = 0;
+          if (lastPos?.lat && startPt?.lat) {
+            const _hav = (la1, lo1, la2, lo2) => {
+              const R = 6371, dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
+              const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
+              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            };
+            kmRetour = _hav(parseFloat(lastPos.lat), parseFloat(lastPos.lng), parseFloat(startPt.lat), parseFloat(startPt.lng));
+            const curKm = parseFloat(APP.get('tourneeKmJour') || 0);
+            APP.set('tourneeKmJour', curKm + kmRetour);
+            try { localStorage.setItem('ami_tournee_km', String(curKm + kmRetour)); } catch {}
+          }
 
-          let kmTotal = 0;
-          let kmSource = '';
-
-          /* Source 1 : km OSRM stockés lors de l'optimisation (APP state + localStorage persisté) */
-          const osrmKm = parseFloat(APP.get('tourneeKmJour') || 0)
+          /* ── Écrire le journal kilométrique ── */
+          const kmTotal = parseFloat(APP.get('tourneeKmJour') || 0)
             || parseFloat(localStorage.getItem('ami_tournee_km') || 0);
-          if (osrmKm > 0) { kmTotal = osrmKm; kmSource = 'OSRM'; }
 
-          /* Source 2 : badge HTML "🚗 X km" dans la vue tournée */
-          if (!kmTotal) {
-            const badge = document.querySelector('#tbody .dreb');
-            if (badge) {
-              const m = badge.textContent.match(/([\d.,]+)\s*km/i);
-              if (m) { kmTotal = parseFloat(m[1].replace(',','.')); kmSource = 'badge'; }
-            }
-          }
-
-          /* Source 3 : haversine sur TOUS les patients GPS (visités + non visités) */
-          if (!kmTotal) {
-            const start = APP.get('startPoint');
-            // Utiliser snapshot d'abord, puis uberPatients comme fallback (meilleurs coords GPS)
-            const gpsSource = snapshot.some(p => p.lat && p.lng)
-              ? snapshot
-              : (APP.get('uberPatients') || []);
-            const withGPS = gpsSource.filter(p => p.lat && p.lng && parseFloat(p.lat) && parseFloat(p.lng));
-            if (withGPS.length >= 1) {
-              let pts = [];
-              if (start?.lat && start?.lng) pts.push(start);
-              pts = [...pts, ...withGPS];
-              let dist = 0;
-              for (let i = 0; i < pts.length - 1; i++) {
-                dist += _hav(parseFloat(pts[i].lat), parseFloat(pts[i].lng), parseFloat(pts[i+1].lat), parseFloat(pts[i+1].lng));
-              }
-              if (start?.lat && pts.length > 1) {
-                const last = pts[pts.length-1];
-                dist += _hav(parseFloat(last.lat), parseFloat(last.lng), parseFloat(start.lat), parseFloat(start.lng));
-              }
-              if (dist > 0.5) { kmTotal = dist; kmSource = 'GPS patients'; }
-            }
-          }
-
-          /* Source 4 : estimation ~ 3 km/patient si aucune GPS */
-          if (!kmTotal) {
-            const nbP = snapshot.filter(p => p.done || p._done).length;
-            if (nbP > 0) { kmTotal = nbP * 3; kmSource = 'estimation (3 km/patient)'; }
-          }
-
-          console.info('[AMI] Km tournée — source:', kmSource, '— total:', kmTotal.toFixed(1));
-
-          const nbVisites = snapshot.filter(p => p.done || p._done).length;
           if (kmTotal > 0) {
-            // Clé isolée par userId — sync navigateur ↔ mobile
-            let _kmUidT = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
-            if (!_kmUidT) { try { _kmUidT = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
-            const KM_KEY = 'ami_km_journal_' + String(_kmUidT || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+            let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+            if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+            const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
             let journal = [];
             try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
+            const nbVisites = snapshot.filter(p => p.done || p._done).length;
             journal.push({
               id:      Date.now(),
               date:    todayStr,
@@ -1164,18 +1003,18 @@
               _source: 'tournee_auto',
             });
             localStorage.setItem(KM_KEY, JSON.stringify(journal));
-            // Sync silencieux vers le serveur (navigateur ↔ mobile)
             if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
             APP.set('tourneeKmJour', 0);
+            APP.set('_lastVisitedPos', null);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
           }
-        } catch (e) { console.warn('[AMI] Import km KO:', e.message); }
+        } catch (e) { console.warn('[AMI] Km retour cabinet KO:', e.message); }
 
         /* ── Capturer le CA AVANT de stopper le timer ── */
         const caJournee = (typeof _LIVE_CA_TOTAL !== 'undefined' ? _LIVE_CA_TOTAL : 0)
           || snapshot.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
 
-        /* ── Arrêter le timer live (sans confirm, sans reset immédiat) ── */
+        /* ── Arrêter le timer live ── */
         if (typeof _stopDayInternal === 'function') _stopDayInternal(caJournee);
         else if (typeof stopDay === 'function') stopDay();
 
@@ -1183,10 +1022,11 @@
         if (typeof showToast === 'function') {
           const cotAuto = snapshot.filter(p => p._cotation?.auto).length;
           const cotManu = snapshot.filter(p => p._cotation?.validated && !p._cotation?.auto).length;
+          const importCount = snapshot.filter(p => p._cotation?.validated).length;
           showToast(
-            `🏁 Tournée terminée · CA : ${caJournee.toFixed(2)} € · ${importCount} cotation(s) importée(s)` +
-            (cotAuto  ? ` (${cotAuto} auto)` : '') +
-            (cotManu  ? ` (${cotManu} manuelle${cotManu>1?'s':''})` : '')
+            `🏁 Journée clôturée · CA : ${caJournee.toFixed(2)} € · ${importCount} cotation(s)` +
+            (cotAuto ? ` (${cotAuto} auto)` : '') +
+            (cotManu ? ` (${cotManu} manuelle${cotManu>1?'s':''})` : '')
           );
         }
 
