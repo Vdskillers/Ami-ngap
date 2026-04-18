@@ -1183,3 +1183,16 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .rapport-hero-icon{width:44px;height:44px;font-size:18px}
   .rapport-hero-title{font-size:18px}
 }
+
+/* ══════════════════════════════════════════════
+   SÉLECTEUR BARÈME KILOMÉTRIQUE — partagé
+══════════════════════════════════════════════ */
+.km-prefs-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:rgba(79,168,255,.04);border:1px solid rgba(79,168,255,.15);border-radius:10px;margin-bottom:14px}
+.km-prefs-lbl{font-size:10px;font-family:var(--fm);color:var(--m);letter-spacing:.5px;text-transform:uppercase;flex-shrink:0;white-space:nowrap}
+.km-cv-select{padding:5px 10px;background:var(--s);border:1px solid rgba(79,168,255,.25);color:var(--t);border-radius:8px;font-size:12px;font-family:var(--fm);cursor:pointer;transition:border-color .15s}
+.km-cv-select:focus{outline:none;border-color:var(--a2)}
+.km-elec-label{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--t);white-space:nowrap;padding:4px 10px;border-radius:8px;border:1px solid rgba(79,168,255,.2);background:none;transition:background .15s}
+.km-elec-label:hover{background:rgba(79,168,255,.06)}
+.km-elec-label input[type=checkbox]{accent-color:var(--a2);width:14px;height:14px}
+.km-prefs-info{font-size:10px;font-family:var(--fm);color:var(--a2);margin-left:auto;white-space:nowrap;opacity:.8}
+@media(max-width:768px){.km-prefs-info{display:none}}
