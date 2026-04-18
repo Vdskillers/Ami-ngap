@@ -362,7 +362,7 @@ function suggestOptimizations(rows) {
       const k='ik'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'lost_revenue',msg:'Kilométrage mentionné sans IK coté — +0,35 €/km'});}
     }
     // Nuit non majorée
-    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')) {
+    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')&&!actes.includes('NUIT')&&!actes.includes('nuit')) {
       const k='nuit'; if(!seen.has(k)){seen.add(k);suggestions.push({type:'optimization',msg:'Acte de nuit sans majoration nuit (9,15 € ou 18,30 €) — vérifier'});}
     }
     // ALD + reste patient > 0
@@ -421,7 +421,7 @@ function computeLoss(rows) {
     const h=r.heure_soin||'';
     if((txt.includes('domicile')||txt.includes('chez'))&&!actes.includes('IFD')) loss+=2.75;
     if(/\d+\s*km/.test(txt)&&!actes.includes('IK')) loss+=3.5;
-    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')) loss+=9.15;
+    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')&&!actes.includes('NUIT')&&!actes.includes('nuit')) loss+=9.15;
   });
   return loss;
 }
