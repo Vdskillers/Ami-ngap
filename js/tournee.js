@@ -2836,6 +2836,22 @@ function _openCotationComplete() {
 
     if (typeof cotClearPatient === 'function') cotClearPatient();
 
+    // ── Date et heure du soin d'origine ──────────────────────────────────────
+    // Conserve toujours la date/heure du patient, jamais l'heure courante.
+    // _userEdited = true bloque l'écrasement par extras.js / cotation.js.
+    const fDs = document.getElementById('f-ds');
+    const fHs = document.getElementById('f-hs');
+    if (fDs) {
+      const dateSoin = (patient.date || patient.date_soin || '').slice(0, 10);
+      if (dateSoin) fDs.value = dateSoin;
+      else fDs.value = new Date().toISOString().slice(0, 10); // aujourd'hui si aucune date
+    }
+    if (fHs) {
+      // Heure du soin : priorité heure_soin > heure_preferee > heure > vide
+      fHs.value = (patient.heure_soin || patient.heure_preferee || patient.heure || '').trim().slice(0, 5);
+      fHs._userEdited = true; // bloque tout écrasement ultérieur
+    }
+
     const badge     = document.getElementById('cot-patient-badge');
     const badgeText = document.getElementById('cot-patient-badge-text');
     if (badge && badgeText && nomComplet) {
