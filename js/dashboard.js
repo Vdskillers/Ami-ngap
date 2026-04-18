@@ -263,8 +263,8 @@ function renderDashboard(arr) {
   const explanations = explainAnomalies(arr, anomalyResult);
   const suggestions = suggestOptimizations(arr);
   renderAI(explanations, suggestions);
-  const loss = computeLoss(arr);
-  showLossAlert(loss);
+  const lossResult = computeLoss(arr);
+  showLossAlert(lossResult);
 
   // Notice admin si applicable
   const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
@@ -414,30 +414,140 @@ function renderAI(explanations, suggestions) {
 }
 
 /* ============================================================
-   9. CALCUL PERTE ESTIMÉE + ALERTE
+   9. CALCUL PERTE ESTIMÉE + ALERTE — v2.0
+   Analyse ligne par ligne avec détail par source de perte.
+   Retourne { total, details[], byType{} }
    ============================================================ */
 function computeLoss(rows) {
-  let loss=0;
-  rows.forEach(r=>{
-    const txt=(r.texte_soin||r.description||'').toLowerCase();
-    const actes=r.actes||'';
-    const h=r.heure_soin||'';
-    if((txt.includes('domicile')||txt.includes('chez'))&&!actes.includes('IFD')) loss+=2.75;
-    if(/\d+\s*km/.test(txt)&&!actes.includes('IK')) loss+=3.5;
-    if(h&&(h<'08:00'||h>'20:00')&&!actes.includes('majoration_nuit')&&!actes.includes('MN')&&!actes.includes('NUIT')&&!actes.includes('nuit')) loss+=9.15;
+  let total = 0;
+  const details = [];
+  const byType  = { ifd: 0, ik: 0, nuit: 0, dimanche: 0, ald: 0 };
+
+  rows.forEach(r => {
+    const txt   = (r.texte_soin || r.description || '').toLowerCase();
+    const actes = r.actes || '';
+    const h     = r.heure_soin || '';
+    const date  = r.date_soin  || '';
+    const nom   = r.patient_nom || r.nom || '';
+
+    // ── IFD manquant ────────────────────────────────────────
+    // Seulement si le texte mentionne explicitement le domicile
+    // ET que ni IFD ni IK (déplacement) ne sont cotés
+    const mentionDomicile = txt.includes('domicile') || txt.includes(' chez ');
+    const aIFD = actes.includes('IFD') || actes.includes('ifd');
+    if (mentionDomicile && !aIFD) {
+      details.push({ type: 'ifd', montant: 2.75, label: 'IFD manquant', date, nom });
+      byType.ifd += 2.75;
+      total += 2.75;
+    }
+
+    // ── IK manquant ─────────────────────────────────────────
+    // Uniquement si un nombre de km est explicitement mentionné
+    const kmMatch = txt.match(/(\d+(?:[.,]\d+)?)\s*km/);
+    const aIK     = actes.includes('IK') || actes.includes(' ik');
+    if (kmMatch && !aIK) {
+      const km       = parseFloat(kmMatch[1].replace(',', '.'));
+      const montantIK = Math.round(km * 0.35 * 100) / 100;
+      details.push({ type: 'ik', montant: montantIK, label: `IK non coté (${km} km × 0,35 €)`, date, nom });
+      byType.ik += montantIK;
+      total     += montantIK;
+    }
+
+    // ── Majoration nuit manquante ────────────────────────────
+    // Seulement si l'heure est hors plage 08:00–20:00
+    // ET qu'aucun code majoration nuit n'est présent
+    const aNuit = actes.includes('MN') || actes.toLowerCase().includes('nuit') || actes.includes('majoration_nuit');
+    if (h && !aNuit) {
+      const hh = parseInt(h.slice(0, 2), 10);
+      const mm = parseInt(h.slice(3, 5) || '0', 10);
+      const tMin = hh * 60 + mm;
+      // Nuit profonde 00:00–06:00 → +18,30€ · Nuit 20:00–00:00 et 06:00–08:00 → +9,15€
+      if (tMin >= 0 && tMin < 360) {
+        details.push({ type: 'nuit', montant: 18.30, label: `Majoration nuit profonde (${h})`, date, nom });
+        byType.nuit += 18.30;
+        total       += 18.30;
+      } else if (tMin >= 1200 || (tMin >= 360 && tMin < 480)) {
+        details.push({ type: 'nuit', montant: 9.15, label: `Majoration nuit (${h})`, date, nom });
+        byType.nuit += 9.15;
+        total       += 9.15;
+      }
+    }
+
+    // ── Dimanche/férié sans majoration ──────────────────────
+    if (date) {
+      const dow = new Date(date).getDay();
+      const aDim = actes.includes('MD') || actes.toLowerCase().includes('dimanche') || actes.toLowerCase().includes('ferie') || actes.toLowerCase().includes('férié');
+      if ((dow === 0) && !aDim) {
+        details.push({ type: 'dimanche', montant: 9.15, label: 'Majoration dimanche/férié manquante', date, nom });
+        byType.dimanche += 9.15;
+        total           += 9.15;
+      }
+    }
+
+    // ── ALD avec reste patient > 0 (incohérence, pas perte mais alerte) ──
+    if ((r.exo || '').toUpperCase() === 'ALD' && parseFloat(r.part_patient || 0) > 0) {
+      details.push({ type: 'ald', montant: 0, label: 'ALD avec reste patient > 0 — incohérence CPAM', date, nom });
+    }
   });
-  return loss;
+
+  return { total: Math.round(total * 100) / 100, details, byType };
 }
 
-function showLossAlert(loss) {
-  const el=$('dash-loss');
+function showLossAlert(lossResult) {
+  const el = $('dash-loss');
   if (!el) return;
-  if (loss<5) {
-    el.innerHTML='<div class="ai su">✅ Aucune perte de revenu manifeste détectée</div>';
+
+  // Compatibilité ancienne signature (nombre seul)
+  const loss    = typeof lossResult === 'number' ? lossResult : (lossResult?.total || 0);
+  const details = lossResult?.details || [];
+  const byType  = lossResult?.byType  || {};
+
+  if (loss < 1) {
+    el.innerHTML = '<div class="ai su">✅ Aucune perte de revenu manifeste détectée sur la période</div>';
     return;
   }
-  el.innerHTML=`<div class="ai er">🔔 Perte estimée : <strong>${loss.toFixed(2)} €</strong> sur la période analysée</div>
-    <div class="ai in" style="margin-top:6px;font-size:12px">💡 Sources possibles : IFD oubliés · IK non cotés · Majorations nuit manquantes. Utilisez "Vérifier soin" pour corriger.</div>`;
+
+  // Résumé par type
+  const byTypeLines = [
+    byType.ifd      > 0 ? `IFD oubliés : <strong>−${byType.ifd.toFixed(2)} €</strong>`           : '',
+    byType.ik       > 0 ? `IK non cotés : <strong>−${byType.ik.toFixed(2)} €</strong>`            : '',
+    byType.nuit     > 0 ? `Majorations nuit manquantes : <strong>−${byType.nuit.toFixed(2)} €</strong>` : '',
+    byType.dimanche > 0 ? `Majorations dimanche : <strong>−${byType.dimanche.toFixed(2)} €</strong>`    : '',
+  ].filter(Boolean);
+
+  // Lignes détail (max 5 premières, hors ALD qui sont des alertes)
+  const lossLines = details
+    .filter(d => d.montant > 0)
+    .slice(0, 5)
+    .map(d => {
+      const dateStr = d.date ? ` <span style="opacity:.6;font-size:11px">(${d.date.slice(0,10)})</span>` : '';
+      const nomStr  = d.nom  ? ` — ${d.nom}` : '';
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,95,109,.1)">
+        <span>• ${d.label}${nomStr}${dateStr}</span>
+        <span style="flex-shrink:0;margin-left:12px;font-weight:600">−${d.montant.toFixed(2)} €</span>
+      </div>`;
+    }).join('');
+
+  const moreCount = details.filter(d => d.montant > 0).length - 5;
+  const moreStr   = moreCount > 0 ? `<div style="font-size:11px;color:var(--m);margin-top:4px">… et ${moreCount} autre(s) non affiché(s)</div>` : '';
+
+  const aldAlert = details.some(d => d.type === 'ald')
+    ? `<div class="ai wa" style="margin-top:8px;font-size:12px">⚠️ Incohérence ALD détectée — reste patient > 0 alors qu'exonération active</div>`
+    : '';
+
+  el.innerHTML = `
+    <div class="ai er" style="flex-direction:column;gap:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span>🔔 <strong>Alertes revenus manqués</strong></span>
+        <span style="font-size:16px;font-weight:700;color:#ff9aa2">−${loss.toFixed(2)} €</span>
+      </div>
+      ${byTypeLines.length ? `<div style="font-size:12px;display:flex;flex-wrap:wrap;gap:8px;opacity:.85">${byTypeLines.join(' · ')}</div>` : ''}
+    </div>
+    ${lossLines ? `<div style="margin-top:8px;font-size:12px;padding:8px 0">${lossLines}${moreStr}</div>` : ''}
+    <div class="ai in" style="margin-top:8px;font-size:12px">
+      💡 Ouvrez chaque soin concerné et utilisez <strong>"Vérifier soin"</strong> pour ajouter les éléments manquants.
+    </div>
+    ${aldAlert}`;
 }
 
 /* ============================================================
