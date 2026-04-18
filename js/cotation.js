@@ -582,9 +582,9 @@ function renderCotCabinet(d) {
    Retourne true si on peut continuer, false si on attend le choix utilisateur.
 ════════════════════════════════════════════════ */
 async function _cotationCheckDoublon(onUpdate, onNew) {
-  // Si _editingCotation est déjà positionné manuellement (pas auto-détecté),
-  // l'utilisateur sait ce qu'il fait → pas de modale
-  if (window._editingCotation && !window._editingCotation._autoDetected) return true;
+  // Si l'utilisateur a déjà fait un choix explicite via la modale de ce cycle,
+  // on ne re-affiche pas la modale (évite une boucle infinie)
+  if (window._editingCotation && window._editingCotation._userChose) return true;
 
   try {
     const _patNomCheck = (gv('f-pt') || '').trim();
@@ -658,12 +658,13 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
     // Handlers boutons
     _existMod.querySelector('#cot-doublon-update').onclick = () => {
       _existMod.remove();
-      // Poser _editingCotation → mode mise à jour
+      // Poser _editingCotation → mode mise à jour (choix explicite → _userChose pour ne pas re-afficher la modale)
       window._editingCotation = {
-        patientId:     _foundRow.id,
-        cotationIdx:   _existIdx,
+        patientId:      _foundRow.id,
+        cotationIdx:    _existIdx,
         invoice_number: _existCot.invoice_number || null,
-        _autoDetected: false, // choix explicite de l'utilisateur
+        _userChose:     true, // choix explicite utilisateur → bypass la modale au prochain appel
+        _fromTournee:   (window._editingCotation || {})._fromTournee || false,
       };
       onUpdate();
     };
@@ -998,16 +999,15 @@ async function _cotationPipeline() {
       // Dispatch pour tout listener externe
       document.dispatchEvent(new CustomEvent('ami:cotation_done', { detail: { invoice_number: _invoiceId } }));
     }
-    // ── Nettoyer _editingCotation auto-détecté (ne doit pas persister entre cotations) ──
-    // UNIQUEMENT si c'était une détection automatique — ne pas toucher aux refs manuelles
-    // posées explicitement depuis la fiche patient (sans _autoDetected)
-    if (window._editingCotation?._autoDetected) {
+    // ── Nettoyer _editingCotation après pipeline (auto-détecté ET choix utilisateur via modale) ──
+    // Ne pas toucher aux refs posées explicitement depuis la fiche patient (_fromTournee sans _userChose)
+    if (window._editingCotation?._autoDetected || window._editingCotation?._userChose) {
       window._editingCotation = null;
     }
 
   } catch (e) {
-    // Nettoyer aussi en cas d'erreur (auto-détecté seulement)
-    if (window._editingCotation?._autoDetected) {
+    // Nettoyer aussi en cas d'erreur
+    if (window._editingCotation?._autoDetected || window._editingCotation?._userChose) {
       window._editingCotation = null;
     }
     _clearSlowTimers();

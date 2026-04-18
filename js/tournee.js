@@ -2850,15 +2850,9 @@ async function openCotationPatient(patientIndex) {
     return;
   }
 
-  // Si cotation déjà validée, proposer de la re-consulter / corriger
-  if (patient._cotation?.validated) {
-    showCotationModal(patient, patient._cotation, null);
-    return;
-  }
-
   // ── Vérification doublon IDB avant l'appel IA ────────────────────────────
-  // Si une cotation existe déjà dans le carnet pour ce patient à cette date,
-  // proposer de la mettre à jour ou d'en créer une nouvelle.
+  // Si une cotation existe déjà dans le carnet pour ce patient à cette date
+  // (qu'elle soit validée ou non), proposer de la mettre à jour ou d'en créer une nouvelle.
   const _todayCheck = new Date().toISOString().slice(0, 10);
   try {
     if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
@@ -2924,6 +2918,7 @@ async function openCotationPatient(patientIndex) {
                   cotationIdx:    _existIdx,
                   invoice_number: _existCot.invoice_number || null,
                   _fromTournee:   true,
+                  _userChose:     true,
                 };
                 showCotationModal(patient, _existCot, null);
                 resolve('update');
@@ -2939,15 +2934,28 @@ async function openCotationPatient(patientIndex) {
               };
             });
 
-            // Mettre à jour → showCotationModal déjà appelé, sortir
+            // Mettre à jour / Annuler → showCotationModal déjà appelé ou abandon, sortir
             if (_choice === 'update' || _choice === 'cancel') return;
             // Nouvelle cotation → continuer le flux normal (appel API ci-dessous)
+          } else if (patient._cotation?.validated) {
+            // Cotation validée en mémoire mais absente en IDB → ouvrir directement la modale
+            showCotationModal(patient, patient._cotation, null);
+            return;
           }
         }
+      } else if (patient._cotation?.validated) {
+        // Pas de fiche IDB → ouvrir directement la modale sur la cotation en mémoire
+        showCotationModal(patient, patient._cotation, null);
+        return;
       }
     }
   } catch (_doubErr) {
     console.warn('[openCotationPatient] doublon check:', _doubErr.message);
+    // Fallback : si cotation validée, ouvrir la modale quand même
+    if (patient._cotation?.validated) {
+      showCotationModal(patient, patient._cotation, null);
+      return;
+    }
   }
 
   // Sinon générer une cotation automatique via API ou fallback local
