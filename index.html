@@ -2690,6 +2690,19 @@ document.addEventListener('click', function(e) {
 window.showToast = function(type, title, msg, duration=4000) {
   const container = document.getElementById('toast-container');
   if (!container) return;
+  // ── Compatibilité ancienne signature showToast(msg, type) ──────────────
+  // Détecte si appelé avec l'ancienne API : 1er arg = message texte long, 2ème = 'ok'/'warn'/'err'
+  const _newTypes = ['success','warning','error','info'];
+  if (!_newTypes.includes(type)) {
+    // Ancienne signature détectée : (msg, oldType) → convertir
+    const _oldTypeMap = { ok:'success', warn:'warning', err:'error', info:'info' };
+    const _oldMsg  = String(type || '');
+    const _oldType = _oldTypeMap[String(title || 'ok')] || 'info';
+    type  = _oldType;
+    title = _oldMsg || '';
+    msg   = '';
+    duration = 3500;
+  }
   const icons = { success:'✓', warning:'⚠', error:'✕', info:'💡' };
   const id = 'toast-' + Date.now();
   const el = document.createElement('div');
@@ -2698,7 +2711,7 @@ window.showToast = function(type, title, msg, duration=4000) {
   el.innerHTML = `
     <div class="toast-icon">${icons[type]||'ℹ'}</div>
     <div class="toast-body">
-      <div class="toast-title">${title}</div>
+      <div class="toast-title">${title != null ? title : ''}</div>
       ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
     </div>
     <button class="toast-close" onclick="dismissToast('${id}')">✕</button>
