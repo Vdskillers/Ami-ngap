@@ -349,11 +349,9 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   const ca2  = sum(moisPrecedent);
   const ca3  = sum(trois_mois);
   const evo  = ca2 > 0 ? ((ca1 - ca2) / ca2 * 100) : 0;
-  const evoColor = evo >= 0 ? 'var(--a)' : 'var(--d)';
-  const evoArrow = evo >= 0 ? '↑' : '↓';
+  const evoColor = evo >= 0 ? 'var(--ok)' : 'var(--d)';
 
   // ── Km du mois depuis le journal local ───────────────────────────────────
-  // Clé isolée par userId — même logique que _kmKey() dans infirmiere-tools.js
   let kmMois = 0, kmDeduction = 0;
   try {
     let kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
@@ -393,74 +391,107 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   moisActuel.forEach(r => { const pid = r.patient_id||'?'; patFreq[pid]=(patFreq[pid]||0)+1; });
   const topPatient = Object.entries(patFreq).sort((a,b)=>b[1]-a[1])[0];
 
+  // Delta badge helper
+  const deltaBadge = (pct) => {
+    if (Math.abs(pct) < 0.5) return `<span class="sc-delta nt">→ stable</span>`;
+    return pct > 0
+      ? `<span class="sc-delta up">↑ +${Math.abs(pct).toFixed(1)}%</span>`
+      : `<span class="sc-delta dn">↓ −${Math.abs(pct).toFixed(1)}%</span>`;
+  };
+
   el.innerHTML = `
-    <!-- Comparatif mois/mois -->
-    <div class="card" style="margin-bottom:16px">
-      <div class="ct">📊 Comparatif mensuel</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
-        <div class="sc g"><div class="si">📅</div><div class="sv">${ca1.toFixed(0)}€</div><div class="sn">Mois actuel</div></div>
-        <div class="sc b"><div class="si">🗓️</div><div class="sv">${ca2.toFixed(0)}€</div><div class="sn">Mois précédent</div></div>
-        <div class="sc ${evo>=0?'g':'r'}"><div class="si">${evoArrow}</div><div class="sv" style="color:${evoColor}">${evo>=0?'+':''}${evo.toFixed(1)}%</div><div class="sn">Évolution</div></div>
-        <div class="sc o"><div class="si">📆</div><div class="sv">${joursTravailles}j</div><div class="sn">Jours travaillés</div></div>
-        <div class="sc b"><div class="si">💹</div><div class="sv">${caParJour.toFixed(0)}€</div><div class="sn">CA/jour moyen</div></div>
-        <div class="sc g"><div class="si">📈</div><div class="sv">${ca3.toFixed(0)}€</div><div class="sn">3 mois cumulés</div></div>
-        ${kmMois > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${kmMois} km</div><div class="sn">Km ce mois</div></div>` : ''}
-        ${kmDeduction > 0 ? `<div class="sc g"><div class="si">💸</div><div class="sv">${kmDeduction} €</div><div class="sn">Déd. fiscale km</div></div>` : ''}
+    <!-- ── Séparateur titre ── -->
+    <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div class="dash-section-title" style="margin-bottom:0">Comparatif mensuel</div>
+    </div>
+
+    <!-- KPIs comparatif — même style .sc avec delta -->
+    <div class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin-bottom:20px">
+      <div class="sc g">
+        <div class="si">📅</div>
+        <div class="sv">${ca1.toFixed(0)} €</div>
+        <div class="sn">Mois actuel</div>
+        ${deltaBadge(evo)}
       </div>
-      ${evo < -10 ? `<div class="ai wa">📉 Baisse de CA de ${Math.abs(evo).toFixed(0)}% vs mois précédent — vérifiez vos cotations manquées</div>` : ''}
-      ${evo > 15 ? `<div class="ai su">🚀 Excellente progression +${evo.toFixed(0)}% ce mois !</div>` : ''}
+      <div class="sc b">
+        <div class="si">🗓️</div>
+        <div class="sv">${ca2.toFixed(0)} €</div>
+        <div class="sn">Mois précédent</div>
+      </div>
+      <div class="sc ${evo>=0?'g':'r'}">
+        <div class="si">${evo>=0?'↑':'↓'}</div>
+        <div class="sv">${evo>=0?'+':''}${evo.toFixed(1)}%</div>
+        <div class="sn">Évolution M/M-1</div>
+      </div>
+      <div class="sc o">
+        <div class="si">📆</div>
+        <div class="sv">${joursTravailles}j</div>
+        <div class="sn">Jours travaillés</div>
+      </div>
+      <div class="sc b">
+        <div class="si">💹</div>
+        <div class="sv">${caParJour.toFixed(0)} €</div>
+        <div class="sn">CA / jour moyen</div>
+      </div>
+      <div class="sc g">
+        <div class="si">📈</div>
+        <div class="sv">${ca3.toFixed(0)} €</div>
+        <div class="sn">3 mois cumulés</div>
+      </div>
+      ${kmMois > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${kmMois} km</div><div class="sn">Km ce mois</div></div>` : ''}
+      ${kmDeduction > 0 ? `<div class="sc g"><div class="si">💸</div><div class="sv">${kmDeduction} €</div><div class="sn">Déd. fiscale km</div></div>` : ''}
     </div>
 
-    <!-- Évolution des actes -->
-    <div class="card" style="margin-bottom:16px">
-      <div class="ct">🩺 Évolution des actes (M vs M-1)</div>
-      ${allCodes.length ? `<div class="al">
-        ${allCodes.map(code => {
-          const n1 = freq1[code]||0, n2 = freq2[code]||0;
-          const diff = n1 - n2;
-          const pct  = n2 > 0 ? Math.round((n1-n2)/n2*100) : (n1>0?100:0);
-          const color= diff > 0 ? 'var(--a)' : diff < 0 ? 'var(--d)' : 'var(--m)';
-          const icon = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
-          return `<div class="ar">
-            <div class="ac">${code}</div>
-            <div class="an"><div style="height:5px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(n1/Math.max(...Object.values(freq1),1)*100,100)}%;background:var(--a);transition:width .4s"></div></div></div>
-            <div class="ao">${n1}× ce mois</div>
-            <div style="font-family:var(--fm);font-size:11px;color:${color};min-width:44px;text-align:right">${icon} ${n2}×</div>
-          </div>`;
-        }).join('')}
-      </div>` : '<div class="ai in">Pas encore assez de données pour comparer.</div>'}
-    </div>
+    ${evo < -10 ? `<div class="dash-alert-strip r" style="margin-bottom:20px;border-radius:10px"><div class="dash-alert-dot"></div><div class="dash-alert-text">Baisse de CA de ${Math.abs(evo).toFixed(0)}% vs mois précédent — vérifiez vos cotations manquées</div></div>` : ''}
+    ${evo > 15  ? `<div class="dash-alert-strip g" style="margin-bottom:20px;border-radius:10px"><div class="dash-alert-dot"></div><div class="dash-alert-text">Excellente progression <strong>+${evo.toFixed(0)}%</strong> ce mois !</div></div>` : ''}
 
-    <!-- Meilleure heure de travail -->
-    <div class="card">
-      <div class="ct">⏰ Analyse horaire</div>
-      ${_renderHeureStats(moisActuel)}
-    </div>`;
+    <!-- ── Évolution des actes ── -->
+    <div style="border-top:1px solid var(--b);margin-bottom:20px"></div>
+    <div class="dash-section-title" style="margin-bottom:14px">
+      Évolution des actes (M vs M-1)
+      <span class="dash-section-badge b">${allCodes.length} actes</span>
+    </div>
+    ${allCodes.length ? `
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+      ${allCodes.map(code => {
+        const n1 = freq1[code]||0, n2 = freq2[code]||0;
+        const diff = n1 - n2;
+        const pct  = n2 > 0 ? Math.round((n1-n2)/n2*100) : (n1>0?100:0);
+        const color= diff > 0 ? 'var(--ok)' : diff < 0 ? 'var(--d)' : 'var(--m)';
+        const icon = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
+        const maxN = Math.max(...Object.values(freq1), 1);
+        return `<div class="acte-row-prem">
+          <div class="acte-rank">${icon}</div>
+          <div class="acte-code-pill">${code}</div>
+          <div class="acte-bar-track"><div class="acte-bar-fill-prem" style="width:${Math.min(n1/maxN*100,100)}%"></div></div>
+          <div style="font-size:11px;font-family:var(--fm);color:var(--t);width:28px;text-align:right;flex-shrink:0">${n1}×</div>
+          <div style="font-size:10px;font-family:var(--fm);color:${color};width:42px;text-align:right;flex-shrink:0">${diff>0?'+':''}${diff}× M-1</div>
+        </div>`;
+      }).join('')}
+    </div>` : '<div class="ai in" style="margin-bottom:20px">Pas encore assez de données pour comparer.</div>'}
+
+    <!-- ── Analyse horaire ── -->
+    <div style="border-top:1px solid var(--b);margin-bottom:20px"></div>
+    <div class="dash-section-title" style="margin-bottom:14px">Analyse horaire</div>
+    ${_renderHeureStats(moisActuel)}
+  `;
 }
 
 function _renderHeureStats(arr) {
   const byHour = {};
 
-  // Pré-charger le cache persistant (heure_soin mémorisé par id entre sessions)
   const heureCache = _loadHeureCache();
-
-  // Pré-charger l'index horaire local (planning isolé par userId)
   const heureIdx = _buildHeureIndex();
 
   arr.forEach(r => {
     let h = '';
-
-    // Priorité 1 : heure_soin retournée par l'API ("HH:MM" ou "HH:MM:SS")
     const hSoin = (r.heure_soin || '').trim().slice(0, 2);
     if (hSoin && !isNaN(parseInt(hSoin))) h = hSoin;
-
-    // Priorité 2 : cache persistant par id (mémorisé lors des sessions précédentes)
     if (!h && r.id) {
       const cached = heureCache[String(r.id)];
       if (cached) h = (cached || '').trim().slice(0, 2);
     }
-
-    // Priorité 3 : index planning local par date
     if (!h) {
       const date = (r.date_soin || '').slice(0, 10);
       if (date && heureIdx[date]) {
@@ -468,21 +499,15 @@ function _renderHeureStats(arr) {
         if (!isNaN(parseInt(hLocal))) h = hLocal;
       }
     }
-
-    // Priorité 4 : cache persistant par date (fallback si pas d'id)
     if (!h) {
       const date = (r.date_soin || '').slice(0, 10);
       if (date && heureCache[date]) h = (heureCache[date] || '').trim().slice(0, 2);
     }
-
-    // Priorité 5 : timestamp ISO dans date_soin ("2024-01-15T14:30:00")
     if (!h && r.date_soin && r.date_soin.includes('T')) {
       const timePart = r.date_soin.split('T')[1] || '';
       const hIso = timePart.slice(0, 2);
       if (hIso && !isNaN(parseInt(hIso)) && parseInt(hIso) < 24) h = hIso;
     }
-
-    // Priorité 6 : texte libre (notes) — "14h30", "matin", "après-midi", "soir"
     if (!h) {
       const txt = (r.notes || r.description || r.texte || '').toLowerCase();
       const matchH = txt.match(/\b(\d{1,2})[h:]\d{0,2}\b/);
@@ -492,7 +517,6 @@ function _renderHeureStats(arr) {
       else if (/apr[eè]s.?midi\b|afternoon/.test(txt)) h = '14';
       else if (/\bsoir\b|evening/.test(txt))           h = '19';
     }
-
     if (h && !isNaN(parseInt(h))) {
       const k = parseInt(h);
       if (k >= 0 && k <= 23) byHour[k] = (byHour[k] || 0) + 1;
@@ -504,24 +528,53 @@ function _renderHeureStats(arr) {
       <span>Aucune heure de soin détectée sur cette période.</span>
       <span style="font-size:11px;color:var(--m);font-family:var(--fm);line-height:1.5">
         💡 Renseignez le champ <strong>Heure du soin</strong> lors de la cotation,
-        ou importez un planning avec des créneaux horaires — le graphique apparaîtra automatiquement.
+        ou importez un planning avec des créneaux horaires.
       </span>
     </div>`;
   }
 
   const max = Math.max(...Object.values(byHour), 1);
   const hours = Array.from({length:24},(_,i)=>i);
-  return `<div style="display:flex;align-items:flex-end;gap:2px;height:80px;margin-top:12px">
-    ${hours.map(h => {
-      const count = byHour[h]||0;
-      const height = count > 0 ? Math.max(8, Math.round(count/max*70)) : 3;
-      const color  = h < 8 ? 'rgba(255,95,109,.6)' : h < 12 ? 'var(--a)' : h < 18 ? 'var(--a2)' : 'rgba(255,181,71,.7)';
-      return `<div title="${h}h : ${count} soin(s)" style="flex:1;height:${height}px;background:${count>0?color:'var(--b)'};border-radius:2px 2px 0 0;opacity:${count>0?1:0.3}"></div>`;
-    }).join('')}
-  </div>
-  <div style="display:flex;gap:0;margin-top:4px;font-family:var(--fm);font-size:8px;color:var(--m)">
-    ${hours.map(h => `<div style="flex:1;text-align:center">${h%6===0?h+'h':''}</div>`).join('')}
-  </div>`;
+
+  // Tranches horaires colorées identiques au dashboard
+  const barColor = h => h < 8 ? 'rgba(255,95,109,.7)' : h < 12 ? 'var(--a)' : h < 18 ? 'var(--a2)' : 'rgba(255,181,71,.8)';
+
+  // Heure pic
+  const peakHour = Object.entries(byHour).sort((a,b)=>b[1]-a[1])[0];
+
+  return `
+    <!-- Graphe barres 24h -->
+    <div style="display:flex;align-items:flex-end;gap:2px;height:80px;margin-bottom:4px">
+      ${hours.map(h => {
+        const count = byHour[h]||0;
+        const height = count > 0 ? Math.max(6, Math.round(count/max*72)) : 3;
+        return `<div title="${h}h : ${count} soin(s)" style="flex:1;height:${height}px;background:${count>0?barColor(h):'var(--b)'};border-radius:2px 2px 0 0;opacity:${count>0?1:0.25};transition:height .3s;cursor:help"></div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:0;margin-bottom:14px;font-family:var(--fm);font-size:8px;color:var(--m)">
+      ${hours.map(h => `<div style="flex:1;text-align:center">${h%6===0?h+'h':''}</div>`).join('')}
+    </div>
+
+    <!-- Légende couleurs + stat pic -->
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--m)"><div style="width:10px;height:10px;border-radius:2px;background:rgba(255,95,109,.7)"></div>Nuit (0–7h)</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--m)"><div style="width:10px;height:10px;border-radius:2px;background:var(--a)"></div>Matin (8–11h)</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--m)"><div style="width:10px;height:10px;border-radius:2px;background:var(--a2)"></div>Après-midi (12–17h)</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--m)"><div style="width:10px;height:10px;border-radius:2px;background:rgba(255,181,71,.8)"></div>Soir (18–23h)</div>
+      ${peakHour ? `<div style="margin-left:auto;font-size:11px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:2px 10px;border-radius:10px">⏰ Pic : ${peakHour[0]}h (${peakHour[1]} soins)</div>` : ''}
+    </div>
+
+    <!-- Heatmap compacte 24 cases (0h→23h) -->
+    <div style="display:grid;grid-template-columns:repeat(24,1fr);gap:3px;margin-bottom:4px">
+      ${hours.map(h => {
+        const count = byHour[h]||0;
+        const intensity = count===0 ? 0 : count < max*0.25 ? 1 : count < max*0.5 ? 2 : count < max*0.75 ? 3 : 4;
+        return `<div class="hm-cell h${intensity}" title="${h}h : ${count} soin(s)"></div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--m);font-family:var(--fm)">
+      <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span>
+    </div>`;
 }
 
 /* ═══════════════════════════════════════════════

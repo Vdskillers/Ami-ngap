@@ -720,16 +720,8 @@ function forecastRevenue(daily) {
 
 /* ════════════════════════════════════════════════
    DASHBOARD CABINET — Statistiques multi-IDE
-   ────────────────────────────────────────────────
-   loadDashCabinet()   — charge les stats cabinet
-   runCabinetSimulator() — simulateur revenus
-   runCabinetCATarget()  — objectif CA mensuel
 ════════════════════════════════════════════════ */
 
-/**
- * loadDashCabinet — charge les stats cabinet et les affiche
- * Appelé automatiquement si APP.cabinet est actif
- */
 async function loadDashCabinet() {
   const section = document.getElementById('dash-cabinet-section');
   if (!section) return;
@@ -741,50 +733,49 @@ async function loadDashCabinet() {
   }
   section.style.display = 'block';
 
-  // KPIs cabinet (calculés depuis les données déjà chargées + status sync)
   const kpisEl = document.getElementById('dash-cabinet-kpis');
   const revsEl = document.getElementById('dash-cabinet-ide-revenues');
   if (!kpisEl) return;
 
-  // Récupérer les stats depuis le status sync (dernière sync de chaque membre)
   let members = cab.members || [];
-
-  // KPIs globaux estimés
   const nbIDE     = members.length;
-  const caEstime  = nbIDE * 280; // estimation 280€/j par IDE — sera remplacé par données réelles
-  const caMessage = nbIDE > 1 ? `${nbIDE} IDEs actifs` : '1 IDE';
+  const caEstime  = nbIDE * 280;
 
-  kpisEl.innerHTML = [
-    { icon: '🏥', val: caMessage,             label: 'Cabinet',              cls: 'g' },
-    { icon: '👥', val: `${nbIDE} membre(s)`,  label: 'IDEs',                 cls: 'b' },
-    { icon: '💶', val: `~${(caEstime).toFixed(0)} €/j`, label: 'CA estimé/jour', cls: 'g' },
-    { icon: '📅', val: `~${(caEstime * 22).toFixed(0)} €`, label: 'Projection mensuelle', cls: 'o' },
-  ].map(k => `<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
+  // KPIs cabinet — même style .sc avec delta
+  const kpis = [
+    { icon: '🏥', val: nbIDE > 1 ? `${nbIDE} IDEs` : '1 IDE', label: 'Cabinet actif',       cls: 'g' },
+    { icon: '👥', val: `${nbIDE} membre(s)`,                   label: 'IDEs',                cls: 'b' },
+    { icon: '💶', val: `~${caEstime.toFixed(0)} €/j`,          label: 'CA estimé / jour',    cls: 'g' },
+    { icon: '📅', val: `~${(caEstime*22).toFixed(0)} €`,       label: 'Projection mensuelle',cls: 'o' },
+  ];
+  kpisEl.innerHTML = kpis.map(k =>
+    `<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`
+  ).join('');
 
-  // Revenus par IDE — avec avatars colorés
+  // Revenus par IDE — avatars colorés + barres
   if (revsEl) {
     const avatarColors = ['col-a', 'col-b', 'col-c', 'col-d', 'col-e'];
+    const colorVars    = ['var(--a)', 'var(--a2)', 'var(--w)', 'var(--d)', 'var(--ok)'];
     revsEl.innerHTML = members.map((m, i) => {
-      const colorVar = ['var(--a)', 'var(--a2)', 'var(--w)', 'var(--d)', 'var(--ok)'][i % 5];
-      const pct = Math.round(100 / members.length);
+      const colorVar = colorVars[i % 5];
+      const pct      = Math.round(100 / members.length);
       const initials = ((m.prenom||'').charAt(0) + (m.nom||'').charAt(0)).toUpperCase();
       return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        <div class="pt-avatar ${avatarColors[i % 5]}" style="width:36px;height:36px;font-size:13px">${initials}</div>
+        <div class="pt-avatar ${avatarColors[i%5]}" style="width:36px;height:36px;font-size:13px">${initials}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
             <span style="font-size:13px;font-weight:600">${m.prenom} ${m.nom}</span>
-            <span style="font-size:13px;color:${colorVar};font-family:var(--fm);font-weight:600">~${(caEstime).toFixed(0)} €/j</span>
+            <span style="font-size:13px;color:${colorVar};font-family:var(--fm);font-weight:600">~${caEstime.toFixed(0)} €/j</span>
           </div>
           <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden">
             <div style="height:100%;width:${pct}%;background:${colorVar};border-radius:3px;transition:width .5s"></div>
           </div>
-          <div style="font-size:10px;color:var(--m);margin-top:3px;font-family:var(--fm)">${m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre'}</div>
+          <div style="font-size:10px;color:var(--m);margin-top:3px;font-family:var(--fm)">${m.role==='titulaire'?'👑 Titulaire':'👤 Membre'}</div>
         </div>
       </div>`;
     }).join('') || '<div class="ai in" style="font-size:12px">Aucun membre.</div>';
   }
 
-  // Lancer le simulateur avec valeurs par défaut
   runCabinetSimulator();
 }
 
@@ -804,27 +795,33 @@ function runCabinetSimulator() {
   const caJourCab    = caJourIDE * nbIDE;
   const caMoisCab    = caJourCab * jours;
   const caMoisIDE    = caJourIDE * jours;
-
-  // Estimation avec optimisation cabinet (+15% grâce à la répartition intelligente des actes)
   const gainOptim    = caMoisCab * 0.15;
   const caMoisOptim  = caMoisCab + gainOptim;
-
-  // Décotes évitées estimées (sans cabinet : ~20% de décotes, avec cabinet : ~5%)
   const decotesEvitees = Math.round(patientsJour * nbIDE * jours * 0.15 * 3.15);
 
+  // Barre de progression objectif
+  const objectif = caMoisOptim;
+  const pct = Math.min(100, Math.round(caMoisCab / objectif * 100));
+
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:12px">
+    <div class="sg" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));margin-bottom:14px">
       <div class="sc g"><div class="si">💶</div><div class="sv">${caMoisCab.toFixed(0)} €</div><div class="sn">CA mensuel cabinet</div></div>
       <div class="sc b"><div class="si">👤</div><div class="sv">${caMoisIDE.toFixed(0)} €</div><div class="sn">CA moyen / IDE</div></div>
-      <div class="sc g"><div class="si">⚡</div><div class="sv">+${gainOptim.toFixed(0)} €</div><div class="sn">Gain optimisation IA</div></div>
+      <div class="sc g"><div class="si">⚡</div><div class="sv">+${gainOptim.toFixed(0)} €</div><div class="sn">Gain optimisation IA</div><span class="sc-delta up">+15%</span></div>
       <div class="sc o"><div class="si">📉</div><div class="sv">+${decotesEvitees.toFixed(0)} €</div><div class="sn">Décotes évitées</div></div>
     </div>
-    <div class="ai su" style="font-size:12px">
-      💡 <strong>Avec optimisation IA :</strong> CA estimé <strong>${caMoisOptim.toFixed(0)} €/mois</strong>
-      (${nbIDE} IDE × ${patientsJour} patients/j × ${jours} jours)
+    <!-- Barre objectif avec optimisation -->
+    <div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--m);margin-bottom:5px;font-family:var(--fm)">
+        <span>CA actuel</span>
+        <span style="color:var(--a)">Avec optimisation IA : <strong>${caMoisOptim.toFixed(0)} €/mois</strong></span>
+      </div>
+      <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--a2),var(--a));border-radius:4px;transition:width .6s"></div>
+      </div>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--m)">
-      Ces projections sont indicatives. Basées sur ${patientsJour} patients/IDE/jour à ${montantMoyen.toFixed(2)} €/acte moyen.
+    <div style="font-size:11px;color:var(--m)">
+      Basé sur ${patientsJour} patients/IDE/jour · ${montantMoyen.toFixed(2)} €/acte · ${jours} jours travaillés
     </div>`;
 }
 
@@ -846,46 +843,60 @@ function runCabinetCATarget() {
   const currentEstim = nbIDE * 12 * montant * jours;
   const diff         = target - currentEstim;
   const reached      = currentEstim >= target;
+  const pctAtteint   = Math.min(100, Math.round(currentEstim / target * 100));
+
+  // Barre de progression toujours affichée
+  const progressBar = `
+    <div style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--m);margin-bottom:5px;font-family:var(--fm)">
+        <span>Estimé : <strong style="color:var(--t)">${currentEstim.toFixed(0)} €</strong></span>
+        <span>Objectif : <strong style="color:var(--t)">${target.toFixed(0)} €</strong></span>
+      </div>
+      <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pctAtteint}%;background:${reached?'linear-gradient(90deg,var(--a),var(--ok))':'linear-gradient(90deg,var(--a2),var(--a))'};border-radius:4px;transition:width .6s"></div>
+      </div>
+      <div style="text-align:right;font-size:10px;color:var(--m);font-family:var(--fm);margin-top:3px">${pctAtteint}% de l'objectif</div>
+    </div>`;
 
   if (reached) {
-    el.innerHTML = `<div class="ai su" style="font-size:13px">✅ Objectif atteignable avec votre configuration actuelle ! CA estimé : <strong>${currentEstim.toFixed(0)} €</strong> ≥ ${target.toFixed(0)} €</div>`;
+    el.innerHTML = `
+      <div class="dash-alert-strip g" style="border-radius:10px;margin-bottom:0">
+        <div class="dash-alert-dot"></div>
+        <div class="dash-alert-text">✅ Objectif atteignable ! CA estimé <strong>${currentEstim.toFixed(0)} €</strong> ≥ ${target.toFixed(0)} €</div>
+      </div>
+      ${progressBar}`;
     return;
   }
 
-  // Calculer ce qu'il faut pour atteindre la cible
   const patientsSupp   = Math.ceil(diff / (montant * jours * nbIDE));
   const actesMoyenSupp = diff / (nbIDE * 12 * jours);
   const joursSupp      = Math.ceil(diff / (nbIDE * 12 * montant));
 
   el.innerHTML = `
-    <div class="ai wa" style="font-size:13px;margin-bottom:10px">
-      ⚠️ Il manque <strong>${diff.toFixed(0)} €</strong> pour atteindre l'objectif de ${target.toFixed(0)} €
+    <div class="dash-alert-strip" style="border-radius:10px;margin-bottom:12px">
+      <div class="dash-alert-dot"></div>
+      <div class="dash-alert-text">Il manque <strong>${diff.toFixed(0)} €</strong> pour atteindre l'objectif</div>
     </div>
-    <div style="font-size:12px;color:var(--m);margin-bottom:8px">💡 Pour y arriver, vous pouvez :</div>
+    <div class="dash-section-title" style="margin-bottom:10px">Pour y arriver</div>
     <div style="display:flex;flex-direction:column;gap:6px">
-      <div class="ai in" style="font-size:12px">
-        📋 <strong>+${patientsSupp} patient(s)/IDE/jour</strong>
-        → soit ${(12 + patientsSupp)} patients/j au lieu de 12
+      <div class="acte-row-prem" style="gap:12px;align-items:center">
+        <div style="font-size:14px;flex-shrink:0">📋</div>
+        <div style="flex:1;font-size:12px"><strong>+${patientsSupp} patient(s)/IDE/jour</strong> <span style="color:var(--m)">→ soit ${12+patientsSupp} patients/j</span></div>
       </div>
-      <div class="ai in" style="font-size:12px">
-        💶 <strong>+${actesMoyenSupp.toFixed(2)} €/acte moyen</strong>
-        → optimiser la cotation NGAP (ajouter IFD, IK, majorations)
+      <div class="acte-row-prem" style="gap:12px;align-items:center">
+        <div style="font-size:14px;flex-shrink:0">💶</div>
+        <div style="flex:1;font-size:12px"><strong>+${actesMoyenSupp.toFixed(2)} €/acte moyen</strong> <span style="color:var(--m)">→ optimiser la cotation NGAP</span></div>
       </div>
-      <div class="ai in" style="font-size:12px">
-        📅 <strong>+${joursSupp} jour(s)/mois</strong>
-        → soit ${jours + joursSupp} jours travaillés
+      <div class="acte-row-prem" style="gap:12px;align-items:center">
+        <div style="font-size:14px;flex-shrink:0">📅</div>
+        <div style="flex:1;font-size:12px"><strong>+${joursSupp} jour(s)/mois</strong> <span style="color:var(--m)">→ soit ${jours+joursSupp} jours travaillés</span></div>
       </div>
-      ${nbIDE < 3 ? `<div class="ai su" style="font-size:12px">🏥 <strong>Ajouter 1 IDE au cabinet</strong> → CA estimé : <strong>${(currentEstim + currentEstim / nbIDE).toFixed(0)} €</strong></div>` : ''}
+      ${nbIDE < 3 ? `<div class="acte-row-prem" style="gap:12px;align-items:center;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:8px;padding:8px 10px">
+        <div style="font-size:14px;flex-shrink:0">🏥</div>
+        <div style="flex:1;font-size:12px"><strong>Ajouter 1 IDE</strong> <span style="color:var(--a)">→ CA estimé : ${(currentEstim+currentEstim/nbIDE).toFixed(0)} €</span></div>
+      </div>` : ''}
     </div>
-    <div style="margin-top:10px">
-      <div style="height:10px;background:var(--b);border-radius:5px;overflow:hidden">
-        <div style="height:100%;width:${Math.min(100, (currentEstim/target*100)).toFixed(1)}%;background:var(--a);border-radius:5px;transition:width .5s"></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--m);margin-top:4px">
-        <span>${currentEstim.toFixed(0)} € estimé</span>
-        <span>${target.toFixed(0)} € objectif</span>
-      </div>
-    </div>`;
+    ${progressBar}`;
 }
 
 /* Déclencher le dashboard cabinet quand APP.cabinet change */
