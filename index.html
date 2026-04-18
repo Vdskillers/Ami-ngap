@@ -1211,23 +1211,46 @@
       <h1 class="pt">Historique <em>des soins</em></h1>
       <p class="ps">Cotations · Historique · Recherche</p>
       <div class="card">
-        <!-- Notice admin (masquée pour les infirmières, activée par auth.js) -->
+        <!-- Notices -->
         <div id="his-admin-notice" style="display:none;margin-bottom:14px" class="ai in">
-          🛡️ <strong>Mode admin — vos données de test uniquement</strong> · Vous ne voyez que les cotations enregistrées depuis votre compte admin. Les données des infirmières sont physiquement inaccessibles.
+          🛡️ <strong>Mode admin — vos données de test uniquement</strong> · Vous ne voyez que les cotations enregistrées depuis votre compte admin.
         </div>
         <div class="priv" id="his-nurse-notice"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p>Seule l'infirmière connectée voit ses propres données. Isolation stricte par compte.</p></div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-          <input type="text" id="hq" placeholder="🔍 Rechercher..." style="width:200px" oninput="hist()">
-          <select id="hp" onchange="hist()" style="width:160px">
+
+        <!-- Barre de recherche + période -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <input type="text" id="hq" placeholder="🔍 Rechercher patient, acte…" style="max-width:220px" oninput="hist()">
+          <div class="dash-period-pill">
+            <button class="dpp-btn active" onclick="setHistPeriod(this,'month')">Mois</button>
+            <button class="dpp-btn" onclick="setHistPeriod(this,'lastmonth')">M-1</button>
+            <button class="dpp-btn" onclick="setHistPeriod(this,'3month')">3 mois</button>
+            <button class="dpp-btn" onclick="setHistPeriod(this,'year')">Année</button>
+          </div>
+          <select id="hp" style="display:none" onchange="hist()">
             <option value="month">Ce mois</option>
             <option value="lastmonth">Mois précédent</option>
             <option value="3month">3 derniers mois</option>
             <option value="year">Cette année</option>
           </select>
-          <button class="btn bs bsm" onclick="hist()">↻ Actualiser</button>
-          <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
+          <button class="btn bs bsm" onclick="hist()">↻</button>
+          <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Réinitialiser</button>
         </div>
-        <div id="hstats" class="sg"></div>
+
+        <!-- Filtres rapides pills -->
+        <div class="hist-filter-bar">
+          <button class="hist-filter-pill active" onclick="histSetFilter(this,'all')">Tous</button>
+          <button class="hist-filter-pill" onclick="histSetFilter(this,'ok')">✅ Conformes</button>
+          <button class="hist-filter-pill wa" onclick="histSetFilter(this,'dre')">📋 DRE requis</button>
+          <button class="hist-filter-pill er" onclick="histSetFilter(this,'alerts')">⚠ Alertes</button>
+          <button class="hist-sort-btn" id="hist-sort-btn" onclick="histToggleSort()">
+            <span id="hist-sort-icon">↕</span> <span id="hist-sort-label">Date</span>
+          </button>
+        </div>
+
+        <!-- KPIs mini -->
+        <div class="hist-kpi-row" id="hstats"></div>
+
+        <!-- Table -->
         <div class="ht"><table>
           <thead><tr><th>Patient</th><th>Date</th><th>Actes</th><th>Total</th><th>Statut</th><th>Alertes</th><th></th><th></th></tr></thead>
           <tbody id="htb"><tr><td colspan="8" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
@@ -1606,23 +1629,50 @@
     <section class="view" id="view-rapport">
       <h1 class="pt">Rapport <em>d'activité</em></h1>
       <p class="ps">Rapport mensuel complet · Export PDF · Pour votre comptable et l'URSSAF</p>
-      <div class="card" style="margin-bottom:16px">
-        <div class="ct">📄 Générer le rapport</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-          <select id="rapport-period" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
-            <option value="month">Ce mois-ci</option>
-            <option value="lastmonth">Mois précédent</option>
-            <option value="3month">3 derniers mois</option>
-            <option value="year">Cette année</option>
-          </select>
-          <button class="btn bp" id="btn-rapport" onclick="generateRapportMensuel()"><span>📄</span> Télécharger le rapport</button>
-          <button class="btn bv bsm" onclick="previewRapport()">👁️ Aperçu</button>
+
+      <!-- Sélecteur période pill -->
+      <div class="dash-period-pill" style="margin-bottom:18px;display:inline-flex">
+        <button class="dpp-btn active" onclick="setRapportPeriod(this,'month')">Ce mois</button>
+        <button class="dpp-btn" onclick="setRapportPeriod(this,'lastmonth')">Mois préc.</button>
+        <button class="dpp-btn" onclick="setRapportPeriod(this,'3month')">3 mois</button>
+        <button class="dpp-btn" onclick="setRapportPeriod(this,'year')">Année</button>
+      </div>
+      <select id="rapport-period" style="display:none">
+        <option value="month">Ce mois-ci</option>
+        <option value="lastmonth">Mois précédent</option>
+        <option value="3month">3 derniers mois</option>
+        <option value="year">Cette année</option>
+      </select>
+
+      <!-- Carte hero rapport -->
+      <div class="rapport-hero" style="margin-bottom:18px">
+        <div class="rapport-hero-icon">📄</div>
+        <div class="rapport-hero-body">
+          <div class="rapport-hero-title">Rapport mensuel</div>
+          <div class="rapport-hero-sub" id="rapport-period-label">Ce mois · NGAP 2026.1 · Prêt à exporter</div>
+          <div class="rapport-includes">
+            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>KPIs revenus</strong> · décomposition AMO/AMC/Patient</div>
+            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>Détail chronologique</strong> de chaque cotation</div>
+            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>Top actes</strong> · graphique journalier · analyse horaire</div>
+            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>N° ADELI · RPPS</strong> · numéros de factures séquentiels</div>
+            <div class="rapport-include-item"><div class="rapport-include-dot"></div>Conforme <strong>URSSAF</strong> · prêt pour votre comptable</div>
+          </div>
+          <div class="rapport-actions">
+            <button class="btn bp" id="btn-rapport" onclick="generateRapportMensuel()"><span>📄</span> Télécharger le rapport</button>
+            <button class="btn bv bsm" onclick="previewRapport()">👁️ Aperçu</button>
+            <button class="btn bs bsm" onclick="exportComptable ? exportComptable() : null">📊 Export CSV</button>
+          </div>
         </div>
-        <div class="aic">
-          <div class="ai in">📊 Le rapport inclut : KPIs revenus, détail de chaque cotation, top actes, graphique journalier, répartition AMO/AMC/patient</div>
-          <div class="ai in">💡 Format HTML — ouvrez-le dans Chrome et faites Fichier → Imprimer → Enregistrer en PDF pour un PDF propre</div>
-          <div class="ai su">✅ Conforme URSSAF · Inclut N° ADELI, RPPS, N° factures séquentiels, version NGAP</div>
-        </div>
+      </div>
+
+      <!-- KPIs résumé avant export -->
+      <div id="rapport-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-bottom:4px"></div>
+      <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:8px" id="rapport-kpis-note"></div>
+
+      <!-- Info format -->
+      <div class="aic" style="margin-top:8px">
+        <div class="ai in" style="font-size:12px">💡 Format HTML — ouvrez dans Chrome → Fichier → Imprimer → Enregistrer en PDF pour un PDF propre</div>
+        <div class="ai su" style="font-size:12px">✅ Conforme URSSAF · N° ADELI, RPPS, N° factures séquentiels, version NGAP</div>
       </div>
     </section>
 
@@ -2512,9 +2562,7 @@ document.addEventListener('click', function(e) {
     var _origShowApp = window.showApp;
     window.showApp = function() {
       if (typeof _origShowApp === 'function') _origShowApp.apply(this, arguments);
-      // Init topbar enrichie (status + search + notif)
       if (typeof window._initTopbarExtras === 'function') window._initTopbarExtras();
-      // Toast de bienvenue avec le prénom
       setTimeout(function() {
         if (typeof showToast === 'function' && typeof S !== 'undefined' && S?.user) {
           const prenom = S.user.prenom || S.user.user_metadata?.prenom || '';
@@ -2522,6 +2570,25 @@ document.addEventListener('click', function(e) {
         }
       }, 600);
     };
+
+    // Chargement auto KPIs rapport + filtre hist à la navigation
+    document.addEventListener('ui:navigate', function(e) {
+      const view = e.detail?.view;
+      if (view === 'rapport') {
+        const period = document.getElementById('rapport-period')?.value || 'month';
+        if (typeof _loadRapportKpis === 'function') setTimeout(() => _loadRapportKpis(period), 150);
+      }
+      if (view === 'his') {
+        // Réinitialiser les filtres pills à l'ouverture
+        _histFilter = 'all';
+        _histSort = 'date-desc';
+        document.querySelectorAll('.hist-filter-pill').forEach(b => b.classList.remove('active'));
+        const allPill = document.querySelector('.hist-filter-pill[onclick*="all"]');
+        if (allPill) allPill.classList.add('active');
+        const sortLbl = document.getElementById('hist-sort-label');
+        if (sortLbl) sortLbl.textContent = 'Date';
+      }
+    });
   });
   // Afficher le bouton install mobile dans menu Plus (sans preventDefault ici)
   // Le preventDefault est géré UNIQUEMENT dans pwa.js
