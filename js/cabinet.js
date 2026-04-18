@@ -58,7 +58,6 @@ function _defaultSyncPrefs() {
    Appelé par auth.js après showApp()
 ════════════════════════════════════════════════ */
 async function initCabinet() {
-  if (APP.role === 'admin') return; // admins sans cabinet
   try {
     const d = await apiCall('/webhook/cabinet-get', {});
     if (d.ok && d.cabinet) {
@@ -99,11 +98,6 @@ async function renderCabinetSection() {
   const root = document.getElementById('cabinet-root');
   if (!root) return;
 
-  if (APP.role === 'admin') {
-    root.innerHTML = `<div class="card"><div class="ai in">🛡️ <strong>Mode admin</strong> — La fonctionnalité cabinet est réservée aux infirmières libérales.</div></div>`;
-    return;
-  }
-
   root.innerHTML = `<div class="card" style="text-align:center;padding:32px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto"></div><p style="margin-top:12px;color:var(--m)">Chargement cabinet…</p></div>`;
 
   try {
@@ -123,6 +117,7 @@ function _renderNoCabinet(root) {
   root.innerHTML = `
     <div class="card" style="margin-bottom:16px">
       <div class="ct">🏥 Rejoindre ou créer un cabinet</div>
+      ${APP.role === 'admin' ? `<div class="ai in" style="margin-bottom:14px;font-size:12px">🛡️ <strong>Mode admin — test fonctionnel</strong> · Vous pouvez créer un cabinet de test et tester toutes les fonctionnalités multi-IDE. Les données des infirmières restent inaccessibles.</div>` : ''}
       <p style="font-size:13px;color:var(--m);margin-bottom:20px;line-height:1.6">
         Le mode cabinet vous permet de partager votre tournée et certaines données avec vos collègues,
         <strong style="color:var(--t)">uniquement ce que vous choisissez de partager</strong>.

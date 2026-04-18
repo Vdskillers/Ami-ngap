@@ -113,7 +113,7 @@ function showApp(){
     });
 
     // ── Rebrancher onclick pour copilote et stats (nurse-only mais accessibles admin) ──
-    ['dash','copilote','ngap-ref','rapport','sig','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km'].forEach(v => {
+    ['dash','copilote','ngap-ref','rapport','sig','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','cabinet'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
         ni.classList.remove('nurse-only');
@@ -148,6 +148,22 @@ function showApp(){
       // Insérer : Mon compte en premier, Panneau admin en second
       slLast?.prepend(liAdmin);   // admin en bas
       slLast?.prepend(liCompte);  // compte au-dessus
+
+      // ── Injecter aussi "Cabinet" dans la sidebar pour les admins (test fonctionnel) ──
+      if (!$('nav-cabinet-item')) {
+        const slOutils = document.querySelector('.side .sl:nth-child(2)');
+        if (slOutils) {
+          const liCab = document.createElement('div');
+          liCab.className = 'ni';
+          liCab.id = 'nav-cabinet-item';
+          liCab.dataset.v = 'cabinet';
+          liCab.innerHTML = `<span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span>`;
+          liCab.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', liCab); };
+          const dashItem = slOutils.querySelector('[data-v="dash"]');
+          if (dashItem && dashItem.nextSibling) slOutils.insertBefore(liCab, dashItem.nextSibling);
+          else slOutils.appendChild(liCab);
+        }
+      }
 
       // ── Mobile : injecter bouton Panneau admin dans le menu Plus ──
       const _injectAdminMobile = () => {
@@ -186,10 +202,25 @@ function showApp(){
         else mobileGrid.appendChild(btnAdminM);
 
         // Rendre nurse-only visibles pour l'admin (copilote, rapport, contact, sig, tournée…)
-        ['copilote','rapport','contact','sec','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','dash'].forEach(v => {
+        // 'cabinet' inclus pour permettre aux admins de tester le mode cabinet
+        ['copilote','rapport','contact','sec','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','dash','cabinet'].forEach(v => {
           const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
           if(btn) btn.classList.remove('nurse-only');
         });
+
+        // Injecter bouton Cabinet mobile si absent (admin se connecte en premier)
+        if (!document.getElementById('btn-cabinet-mobile')) {
+          const btnCabM = document.createElement('button');
+          btnCabM.id = 'btn-cabinet-mobile';
+          btnCabM.className = 'bn-item';
+          btnCabM.style.cssText = 'background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none';
+          btnCabM.innerHTML = '<span class="bn-ic">🏥</span>Cabinet';
+          btnCabM.setAttribute('data-v', 'cabinet');
+          btnCabM.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', null); if (typeof toggleMobileMenu === 'function') toggleMobileMenu(); };
+          const btnQuitter2 = mobileGrid.querySelector('[onclick*="logout"]');
+          if (btnQuitter2) mobileGrid.insertBefore(btnCabM, btnQuitter2);
+          else mobileGrid.appendChild(btnCabM);
+        }
       };
       setTimeout(_injectAdminMobile, 200);
     }
