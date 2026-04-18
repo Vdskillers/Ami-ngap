@@ -77,8 +77,12 @@ async function loadAdmComptes() {
   }
 }
 
-/* ── Onglet 2 : Statistiques globales + par user ── */
+/* ── Onglet 2 : Statistiques globales + par infirmière ── */
+let _ADM_PER_USER_DATA = []; // cache pour filtre/tri client
+
 async function loadAdmStats() {
+  const puEl = $('adm-per-user-stats');
+  if (puEl) puEl.innerHTML = '<div class="ai in" style="font-size:12px">Chargement…</div>';
   try {
     const d = await wpost('/webhook/admin-stats', {});
     if (!d.ok) return;
@@ -96,48 +100,178 @@ async function loadAdmStats() {
         </div>`;
     }
 
-    // ── Stats par infirmière ─────────────────────────────────────────
-    // ⚠️ RGPD/HDS : seuls nom, prénom et métriques NGAP agrégées sont affichés
-    // Les données de santé des patients restent sur l'appareil de l'infirmière (chiffrées AES-256)
-    const perUser = d.per_user || [];
-    const puEl = $('adm-per-user-stats');
-    if (puEl) {
-      if (!perUser.length) {
-        puEl.innerHTML = '<p style="color:var(--m);font-size:13px;text-align:center;padding:20px">Aucune activité enregistrée.</p>';
-      } else {
-        // Trier par CA décroissant
-        const sorted = [...perUser].sort((a,b) => b.ca_total - a.ca_total);
-        const maxCA  = sorted[0]?.ca_total || 1;
-        puEl.innerHTML = `
-          <div class="lbl" style="margin-bottom:12px">Activité par infirmier(ère) — métriques NGAP uniquement · Données patient non accessibles</div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            ${sorted.map(u => {
-              const ini   = ((u.prenom||'?')[0]+(u.nom||'?')[0]).toUpperCase();
-              const name  = ((u.prenom||'')+' '+(u.nom||'')).trim() || '—';
-              const pct   = maxCA > 0 ? Math.round((u.ca_total / maxCA) * 100) : 0;
-              const panier= u.nb_actes > 0 ? (u.ca_total / u.nb_actes).toFixed(2) : '0.00';
-              return `<div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                  <div style="width:32px;height:32px;border-radius:50%;background:var(--ad);border:1px solid rgba(0,212,170,.3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--a);flex-shrink:0">${ini}</div>
-                  <div style="flex:1;min-width:0">
-                    <div style="font-size:13px;font-weight:600;color:var(--t)">${_escAdm(name)}</div>
-                    <div style="font-size:11px;color:var(--m);margin-top:1px">${u.nb_actes} acte${u.nb_actes!==1?'s':''} · panier moyen ${panier}€</div>
-                  </div>
-                  <div style="text-align:right;flex-shrink:0">
-                    <div style="font-size:15px;font-weight:700;color:var(--a);font-family:var(--fm)">${u.ca_total.toFixed(0)}€</div>
-                    <div style="font-size:10px;color:var(--m)">CA total</div>
-                  </div>
-                </div>
-                <div style="height:4px;background:rgba(0,212,170,.1);border-radius:2px;overflow:hidden">
-                  <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#00d4aa,#4fa8ff);border-radius:2px;transition:width .4s ease"></div>
-                </div>
-              </div>`;
-            }).join('')}
-          </div>`;
-      }
-    }
-  } catch {}
+    // ── Stocker + rendre les stats par infirmière ──────────────────────
+    _ADM_PER_USER_DATA = d.per_user || [];
+    _admRenderNurseStats(_ADM_PER_USER_DATA);
+  } catch(e) {
+    if (puEl) puEl.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message)}</div>`;
+  }
 }
+
+/* Filtre la liste par nom/prénom */
+function _admFilterNurses(q) {
+  const query = (q || '').toLowerCase().trim();
+  const filtered = query
+    ? _ADM_PER_USER_DATA.filter(u => ((u.prenom||'') + ' ' + (u.nom||'')).toLowerCase().includes(query))
+    : _ADM_PER_USER_DATA;
+  _admRenderNurseStats(filtered);
+}
+
+/* Tri client */
+function _admSortNurses(mode) {
+  const q = ($('adm-nurse-search')?.value || '').toLowerCase().trim();
+  let list = q
+    ? _ADM_PER_USER_DATA.filter(u => ((u.prenom||'') + ' ' + (u.nom||'')).toLowerCase().includes(q))
+    : [..._ADM_PER_USER_DATA];
+  if (mode === 'ca_desc')       list.sort((a,b) => b.ca_total - a.ca_total);
+  else if (mode === 'ca_asc')   list.sort((a,b) => a.ca_total - b.ca_total);
+  else if (mode === 'actes_desc') list.sort((a,b) => b.nb_actes - a.nb_actes);
+  else if (mode === 'alpha')    list.sort((a,b) => (a.nom+a.prenom).localeCompare(b.nom+b.prenom,'fr'));
+  else if (mode === 'last_activity') list.sort((a,b) => (b.last_activity||'') > (a.last_activity||'') ? 1 : -1);
+  _admRenderNurseStats(list);
+}
+
+/* Rendu principal : cards par infirmière */
+function _admRenderNurseStats(list) {
+  const puEl = $('adm-per-user-stats');
+  if (!puEl) return;
+
+  if (!list.length) {
+    puEl.innerHTML = '<p style="color:var(--m);font-size:13px;text-align:center;padding:20px 0">Aucune infirmière correspondante.</p>';
+    return;
+  }
+
+  // Calcul max CA pour les barres de progression
+  const maxCA = Math.max(...list.map(u => u.ca_total), 1);
+
+  // Compteurs globaux de la liste affichée
+  const totalCA     = list.reduce((s,u) => s + u.ca_total, 0);
+  const totalActes  = list.reduce((s,u) => s + u.nb_actes, 0);
+  const actives     = list.filter(u => u.is_active !== false && u.nb_actes > 0).length;
+
+  puEl.innerHTML = `
+    <!-- Résumé cohorte -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:18px">
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px;text-align:center">
+        <div style="font-size:20px;margin-bottom:2px">👩‍⚕️</div>
+        <div style="font-family:var(--fs);font-size:22px;color:var(--a)">${list.length}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Infirmier(e)s</div>
+      </div>
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px;text-align:center">
+        <div style="font-size:20px;margin-bottom:2px">✅</div>
+        <div style="font-family:var(--fs);font-size:22px;color:var(--a)">${actives}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Actives (actes)</div>
+      </div>
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px;text-align:center">
+        <div style="font-size:20px;margin-bottom:2px">💰</div>
+        <div style="font-family:var(--fs);font-size:22px;color:var(--a)">${totalCA.toFixed(0)}€</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">CA cumulé</div>
+      </div>
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px 14px;text-align:center">
+        <div style="font-size:20px;margin-bottom:2px">⚡</div>
+        <div style="font-family:var(--fs);font-size:22px;color:var(--a)">${totalActes}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Actes totaux</div>
+      </div>
+    </div>
+
+    <!-- Notice RGPD -->
+    <div class="adm-notice" style="margin-bottom:14px;font-size:11px">
+      <span style="font-size:14px;flex-shrink:0">🔐</span>
+      <span>Seuls nom, prénom et métriques NGAP agrégées sont affichés. Aucune donnée patient (noms, DDN, pathologies) n'est accessible — stockage local chiffré AES-256 sur l'appareil de chaque infirmière.</span>
+    </div>
+
+    <!-- Cards par infirmière -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${list.map(u => _admNurseCard(u, maxCA)).join('')}
+    </div>`;
+}
+
+/* Rendu d'une card infirmière */
+function _admNurseCard(u, maxCA) {
+  const ini     = (((u.prenom||'?')[0]) + ((u.nom||'?')[0])).toUpperCase();
+  const name    = (_escAdm((u.prenom||'') + ' ' + (u.nom||'')).trim()) || '—';
+  const pct     = maxCA > 0 ? Math.round((u.ca_total / maxCA) * 100) : 0;
+  const panier  = u.panier_moyen ? u.panier_moyen.toFixed(2) : '0.00';
+  const active  = u.is_active !== false;
+  const hasData = u.nb_actes > 0;
+
+  const lastAct = u.last_activity
+    ? new Date(u.last_activity).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })
+    : '—';
+  const inscription = u.date_inscription
+    ? new Date(u.date_inscription).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })
+    : '—';
+
+  const statusDot = active
+    ? '<span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0" title="Compte actif"></span>'
+    : '<span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;flex-shrink:0" title="Compte bloqué"></span>';
+
+  const alertBadge = u.nb_alertes > 0
+    ? `<span style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:2px 8px;border-radius:20px;font-size:10px;font-family:var(--fm)">⚠️ ${u.nb_alertes} alerte${u.nb_alertes>1?'s':''}</span>`
+    : '';
+  const dreBadge = u.taux_dre > 0
+    ? `<span style="background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.25);padding:2px 8px;border-radius:20px;font-size:10px;font-family:var(--fm)">🏥 DRE ${u.taux_dre}%</span>`
+    : '';
+  const topCodeBadge = u.top_code
+    ? `<span style="background:var(--ad);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:2px 8px;border-radius:20px;font-size:10px;font-family:var(--fm)">🏆 ${u.top_code}</span>`
+    : '';
+
+  return `<div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px 16px;${!active?'opacity:.6':''}">
+    <!-- Ligne 1 : avatar + nom + statut + CA -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:36px;height:36px;border-radius:50%;background:${hasData?'var(--ad)':'var(--s)'};border:1px solid ${hasData?'rgba(0,212,170,.35)':'var(--b)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${hasData?'var(--a)':'var(--m)'};flex-shrink:0">${ini}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${statusDot}
+          <span style="font-size:13px;font-weight:600;color:var(--t)">${name}</span>
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-top:1px">
+          ${u.nb_actes} acte${u.nb_actes!==1?'s':''} · panier ${panier}€
+          ${u.last_activity ? ' · Dernière activité : ' + lastAct : ' · Aucune activité'}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-family:var(--fs);font-size:18px;color:${hasData?'var(--a)':'var(--m)'};font-weight:700">${u.ca_total.toFixed(0)}€</div>
+        <div style="font-size:10px;color:var(--m)">CA total</div>
+      </div>
+    </div>
+
+    <!-- Barre CA relative -->
+    <div style="height:5px;background:rgba(0,212,170,.08);border-radius:3px;overflow:hidden;margin-bottom:10px">
+      <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#00d4aa,#4fa8ff);border-radius:3px;transition:width .5s ease"></div>
+    </div>
+
+    <!-- Ligne 2 : métriques KPI -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-bottom:${alertBadge||dreBadge||topCodeBadge?'10px':'0'}">
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:8px;padding:7px 10px;text-align:center">
+        <div style="font-size:14px;font-weight:700;color:var(--a);font-family:var(--fm)">${u.nb_actes}</div>
+        <div style="font-size:10px;color:var(--m)">Actes</div>
+      </div>
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:8px;padding:7px 10px;text-align:center">
+        <div style="font-size:14px;font-weight:700;color:var(--a);font-family:var(--fm)">${panier}€</div>
+        <div style="font-size:10px;color:var(--m)">Panier moy.</div>
+      </div>
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:8px;padding:7px 10px;text-align:center">
+        <div style="font-size:14px;font-weight:700;color:${u.nb_dre>0?'#f59e0b':'var(--m)'};font-family:var(--fm)">${u.nb_dre}</div>
+        <div style="font-size:10px;color:var(--m)">DRE</div>
+      </div>
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:8px;padding:7px 10px;text-align:center">
+        <div style="font-size:14px;font-weight:700;color:${u.nb_alertes>0?'#ef4444':'var(--m)'};font-family:var(--fm)">${u.nb_alertes}</div>
+        <div style="font-size:10px;color:var(--m)">Alertes</div>
+      </div>
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:8px;padding:7px 10px;text-align:center">
+        <div style="font-size:11px;font-weight:600;color:var(--m);font-family:var(--fm)">${inscription}</div>
+        <div style="font-size:10px;color:var(--m)">Inscrit(e)</div>
+      </div>
+    </div>
+
+    <!-- Badges -->
+    ${alertBadge || dreBadge || topCodeBadge ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${topCodeBadge}${dreBadge}${alertBadge}</div>` : ''}
+  </div>`;
+}
+
+window._admFilterNurses = _admFilterNurses;
+window._admSortNurses   = _admSortNurses;
 
 /* ════════════════════════════════════════════════
    ONGLET 3 : JOURNAL D'AUDIT — audit_logs Supabase
