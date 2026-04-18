@@ -657,7 +657,7 @@ function _updateTourneeCabinetPanel() {
   const panel = document.getElementById('tur-cabinet-panel');
   if (!panel) return;
   const cab = APP.get('cabinet');
-  if (cab?.id && cab.members?.length > 1) {
+  if (cab?.id) {
     panel.style.display = 'block';
     const nomEl = document.getElementById('tur-cabinet-nom');
     if (nomEl) nomEl.textContent = cab.nom || '—';

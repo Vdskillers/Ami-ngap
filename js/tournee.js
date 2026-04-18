@@ -44,6 +44,8 @@ function storeImportedData(d){
     banner.style.display='block';
     const manual=$('pla-manual');
     if(manual)manual.style.display='none';
+    // Mettre à jour le toggle cabinet et le bouton "Répartir entre IDEs"
+    if (typeof _planningInitCabinetUI === 'function') _planningInitCabinetUI();
   }
   showCaFromImport();
 }
@@ -112,7 +114,10 @@ document.addEventListener('ui:navigate', _onNavLive);
 /* Recharger le planning hebdomadaire quand on navigue vers la vue "pla" */
 const _onNavPla = e => {
   if (e.detail?.view === 'pla') {
-    setTimeout(_restorePlanningIfNeeded, 100);
+    setTimeout(() => {
+      _planningInitCabinetUI();
+      _restorePlanningIfNeeded();
+    }, 100);
   }
 };
 document.addEventListener('app:nav',     _onNavPla);
@@ -329,6 +334,7 @@ function _renderPlanningIfVisible() {
 
 /* Actualiser le planning manuellement (bouton Actualiser dans view-pla) */
 function refreshPlanning() {
+  _planningInitCabinetUI(); // toujours mettre à jour le toggle cabinet
   _restorePlanningIfNeeded();
   const patients = window.APP._planningData?.patients
     || APP.importedData?.patients || APP.importedData?.entries
@@ -367,15 +373,43 @@ function _planningInitCabinetUI() {
   const wrap   = document.getElementById('pla-cabinet-toggle-wrap');
   const btnCab = document.getElementById('btn-pla-cabinet');
   const cab    = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
-  const hasCab = !!(cab?.id && cab.members?.length > 1);
-  if (wrap)   wrap.style.display   = hasCab ? 'block' : 'none';
+
+  // Afficher dès qu'un cabinet existe — admins inclus, même sans membres (test solo)
+  // Pour la vue multi-IDE, il faut au moins 2 membres, mais le toggle reste visible
+  const hasCab     = !!(cab?.id);
+  const hasMembers = !!(cab?.members?.length > 1);
+
+  if (wrap) {
+    wrap.style.display = hasCab ? 'block' : 'none';
+    // Désactiver (griser) le toggle si pas assez de membres, mais le laisser visible
+    const label = wrap.querySelector('label');
+    if (label) {
+      label.style.opacity = hasMembers ? '1' : '0.6';
+      label.title = hasMembers ? '' : 'Invitez des collègues dans votre cabinet pour activer la vue multi-IDE';
+    }
+    const cb = wrap.querySelector('input[type=checkbox]');
+    if (cb) cb.disabled = !hasMembers;
+  }
   if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
+
+  // Si APP.cabinet pas encore chargé (initCabinet() async), retry dans 1s
+  if (!hasCab && !_planningCabinetInitDone) {
+    setTimeout(() => {
+      const cabRetry = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
+      if (cabRetry?.id) _planningInitCabinetUI();
+    }, 1000);
+  }
 }
 
-/** Réagir aux changements de cabinet */
-if (typeof APP !== 'undefined' && APP.on) {
-  APP.on('cabinet', () => { _planningInitCabinetUI(); });
-}
+// Flag pour éviter les retries infinis une fois le cabinet chargé
+let _planningCabinetInitDone = false;
+APP.on('cabinet', () => {
+  _planningCabinetInitDone = true;
+  _planningInitCabinetUI();
+});
+
+// Exposer globalement pour ui.js
+window._planningInitCabinetUI = _planningInitCabinetUI;
 
 /** Génère et affiche un planning multi-IDE depuis les patients importés */
 async function planningGenerateCabinet() {
@@ -2784,11 +2818,43 @@ function _openCotationComplete() {
 
 /* Ouvre la modale de cotation pour un patient spécifique depuis la liste tournée */
 async function openCotationPatient(patientIndex) {
-  // Priorité uberPatients (bilan tournée), fallback importedData (planning)
-  const uberPats = APP.get('uberPatients') || [];
-  const impPats  = APP.importedData?.patients || APP.importedData?.entries || [];
-  const patients = uberPats.length ? uberPats : impPats;
-  const patient  = patients[patientIndex];
+  // Priorité uberPatients (bilan tournée)
+  // Fallback : _planningData (planning hebdomadaire) — utilise _planIdx
+  // Fallback final : importedData
+  const uberPats     = APP.get('uberPatients') || [];
+  const planningPats = window.APP._planningData?.patients || [];
+  const impPats      = APP.importedData?.patients || APP.importedData?.entries || [];
+
+  // Choisir la bonne source selon le contexte :
+  // Si uberPatients actifs → tournée du jour
+  // Sinon chercher dans _planningData d'abord (planning hebdo), puis importedData
+  let patients;
+  if (uberPats.length) {
+    patients = uberPats;
+  } else if (planningPats.length && planningPats[patientIndex] !== undefined) {
+    patients = planningPats;
+  } else {
+    patients = impPats;
+  }
+
+  const patient = patients[patientIndex];
+  if (!patient) {
+    // Dernier recours : chercher dans toutes les sources par _planIdx
+    const allSources = [...planningPats, ...impPats];
+    const byIdx = allSources.find(p => p._planIdx === patientIndex);
+    if (!byIdx) { if (typeof showToast==='function') showToast('Patient introuvable.','wa'); return; }
+    return openCotationPatientFromPatient(byIdx);
+  }
+
+  // Déléguer au handler principal
+  return openCotationPatientFromPatient(patient);
+}
+
+/**
+ * openCotationPatientFromPatient — génère et affiche la cotation d'un patient
+ * Appelé par openCotationPatient() une fois le bon objet patient résolu
+ */
+async function openCotationPatientFromPatient(patient) {
   if (!patient) return;
 
   // Si cotation déjà validée, proposer de la re-consulter / corriger
