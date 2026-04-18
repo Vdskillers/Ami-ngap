@@ -725,14 +725,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
       setTimeout(()=>{ initTurMap(); updateCAEstimate(); }, 150);
     }
     // Mettre à jour l'heure courante à chaque retour sur la vue cotation
+    // SAUF si on est en mode édition d'une cotation existante (_editingCotation posé)
+    // → dans ce cas, l'heure d'origine doit être conservée.
     if(e.detail?.view === 'cot'){
       const fhs = document.getElementById('f-hs');
-      if(fhs && !fhs._userEdited) {
+      const _isEditMode = !!(window._editingCotation &&
+        (window._editingCotation.invoice_number || window._editingCotation.cotationIdx != null));
+      if(fhs && !fhs._userEdited && !_isEditMode) {
         const now = new Date();
         fhs.value = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
       }
       const fds = document.getElementById('f-ds');
-      if(fds && !fds.value) fds.value = new Date().toISOString().split('T')[0];
+      if(fds && !fds.value && !_isEditMode) fds.value = new Date().toISOString().split('T')[0];
     }
   });
 

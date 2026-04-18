@@ -109,7 +109,14 @@ function showApp(){
     ────────────────────────────────────────────────────────────────────────── */
     // Pré-remplir date pour test fonctionnel
     const fds=$('f-ds'); if(fds)fds.value=new Date().toISOString().split('T')[0];
-    const fhs=$('f-hs'); if(fhs && !fhs.value) { const now=new Date(); fhs.value=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'); }
+    // Pré-remplir f-hs avec l'heure actuelle SAUF si une cotation est en cours d'édition
+    const fhs=$('f-hs');
+    const _hsEditMode = !!(window._editingCotation &&
+      (window._editingCotation.invoice_number || window._editingCotation.cotationIdx != null));
+    if(fhs && !fhs.value && !_hsEditMode) {
+      const now=new Date();
+      fhs.value=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    }
     // Charger les prescripteurs (fonctionnel en mode admin)
     loadPrescripteurs();
 

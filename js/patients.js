@@ -929,12 +929,17 @@ async function editCotationPatient(patientId, cotationIdx) {
     const fPr  = $('f-pr');  if (fPr  && p.medecin) fPr.value = p.medecin;
 
     // Date et heure du soin d'origine
+    // c.heure est le champ dédié à l'heure — ne jamais extraire l'heure depuis c.date
+    // (c.date est souvent en UTC et donnerait une heure décalée ou 00:00)
+    const fDs = $('f-ds');
+    const fHs = $('f-hs');
     if (c.date) {
-      const fDs = $('f-ds');
-      const fHs = $('f-hs');
-      const d   = new Date(c.date);
+      const d = new Date(c.date);
       if (fDs) fDs.value = d.toISOString().slice(0, 10); // YYYY-MM-DD
-      if (fHs) fHs.value = d.toTimeString().slice(0, 5);  // HH:MM
+    }
+    if (fHs) {
+      fHs.value = (c.heure || '').trim().slice(0, 5); // heure dédiée, vide si non renseignée
+      fHs._userEdited = true; // bloque tout écrasement ultérieur par l'heure courante
     }
 
     // Description des actes → champ principal IA
