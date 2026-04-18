@@ -1300,8 +1300,18 @@
 
         <!-- Table -->
         <div class="ht"><table>
-          <thead><tr><th>Patient</th><th>Date</th><th>Actes</th><th>Total</th><th>Statut</th><th>Alertes</th><th></th><th></th></tr></thead>
-          <tbody id="htb"><tr><td colspan="8" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
+          <thead><tr>
+            <th>Patient</th>
+            <th>Date &amp; Heure</th>
+            <th>N° Facture</th>
+            <th>Actes</th>
+            <th>Total</th>
+            <th>Statut</th>
+            <th>Alertes</th>
+            <th></th>
+            <th></th>
+          </tr></thead>
+          <tbody id="htb"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -2331,7 +2341,7 @@ async function hist() {
   const stats = document.getElementById('hstats');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
 
   const q       = (document.getElementById('hq')?.value || '').toLowerCase().trim();
   const period  = document.getElementById('hp')?.value || '';
@@ -2354,13 +2364,15 @@ async function hist() {
     if (q) {
       rows = rows.filter(r => {
         const date = (r.date_soin || '').toLowerCase();
+        const nom  = (r.patient_nom || r.nom || '').toLowerCase();
+        const inv  = String(r.invoice_number || '').toLowerCase();
         const actes = (() => { try { return JSON.parse(r.actes||'[]').map(a=>a.code||'').join(' ').toLowerCase(); } catch { return ''; } })();
-        return date.includes(q) || actes.includes(q) || String(r.id).includes(q);
+        return date.includes(q) || actes.includes(q) || String(r.id).includes(q) || nom.includes(q) || inv.includes(q);
       });
     }
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
       if (stats) stats.innerHTML = '';
       return;
     }
@@ -2380,25 +2392,50 @@ async function hist() {
 
     /* Tableau premium */
     tbody.innerHTML = rows.map(r => {
-      const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}) : '—';
+      // ── Date + heure ─────────────────────────────────────────────────────
+      const dateObj  = r.date_soin ? new Date(r.date_soin) : null;
+      const dateStr  = dateObj ? dateObj.toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}) : '—';
+      const heureRaw = (r.heure_soin || '').trim().slice(0,5);
+      const heureStr = heureRaw && /^\d{1,2}:\d{2}/.test(heureRaw) ? heureRaw : null;
+      const dateHtml = `<div style="font-size:12px;font-weight:500;color:var(--t)">${dateStr}</div>
+        ${heureStr
+          ? `<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;background:rgba(79,168,255,.1);border:1px solid rgba(79,168,255,.18);border-radius:6px;padding:1px 7px">
+               <span style="font-size:10px;color:var(--a2)">🕐</span>
+               <span style="font-family:var(--fm);font-size:11px;color:var(--a2);font-weight:600">${heureStr}</span>
+             </div>`
+          : `<div style="font-size:10px;color:var(--m);margin-top:2px;font-family:var(--fm)">— heure non renseignée</div>`}`;
+
+      // ── N° Facture ────────────────────────────────────────────────────────
+      const invNum  = (r.invoice_number || '').toString().trim();
+      const invHtml = invNum
+        ? `<div style="display:inline-flex;align-items:center;gap:5px">
+             <span style="font-family:var(--fm);font-size:10px;letter-spacing:.5px;color:var(--m)">N°</span>
+             <span style="font-family:var(--fm);font-size:12px;font-weight:600;color:var(--a);background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.18);border-radius:6px;padding:2px 8px">${invNum}</span>
+           </div>`
+        : `<span style="font-size:11px;color:var(--m);font-family:var(--fm)">—</span>`;
+
+      // ── Actes ─────────────────────────────────────────────────────────────
       let actesTxt = '—';
       let actesArr = [];
       try {
         actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
         actesTxt = actesArr.map(a => a.code || '').filter(Boolean).join(', ') || '—';
       } catch {}
+      const actesHtml = actesArr.length
+        ? actesArr.map(a => a.code ? `<span style="display:inline-block;background:rgba(79,168,255,.08);border:1px solid rgba(79,168,255,.15);border-radius:5px;padding:1px 6px;font-family:var(--fm);font-size:10px;color:var(--a2);margin:1px 2px 1px 0">${a.code}</span>` : '').filter(Boolean).join('')
+        : '<span style="color:var(--m);font-size:11px">—</span>';
 
-      // Alertes
+      // ── Alertes ───────────────────────────────────────────────────────────
       const alertCount = (() => { try { return JSON.parse(r.alerts||'[]').length; } catch { return 0; } })();
       const alertsHtml = alertCount ? `<span style="background:rgba(255,95,109,.12);color:var(--d);font-family:var(--fm);font-size:10px;padding:2px 7px;border-radius:10px;border:1px solid rgba(255,95,109,.2)">⚠ ${alertCount}</span>` : `<span style="color:var(--ok);font-size:11px">✓</span>`;
 
-      // Avatar patient
+      // ── Avatar patient ────────────────────────────────────────────────────
       const patNom = (r.patient_nom || r.nom || '').trim();
-      const initials = patNom ? patNom.split(/\s+/).map(w=>w.charAt(0)).slice(0,2).join('').toUpperCase() : '#';
+      const initials = patNom ? patNom.split(/\s+/).map(w=>w.charAt(0)).slice(0,2).join('').toUpperCase() : '?';
       if (patNom && !_avatarMap[patNom]) { _avatarMap[patNom] = _avatarCols[_avatarIdx++ % 5]; }
       const avatarCol = _avatarMap[patNom] || 'col-a';
 
-      // Statut DRE
+      // ── Statut DRE ────────────────────────────────────────────────────────
       const statutHtml = r.dre_requise
         ? `<span class="pt-status pause"><span class="pt-status-dot pause"></span><span style="font-size:11px">DRE req.</span></span>`
         : `<span class="pt-status active"><span class="pt-status-dot active"></span><span style="font-size:11px">Conforme</span></span>`;
@@ -2407,16 +2444,17 @@ async function hist() {
       return `<tr id="${_rowId}">
         <td>
           <div style="display:flex;align-items:center;gap:10px">
-            <div class="pt-avatar ${avatarCol}" style="width:32px;height:32px;font-size:12px">${initials}</div>
+            <div class="pt-avatar ${avatarCol}" style="width:34px;height:34px;font-size:12px;flex-shrink:0">${initials}</div>
             <div>
-              <div style="font-size:13px;font-weight:500">${patNom || '—'}</div>
-              <div style="font-size:10px;color:var(--m);font-family:var(--fm)">#${r.id}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--t)">${patNom || '—'}</div>
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:1px">ID&nbsp;#${r.id}</div>
             </div>
           </div>
         </td>
-        <td style="font-size:13px;color:var(--m)">${date}</td>
-        <td style="font-family:var(--fm);font-size:11px;color:var(--a2)">${actesTxt}</td>
-        <td class="pt-ca">${parseFloat(r.total||0).toFixed(2)} €</td>
+        <td>${dateHtml}</td>
+        <td>${invHtml}</td>
+        <td style="max-width:160px">${actesHtml}</td>
+        <td class="pt-ca" style="white-space:nowrap">${parseFloat(r.total||0).toFixed(2)}&nbsp;€</td>
         <td>${statutHtml}</td>
         <td>${alertsHtml}</td>
         <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
@@ -2432,7 +2470,7 @@ async function hist() {
     }).join('');
 
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
   }
 }
 
@@ -2482,7 +2520,7 @@ async function resetAllHist() {
   if (!confirm(`Confirmer la suppression définitive de toutes les cotations de ${periodLabel} ?`)) return;
 
   const tbody = document.getElementById('htb');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
 
   try {
     // ── Suppression en masse — un seul appel Supabase, plus fiable que N appels séquentiels ──
