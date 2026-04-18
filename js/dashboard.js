@@ -189,18 +189,36 @@ function renderDashboard(arr) {
   const dayOfMonth=new Date().getDate();
   const daysInMonth=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
 
-  // ── Km du mois depuis le journal kilométrique ──────────────────────────
-  let kmMois = 0, kmDeduction = 0;
+  // ── Km du mois — barème dynamique depuis préférences véhicule ─────────────
+  let kmMois = 0, kmDeduction = 0, _kmBaremeLabel = '5 CV';
   try {
-    // Clé isolée par userId — même logique que _kmKey() dans infirmiere-tools.js
     let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
     if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
-    const _kmKey3 = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const kmEntries = JSON.parse(localStorage.getItem(_kmKey3) || '[]');
+    const _kmKey3    = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const _prefsKey3 = 'ami_km_prefs_'   + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const kmEntries  = JSON.parse(localStorage.getItem(_kmKey3) || '[]');
+    const kmPrefs    = (() => { try { return JSON.parse(localStorage.getItem(_prefsKey3)||'{}'); } catch { return {}; } })();
+
+    const cv         = parseInt(kmPrefs.cv) || 5;
+    const electrique = !!kmPrefs.electrique;
+
     const since = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const kmAnnuel = kmEntries.filter(e => new Date(e.date).getFullYear() === new Date().getFullYear())
+      .reduce((s,e) => s + parseFloat(e.km||0), 0);
+
     kmEntries.filter(e => new Date(e.date) >= since).forEach(e => { kmMois += parseFloat(e.km||0); });
-    kmDeduction = Math.round(kmMois * 0.636 * 100) / 100;
-    kmMois = Math.round(kmMois * 10) / 10;
+
+    // Barème 2025/2026
+    const _KMB = {3:{t1:.529,t2a:.316,t2b:1065,t3:.370,lbl:'3 CV'},4:{t1:.606,t2a:.340,t2b:1330,t3:.407,lbl:'4 CV'},
+      5:{t1:.636,t2a:.357,t2b:1395,t3:.427,lbl:'5 CV'},6:{t1:.665,t2a:.374,t2b:1457,t3:.447,lbl:'6 CV'},
+      7:{t1:.697,t2a:.394,t2b:1515,t3:.470,lbl:'7 CV et +'}};
+    const b   = _KMB[cv] || _KMB[5];
+    let taux  = kmAnnuel <= 5000 ? b.t1 : kmAnnuel <= 20000 ? b.t2a + b.t2b/kmAnnuel : b.t3;
+    if (electrique) taux *= 1.20;
+
+    kmDeduction       = Math.round(kmMois * taux * 100) / 100;
+    kmMois            = Math.round(kmMois * 10) / 10;
+    _kmBaremeLabel    = b.lbl + (electrique ? ' ⚡' : '');
   } catch {}
 
   // ── Patients du carnet ce mois (IDB local) ─────────────────────────────
@@ -249,7 +267,7 @@ function renderDashboard(arr) {
     {icon:'🏆', val:best.toFixed(2)+'€',     label:'Meilleure facture', cls:'g', delta:''},
     {icon:'📋', val:dre,                      label:'DRE requises',      cls:'r', delta: dre>0?'<span class="sc-delta dn">à vérifier</span>':'<span class="sc-delta up">OK</span>'},
     {icon:'📊', val:avg.toFixed(2)+'€',      label:'Moy. par passage',  cls:'b', delta:''},
-    ...(kmMois>0 ? [{icon:'🚗', val:kmMois+'km', label:'Km ce mois', cls:'b', delta:''}] : []),
+    ...(kmMois>0 ? [{icon:'🚗', val:kmMois+'km', label:'Km ce mois', cls:'b', delta:`<span class="sc-delta nt" style="font-size:9px">${_kmBaremeLabel}</span>`}] : []),
     ...(kmDeduction>0 ? [{icon:'💸', val:kmDeduction+'€', label:'Déd. fiscale km', cls:'g', delta:''}] : []),
   ].map(k=>`<div class="sc ${k.cls}">
     <div class="si">${k.icon}</div>
@@ -287,7 +305,15 @@ function renderDashboard(arr) {
   const kmBandeau = $('dash-km-bandeau');
   if (kmBandeau) {
     kmBandeau.style.display = kmMois > 0 ? 'flex' : 'none';
-    if (kmMois > 0) kmBandeau.innerHTML = `🚗 <strong>${kmMois} km</strong> parcourus ce mois · déduction fiscale estimée : <strong style="color:#22c55e">${kmDeduction} €</strong> (barème 5CV 2025) · <span id="dash-km-patients" style="color:var(--m)"></span>`;
+    if (kmMois > 0) {
+      kmBandeau.innerHTML = `🚗 <strong>${kmMois} km</strong> parcourus ce mois · déduction fiscale estimée : <strong style="color:#22c55e">${kmDeduction} €</strong> · ${_kmBaremeLabel} · barème 2025/2026 · <span id="dash-km-patients" style="color:var(--m)"></span>`;
+      // Afficher le sélecteur barème
+      const prefsBar = document.getElementById('dash-km-prefs');
+      if (prefsBar) prefsBar.style.display = 'flex';
+    } else {
+      const prefsBar = document.getElementById('dash-km-prefs');
+      if (prefsBar) prefsBar.style.display = 'none';
+    }
   }
 
   // Prévision — anneau SVG + sidebar layout
@@ -907,6 +933,64 @@ if (typeof APP !== 'undefined' && APP.on) {
       loadDashCabinet();
     }
   });
+}
+
+/* ── Préférences km partagées — helpers dashboard ── */
+
+/** Clé préférences km (même que tresorerie.js) */
+function _kmPrefsKeyDash() {
+  let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  if (!uid) { try { uid = JSON.parse(sessionStorage.getItem('ami')||'null')?.user?.id||null; } catch {} }
+  return 'ami_km_prefs_' + String(uid||'local').replace(/[^a-zA-Z0-9_-]/g,'_');
+}
+
+/** Lire les préférences */
+function _loadKmPrefsDash() {
+  try { return JSON.parse(localStorage.getItem(_kmPrefsKeyDash())||'{}'); } catch { return {}; }
+}
+
+/** Sauvegarder depuis le dashboard */
+function saveKmPrefsDash() {
+  const cv         = parseInt(document.getElementById('dash-km-cv')?.value) || 5;
+  const electrique = !!document.getElementById('dash-km-elec')?.checked;
+  try { localStorage.setItem(_kmPrefsKeyDash(), JSON.stringify({ cv, electrique })); } catch {}
+  _syncAllKmSelectors(cv, electrique);
+  loadDash(); // recalculer
+}
+
+/** Sauvegarder depuis le rapport */
+function saveKmPrefsRapport() {
+  const cv         = parseInt(document.getElementById('rapport-km-cv')?.value) || 5;
+  const electrique = !!document.getElementById('rapport-km-elec')?.checked;
+  try { localStorage.setItem(_kmPrefsKeyDash(), JSON.stringify({ cv, electrique })); } catch {}
+  _syncAllKmSelectors(cv, electrique);
+  const period = document.getElementById('rapport-period')?.value || 'month';
+  if (typeof _loadRapportKpis === 'function') _loadRapportKpis(period);
+}
+
+/** Synchroniser tous les sélecteurs CV/électrique sur la page */
+function _syncAllKmSelectors(cv, electrique) {
+  const selIds = ['km-cv','tresor-km-cv','rapport-km-cv','dash-km-cv'];
+  const chkIds = ['km-electrique','tresor-km-elec','rapport-km-elec','dash-km-elec'];
+  selIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = cv; });
+  chkIds.forEach(id => { const el = document.getElementById(id); if (el) el.checked = electrique; });
+  // Mettre à jour les infos taux
+  const bareme = {3:'3 CV · 0.529',4:'4 CV · 0.606',5:'5 CV · 0.636',6:'6 CV · 0.665',7:'7 CV et + · 0.697'};
+  const lbl = (bareme[cv]||'5 CV · 0.636') + (electrique ? ' ⚡' : '') + ' €/km';
+  ['tresor-km-rate-info','rapport-km-rate-info','dash-km-rate-info'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = 'Taux : ' + lbl;
+  });
+}
+
+/** Initialiser les sélecteurs depuis les préférences au chargement */
+function _initKmPrefsSelectors() {
+  const prefs = _loadKmPrefsDash();
+  if (prefs.cv || prefs.electrique) {
+    _syncAllKmSelectors(parseInt(prefs.cv)||5, !!prefs.electrique);
+  }
+  // Afficher la barre km dashboard uniquement si des km existent
+  // (géré dans renderDashboard — ici on initialise juste les selects)
 }
 
 /* ── setDashPeriod — gère la période pill ── */

@@ -351,8 +351,8 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
   const evo  = ca2 > 0 ? ((ca1 - ca2) / ca2 * 100) : 0;
   const evoColor = evo >= 0 ? 'var(--ok)' : 'var(--d)';
 
-  // ── Km du mois depuis le journal local ───────────────────────────────────
-  let kmMois = 0, kmDeduction = 0;
+  // ── Km du mois — barème dynamique depuis préférences véhicule ────────────
+  let kmMois = 0, kmDeduction = 0, kmBaremeLabel = '5 CV';
   try {
     let kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
     if (!kmUid) {
@@ -363,10 +363,30 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
     const since = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const filtered = kmEntries.filter(e => new Date(e.date) >= since);
     kmMois = Math.round(filtered.reduce((s, e) => s + parseFloat(e.km||0), 0) * 10) / 10;
+
     const kmAnnuel = kmEntries.filter(e => new Date(e.date).getFullYear() === new Date().getFullYear())
       .reduce((s, e) => s + parseFloat(e.km||0), 0);
-    const taux = kmAnnuel <= 5000 ? 0.636 : kmAnnuel <= 20000 ? (0.319 + 1587/kmAnnuel) : 0.370;
-    kmDeduction = Math.round(kmMois * taux * 100) / 100;
+
+    // Lire les préférences véhicule partagées (clé commune à tresorerie.js + infirmiere-tools.js)
+    const prefsKey  = 'ami_km_prefs_' + String(kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const prefs     = (() => { try { return JSON.parse(localStorage.getItem(prefsKey)||'{}'); } catch { return {}; } })();
+    const cv        = parseInt(prefs.cv) || 5;
+    const electrique = !!prefs.electrique;
+
+    // Barème 2025/2026 — même table que infirmiere-tools.js + tresorerie.js
+    const KM_B = {
+      3:{t1:0.529,t2a:0.316,t2b:1065,t3:0.370,label:'3 CV'},
+      4:{t1:0.606,t2a:0.340,t2b:1330,t3:0.407,label:'4 CV'},
+      5:{t1:0.636,t2a:0.357,t2b:1395,t3:0.427,label:'5 CV'},
+      6:{t1:0.665,t2a:0.374,t2b:1457,t3:0.447,label:'6 CV'},
+      7:{t1:0.697,t2a:0.394,t2b:1515,t3:0.470,label:'7 CV et +'},
+    };
+    const b = KM_B[cv] || KM_B[5];
+    let taux = kmAnnuel <= 5000 ? b.t1 : kmAnnuel <= 20000 ? b.t2a + b.t2b/kmAnnuel : b.t3;
+    if (electrique) taux *= 1.20;
+
+    kmDeduction   = Math.round(kmMois * taux * 100) / 100;
+    kmBaremeLabel = b.label + (electrique ? ' · ⚡ électrique' : '');
   } catch {}
 
   // Actes par fréquence — mois actuel vs précédent
@@ -439,7 +459,7 @@ function renderStatsAvancees(moisActuel, moisPrecedent, trois_mois) {
         <div class="sv">${ca3.toFixed(0)} €</div>
         <div class="sn">3 mois cumulés</div>
       </div>
-      ${kmMois > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${kmMois} km</div><div class="sn">Km ce mois</div></div>` : ''}
+      ${kmMois > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${kmMois} km</div><div class="sn">Km ce mois</div><span class="sc-delta nt" style="font-size:9px">${kmBaremeLabel}</span></div>` : ''}
       ${kmDeduction > 0 ? `<div class="sc g"><div class="si">💸</div><div class="sv">${kmDeduction} €</div><div class="sn">Déd. fiscale km</div></div>` : ''}
     </div>
 

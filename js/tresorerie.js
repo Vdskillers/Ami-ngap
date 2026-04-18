@@ -11,8 +11,62 @@
    - checklistCPAM()        — audit conformité avant envoi lot
 ════════════════════════════════════════════════ */
 
-const TRESOR_PAID_KEY = 'ami_tresor_paid';
-const KM_FISCAL_RATE_TRESOR = 0.636; // barème 5 CV 2025/2026
+const TRESOR_PAID_KEY  = 'ami_tresor_paid';
+
+/* ══════════════════════════════════════════════════════
+   BARÈME KILOMÉTRIQUE PARTAGÉ — 2025/2026
+   Source : Service-Public.fr, brochure fiscale 09/04/2026
+   Clé préférences : ami_km_prefs_<userId>  (partagée avec
+   infirmiere-tools.js, offline-queue.js, rapport.js)
+══════════════════════════════════════════════════════ */
+const _KM_BAREME = {
+  3: { t1:0.529, t2a:0.316, t2b:1065, t3:0.370, label:'3 CV' },
+  4: { t1:0.606, t2a:0.340, t2b:1330, t3:0.407, label:'4 CV' },
+  5: { t1:0.636, t2a:0.357, t2b:1395, t3:0.427, label:'5 CV' },
+  6: { t1:0.665, t2a:0.374, t2b:1457, t3:0.447, label:'6 CV' },
+  7: { t1:0.697, t2a:0.394, t2b:1515, t3:0.470, label:'7 CV et +' },
+};
+const _KM_ELEC_BONUS = 1.20; // +20% électrique
+
+/* Clé localStorage pour préférences véhicule (isolée par userId) */
+function _kmPrefsKey() {
+  let uid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+  if (!uid) { try { uid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+  return 'ami_km_prefs_' + String(uid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+/* Lire les préférences véhicule (cv + électrique) */
+function _loadKmPrefs() {
+  try { return JSON.parse(localStorage.getItem(_kmPrefsKey()) || '{}'); } catch { return {}; }
+}
+
+/* Sauvegarder les préférences véhicule */
+function _saveKmPrefs(prefs) {
+  try { localStorage.setItem(_kmPrefsKey(), JSON.stringify(prefs)); } catch {}
+}
+
+/* Calculer le taux km selon puissance + tranche + électrique */
+function _calcKmRate(cv, kmAnnuel, electrique) {
+  const b = _KM_BAREME[cv] || _KM_BAREME[5];
+  let rate;
+  if      (kmAnnuel <= 5000)  rate = b.t1;
+  else if (kmAnnuel <= 20000) rate = b.t2a + b.t2b / kmAnnuel;
+  else                        rate = b.t3;
+  return electrique ? rate * _KM_ELEC_BONUS : rate;
+}
+
+/* Taux moyen approximatif pour une période (≤5000km : tranche 1) */
+function _getKmRateForDisplay(cv, electrique) {
+  const b = _KM_BAREME[cv] || _KM_BAREME[5];
+  const base = b.t1; // tranche ≤5000 = taux de référence affiché
+  return electrique ? +(base * _KM_ELEC_BONUS).toFixed(3) : base;
+}
+
+/* Label barème pour affichage */
+function _kmBaremeLabel(cv, electrique) {
+  const lbl = _KM_BAREME[cv]?.label || '5 CV';
+  return electrique ? `${lbl} · ⚡ électrique` : lbl;
+}
 
 /* Charge les paiements locaux (localStorage) */
 function _loadPaidMap() {
@@ -27,43 +81,56 @@ function _savePaidMap(map) {
 ════════════════════════════════════════════════ */
 function _getKmForPeriod(period) {
   try {
-    // Clé isolée par userId — même logique que _kmKey() dans infirmiere-tools.js
+    // Préférences véhicule (cv + électrique)
+    const prefs      = _loadKmPrefs();
+    const cv         = parseInt(prefs.cv) || 5;
+    const electrique = !!prefs.electrique;
+
+    // Clé isolée par userId
     let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
     if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
     const _kmStoreKey = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
     const entries = JSON.parse(localStorage.getItem(_kmStoreKey) || '[]');
     const now = new Date();
 
-    // Calculer la date de début selon la période
+    // km totaux de l'année (pour tranches barème)
+    const kmAnnuel = entries
+      .filter(e => new Date(e.date).getFullYear() === now.getFullYear())
+      .reduce((s, e) => s + parseFloat(e.km || 0), 0);
+
+    // Filtrer par période
     let since = new Date();
-    if      (period === 'today')    { since.setHours(0,0,0,0); }
-    else if (period === 'week')     { since.setDate(now.getDate() - 7); }
-    else if (period === 'lastmonth'){
+    let until = null;
+    if      (period === 'today')     { since.setHours(0,0,0,0); }
+    else if (period === 'week')      { since.setDate(now.getDate() - 7); }
+    else if (period === 'lastmonth') {
       since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const until = new Date(now.getFullYear(), now.getMonth(), 0);
-      const filtered = entries.filter(e => {
-        const d = new Date(e.date); return d >= since && d <= until;
-      });
-      const totalKm   = filtered.reduce((s, e) => s + parseFloat(e.km || 0), 0);
-      const deduction = totalKm * KM_FISCAL_RATE_TRESOR;
-      return { totalKm: Math.round(totalKm * 10) / 10, deduction: Math.round(deduction * 100) / 100, count: filtered.length, label: 'Mois précédent' };
+      until = new Date(now.getFullYear(), now.getMonth(), 0);
     }
-    else if (period === '3month')   { since.setMonth(now.getMonth() - 3); }
-    else if (period === 'year')     { since = new Date(now.getFullYear(), 0, 1); }
-    else /* month */                { since = new Date(now.getFullYear(), now.getMonth(), 1); }
+    else if (period === '3month')    { since.setMonth(now.getMonth() - 3); }
+    else if (period === 'year')      { since = new Date(now.getFullYear(), 0, 1); }
+    else /* month */                 { since = new Date(now.getFullYear(), now.getMonth(), 1); }
 
-    const filtered  = entries.filter(e => new Date(e.date) >= since);
-    const totalKm   = filtered.reduce((s, e) => s + parseFloat(e.km || 0), 0);
-    const deduction = totalKm * KM_FISCAL_RATE_TRESOR;
+    const filtered = until
+      ? entries.filter(e => { const d = new Date(e.date); return d >= since && d <= until; })
+      : entries.filter(e => new Date(e.date) >= since);
 
-    const labels = { month:'Ce mois', lastmonth:'Mois précédent', '3month':'3 derniers mois', year:'Cette année', today:'Aujourd\'hui', week:'Cette semaine' };
+    const totalKm  = filtered.reduce((s, e) => s + parseFloat(e.km || 0), 0);
+    const taux     = _calcKmRate(cv, kmAnnuel, electrique);
+    const deduction = totalKm * taux;
+
+    const labels = { month:'Ce mois', lastmonth:'Mois précédent', '3month':'3 derniers mois', year:'Cette année', today:"Aujourd'hui", week:'Cette semaine' };
     return {
-      totalKm:   Math.round(totalKm * 10) / 10,
-      deduction: Math.round(deduction * 100) / 100,
-      count:     filtered.length,
-      label:     labels[period] || 'Ce mois',
+      totalKm:    Math.round(totalKm * 10) / 10,
+      deduction:  Math.round(deduction * 100) / 100,
+      count:      filtered.length,
+      label:      labels[period] || 'Ce mois',
+      taux,
+      cv,
+      electrique,
+      baremeLabel: _kmBaremeLabel(cv, electrique),
     };
-  } catch { return { totalKm: 0, deduction: 0, count: 0, label: '' }; }
+  } catch { return { totalKm: 0, deduction: 0, count: 0, label: '', taux: 0.636, cv: 5, electrique: false, baremeLabel: '5 CV' }; }
 }
 
 /* ════════════════════════════════════════════════
@@ -100,7 +167,7 @@ function renderTresorerie(arr, km) {
       <div style="font-size:24px;flex-shrink:0">🚗</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--t)">Journal kilométrique — <span style="color:var(--a2)">${km.label}</span></div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px">${km.count} trajet(s) · barème ${KM_FISCAL_RATE_TRESOR} €/km (5CV 2025/2026)</div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">${km.count} trajet(s) · ${km.taux ? km.taux.toFixed(3)+' €/km' : 'barème'} · ${km.baremeLabel || '5 CV'} · 2025/2026</div>
       </div>
       <div style="display:flex;gap:20px;flex-wrap:wrap">
         <div class="km-stat">
@@ -280,7 +347,7 @@ async function exportComptable() {
         '',
         '',
         `${km.totalKm.toFixed(1)} km parcourus`,
-        `Déduction ${km.deduction.toFixed(2)} € (${KM_FISCAL_RATE_TRESOR} €/km)`,
+        `Déduction ${km.deduction.toFixed(2)} € (${km.taux ? km.taux.toFixed(3) : '0.636'} €/km · ${km.baremeLabel || '5 CV'})`,
       ].join(';'));
     }
 
@@ -385,10 +452,36 @@ async function checklistCPAM() {
   }
 }
 
+/* Sauvegarder les préférences véhicule depuis la trésorerie */
+function saveKmPrefsTresor() {
+  const cv         = parseInt(document.getElementById('tresor-km-cv')?.value) || 5;
+  const electrique = !!document.getElementById('tresor-km-elec')?.checked;
+  _saveKmPrefs({ cv, electrique });
+  // Synchroniser avec le Journal kilométrique s'il est ouvert
+  const kmCvEl   = document.getElementById('km-cv');
+  const kmElecEl = document.getElementById('km-electrique');
+  if (kmCvEl)   kmCvEl.value = cv;
+  if (kmElecEl) kmElecEl.checked = electrique;
+  // Recharger la trésorerie avec les nouveaux paramètres
+  loadTresorerie();
+}
+
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('app:nav', e => {
     if (e.detail?.view === 'tresor') {
+      loadTresorerie();
+    }
+  });
+  // Écouter ui:navigate aussi
+  document.addEventListener('ui:navigate', e => {
+    if (e.detail?.view === 'tresor') {
+      // Synchroniser les sélecteurs CV/électrique depuis les préférences
+      const prefs = _loadKmPrefs();
+      const cvEl   = document.getElementById('tresor-km-cv');
+      const elecEl = document.getElementById('tresor-km-elec');
+      if (cvEl   && prefs.cv)         cvEl.value   = prefs.cv;
+      if (elecEl && prefs.electrique) elecEl.checked = true;
       loadTresorerie();
     }
   });
