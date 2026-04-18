@@ -102,6 +102,8 @@ async function loadAdmStats() {
 
     // ── Stocker + rendre les stats par infirmière ──────────────────────
     _ADM_PER_USER_DATA = d.per_user || [];
+    console.log('[AMI Admin] per_user reçu :', _ADM_PER_USER_DATA.length, JSON.stringify(_ADM_PER_USER_DATA).slice(0, 300));
+    console.log('[AMI Admin] _debug worker :', JSON.stringify(d._debug || {}));
     _admRenderNurseStats(_ADM_PER_USER_DATA);
   } catch(e) {
     if (puEl) puEl.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message)}</div>`;
