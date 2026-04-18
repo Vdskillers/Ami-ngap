@@ -1,7 +1,7 @@
-# AMI — Documentation Architecture v7.0
+# AMI — Documentation Architecture v8.0
 
-> **Application web progressive (PWA) pour infirmières libérales.**  
-> Cotation NGAP automatique, tournée optimisée, carnet patients chiffré, signatures électroniques, mode cabinet multi-IDE, **moteur hybride Smart Engine IA**.
+> **Application web progressive (PWA) pour infirmières libérales.**
+> Cotation NGAP automatique, tournée optimisée, carnet patients chiffré, signatures électroniques, **mode cabinet multi-IDE**, moteur hybride Smart Engine IA, planning hebdomadaire cabinet.
 
 ---
 
@@ -9,450 +9,475 @@
 
 | Composant | Version | Nouveautés |
 |---|---|---|
-| **Worker backend** | **v7.0** | Smart Engine hybride, State Engine, RL Logger, Heatmap Scoring, 3 nouvelles routes |
-| **Agent IA N8N** | **v10** | +2 nœuds : RL Decision Logger + Heatmap Zone Scorer — pipeline NGAP intact |
-| Module cabinet | v1.0 | Gestion membres, sync sélective, cotation multi-IDE |
-| Moteur tournée IA | v6.0 | Cabinet multi-IDE, clustering, fatigue, surge, prédiction retard |
-| Cotation | v8 | Mode cabinet multi-IDE, sélecteur "Qui fait quoi ?" |
-| Dashboard | v2.0 | KPIs multi-IDE, simulateur revenus, objectif CA |
-| Heatmap zones | **v2.0** | Scoring décisionnel automatique (enrichHeatmap + scorePatientZone) |
-| Assistant vocal IA | v1.1 | NLP embarqué |
+| **Worker backend** | **v7.0** | Smart Engine hybride, State Engine, RL Logger, Heatmap Scoring |
+| **Agent IA N8N** | **v10** | 51 nœuds — RL Decision Logger + Heatmap Zone Scorer |
+| Module cabinet | **v2.0** | Cotation multi-IDE, tournée cabinet, sync sélective, admin seul |
+| Cotation | **v8** | NLP 17 patterns, sélecteur IDE par acte, estimation NGAP correcte côté client |
+| Planning hebdomadaire | **v2.0** | Navigation semaine, vue cabinet multi-IDE, bouton Coter réparé |
+| Tournée IA | **v6.0** | Cabinet multi-IDE, clustering, fatigue, surge, prédiction retard |
+| Dashboard | **v2.0** | KPIs multi-IDE, simulateur revenus, objectif CA (après Stats avancées) |
+| Heatmap zones | **v2.0** | Scoring décisionnel enrichHeatmap + scorePatientZone |
+| Admin panel | v4.0 | Stats Smart Engine + RL, admins invisibles |
 | PWA / Service Worker | v3.6 | Cache offline, tiles carte |
 | Sécurité RGPD | v2.0 | Isolation multi-users IndexedDB par userId |
-| Admin panel | v4.0 | Admins invisibles entre eux + stats Smart Engine |
 
 ---
 
-## Architecture globale de l'application
+## Architecture globale
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        TERMINAL UTILISATEUR                             │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                    FRONTEND (GitHub Pages)                        │  │
-│  │  index.html · style.css · mobile-premium.css · desktop-premium   │  │
-│  │                                                                   │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │  │
-│  │  │cotation.js│ │tournee.js│ │patients.j│ │  cabinet.js      │   │  │
-│  │  │NGAP v8   │ │planning  │ │IndexedDB │ │  multi-IDE v1.0  │   │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │  │
-│  │                                                                   │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │  │
-│  │  │dashboard │ │map.js    │ │ai-tournee│ │  security.js     │   │  │
-│  │  │KPIs+CA   │ │Leaflet   │ │Smart TSP │ │  AES-256-GCM     │   │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │  │
-│  │                                                                   │  │
-│  │  STOCKAGE LOCAL (jamais transmis aux serveurs)                   │  │
-│  │  ├── IndexedDB ami_patients_db_<userId>  ← données santé AES    │  │
-│  │  ├── IndexedDB ami_sig_db_<userId>       ← signatures AES       │  │
-│  │  └── localStorage ami_dash_<userId>_*   ← cache non-sensible    │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
+│  FRONTEND (GitHub Pages)                                                │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────────────┐  │
+│  │cotation.js│ │tournee.js│ │patients.j│ │  cabinet.js v2.0         │  │
+│  │NGAP v8   │ │planning  │ │IndexedDB │ │  multi-IDE · sync · test  │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────────────┐  │
+│  │dashboard │ │map.js v2 │ │ai-tournee│ │  security.js AES-256-GCM  │  │
+│  │KPIs+Cab  │ │Heatmap   │ │Smart TSP │ │                           │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────────────┘  │
+│  STOCKAGE LOCAL (jamais transmis aux serveurs)                         │
+│  ├── IndexedDB ami_patients_db_<userId>  ← données santé AES-256      │
+│  ├── IndexedDB ami_sig_db_<userId>       ← signatures AES-256         │
+│  └── localStorage ami_dash_<userId>_*   ← cache non-sensible          │
 └─────────────────────────────────────────────────────────────────────────┘
                                │ HTTPS · JWT
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │               CLOUDFLARE WORKER v7.0  (Edge Computing)                  │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  🧠 SMART ENGINE HYBRIDE (NOUVEAU v7.0)                          │  │
-│  │                                                                   │  │
-│  │  REQUEST ami-calcul mode:ngap                                     │  │
-│  │       │                                                           │  │
-│  │       ▼                                                           │  │
-│  │  [1] CACHE sha256 ──── HIT ──────────────────────→ Réponse       │  │
-│  │       │ MISS                                                      │  │
-│  │       ▼                                                           │  │
-│  │  [2] RULE ENGINE (cas simples ~60%) ── OK ────────→ Réponse      │  │
-│  │       │ cas complexe                                              │  │
-│  │       ▼                                                           │  │
-│  │  [3] ML RAPIDE (confidence > 0.82) ── OK ─────────→ Réponse      │  │
-│  │       │ faible confiance                                          │  │
-│  │       ▼                                                           │  │
-│  │  [4] N8N FALLBACK ─────────────────────────────────→ Réponse     │  │
-│  │                                                                   │  │
-│  │  Résultat → RL Logger → State Engine update                      │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│                                                                         │
-│  ┌────────────────┐  ┌─────────────────┐  ┌────────────────────────┐  │
-│  │  STATE ENGINE  │  │   RL LOGGER     │  │   HEATMAP SCORING      │  │
-│  │  (nouveau v7)  │  │  (nouveau v7)   │  │   (nouveau v7)         │  │
-│  │  Map userId→   │  │  Q-table ε-     │  │  enrichHeatmap()       │  │
-│  │  {version,     │  │  greedy         │  │  scorePatientZone()    │  │
-│  │   heatmap,     │  │  reward réel    │  │  > 30 → high priority  │  │
-│  │   last_cotat.} │  │  → system_logs  │  │  10-30 → normal        │  │
-│  └────────────────┘  └─────────────────┘  └────────────────────────┘  │
-│                                                                         │
-│  Auth · Isolation infirmiere_id · NGAP rules · Fraud detection          │
-│  Cabinet multi-IDE · Sync PC↔Mobile · Invoice generation               │
+│  SMART ENGINE HYBRIDE                                                   │
+│  [1] Cache sha256 ──── HIT ────────────────────→ Réponse               │
+│  [2] Rule Engine (~60%) ── OK ─────────────────→ Réponse               │
+│  [3] ML Rapide (confidence > 0.82) ── OK ──────→ Réponse               │
+│  [4] N8N Fallback ──────────────────────────────→ Réponse              │
+│  Résultat → RL Logger → State Engine update                            │
+│  Auth · Isolation infirmiere_id · Cabinet multi-IDE · Sync PC↔Mobile  │
 └─────────────────────────────────────────────────────────────────────────┘
-          │                              │
-          │ SQL REST                     │ HTTP POST
-          ▼                              ▼
-┌─────────────────────┐     ┌──────────────────────────────────────────┐
-│  SUPABASE           │     │  N8N v10  (Render · stateless)           │
-│  (PostgreSQL)       │     │                                          │
-│                     │     │  ami-calcul → Pipeline NGAP complet      │
-│  planning_patients  │     │  [NLP → RAG → Grok → Validate →         │
-│  infirmieres        │     │   Recalcul → Fraud → CPAM → FSE →       │
-│  sessions           │     │   RL Decision Logger ← NOUVEAU v10      │
-│  audit_logs         │     │   Heatmap Zone Scorer ← NOUVEAU v10     │
-│  system_logs        │     │   → Respond]                            │
-│  cabinets           │     │                                          │
-│  cabinet_members    │     │  Utilisé uniquement pour cas complexes  │
-│  signatures_sync    │     │  (~20% des appels ami-calcul)           │
-│  weekly_planning    │     │                                          │
-│  km_journal         │     └──────────────────────────────────────────┘
-│  heure_cache        │
-│  carnet_patients    │
+          │ SQL REST                    │ HTTP POST
+          ▼                             ▼
+┌─────────────────────┐   ┌──────────────────────────────────────────┐
+│  SUPABASE           │   │  N8N v10  (Render · stateless)           │
+│  planning_patients  │   │  Pipeline NGAP 51 nœuds                 │
+│  cabinets           │   │  RL Decision Logger + Heatmap Scorer    │
+│  cabinet_members    │   │  ~20% des appels ami-calcul             │
+│  weekly_planning    │   └──────────────────────────────────────────┘
+│  signatures_sync    │
 └─────────────────────┘
 ```
 
 ---
 
-## Architecture N8N v10 — Pipeline complet
-
-> Workflow : `AI_Agent_AMI_v10` · **51 nœuds**
-> Instance : `https://n8n-6fyl.onrender.com` · Statut : **active**
-> **2 nouveaux nœuds v10** — pipeline NGAP **100% inchangé**
-
-### Flux principal `/ami-calcul`
+## Architecture N8N v10 — Pipeline complet (51 nœuds)
 
 ```
-[POST /ami-calcul]  ← Webhook
+[POST /ami-calcul] ← Webhook
         │
-        ▼
-[0] Router Cabinet
-    Détecte _cabinet_mode → pipeline solo (0) ou Split by IDE (1)
+[0] Router Cabinet — _cabinet_mode → solo (0) ou Split by IDE (1)
         │
-    ┌───┴──────────────────────────────────┐
-    │ MODE SOLO                            │ MODE CABINET
-    │                                      ▼
-    │                              [0b] Split by IDE
-    │                                      │
-    ▼                                      ▼
-[1] NLP Médical v6+v7
-    Extraction actes · contexte · distance km
-    preuve_soin : type / timestamp / hash / geo_zone / force_probante
-        │
-        ▼
-[2] RAG NGAP Retriever v7
-    Base documentaire NGAP 2026 — retrieval BM25
-    rulesetHash + rulesetVersion
-        │
-        ▼
-[3] AI Agent — xAI Grok
-    Raisonnement NGAP avec historique patient
-    Renvoie : actes[] code "AMI"+coeff, total, dre_requise, horaire_type
-        │
-        ▼
-[4] Parser résultat IA v5.5
-    Parse JSON Grok, détection hallucinations, normalisation
-        │
-        ▼
-[5] Validateur NGAP V1
-    AIS+BSI exclusion · IFD unique · NUIT+DIM interdit · IK sans distance
-        │
-        ▼
-[6] Optimisateur € v3
-    Ajout auto MCI / IFD / IK / MIE si critères présents
-        │
-        ▼
-[7] Validateur NGAP V2
-    Second passage post-optimisation
-        │
-        ▼
-[8] Recalcul NGAP Officiel v5  ← SOURCE DE VÉRITÉ ABSOLUE
-    Tarifs 2026 officiels · tri acte principal · coefficients
-    IK = km × 2 × 0,35 € · audit trail complet
-        │
-        ▼
-[9] Analyse Pattern Patient v2
-    Répétition ≥ 7j · évolution dépendance · cohérence pathologie
-        │
-        ▼
-[10] Suggestions alternatives v4
-     Gains € non réalisés · conseils preuve soin
-        │
-        ▼
-[11] Fraude Detector v7
-     Score multicritères — preuve absente +3 pts · preuve forte −3 pts
-        │
-        ▼
-[12] CPAM Simulator v5
-     Simulation contrôle CPAM — preuve forte supprime 1 anomalie
-        │
-        ▼
-[13] Scoring Infirmière v4
-     Score global IDE — niveau SAFE / SURVEILLANCE / DANGER
-        │
-        ▼
-[14] Blocage FSE si HIGH
-     Bloque si fraud=HIGH ou (MEDIUM + CPAM CRITIQUE)
-        │
-        ▼
+[1] NLP Médical v6+v7     [2] RAG NGAP Retriever v7 (BM25)
+[3] AI Agent — xAI Grok   [4] Parser résultat IA v5.5
+[5] Validateur NGAP V1    [6] Optimisateur € v3 (MCI/IFD/IK/MIE auto)
+[7] Validateur NGAP V2    [8] Recalcul NGAP Officiel v5 ← SOURCE DE VÉRITÉ
+[9] Analyse Pattern Patient v2     [10] Suggestions alternatives v4
+[11] Fraude Detector v7            [12] CPAM Simulator v5
+[13] Scoring Infirmière v4         [14] Blocage FSE si HIGH
 [15] FSE Generator v6+v7
-     FSE-1.40 · justification médicale horodatée · preuve_soin intégrée
-        │
-        ▼
-[Mode spécial ?] — bypass DB si _mode≠ngap / _skip_db / blocked
-     │ NON                │ OUI
-     ▼                    ▼
-[16] Sauvegarder en BDD v8
-     INSERT cotations avec invoice_number · RETURNING id
-        │
-        ▼
-[17] Fusionner réponse v11
-     Réponse finale · db_invoice_number
-        │
-        ▼
+[16] Sauvegarder en BDD v8         [17] Fusionner réponse v11
 [18] Merge Cabinet
-     Enrichit réponse cabinet avec ide_id · cabinet_mode:true
-     Solo : laisse passer sans modification
-        │
-        ▼
-[19] RL Decision Logger  ◄─────────────── NOUVEAU v10
-     Calcule reward réel = revenue - km_cost - delay_cost
-     Log dans la réponse : _rl_decision { state, action, reward, outcome }
-     Transparent — ne modifie pas la cotation
-        │
-        ▼
-[20] Heatmap Zone Scorer  ◄────────────── NOUVEAU v10
-     Estime revenue_per_hour · delay_risk · zone_score composite
-     Ajoute zone_data + zone_score à la réponse
-     Transparent — ne modifie pas la cotation
-        │
-        ▼
-[21] Respond to Webhook → JSON au worker
-```
-
-## Modèle Smart Engine — détail v7.0
-
-### Pipeline de décision
-
-```
-INPUT body { texte, heure_soin, km, date_soin }
-        │
-        ▼
-sha256(texte+heure+km+date) ──── Cache HIT? ──── OUI ──→ { source: 'cache' }
-        │ NON
-        ▼
-_isSimpleCase(body)?
-  NON si : perfusion · pansement complexe · escarre · nécrose
-           toilette grabataire · bilan dépendance · 23h/nuit profonde
-           dimanche · cabinet · plusieurs actes
-  OUI → fallbackCotation() ──── actes > 0 & total > 0? ── OUI → { source: 'rule' }
-        │ NON
-        ▼
-_mlPredict(body)
-  features : injection +0.15 · prélèvement +0.15 · pansement +0.10
-             heure_soin +0.05 · domicile +0.05
-             ambiguïté -0.30
-  confidence > 0.82? ── OUI → { source: 'ml' }
-        │ NON
-        ▼
-computeCotationSmart → N8N
-  POST /webhook/ami-calcul → pipeline N8N complet
-  Résultat mis en cache pour 1h
-  { source: 'n8n' }
-```
-
-### Compteurs exposés dans `/webhook/admin-engine-stats`
-
-```json
-{
-  "smart_engine": {
-    "cache_size": 42,
-    "rule_engine_hits": 1240,
-    "ml_engine_hits": 380,
-    "n8n_calls": 95
-  },
-  "state_engine": { "active_users": 7 },
-  "rl_engine": {
-    "q_table_states": 12,
-    "action_stats": {
-      "rule":  { "avg_q": 14.2, "count": 1240 },
-      "ml":    { "avg_q": 11.8, "count": 380 },
-      "cache": { "avg_q": 13.5, "count": 520 },
-      "n8n":   { "avg_q": 18.6, "count": 95 }
-    }
-  }
-}
+[19] RL Decision Logger  ← NOUVEAU v10
+     reward = revenue - km_cost - delay_cost → system_logs (RL_DECISION)
+[20] Heatmap Zone Scorer ← NOUVEAU v10
+     revenue_per_hour · delay_risk · zone_score → zone_data dans réponse
+[21] Respond to Webhook
 ```
 
 ---
 
-## RL Engine — fonctionnement
+## Modèle de sécurité & isolation
 
-### Reward réel
+### Rôles
 
-```
-reward = revenue
-       - km × 0.35     (coût kilométrique — remboursement CPAM)
-       - fatigue × 5   (coût fatigue IDE — subjectif)
-       - delay × 2     (pénalité retard patient)
-```
-
-### Q-table (ε-greedy)
-
-```
-État   = { zone, time_slot, load_level }
-Action = 'cache' | 'rule' | 'ml' | 'n8n'
-α = 0.1  (taux apprentissage)
-γ = 0.9  (facteur actualisation)
-ε = 0.10 (taux exploration)
-
-Q(s,a) ← Q(s,a) + α × [ reward + γ × max Q(s',a') - Q(s,a) ]
-```
-
-### Log RL (`system_logs` event: `RL_DECISION`)
-
-```json
-{
-  "userId": "uuid",
-  "state":  { "zone": "Finistère-29", "time_slot": "day", "load_level": "normal" },
-  "action": "rule",
-  "reward": 12,
-  "context": { "invoice": "F2026-ABCDEF-000042" }
-}
-```
-
----
-
-## Heatmap Scoring — fonctionnement v2.0
-
-### Flux complet
-
-```
-Tournée terminée (front)
-       │ POST /webhook/heatmap-push
-       ▼
-Worker v7 — State Engine
-       │ heatmap[gridKey] = { revenue_per_hour, km, delay_risk }
-       ▼
-enrichHeatmap(grid)
-       │ score = revenue_per_hour - km×0.35 - delay_risk×5
-       ▼
-ami-tournee-ia
-       │ scorePatientZone(patient, heatmap) → zone_score
-       │ heatmapPriority(score) → 'high' | 'normal' | 'low'
-       ▼
-Tri composite : priority_horaire + (zone_score > 30 ? +20 bonus)
-```
-
-### Routes heatmap (nouvelles v7)
-
-| Route | Permissions | Rôle |
-|---|---|---|
-| `POST /webhook/heatmap-push` | Infirmière seulement | Envoyer les données de zone depuis le front |
-| `POST /webhook/heatmap-pull` | Infirmière seulement | Lire la heatmap enrichie (avec score) |
-
----
-
-## Modèle de sécurité & isolation des données
-
-### Rôles utilisateurs
-
-| Rôle | Accès données patients | Accès fonctionnalités | Cabinet |
+| Rôle | Accès données patients | Cabinet | Admin |
 |---|---|---|---|
-| **Infirmière** | Ses propres patients uniquement (`infirmiere_id`) | Toutes les vues métier | Créer / rejoindre un cabinet |
-| **Admin** | Ses propres patients de test uniquement — jamais ceux des infirmières | Toutes les vues en mode démo + panneau admin | Cabinet de test (isolation `user.id`) |
+| **Infirmière** | Ses propres patients (`infirmiere_id`) | Créer/rejoindre, même seule | Non |
+| **Admin** | Ses propres données de test uniquement | Cabinet de test, seul ou avec membres | Oui |
 
-### Règles d'isolation strictes
+### Règles critiques
 
-- Chaque infirmière ne voit **que ses propres données** — filtrage strict `infirmiere_id=eq.${user.id}` côté Worker
-- Les admins testent toutes les fonctionnalités avec **leurs propres données de test** — pas d'accès aux données infirmières
-- Les admins sont **invisibles entre eux** — le panneau admin n'affiche que les comptes infirmières
-- Le panneau admin affiche statistiques globales + noms/prénoms des **infirmières uniquement**
-- **RL Logger désactivé pour les admins** — les décisions de test ne polluent pas la Q-table
-
-### Architecture Privacy by Design
-
-```
-Données de santé → chiffrées AES-256-GCM → stockage local (IndexedDB)
-                                            JAMAIS transmises aux serveurs
-
-Cloudflare Worker → métadonnées & cotations uniquement
-Supabase          → données non-sensibles + cotations (chiffrement champ)
-N8N (Render)      → traitement IA stateless — aucune donnée santé brute stockée
-
-Smart Engine      → cache mémoire Worker (TTL 1h) — anonymisé par sha256
-State Engine      → mémoire Worker (reset au redéploiement) — pas de persistance DB
-RL Logger         → system_logs (userId + reward seulement — jamais de texte médical)
-
-Mode cabinet sync → données anonymisées uniquement
-                    consentement explicite requis · TTL 7 jours
-```
+- Chaque infirmière ne voit que ses propres données — filtrage strict `infirmiere_id=eq.${user.id}`
+- Les admins sont **invisibles entre eux** dans le panneau d'administration
+- **Mode cabinet activable dès que cabinet existe, même avec un seul membre (admin seul)**
+- RL Logger désactivé pour les admins — les décisions de test ne polluent pas la Q-table
 
 ---
 
-## Checklist RGPD / HDS — audit-ready
+## Module cotation.js v8 — Fonctions
 
-### A. Gouvernance
-- ✅ Registre des traitements — ✅ Responsable de traitement défini — ✅ DPO si applicable
+### Cotation solo
 
-### B. Sécurité
-- ✅ HTTPS partout (Cloudflare + GitHub Pages)
-- ✅ Chiffrement **AES-256-GCM** — `crypto.createCipheriv('aes-256-gcm', key, iv)` (PBKDF2, 100k itérations)
-- ✅ Mots de passe hashés (SHA-256 salé) — ✅ JWT sécurisé + vérification session Supabase
-- ✅ Firewall WAF Cloudflare
-
-### C. Données de santé
-- ✅ Accès restreint par rôle et `infirmiere_id`
-- ✅ Logs d'accès (`audit_logs` + `system_logs`)
-- ✅ Chiffrement de champ (`encryptField` / `decryptField`)
-- ✅ Anonymisation admin (`anonymizePatient()`, `sanitizeForAdmin()`)
-- ✅ **Smart Engine** : cache sha256 (texte anonymisé) — jamais en clair
-- ✅ **RL Logger** : system_logs ne contient jamais le texte libre médical
-
-### D. Accès utilisateur
-- ✅ Auth forte (JWT + PIN local) — ✅ Sessions `getSession()`
-- ✅ Déconnexion auto + verrouillage PIN — ✅ Permissions granulaires `PERMISSIONS`
-
-### E–F. Données & Stockage
-- ✅ Minimisation — ✅ Anonymisation partielle admins — ✅ Séparation infirmière/admin
-- ✅ Patients IndexedDB `ami_patients_db_<userId>` chiffré — ✅ Signatures `ami_sig_db_<userId>`
-- ✅ Backup sync PC ↔ mobile — ✅ Purge auto vieux logs
-- ✅ **Cabinet sync TTL 7 jours** — auto-expiration
-
-### G. Droits utilisateurs
-- ✅ Export (`exportPatientData()`, `exportMyData()`, `exportComptable()`)
-- ✅ Suppression compte — ✅ Modification profil
-
-### H. Consentement
-- ✅ CGU + politique RGPD — ✅ Consentement explicite
-- ✅ **Consentement sync cabinet** : case à cocher par donnée + par collègue
-
-### I. Audit & logs
-- ✅ `audit_logs` — ✅ `system_logs` — ✅ Anti-fraude — ✅ Score qualité IA
-- ✅ **RL decisions loguées** : event `RL_DECISION` dans system_logs (admin visible)
-- ✅ **Heatmap push/pull audités** : event `HEATMAP_PUSH` dans audit_logs
-
-### J. Incident
-- ✅ Plan de réponse — ✅ Notification CNIL < 72h — ✅ Alertes fraude
-
----
-
-## Logique cotation — règles upsert
-
-```
-Patient existe dans le carnet ?
-├── OUI → Upsert (mise à jour de la cotation existante)
-│         Jamais de push(), jamais de doublon
-│         Résolution index : cotationIdx > invoice_number > invoice_number original
-│         Si aucun index trouvé ET mode édition (_editRef) → ne rien faire
-│
-└── NON → Créer la fiche patient + la cotation (une seule fois)
-          Uniquement si ce n'est PAS une correction (_editRef absent)
-```
-
-| Situation | Comportement |
+| Fonction | Description |
 |---|---|
-| Patient existant + mode édition + index trouvé | Mise à jour de la cotation |
-| Patient existant + pas de mode édition | Ajout de la cotation (1ère fois) |
-| Patient existant + mode édition + index introuvable | Rien (évite doublon) |
-| Patient absent + pas de mode édition | Crée la fiche patient + la cotation |
-| Patient absent + mode édition | Rien (ne crée pas de fiche fantôme) |
+| `cotation()` | Pipeline principal — Smart Engine → Rule/ML/N8N |
+| `renderCot(d)` | Résultat complet : fraud, CPAM, suggestions, scoring IDE, horaire |
+| `openVerify()` / `applyVerify()` / `closeVM()` | Modale vérification IA |
+| `verifyStandalone()` | Vérification indépendante du formulaire principal |
+| `clrCot()` | Réinitialise formulaire ET panneau cabinet |
+| `printInv(d)` | Génère et télécharge la facture PDF |
+| `coterDepuisRoute(desc, nom)` | Pré-remplit depuis la tournée |
+| `_saveEditedCotation(d)` | Met à jour une cotation existante (IDB + Supabase) |
+
+### Cabinet multi-IDE
+
+| Fonction | Description |
+|---|---|
+| `initCotationCabinetToggle()` | Toggle visible dès que cabinet existe (admin inclus) |
+| `cotationToggleCabinetMode(active)` | Ouvre/ferme panneau "Qui réalise chaque acte ?" |
+| `cotationRenderCabinetActes()` | Sélecteurs IDE par acte — NLP 17 patterns, groupés (actes/bsi/majorations) |
+| `cotationUpdateCabinetTotal()` | Totaux live par IDE avec coefficients NGAP corrects + gain vs solo |
+| `cotationOptimizeDistribution()` | Répartition IA : actes par valeur décroissante alternés |
+| `_cotEstimateNGAP(actesIDE)` | Calcule l'estimation NGAP correcte (acte principal ×1, suivants ×0,5) |
+| `_cotDetectActes(texte)` | NLP — 17 types : AMI1-6, AIS, BSA/B/C, IFD, NUIT, NUIT_PROF, DIM, MIE, MCI |
+| `cotationCabinet(txt)` | Pipeline multi-IDE → `/webhook/cabinet-calcul` |
+| `renderCotCabinet(d)` | Résultat enrichi : carte par IDE, détail coefficients, gain vs solo, actions |
+
+---
+
+## Module tournee.js — Fonctions
+
+### Planning hebdomadaire v2.0
+
+| Fonction | Description |
+|---|---|
+| `renderPlanning(d)` | Rendu complet : filtrage semaine, vue solo ou cabinet multi-IDE |
+| `refreshPlanning()` | Actualise + init UI cabinet |
+| `planningWeekNav(delta)` | Navigation semaine (-1/+1) — label dynamique |
+| `planningToggleCabinetView(active)` | Active la grille jours × IDEs |
+| `_planningInitCabinetUI()` | Toggle + "Répartir" visibles dès que cabinet existe — retry 1s async |
+| `planningGenerateCabinet()` | Active vue cabinet — accepte admin seul |
+| `planningOptimiseCabinetWeek()` | `smartCluster()` sur la semaine → re-rend |
+| `generatePlanningFromImport()` | Génère depuis données importées |
+| `openCotationPatient(idx)` | Résout dans : uberPatients → **_planningData** → importedData → _planIdx |
+| `openCotationPatientFromPatient(p)` | Corps cotation : IDB → API → modal |
+| `_planningDeleteCotation(idx)` | Supprime cotation sans retirer le patient |
+| `_planningRemovePatient(idx)` | Retire un patient |
+| `_planningResetAll()` | Efface tout le planning |
+
+### Sync planning PC ↔ mobile
+
+| Fonction | Description |
+|---|---|
+| `_savePlanning(patients)` | localStorage (TTL 7 jours) |
+| `_loadPlanning()` | Charge depuis localStorage |
+| `_syncPlanningToServer(patients)` | Push chiffré AES → `/webhook/planning-push` |
+| `_syncPlanningFromServer()` | Pull + fusion si données locales existent |
+
+### Tournée optimisée
+
+| Fonction | Description |
+|---|---|
+| `optimiserTournee()` | Optimisation OSRM + IA (modes : ia/heure/mixte) |
+| `recalculTournee()` | Recalcule sans changer les paramètres |
+| `getOsrmRoute(waypoints)` | Itinéraire OSRM |
+| `_renderRouteHTML(route, osrm, ca, rentab, mode)` | HTML tournée |
+| `removeFromTournee(encodedId, idx)` | Retire un patient |
+| `clearTournee()` | Vide la tournée |
+
+### Pilotage live
+
+| Fonction | Description |
+|---|---|
+| `startDay()` | Démarre la journée — GPS, minuterie, tournée |
+| `stopDay()` | Termine — CA final |
+| `liveStatus()` | État live (local immédiat + sync arrière-plan) |
+| `liveAction(action)` | done/absent/undo/cot |
+| `renderLivePatientList()` | Liste pilotage |
+| `autoFacturation(patient)` | Cotation automatique |
+| `startLiveTimer()` / `detectDelay(p)` | Minuterie + détection retards |
+| `analyzeLive(texte)` / `renderLiveReco(texte)` | NLP + recommandations temps réel |
+| `autoCotationLocale(texte)` | Fallback cotation offline |
+
+### Tournée cabinet
+
+| Fonction | Description |
+|---|---|
+| `optimiserTourneeCabinet()` | Répartit patients entre IDEs — accepte membre seul (admin solo) |
+| `optimiserTourneeCabinetCA()` | Optimise pour maximiser revenus — accepte membre seul |
+| `_renderTourneeCabinetHTML(assignments, scoreData)` | HTML résultat multi-IDE |
+
+### Import calendrier
+
+| Fonction | Description |
+|---|---|
+| `importCalendar()` | Import ICS/CSV/JSON/TXT/texte libre |
+| `_processImportData(content, source)` | Parse et normalise |
+| `_autoAddImportedToCarnet(patients)` | Ajoute au carnet IDB sans doublons |
+| `geocodeImportedPatients()` | Géocode les adresses importées |
+
+---
+
+## Module cabinet.js v2.0 — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `initCabinet()` | Charge l'état cabinet au login (silencieux, async) |
+| `renderCabinetSection()` | Vue "Mon Cabinet" (guard : vue active) |
+| `cabinetCreate()` | Crée un cabinet |
+| `cabinetJoin()` | Rejoint par ID |
+| `cabinetLeave()` | Quitte le cabinet |
+| `cabinetCopyId(id)` | Copie l'ID cabinet |
+| `cabinetToggleSyncWhat(key, checked)` | Type de données à synchroniser |
+| `cabinetToggleSyncWith(memberId, checked)` | Destinataire de sync |
+| `cabinetPushSync()` | Envoie données sélectionnées (consentement explicite) |
+| `cabinetPullSync()` | Reçoit données des collègues |
+| `cabinetSyncStatus()` | Dernière sync de chaque membre |
+| `cabinetCotation(basePayload, actes)` | Cotation multi-IDE → `/webhook/cabinet-calcul` |
+| `cabinetTournee(patients)` | Tournée cabinet → `/webhook/cabinet-tournee` |
+| `_updateCabinetBadge(nbMembers)` | Badge "N membres" sidebar |
+| `_updateTourneeCabinetPanel()` | Panel tournée visible dès que cabinet existe |
+
+---
+
+## Module ai-tournee.js v6.0 — Fonctions
+
+### Moteur de tournée
+
+| Fonction | Description |
+|---|---|
+| `optimizeTour(patients, start, startTime, mode)` | TSP hybride : géo + médical + trafic + lookahead |
+| `twoOpt(route)` | Optimisation 2-opt locale |
+| `simulateLookahead(from, remaining, depth, depMin)` | Lookahead IA profondeur 2 |
+| `recomputeRoute()` | Recalcule la route en cours |
+| `startLiveOptimization()` / `stopLiveOptimization()` | Boucle live toutes les 5 min |
+
+### Scoring et heuristiques
+
+| Fonction | Description |
+|---|---|
+| `medicalWeight(p)` | Score médical (urgence, dépendance, contrainte horaire) |
+| `dynamicScore({ currentTime, travelTime, patient, userPos })` | Score composite dynamique |
+| `geoPenalty(patient, userPos)` | Pénalité éloignement du cluster |
+| `trafficFactor(departureMin, date)` | Coefficient trafic CEREMA |
+| `trafficAdjust(osrmMin, departureMin, date)` | Ajuste le temps OSRM |
+| `scoreTourneeRentabilite(route)` | Score rentabilité €/km |
+| `_estimateFatigueFactor(nbStops, km, minutes)` | Facteur fatigue IDE (×1.0 → ×1.4) |
+
+### Cabinet multi-IDE
+
+| Fonction | Description |
+|---|---|
+| `cabinetGeoCluster(patients, k)` | K-means géographique pour k IDEs |
+| `cabinetPlanDay(patients, members)` | Plan journée multi-IDE (synchrone) |
+| `cabinetScoreDistribution(assignments)` | Score €/km, pénalise les déséquilibres |
+| `cabinetOptimizeRevenue(assignments, members)` | 30 itérations de swap patients |
+| `cabinetBuildUI(assignments, scoreData)` | HTML résumé planning multi-IDE |
+
+### IA avancée
+
+| Fonction | Description |
+|---|---|
+| `smartCluster(patients, k)` | Clustering hybride géo + score € (20 itérations) |
+| `planWithRevenueTarget({ patients, members, target })` | Planning piloté par objectif CA |
+| `planWithTargetAndSurge({ patients, members, target, zones })` | Planning objectif + surge zones |
+| `predictDelayLive({ ide, route })` | Prédit retards live → LOW/MEDIUM/HIGH |
+| `autoReassignIfRisk({ planning, infirmieres })` | Réassigne si risque HIGH |
+| `startCabinetLiveOptimization(...)` / `stopCabinetLiveOptimization()` | Boucle live 15s |
+| `_surgeScore({ demand, supply, delayRisk, fatigueAvg })` | Score tension zone |
+
+### Transport
+
+| Fonction | Description |
+|---|---|
+| `getTravelTimeOSRM(a, b)` | Temps trajet OSRM en minutes |
+| `cachedTravel(a, b)` | Trajet avec cache mémoire |
+| `trafficAwareCachedTravel(a, b, departureMin)` | Trajet cache + trafic |
+| `addUrgentPatient(patient)` | Insère un urgent dans la tournée |
+| `cancelPatient(patientId)` | Retire un patient annulé |
+| `completePatient(patientId, actualArrivalMin)` | Marque terminé + stats |
+
+---
+
+## Module map.js v2.0 — Fonctions
+
+### Correction de position
+
+| Fonction | Description |
+|---|---|
+| `enableCorrectionMode(lat, lng)` | Mode correction de position |
+| `confirmCorrectedPosition(patientId)` | Sauvegarde position corrigée |
+| `enablePatientCorrection(patientId, idx, lat, lng, nom)` | Correction patient spécifique |
+| `enableStartPointCorrection(map, lat, lng, onConfirm)` | Correction point de départ |
+| `openStartPointEditor(context)` | Éditeur point de départ |
+| `useMyLocation(patientId)` | Géolocalisation GPS |
+
+### Carte
+
+| Fonction | Description |
+|---|---|
+| `renderPatientsOnMap(patients)` | Marqueurs patients Leaflet |
+| `searchLiveStartPoint()` | Recherche adresse départ live |
+| `useLiveMyLocation()` | GPS pilotage live |
+
+### Heatmap zones rentables
+
+| Fonction | Description |
+|---|---|
+| `computeHeatmap(cotations)` | Agrège par grille ~110m → `revenue_per_hour` |
+| `renderHeatmap(grid, metric)` | Calque Leaflet.heat (bleu→orange→rouge→violet) |
+| `toggleHeatmap()` | Bascule on/off — charge cache ou API |
+| `gridKey(lat, lng, precision)` | Clé de grille géographique |
+| `_showHeatmapPanel(grid)` | Panneau flottant top 5 zones €/h |
+
+---
+
+## Module dashboard.js v2.0 — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `loadDash()` | Charge les cotations + rend le dashboard |
+| `renderDashboard(arr)` | KPIs, graphique 30j, top actes, prévision, anomalies, IA |
+| `detectAnomalies(rows, daily)` | Détection statistique (σ) des anomalies |
+| `renderAnomalies(result)` | Affiche les anomalies |
+| `explainAnomalies(rows, result)` | Explications textuelles des anomalies |
+| `suggestOptimizations(rows)` | Suggestions d'optimisation NGAP |
+| `renderAI(explanations, suggestions)` | Bloc analyse IA |
+| `computeLoss(rows)` / `showLossAlert(loss)` | Calcul + alerte perte de revenus |
+| `forecastRevenue(daily)` | Prévision fin de mois par tendance linéaire |
+| `loadDashCabinet()` | KPIs cabinet + revenus par IDE (si cabinet actif) |
+| `runCabinetSimulator()` | Simulateur revenus cabinet |
+| `runCabinetCATarget()` | Objectif CA mensuel avec suggestions + barre progression |
+
+**Ordre des sections :**
+1. KPIs · Graphique 30j · Top actes · Prévision · Alertes · Anomalies · Analyse IA
+2. **📊 Statistiques avancées**
+3. **🏥 Statistiques cabinet** (si cabinet actif)
+
+---
+
+## Module patients.js — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `initPatientsDB()` | Initialise IndexedDB `ami_patients_db_<userId>` |
+| `openAddPatient()` | Formulaire ajout |
+| `savePatient()` | Crée/met à jour fiche (géocodage auto) |
+| `loadPatients()` | Liste avec recherche |
+| `openPatientDetail(id)` | Vue détail avec onglets |
+| `editPatient(patId)` | Mode édition |
+| `_saveOrdo(patientId)` | Sauvegarde ordonnance |
+| `_editOrdo` / `_deleteOrdo` | Gestion ordonnances |
+| `_calcOrdoExp()` | Alerte expiration 30 jours |
+| `_enc(obj)` / `_dec(str)` | Chiffrement/déchiffrement btoa (clé JWT) |
+| `_idbPut` / `_idbGetAll` / `_idbDelete` | IDB bas niveau |
+
+---
+
+## Module security.js v2.0 — Fonctions
+
+### Chiffrement AES-256-GCM
+
+| Fonction | Description |
+|---|---|
+| `generateEncKey(password, saltHex)` | Dérive clé AES-256 via PBKDF2 (100k itérations) |
+| `initSessionKey(token)` | Initialise la clé de session depuis JWT |
+| `encryptData(obj)` / `decryptData(payload)` | Chiffrement/déchiffrement objet |
+| `encryptField(str)` / `decryptField(json)` | Chiffrement champ individuel |
+| `saveSecure` / `loadSecure` / `loadAllSecure` / `clearSecureStore` | IDB sécurisé |
+
+### RGPD & PIN
+
+| Fonction | Description |
+|---|---|
+| `hasConsent()` / `checkConsent()` / `showConsentModal()` | Gestion consentement |
+| `acceptConsent()` / `revokeConsent()` | Accept / révoque |
+| `exportMyData()` | Export RGPD complet (JSON) |
+| `purgeLocalData()` | Purge toutes les données locales |
+| `auditLocal(action, detail)` | Log action dans audit_logs |
+| `setupPIN(pin)` / `checkPIN(pin)` / `lockApp()` / `unlockApp()` | PIN + verrouillage |
+
+---
+
+## Module signature.js — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `openSignatureModal(invoiceId)` | Canvas signature pour une facture |
+| `saveSignature()` | Sauvegarde chiffrée + sync serveur |
+| `injectSignatureInPDF(invoiceId)` | Injecte dans le PDF facture |
+| `getSignature(invoiceId)` / `deleteSignature(invoiceId)` | Lecture/suppression |
+| `syncSignaturesToServer()` / `syncSignaturesFromServer()` | Sync bidirectionnelle |
+
+---
+
+## Module rapport.js — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `generateRapportMensuel()` | Rapport PDF mensuel |
+| `previewRapport()` | Prévisualisation HTML |
+| `loadSystemHealth()` | Stats N8N + Smart Engine (admin) |
+| `lookupNGAP(code)` | Lookup code NGAP |
+| `searchNGAP(query)` | Recherche référentiel (BM25 léger) |
+| `validateNGAPCumul(actes)` | Vérifie règles de cumul côté client |
+| `renderNGAPSearch()` | Rendu recherche référentiel |
+
+---
+
+## Module infirmiere-tools.js — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `calculerCharges()` | Simulateur URSSAF + CARPIMKO + IR — barème 2026 |
+| `addKmEntry()` / `deleteKmEntry(id)` / `renderKmJournal()` | Journal kilométrique |
+| `exportKmCSV()` | Export CSV journal |
+| `syncKmFromServer()` | Sync depuis `/webhook/km-pull` |
+| `_getKmRate(cv, kmAnnuel, electrique)` | Barème IK selon véhicule |
+| `renderModeles()` / `utiliserModele(id)` | Bibliothèque modèles de soins |
+| `sauvegarderModele()` / `modifierModele(id)` / `supprimerModele(id)` | CRUD modèles |
+| `simulerMajoration()` | Calcul AMI/AIS/BSx + IFD/IK/MIE/MCI selon heure/jour/contexte |
+| `utiliserSimulation(...)` | Transfère vers formulaire cotation |
+
+---
+
+## Module admin.js v4.0 — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `loadAdm()` / `admTab(tab)` | Panneau admin — onglets |
+| `loadAdmComptes()` | Liste infirmières (admins exclus) |
+| `loadAdmStats()` | Stats globales + Smart Engine |
+| `_admFilterNurses(q)` / `_admSortNurses(mode)` | Filtre + tri |
+| `_admNurseCard(u, maxCA)` | Carte infirmière avec KPIs |
+| `loadAdmLogs()` / `_applyAuditFilters()` | Logs d'audit avec filtres |
+| `exportAuditCSV()` | Export CSV logs |
+| `loadAdmSecurityStats()` | Stats sécurité |
+
+---
+
+## Module copilote.js — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `toggleCopilot()` | Ouvre/ferme panneau flottant |
+| `sendCopilotMessage(text)` | Envoie un message |
+| `sendCopilotFull()` | Mode page complète avec contexte enrichi |
+| `clearCopilotHistory()` | Efface l'historique |
+| `openCopilotSection()` / `initCopiloteSection()` | Vue copilote complète |
+| `_buildContext()` | Contexte NGAP (dernières cotations, profil) |
+| `_askClaude(question)` | Appel `/webhook/ami-copilot` |
+
+---
+
+## Module onboarding.js — Fonctions
+
+| Fonction | Description |
+|---|---|
+| `checkOnboarding()` | Vérifie si les intros ont été vues |
+| `resetOnboarding()` | Remet toutes les intros à zéro |
+| `showMainIntro()` | Intro principale |
+| `showPatientsIntro()` | Intro carnet patients |
+| `showTourneeIntro()` | Intro tournée IA |
+| `showLiveIntro()` | Intro pilotage live |
 
 ---
 
@@ -460,179 +485,131 @@ Patient existe dans le carnet ?
 
 ### Authentification & Profil
 
-| Route | Méthode | Permissions |
+| Route | Permissions | Rôle |
 |---|---|---|
-| `/webhook/auth-login` | POST | Public |
-| `/webhook/infirmiere-register` | POST | Public |
-| `/webhook/change-password` | POST | Auth |
-| `/webhook/delete-account` | POST | Auth |
-| `/webhook/profil-get` / `profil-save` | POST | Auth |
+| `POST /webhook/auth-login` | Public | Login JWT |
+| `POST /webhook/infirmiere-register` | Public | Création compte |
+| `POST /webhook/change-password` | Auth | Modification mot de passe |
+| `POST /webhook/delete-account` | Auth | Suppression compte |
+| `POST /webhook/profil-get` / `profil-save` | Auth | Profil infirmière |
+| `POST /webhook/prescripteur-liste` / `-add` / `-get` | Auth | Gestion prescripteurs |
 
-### Cotation NGAP
+### Cotation NGAP (Smart Engine v7)
 
-| Route | Méthode | Permissions | Rôle |
-|---|---|---|---|
-| `/webhook/ami-calcul` | POST | Auth | **Smart Engine v7** → Rule/ML/N8N auto-sélectionné |
-| `/webhook/ami-calcul` + `cabinet_mode:true` | POST | Auth | Split IDE → N8N parallèle → merge |
-| `/webhook/ami-historique` | GET | Auth | Historique — Supabase direct (pas N8N) |
-| `/webhook/ami-supprimer` | POST | Auth | Suppression par ID ou patient_id |
-| `/webhook/ami-supprimer-tout` | POST | Auth | Suppression groupée |
-| `/webhook/ami-save-cotation` | POST | Auth | Sauvegarde cotation tournée live |
+| Route | Permissions | Rôle |
+|---|---|---|
+| `POST /webhook/ami-calcul` | Auth | Smart Engine → Rule/ML/N8N auto |
+| `POST /webhook/ami-calcul` + `cabinet_mode:true` | Auth | Split IDE → N8N parallèle → merge |
+| `GET /webhook/ami-historique` | Auth | Historique cotations Supabase direct |
+| `POST /webhook/ami-supprimer` | Auth | Suppression par ID ou patient_id |
+| `POST /webhook/ami-supprimer-tout` | Auth | Suppression groupée |
+| `POST /webhook/ami-save-cotation` | Auth | Sauvegarde cotation tournée live |
 
 ### Cabinet multi-IDE
 
-| Route | Méthode | Permissions | Rôle |
-|---|---|---|---|
-| `/webhook/cabinet-register` | POST | Auth | Créer / rejoindre / quitter |
-| `/webhook/cabinet-get` | POST | Auth | Infos + membres |
-| `/webhook/cabinet-calcul` | POST | Auth | Cotation multi-IDE parallèle |
-| `/webhook/cabinet-tournee` | POST | Auth | Distribution patients clustering géo |
-| `/webhook/cabinet-sync-push` / `-pull` / `-status` | POST | Auth | Sync sélective anonymisée |
+| Route | Permissions | Rôle |
+|---|---|---|
+| `POST /webhook/cabinet-register` | Auth | Créer/rejoindre/quitter |
+| `POST /webhook/cabinet-get` | Auth | Infos + membres |
+| `POST /webhook/cabinet-calcul` | Auth | Cotation multi-IDE parallèle |
+| `POST /webhook/cabinet-tournee` | Auth (`!isAdmin && manage_tournee` ou admin) | Distribution patients clustering géo |
+| `POST /webhook/cabinet-sync-push` / `-pull` / `-status` | Auth | Sync sélective anonymisée (TTL 7j) |
 
 ### Tournée & IA
 
-| Route | Méthode | Permissions | Rôle |
-|---|---|---|---|
-| `/webhook/ami-tournee-ia` | POST | Auth | Tournée + **heatmap scoring v7** |
-| `/webhook/ami-live` | POST | Auth | Pilotage live |
-| `/webhook/ami-copilot` | POST | Auth | Copilote NGAP |
-| `/webhook/ami-week-analytics` | POST | Auth | Analyse hebdomadaire |
+| Route | Permissions | Rôle |
+|---|---|---|
+| `POST /webhook/ami-tournee-ia` | Auth | Tournée + heatmap scoring |
+| `POST /webhook/ami-live` | Auth | Pilotage live |
+| `POST /webhook/ami-copilot` | Auth | Copilote NGAP |
+| `POST /webhook/ami-week-analytics` | Auth | Analyse hebdomadaire |
+| `POST /webhook/ami-forecast` | Auth | Prévision revenus |
+| `POST /webhook/import-calendar` | Auth | Import calendrier |
 
-### Heatmap (NOUVELLES v7)
+### Heatmap
 
-| Route | Méthode | Permissions | Rôle |
-|---|---|---|---|
-| `/webhook/heatmap-push` | POST | Infirmière | Mettre à jour les données de zone |
-| `/webhook/heatmap-pull` | POST | Infirmière | Lire la heatmap enrichie (avec scores) |
+| Route | Permissions | Rôle |
+|---|---|---|
+| `POST /webhook/heatmap-push` | Infirmière | Envoyer données de zone |
+| `POST /webhook/heatmap-pull` | Infirmière | Lire heatmap enrichie (avec scores) |
 
 ### Sync PC ↔ Mobile
 
-| Route | Méthode | Rôle |
+| Route | Rôle |
+|---|---|
+| `POST /webhook/planning-push` / `-pull` | Planning hebdomadaire chiffré |
+| `POST /webhook/km-push` / `-pull` | Journal kilométrique chiffré |
+| `POST /webhook/heure-push` / `-pull` | Cache heures soins |
+| `POST /webhook/signatures-push` / `-pull` / `-delete` | Signatures PNG chiffrées |
+| `POST /webhook/patients-push` / `-pull` / `-delete` | Carnet patients chiffré |
+
+### Contact & Messagerie
+
+| Route | Permissions | Rôle |
 |---|---|---|
-| `/webhook/planning-push` / `-pull` | POST | Planning hebdomadaire chiffré |
-| `/webhook/km-push` / `-pull` | POST | Journal kilométrique chiffré |
-| `/webhook/heure-push` / `-pull` | POST | Cache heures soins |
-| `/webhook/signatures-push` / `-pull` / `-delete` | POST | Signatures PNG chiffrées AES |
-| `/webhook/carnet-push` / `-pull` | POST | Carnet patients chiffré |
+| `POST /webhook/contact-send` | Infirmière | Message vers admin |
+| `POST /webhook/contact-mes-messages` | Auth | Historique messages |
+| `POST /webhook/admin-messages` | Admin | Messagerie admin |
+| `POST /webhook/admin-message-read` / `-reply` | Admin | Lecture/réponse |
 
 ### Admin & Monitoring
 
-| Route | Méthode | Permissions | Rôle |
-|---|---|---|---|
-| `/webhook/admin-stats` | GET | Admin | Stats globales infirmières |
-| `/webhook/admin-users` | GET | Admin | Liste comptes infirmières (admins exclus) |
-| `/webhook/admin-action` | POST | Admin | Bloquer / débloquer / supprimer |
-| `/webhook/admin-messages` | POST | Admin | Messagerie admin |
-| `/webhook/admin-engine-stats` | POST | **Admin** | **Stats Smart Engine + RL + State (NOUVEAU v7)** |
-| `/webhook/log` | POST | Public | Log frontend → system_logs |
-| `/webhook/system-logs` | GET | Admin | Logs + stats N8N + décisions RL |
+| Route | Permissions | Rôle |
+|---|---|---|
+| `POST /webhook/admin-liste` | Admin | Liste comptes infirmières |
+| `POST /webhook/admin-stats` | Admin | Stats globales |
+| `POST /webhook/admin-logs` | Admin | Logs d'audit |
+| `POST /webhook/admin-security-stats` | Admin | Stats sécurité |
+| `POST /webhook/admin-bloquer` / `-debloquer` / `-supprimer` | Admin | Gestion comptes |
+| `POST /webhook/admin-engine-stats` | Admin | **Stats Smart Engine + RL + State** |
+| `POST /webhook/admin-system-reset` | Admin | Reset logs système |
+| `POST /webhook/log` | Public | Log frontend → system_logs |
 
 ---
 
-## Schema base de données Supabase
+## Smart Engine v7.0 — Pipeline de décision
 
-### Tables principales
-
-```sql
--- Cotations worker (table principale)
-CREATE TABLE IF NOT EXISTS planning_patients (
-  id BIGSERIAL PRIMARY KEY, infirmiere_id UUID NOT NULL,
-  date_soin DATE, heure_soin TEXT, notes TEXT, actes TEXT,
-  total NUMERIC(10,2), part_amo NUMERIC(10,2), part_amc NUMERIC(10,2),
-  part_patient NUMERIC(10,2), dre_requise BOOLEAN DEFAULT false,
-  source TEXT, ngap_version TEXT, fraud_score NUMERIC, ai_score NUMERIC,
-  alerts TEXT, invoice_number TEXT, locked BOOLEAN DEFAULT false,
-  patient_id TEXT, lat NUMERIC, lng NUMERIC, adresse TEXT,
-  done BOOLEAN, absent BOOLEAN, cabinet_id UUID DEFAULT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(infirmiere_id, invoice_number)
-);
-
--- Infirmières
-CREATE TABLE IF NOT EXISTS infirmieres (
-  id UUID PRIMARY KEY, email TEXT UNIQUE, password TEXT,
-  nom TEXT, prenom TEXT, role TEXT DEFAULT 'nurse',
-  is_blocked BOOLEAN DEFAULT false, adeli TEXT, rpps TEXT, structure TEXT
-);
-
--- Sessions
-CREATE TABLE IF NOT EXISTS sessions (
-  id BIGSERIAL PRIMARY KEY, token TEXT UNIQUE,
-  infirmiere_id UUID, created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Logs audit (toutes les actions sensibles)
-CREATE TABLE IF NOT EXISTS audit_logs (
-  id BIGSERIAL PRIMARY KEY, user_id UUID, event TEXT,
-  score NUMERIC, meta JSONB, created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Logs système (N8N failures, IA fallbacks, RL decisions)
-CREATE TABLE IF NOT EXISTS system_logs (
-  id SERIAL PRIMARY KEY, level TEXT DEFAULT 'info',
-  source TEXT, event TEXT, message TEXT, meta TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+```
+INPUT { texte, heure_soin, km, date_soin }
+        │
+sha256(texte+heure+km+date) ──── Cache HIT? ── OUI → { source: 'cache' }
+        │ MISS
+        ▼
+_isSimpleCase(body)?  [NON si : perfusion, escarre, toilette grabataire,
+                       nuit profonde, dimanche, cabinet, plusieurs actes]
+  OUI → fallbackCotation() ── actes>0 & total>0? → { source: 'rule' }
+        │ NON
+        ▼
+_mlPredict(body)
+  features : injection +0.15, prélèvement +0.15, pansement +0.10,
+             heure_soin +0.05, domicile +0.05, ambiguïté -0.30
+  confidence > 0.82? → { source: 'ml' }
+        │ NON
+        ▼
+N8N complet → résultat mis en cache 1h → { source: 'n8n' }
 ```
 
-### Tables sync PC ↔ Mobile
+---
 
-```sql
-CREATE TABLE IF NOT EXISTS carnet_patients (
-  id BIGSERIAL PRIMARY KEY, infirmiere_id UUID NOT NULL,
-  patient_id TEXT NOT NULL, encrypted_data TEXT NOT NULL,
-  nom_enc TEXT DEFAULT '', updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(infirmiere_id, patient_id)
-);
+## Logique cotation — règles upsert
 
-CREATE TABLE IF NOT EXISTS weekly_planning (
-  id BIGSERIAL PRIMARY KEY, infirmiere_id UUID NOT NULL UNIQUE,
-  encrypted_data TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS km_journal (
-  id BIGSERIAL PRIMARY KEY, infirmiere_id UUID NOT NULL UNIQUE,
-  encrypted_data TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS heure_cache (
-  id BIGSERIAL PRIMARY KEY, infirmiere_id UUID NOT NULL UNIQUE,
-  data TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS signatures_sync (
-  id BIGSERIAL PRIMARY KEY, infirmiere_id UUID NOT NULL,
-  invoice_id TEXT NOT NULL, encrypted_data TEXT NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(infirmiere_id, invoice_id)
-);
+```
+Patient existe dans le carnet ?
+├── OUI → Upsert (cotation existante)
+│         Résolution index : cotationIdx > invoice_number > invoice_number original
+│         Si aucun index trouvé ET mode édition (_editRef) → ne rien faire
+│
+└── NON → Créer fiche patient + cotation (une seule fois)
+          Uniquement si ce n'est PAS une correction (_editRef absent)
 ```
 
-### Tables cabinet (v6.5)
-
-```sql
-CREATE TABLE IF NOT EXISTS cabinets (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  nom TEXT NOT NULL, created_by UUID NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS cabinet_members (
-  id BIGSERIAL PRIMARY KEY, cabinet_id UUID NOT NULL,
-  infirmiere_id UUID NOT NULL, role TEXT DEFAULT 'membre',
-  joined_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(cabinet_id, infirmiere_id)
-);
-
-CREATE TABLE IF NOT EXISTS cabinet_sync (
-  id BIGSERIAL PRIMARY KEY, cabinet_id UUID NOT NULL,
-  sender_id UUID NOT NULL, sender_nom TEXT DEFAULT '',
-  sender_prenom TEXT DEFAULT '', target_ids TEXT NOT NULL,
-  what TEXT NOT NULL, data TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days'
-);
-```
+| Situation | Comportement |
+|---|---|
+| Patient existant + mode édition + index trouvé | Mise à jour |
+| Patient existant + pas de mode édition | Ajout (1ère fois) |
+| Patient existant + mode édition + index introuvable | Rien (évite doublon) |
+| Patient absent + pas de mode édition | Crée fiche + cotation |
+| Patient absent + mode édition | Rien (évite fiche fantôme) |
 
 ---
 
@@ -642,16 +619,16 @@ CREATE TABLE IF NOT EXISTS cabinet_sync (
 |---|---|---|---|
 | AMI1–AMI6 | Actes infirmiers de soins | 3,15 € × coeff | Principal ×1 · secondaire ×0,5 |
 | AIS1, AIS3 | Aide infirmier soins | 2,65 € / 7,95 € | Principal ×1 · secondaire ×0,5 |
-| BSA | Bilan soins — dépendance légère | 13,00 € | Forfait fixe |
-| BSB | Bilan soins — dépendance modérée | 18,20 € | Forfait fixe |
-| BSC | Bilan soins — dépendance lourde | 28,70 € | Forfait fixe |
-| IFD | Indemnité forfaitaire déplacement | 2,75 € | Fixe · 1 seule par passage |
-| IK | Indemnité kilométrique | km × 2 × 0,35 € | Distance documentée obligatoire |
-| MCI | Majoration coordination | 5,00 € | Fixe |
-| MIE | Majoration enfant < 7 ans | 3,15 € | Fixe |
-| NUIT | Majoration nuit (20h–23h / 5h–8h) | 9,15 € | Non cumulable DIM |
-| NUIT_PROF | Majoration nuit profonde (23h–5h) | 18,30 € | Non cumulable DIM |
-| DIM | Majoration dimanche/férié | 8,50 € | Non cumulable NUIT |
+| BSA | Dépendance légère | 13,00 € | Forfait fixe |
+| BSB | Dépendance modérée | 18,20 € | Forfait fixe |
+| BSC | Dépendance lourde | 28,70 € | Forfait fixe |
+| IFD | Déplacement domicile | 2,75 € | 1 seule par passage |
+| IK | Kilométrique | km × 2 × 0,35 € | Distance documentée obligatoire |
+| MCI | Coordination | 5,00 € | Fixe |
+| MIE | Enfant < 7 ans | 3,15 € | Fixe |
+| NUIT | 20h–23h / 5h–8h | 9,15 € | Non cumulable DIM |
+| NUIT_PROF | 23h–5h | 18,30 € | Non cumulable DIM |
+| DIM | Dimanche/Férié | 8,50 € | Non cumulable NUIT |
 
 **Cumuls interdits :** AIS+BSx · plusieurs BSx · NUIT+DIM · NUIT_PROF+DIM · IFD multiple
 
@@ -670,16 +647,16 @@ CREATE TABLE IF NOT EXISTS cabinet_sync (
 
 ---
 
-## Heuristique trafic temporelle
+## Heuristique trafic
 
-| Créneau | Jours | Coefficient | Label |
-|---|---|---|---|
-| 7h15–9h30 | Lun–Ven | ×1.65 | 🔴 Pointe matin |
-| 11h45–14h15 | Lun–Ven | ×1.30 | 🟡 Déjeuner |
-| 16h30–19h30 | Lun–Ven | ×1.75 | 🔴 Pointe soir |
-| 19h30–21h | Lun–Ven | ×1.20 | 🟡 Après pointe |
-| 9h30–12h30 | Sam | ×1.25 | 🟡 Sam. matin |
-| Reste | Tous | ×1.0 | 🟢 Fluide |
+| Créneau | Jours | Coefficient |
+|---|---|---|
+| 7h15–9h30 | Lun–Ven | ×1.65 🔴 Pointe matin |
+| 11h45–14h15 | Lun–Ven | ×1.30 🟡 Déjeuner |
+| 16h30–19h30 | Lun–Ven | ×1.75 🔴 Pointe soir |
+| 19h30–21h | Lun–Ven | ×1.20 🟡 Après pointe |
+| 9h30–12h30 | Sam | ×1.25 🟡 Sam. matin |
+| Reste | Tous | ×1.0 🟢 Fluide |
 
 ---
 
@@ -693,106 +670,13 @@ nurse:  ['create_invoice', 'view_own_data', 'import_calendar',
 admin:  ['view_users_list', 'view_stats', 'view_logs',
          'change_password', 'delete_account']
 
-// Règles spéciales v7 :
-// - RL Logger désactivé pour les admins (isAdmin === true)
-// - Heatmap push/pull : admins exclus (retourne { ok:true, synced:0 })
-// - admin-engine-stats : admin uniquement (view_stats)
-// - Les admins sont INVISIBLES dans le panneau administration
+// Règles spéciales v8 :
+// - Routes cabinet : !isAdmin && !hasPermission → admins autorisés pour tests
+// - cabinet-tournee : !isAdmin && !manage_tournee → admins autorisés (fix v8)
+// - Mode cabinet activable même admin seul (members.length >= 0)
+// - RL Logger désactivé pour les admins
+// - Les admins sont INVISIBLES dans le panneau d'administration
 ```
-
----
-
-## Architecture des fichiers
-
-### Backend & Config
-
-| Fichier | Rôle | Version |
-|---|---|---|
-| `worker.js` | Cloudflare Worker — Smart Engine, State Engine, RL Logger, Heatmap, routes cabinet | **v7.0** |
-| `sw.js` | Service Worker PWA — cache statique, tiles, offline | v3.6 |
-| `manifest.json` | PWA manifest | — |
-
-### Auth & Sécurité
-
-| Fichier | Rôle |
-|---|---|
-| `auth.js` | Login / register / logout, session, navigation par rôle |
-| `security.js` | AES-256-GCM (Web Crypto), PIN local, RGPD, export/purge |
-
-### Cabinet
-
-| Fichier | Rôle |
-|---|---|
-| `cabinet.js` | Gestion membres, sync sélective, cotation multi-IDE, UX |
-
-### UI & Navigation
-
-| Fichier | Rôle |
-|---|---|
-| `ui.js` | `navTo()`, handler cabinet, `loadFaqGuide()` |
-| `navigation.js` | GPS patients |
-| `utils.js` | Store `APP`, helpers, `apiFetch`, `apiCall` |
-
-### Patients & Données de santé
-
-| Fichier | Rôle |
-|---|---|
-| `patients.js` | IndexedDB `ami_patients_db_<userId>` — CRUD, cotations, ordonnances |
-| `patient-form.js` | Formulaire patient — adresse structurée, géocodage |
-| `notes.js` | Notes patient (Général / Accès / Médical / Urgent) |
-| `signature.js` | Signatures canvas — `ami_sig_db_<userId>` |
-
-### Cotation & Finances
-
-| Fichier | Rôle | Version |
-|---|---|---|
-| `cotation.js` | Cotation NGAP + mode cabinet multi-IDE | v8 |
-| `tresorerie.js` | Trésorerie — paiements, remboursements, export CSV | — |
-| `offline-queue.js` | File attente hors-ligne — sync auto | — |
-
-### Tournée & Cartographie
-
-| Fichier | Rôle | Version |
-|---|---|---|
-| `tournee.js` | Tournée IA + import ICS/CSV — planning, pilotage live | v5.1+ |
-| `ai-tournee.js` | Moteur TSP, OSRM, trafic, clustering, fatigue, surge | v6.0 |
-| `map.js` | Leaflet — tap/drag, geocoding, heatmap zones | v2.0 |
-| `ai-layer.js` | Couche IA silencieuse — habitScore/geoScore | — |
-| `geocode.js` | Pipeline Photon → Nominatim → cache IndexedDB | — |
-| `extras.js` | Carte départ, OSRM, scoring fraude front | — |
-| `uber.js` | Mode Uber Médical | — |
-
-### IA & Copilote
-
-| Fichier | Rôle |
-|---|---|
-| `copilote.js` | Chat Copilote NGAP |
-| `ai-assistant.js` | Assistant vocal NLP, commandes, TTS |
-| `voice.js` | Dictée médicale vocale |
-
-### Rapports & Administration
-
-| Fichier | Rôle | Version |
-|---|---|---|
-| `dashboard.js` | KPIs, anomalies, prévisions + section cabinet | v2.0 |
-| `rapport.js` | Rapport mensuel PDF, santé N8N/IA | — |
-| `admin.js` | Panneau admin — infirmières uniquement, stats globales + engine stats | v4.0 |
-| `contact.js` | Messagerie infirmière → admin | — |
-
-### Profil & PWA
-
-| Fichier | Rôle |
-|---|---|
-| `profil.js` | Profil, mot de passe, suppression compte |
-| `pwa.js` | Install, offline, sync, tiles |
-| `onboarding.js` | Onboarding premier lancement |
-| `infirmiere-tools.js` | Simulateur charges, journal km, modèles soins, majorations |
-
-### N8N
-
-| Fichier | Rôle |
-|---|---|
-| `AI_Agent_AMI_v10.json` | Workflow N8N v10 — 51 nœuds · 2 nouveaux nœuds v10 |
 
 ---
 
@@ -805,17 +689,44 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 | Corrections GPS | IndexedDB `geocodeDB` | Partagé (non-sensible) | Non |
 | Cotations | Supabase `planning_patients` | `infirmiere_id` | Chiffrement champ |
 | Cache dashboard | localStorage `ami_dash_<userId>_*` | Par userId | Non |
+| Planning | localStorage `ami_planning_<userId>` | Par userId | Non |
 | Smart Engine cache | Worker memory Map (TTL 1h) | Anonymisé sha256 | sha256 |
-| State Engine | Worker memory Map | Par userId | Non (non-sensible) |
 | RL Q-table | Worker memory | Global (reset deploy) | Non |
+| Cabinet sync prefs | localStorage `ami_cabinet_sync_<userId>` | Par userId | Non |
 
 > **Règle fondamentale :** les données de santé sont stockées exclusivement sur le terminal de l'utilisateur et ne sont jamais transmises à nos serveurs.
 
 ---
 
-## Documentation
+## Architecture des fichiers
 
-| Fichier | Rôle |
-|---|---|
-| `README.md` | Documentation technique architecture (ce fichier) |
-| `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ — chargé dynamiquement dans la vue Aide |
+| Fichier | Rôle | Version |
+|---|---|---|
+| `worker.js` | Cloudflare Worker — Smart Engine, RL, State, Heatmap, toutes les routes | v7.0 |
+| `sw.js` | Service Worker PWA | v3.6 |
+| `auth.js` | Login/logout/session/navigation | — |
+| `security.js` | AES-256-GCM, PIN, RGPD, export, audit | v2.0 |
+| `cabinet.js` | Cabinet multi-IDE complet | v2.0 |
+| `cotation.js` | Cotation NGAP + mode cabinet | v8 |
+| `tournee.js` | Tournée + planning hebdomadaire + cabinet | v6.0 |
+| `ai-tournee.js` | TSP, clustering, fatigue, surge, prédiction retard | v6.0 |
+| `map.js` | Leaflet + heatmap zones rentables | v2.0 |
+| `dashboard.js` | KPIs + stats cabinet + simulateur | v2.0 |
+| `patients.js` | Carnet patients IndexedDB chiffré | — |
+| `signature.js` | Signatures canvas + sync | — |
+| `rapport.js` | Rapport PDF + référentiel NGAP | — |
+| `admin.js` | Panneau admin + Smart Engine stats | v4.0 |
+| `infirmiere-tools.js` | Charges, km, modèles, majorations | — |
+| `copilote.js` | Chat Copilote NGAP | — |
+| `ui.js` | Navigation + handlers spéciaux | — |
+| `utils.js` | Store APP, helpers, apiCall | — |
+| `ai-assistant.js` | Assistant vocal NLP + TTS | v1.1 |
+| `voice.js` | Dictée médicale | — |
+| `onboarding.js` | Introductions guidées (4 modules) | — |
+| `geocode.js` | Photon → Nominatim → cache IDB | — |
+| `extras.js` | OSRM, scoring fraude front | — |
+| `uber.js` | Mode Uber Médical | — |
+| `contact.js` | Messagerie infirmière → admin | — |
+| `AI_Agent_AMI_v10.json` | Workflow N8N — 51 nœuds | v10 |
+| `README.md` | Documentation technique (ce fichier) | **v8.0** |
+| `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ (chargé dynamiquement) | — |
