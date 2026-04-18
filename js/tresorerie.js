@@ -94,28 +94,28 @@ function renderTresorerie(arr, km) {
   if (!el) return;
   const paid = _loadPaidMap();
 
-  // Bloc kilométrique — affiché même si aucune cotation
+  // ── Bloc kilométrique premium ─────────────────────────────────────────────
   const kmBlock = km && km.totalKm > 0 ? `
-    <div style="background:rgba(79,168,255,.05);border:1px solid rgba(79,168,255,.2);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <div style="font-size:22px">🚗</div>
+    <div class="km-block-premium">
+      <div style="font-size:24px;flex-shrink:0">🚗</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--t)">Journal kilométrique — <span style="color:var(--a2)">${km.label}</span></div>
-        <div style="font-size:12px;color:var(--m);margin-top:2px">${km.count} trajet(s) · barème ${KM_FISCAL_RATE_TRESOR} €/km (5 CV 2025/2026)</div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">${km.count} trajet(s) · barème ${KM_FISCAL_RATE_TRESOR} €/km (5CV 2025/2026)</div>
       </div>
-      <div style="display:flex;gap:16px;flex-wrap:wrap">
-        <div style="text-align:center">
-          <div style="font-size:18px;font-weight:700;color:var(--a2);font-family:var(--fm)">${km.totalKm.toFixed(1)} km</div>
-          <div style="font-size:10px;color:var(--m)">parcourus</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div class="km-stat">
+          <div class="km-stat-val" style="color:var(--a2)">${km.totalKm.toFixed(1)} km</div>
+          <div class="km-stat-lbl">parcourus</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:18px;font-weight:700;color:#22c55e;font-family:var(--fm)">${km.deduction.toFixed(2)} €</div>
-          <div style="font-size:10px;color:var(--m)">déduction fiscale</div>
+        <div class="km-stat">
+          <div class="km-stat-val" style="color:var(--ok)">${km.deduction.toFixed(2)} €</div>
+          <div class="km-stat-lbl">déduction fiscale</div>
         </div>
       </div>
     </div>` : (km?.count === 0 ? `
     <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
       <span style="font-size:18px">🚗</span>
-      <span style="font-size:12px;color:var(--m)">Aucun trajet dans le Journal kilométrique sur cette période. <a href="#" onclick="if(typeof navTo==='function')navTo('outils-km',null)" style="color:var(--a);text-decoration:none">→ Ajouter des trajets</a></span>
+      <span style="font-size:12px;color:var(--m)">Aucun trajet sur cette période. <a href="#" onclick="if(typeof navTo==='function')navTo('outils-km',null)" style="color:var(--a);text-decoration:none">→ Ajouter des trajets</a></span>
     </div>` : '');
 
   if (!arr.length) {
@@ -139,65 +139,74 @@ function renderTresorerie(arr, km) {
     if (amoPaid) amoRecu += amo; else amoAttente += amo;
     if (amcPaid) amcRecu += amc; else amcAttente += amc;
 
-    const date = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR') : '—';
+    const date = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR', {day:'2-digit', month:'short'}) : '—';
     let actesCodes = '—';
     try { actesCodes = JSON.parse(r.actes||'[]').map(a=>a.code||'').filter(Boolean).join(', ') || '—'; } catch {}
 
-    return `<tr style="${!amoPaid||!amcPaid ? 'background:rgba(255,181,71,.03)' : ''}">
-      <td style="font-family:var(--fm);font-size:11px;color:var(--m)">#${id}</td>
-      <td style="font-size:13px">${date}</td>
-      <td style="font-family:var(--fm);font-size:11px">${actesCodes}</td>
-      <td style="font-weight:600;font-family:var(--fm);color:var(--a)">${total.toFixed(2)} €</td>
-      <td style="text-align:center">
-        <button onclick="markPaid('${id}','amo')" class="btn bsm ${amoPaid?'bp':'bd'}" style="font-size:10px;padding:3px 8px">
-          ${amoPaid ? '✅ '+amo.toFixed(2)+'€' : '⏳ '+amo.toFixed(2)+'€'}
+    const rowCls = (!amoPaid || !amcPaid) ? 'tresor-tr attente' : 'tresor-tr';
+
+    return `<tr class="${rowCls}">
+      <td class="tresor-td" style="white-space:nowrap">
+        <div style="font-size:10px;font-family:var(--fm);color:var(--m)">#${id}</div>
+        <div style="font-size:12px">${date}</div>
+      </td>
+      <td class="tresor-td" style="font-family:var(--fm);font-size:11px;color:var(--a2)">${actesCodes}</td>
+      <td class="tresor-td" style="font-family:var(--fm);font-size:13px;font-weight:700;color:var(--a)">${total.toFixed(2)} €</td>
+      <td class="tresor-td" style="text-align:center">
+        <button onclick="markPaid('${id}','amo')" class="pay-pill ${amoPaid?'paid':'pending'}">
+          ${amoPaid ? '✅' : '⏳'} ${amo.toFixed(2)} €
         </button>
       </td>
-      <td style="text-align:center">
+      <td class="tresor-td" style="text-align:center">
         ${amc > 0
-          ? `<button onclick="markPaid('${id}','amc')" class="btn bsm ${amcPaid?'bp':'bd'}" style="font-size:10px;padding:3px 8px">
-              ${amcPaid ? '✅ '+amc.toFixed(2)+'€' : '⏳ '+amc.toFixed(2)+'€'}
-             </button>`
-          : '<span style="color:var(--m);font-size:11px">—</span>'}
+          ? `<button onclick="markPaid('${id}','amc')" class="pay-pill ${amcPaid?'paid':'pending'}">${amcPaid?'✅':'⏳'} ${amc.toFixed(2)} €</button>`
+          : '<span style="color:var(--m);font-size:12px">—</span>'}
       </td>
-      <td style="font-family:var(--fm);font-size:11px;color:var(--m)">${pat.toFixed(2)} €</td>
-      <td style="font-size:11px;text-align:center">${r.dre_requise ? '<span style="color:var(--a2)">DRE</span>' : ''}</td>
+      <td class="tresor-td" style="font-family:var(--fm);font-size:11px;color:var(--m)">${pat.toFixed(2)} €</td>
+      <td class="tresor-td" style="text-align:center">
+        ${r.dre_requise ? '<span style="font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.1);color:var(--a2);padding:2px 7px;border-radius:8px;border:1px solid rgba(79,168,255,.2)">DRE</span>' : ''}
+      </td>
     </tr>`;
   }).join('');
 
+  // ── Alert strip attente ───────────────────────────────────────────────────
+  const attenteStrip = (amoAttente > 1 || amcAttente > 1) ? `
+    <div class="tresor-attente-strip">
+      <div class="tresor-attente-dot"></div>
+      <div class="tresor-attente-text">
+        <strong>${amoAttente.toFixed(2)} €</strong> en attente AMO
+        ${amcAttente > 0 ? ` · <strong>${amcAttente.toFixed(2)} €</strong> en attente AMC` : ''}
+        — marquez comme reçu au fur et à mesure
+      </div>
+    </div>` : '';
+
   el.innerHTML = `
     ${kmBlock}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">
-      <div class="sc g"><div class="si">💶</div><div class="sv">${totalTTC.toFixed(0)}€</div><div class="sn">Total facturé</div></div>
-      <div class="sc b"><div class="si">✅</div><div class="sv">${amoRecu.toFixed(0)}€</div><div class="sn">AMO reçu</div></div>
-      <div class="sc o"><div class="si">⏳</div><div class="sv">${amoAttente.toFixed(0)}€</div><div class="sn">AMO en attente</div></div>
-      <div class="sc b"><div class="si">✅</div><div class="sv">${amcRecu.toFixed(0)}€</div><div class="sn">AMC reçu</div></div>
-      <div class="sc o"><div class="si">⏳</div><div class="sv">${amcAttente.toFixed(0)}€</div><div class="sn">AMC en attente</div></div>
-      <div class="sc r"><div class="si">💳</div><div class="sv">${totalPat.toFixed(0)}€</div><div class="sn">Part patients</div></div>
-      ${km?.deduction > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${km.deduction.toFixed(0)}€</div><div class="sn">Déd. km</div></div>` : ''}
+    <div class="sg" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-bottom:16px">
+      <div class="sc g"><div class="si">💶</div><div class="sv">${totalTTC.toFixed(0)} €</div><div class="sn">Total facturé</div></div>
+      <div class="sc b"><div class="si">✅</div><div class="sv">${amoRecu.toFixed(0)} €</div><div class="sn">AMO reçu</div></div>
+      <div class="sc o"><div class="si">⏳</div><div class="sv">${amoAttente.toFixed(0)} €</div><div class="sn">AMO en attente</div></div>
+      <div class="sc b"><div class="si">✅</div><div class="sv">${amcRecu.toFixed(0)} €</div><div class="sn">AMC reçu</div></div>
+      <div class="sc o"><div class="si">⏳</div><div class="sv">${amcAttente.toFixed(0)} €</div><div class="sn">AMC en attente</div></div>
+      <div class="sc r"><div class="si">💳</div><div class="sv">${totalPat.toFixed(0)} €</div><div class="sn">Part patients</div></div>
+      ${km?.deduction > 0 ? `<div class="sc b"><div class="si">🚗</div><div class="sv">${km.deduction.toFixed(0)} €</div><div class="sn">Déd. km</div></div>` : ''}
     </div>
-    <div id="tresor-checklist-bar" style="margin-bottom:16px"></div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:var(--s)">
-          <th style="padding:8px;text-align:left;font-family:var(--fm);font-size:10px;color:var(--m)">ID</th>
-          <th style="padding:8px;text-align:left;font-family:var(--fm);font-size:10px;color:var(--m)">Date</th>
-          <th style="padding:8px;text-align:left;font-family:var(--fm);font-size:10px;color:var(--m)">Actes</th>
-          <th style="padding:8px;text-align:left;font-family:var(--fm);font-size:10px;color:var(--m)">Total</th>
-          <th style="padding:8px;text-align:center;font-family:var(--fm);font-size:10px;color:var(--a)">AMO SS</th>
-          <th style="padding:8px;text-align:center;font-family:var(--fm);font-size:10px;color:var(--a2)">AMC Mutuelle</th>
-          <th style="padding:8px;text-align:left;font-family:var(--fm);font-size:10px;color:var(--m)">Patient</th>
-          <th style="padding:8px;text-align:center;font-family:var(--fm);font-size:10px;color:var(--m)">DRE</th>
+    ${attenteStrip}
+    <div class="tresor-table-wrap">
+      <table class="tresor-table">
+        <thead class="tresor-thead"><tr>
+          <th>ID / Date</th>
+          <th>Actes</th>
+          <th>Total</th>
+          <th class="amo" style="text-align:center">AMO SS</th>
+          <th class="amc" style="text-align:center">AMC Mutuelle</th>
+          <th>Patient</th>
+          <th style="text-align:center">DRE</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>`;
-
-  // Afficher checklist si paiements en attente
-  if (amoAttente > 1 || amcAttente > 1) {
-    const bar = $('tresor-checklist-bar');
-    if (bar) bar.innerHTML = `<div class="ai wa">💡 <strong>${amoAttente.toFixed(2)} €</strong> en attente AMO · <strong>${amcAttente.toFixed(2)} €</strong> en attente AMC — marquez comme reçu au fur et à mesure.</div>`;
-  }
+    </div>
+    <div id="tresor-checklist-bar" style="margin-top:14px"></div>`;
 }
 
 /* Marquer un remboursement comme reçu */
@@ -302,59 +311,74 @@ async function checklistCPAM() {
 
     // 1. Chaque acte a un N° facture
     const missingInvoice = arr.filter(r => !r.invoice_number).length;
-    if (missingInvoice === 0) { ok++; checks.push({ ok:true,  msg:'✅ Tous les actes ont un numéro de facture' }); }
-    else { err++; checks.push({ ok:false, msg:`❌ ${missingInvoice} acte(s) sans numéro de facture` }); }
+    if (missingInvoice === 0) { ok++; checks.push({ cls:'ok', msg:'Tous les actes ont un numéro de facture' }); }
+    else { err++; checks.push({ cls:'er', msg:`${missingInvoice} acte(s) sans numéro de facture` }); }
 
     // 2. Pas d'actes à 0 €
     const zeroCot = arr.filter(r => parseFloat(r.total||0) <= 0).length;
-    if (zeroCot === 0) { ok++; checks.push({ ok:true, msg:'✅ Aucun acte à montant nul' }); }
-    else { warn++; checks.push({ ok:'warn', msg:`⚠️ ${zeroCot} acte(s) à 0 € — vérifiez` }); }
+    if (zeroCot === 0) { ok++; checks.push({ cls:'ok', msg:'Aucun acte à montant nul' }); }
+    else { warn++; checks.push({ cls:'wa', msg:`${zeroCot} acte(s) à 0 € — vérifiez` }); }
 
     // 3. DRE documentées
     const dreRows = arr.filter(r => r.dre_requise);
-    if (dreRows.length > 0) { warn++; checks.push({ ok:'warn', msg:`⚠️ ${dreRows.length} DRE requises à transmettre à la CPAM` }); }
-    else { ok++; checks.push({ ok:true, msg:'✅ Aucune DRE en attente' }); }
+    if (dreRows.length > 0) { warn++; checks.push({ cls:'wa', msg:`${dreRows.length} DRE requises à transmettre à la CPAM` }); }
+    else { ok++; checks.push({ cls:'ok', msg:'Aucune DRE en attente' }); }
 
     // 4. Alertes NGAP
     const withAlerts = arr.filter(r => { try { return JSON.parse(r.alerts||'[]').length>0; } catch { return false; } }).length;
-    if (withAlerts === 0) { ok++; checks.push({ ok:true, msg:'✅ Aucune alerte de conformité NGAP' }); }
-    else { err++; checks.push({ ok:false, msg:`❌ ${withAlerts} cotation(s) avec alertes NGAP — à corriger avant envoi` }); }
+    if (withAlerts === 0) { ok++; checks.push({ cls:'ok', msg:'Aucune alerte de conformité NGAP' }); }
+    else { err++; checks.push({ cls:'er', msg:`${withAlerts} cotation(s) avec alertes NGAP — à corriger` }); }
 
     // 5. Version NGAP à jour
     const oldVersion = arr.filter(r => r.ngap_version && r.ngap_version !== '2026.1').length;
-    if (oldVersion === 0) { ok++; checks.push({ ok:true, msg:'✅ Toutes les cotations sont à la version NGAP 2026.1' }); }
-    else { warn++; checks.push({ ok:'warn', msg:`⚠️ ${oldVersion} cotation(s) avec une version NGAP ancienne` }); }
+    if (oldVersion === 0) { ok++; checks.push({ cls:'ok', msg:'Cotations à la version NGAP 2026.1' }); }
+    else { warn++; checks.push({ cls:'wa', msg:`${oldVersion} cotation(s) avec version NGAP ancienne` }); }
 
     // 6. Profil infirmière complet
     const u = S?.user || {};
-    if (u.adeli && u.rpps && u.structure) { ok++; checks.push({ ok:true, msg:'✅ Profil professionnel complet (ADELI + RPPS + Cabinet)' }); }
+    if (u.adeli && u.rpps && u.structure) { ok++; checks.push({ cls:'ok', msg:'Profil complet — ADELI + RPPS + Cabinet' }); }
     else {
       const missing = [!u.adeli&&'ADELI', !u.rpps&&'RPPS', !u.structure&&'Cabinet'].filter(Boolean).join(', ');
-      err++; checks.push({ ok:false, msg:`❌ Profil incomplet — manque : ${missing}` });
+      err++; checks.push({ cls:'er', msg:`Profil incomplet — manque : ${missing}` });
     }
 
-    const score = Math.round(ok / (ok+warn+err) * 100);
-    const scoreColor = score >= 80 ? 'var(--a)' : score >= 60 ? 'var(--w)' : 'var(--d)';
+    const total = ok + warn + err;
+    const score = Math.round(ok / (total||1) * 100);
+    const scoreColor = score >= 80 ? 'var(--ok)' : score >= 60 ? 'var(--w)' : 'var(--d)';
+    const circumf = 2 * Math.PI * 26;
+    const dashOffset = circumf * (1 - score / 100);
 
     el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap">
-        <div style="text-align:center">
-          <div style="font-family:var(--fs);font-size:44px;color:${scoreColor}">${score}%</div>
-          <div style="font-size:12px;color:var(--m);font-family:var(--fm)">Conformité CPAM</div>
-        </div>
-        <div style="flex:1">
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <span class="ai su" style="font-size:11px">✅ ${ok} OK</span>
-            <span class="ai wa" style="font-size:11px">⚠️ ${warn} avertissements</span>
-            <span class="ai er" style="font-size:11px">❌ ${err} erreurs</span>
+      <div class="cpam-check-wrap">
+        <div class="cpam-check-header">
+          <div class="cpam-ring-wrap">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="32" cy="32" r="26" fill="none" stroke="var(--b)" stroke-width="6"/>
+              <circle cx="32" cy="32" r="26" fill="none" stroke="${scoreColor}" stroke-width="6"
+                stroke-dasharray="${circumf.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"
+                stroke-linecap="round" style="transition:stroke-dashoffset .6s ease"/>
+            </svg>
+            <div class="cpam-ring-label">
+              <div class="cpam-ring-pct" style="color:${scoreColor}">${score}%</div>
+              <div class="cpam-ring-sub">CPAM</div>
+            </div>
           </div>
-          <div style="height:6px;background:var(--b);border-radius:3px;margin-top:10px;overflow:hidden">
-            <div style="height:100%;width:${score}%;background:${scoreColor};border-radius:3px;transition:width .4s"></div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px">Conformité CPAM — ce mois</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="dash-section-badge" style="font-size:10px">✅ ${ok} OK</span>
+              ${warn > 0 ? `<span class="dash-section-badge o" style="font-size:10px">⚠ ${warn} avertissement${warn>1?'s':''}</span>` : ''}
+              ${err  > 0 ? `<span class="dash-section-badge r" style="font-size:10px">❌ ${err} erreur${err>1?'s':''}</span>` : ''}
+            </div>
           </div>
         </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        ${checks.map(c => `<div class="ai ${c.ok===true?'su':c.ok==='warn'?'wa':'er'}" style="font-size:13px">${c.msg}</div>`).join('')}
+        <div style="display:flex;flex-direction:column;gap:5px">
+          ${checks.map(c => `
+            <div class="cpam-check-item ${c.cls}">
+              <div class="cpam-check-dot"></div>
+              <div>${c.msg}</div>
+            </div>`).join('')}
+        </div>
       </div>`;
   } catch(e) {
     el.innerHTML = `<div class="ai er">⚠️ ${e.message}</div>`;

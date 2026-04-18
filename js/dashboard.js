@@ -911,11 +911,120 @@ if (typeof APP !== 'undefined' && APP.on) {
 
 /* ── setDashPeriod — gère la période pill ── */
 function setDashPeriod(btn, period) {
-  // Mettre à jour le select caché
   const sel = document.getElementById('dash-period');
   if (sel) sel.value = period;
-  // Mettre à jour les boutons pill
   document.querySelectorAll('.dpp-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   loadDash();
+}
+
+/* ── setHistPeriod — période pill historique ── */
+function setHistPeriod(btn, period) {
+  const sel = document.getElementById('hp');
+  if (sel) sel.value = period;
+  // Mettre à jour uniquement les boutons dans le même conteneur parent
+  if (btn) {
+    btn.closest('.dash-period-pill')?.querySelectorAll('.dpp-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  if (typeof hist === 'function') hist();
+}
+
+/* ── histSetFilter — filtre rapide pills historique ── */
+let _histFilter = 'all';
+let _histSort   = 'date-desc';
+
+function histSetFilter(btn, filter) {
+  _histFilter = filter;
+  document.querySelectorAll('.hist-filter-pill').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  _applyHistFilter();
+}
+
+function histToggleSort() {
+  const orders = ['date-desc','date-asc','total-desc','total-asc'];
+  const labels = ['Date ↓','Date ↑','Total ↓','Total ↑'];
+  const idx = orders.indexOf(_histSort);
+  _histSort = orders[(idx + 1) % orders.length];
+  const lbl = document.getElementById('hist-sort-label');
+  if (lbl) lbl.textContent = labels[(idx + 1) % orders.length];
+  _applyHistFilter();
+}
+
+function _applyHistFilter() {
+  const tbody = document.getElementById('htb');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr[id^="hist-row-"]'));
+  rows.forEach(row => {
+    let show = true;
+    if (_histFilter === 'ok') {
+      // Statut conforme = dot vert présent
+      show = row.querySelector('.pt-status.active') !== null;
+    } else if (_histFilter === 'dre') {
+      show = row.innerHTML.includes('DRE req');
+    } else if (_histFilter === 'alerts') {
+      // Badge rouge présent
+      show = row.querySelector('[style*="255,95,109"]') !== null || row.innerHTML.includes('⚠');
+    }
+    row.style.display = show ? '' : 'none';
+  });
+}
+
+/* ── setRapportPeriod — période pill rapport ── */
+function setRapportPeriod(btn, period) {
+  const sel = document.getElementById('rapport-period');
+  if (sel) sel.value = period;
+  if (btn) {
+    btn.closest('.dash-period-pill')?.querySelectorAll('.dpp-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  // Mettre à jour le label et charger les KPIs
+  const labels = {
+    month: 'Ce mois',
+    lastmonth: 'Mois précédent',
+    '3month': '3 derniers mois',
+    year: 'Cette année'
+  };
+  const note = document.getElementById('rapport-period-label');
+  if (note) note.textContent = `${labels[period]||period} · NGAP 2026.1 · Prêt à exporter`;
+  _loadRapportKpis(period);
+}
+
+/* ── _loadRapportKpis — charge et affiche les KPIs résumé ── */
+async function _loadRapportKpis(period) {
+  const el = document.getElementById('rapport-kpis');
+  const note = document.getElementById('rapport-kpis-note');
+  if (!el) return;
+  el.innerHTML = `<div style="color:var(--m);font-size:12px;padding:8px 0">Chargement des KPIs...</div>`;
+  try {
+    const data = await fetchAPI(`/webhook/ami-historique?period=${period||'month'}`);
+    const arr  = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+    if (!arr.length) {
+      el.innerHTML = '';
+      if (note) note.textContent = 'Aucune donnée sur cette période.';
+      return;
+    }
+    const total   = arr.reduce((s,r) => s + parseFloat(r.total||0), 0);
+    const amo     = arr.reduce((s,r) => s + parseFloat(r.part_amo||0), 0);
+    const count   = arr.length;
+    const joursSet= new Set(arr.map(r=>(r.date_soin||'').slice(0,10)).filter(Boolean));
+    const jours   = joursSet.size;
+    const avg     = jours > 0 ? total / jours : 0;
+    const dreCount= arr.filter(r=>r.dre_requise).length;
+
+    el.innerHTML = [
+      { icon:'💶', val:total.toFixed(0)+' €',  label:'CA période',      cls:'g' },
+      { icon:'🏥', val:amo.toFixed(0)+' €',    label:'Part AMO',        cls:'b' },
+      { icon:'📋', val:count,                   label:'Actes cotés',     cls:'b' },
+      { icon:'📆', val:jours+'j',               label:'Jours travaillés',cls:'o' },
+      { icon:'💹', val:avg.toFixed(0)+' €',     label:'CA/jour',         cls:'g' },
+      ...(dreCount > 0 ? [{ icon:'📋', val:dreCount, label:'DRE à traiter', cls:'r' }] : []),
+    ].map(k =>
+      `<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`
+    ).join('');
+    if (note) note.textContent = `${count} cotation${count>1?'s':''} · généré le ${new Date().toLocaleDateString('fr-FR')}`;
+  } catch(e) {
+    el.innerHTML = '';
+    if (note) note.textContent = '';
+  }
 }
