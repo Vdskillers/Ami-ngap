@@ -1096,3 +1096,90 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .cab-sync-card { padding: 12px; }
   .cab-member-card { padding: 8px 10px; }
 }
+
+/* ══════════════════════════════════════════════
+   HISTORIQUE — Filtres pills + KPIs mini
+══════════════════════════════════════════════ */
+.hist-filter-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.hist-filter-pill{font-size:11px;font-family:var(--fm);padding:5px 13px;border-radius:20px;cursor:pointer;border:1px solid var(--b);background:none;color:var(--m);transition:all .15s;white-space:nowrap;letter-spacing:.3px}
+.hist-filter-pill:hover{color:var(--t);border-color:var(--bl);background:var(--c)}
+.hist-filter-pill.active{background:var(--ad);color:var(--a);border-color:rgba(0,212,170,.3)}
+.hist-filter-pill.wa{border-color:rgba(255,181,71,.25);color:var(--w);background:rgba(255,181,71,.06)}
+.hist-filter-pill.wa.active{background:rgba(255,181,71,.15);border-color:rgba(255,181,71,.4)}
+.hist-filter-pill.er{border-color:rgba(255,95,109,.25);color:var(--d);background:rgba(255,95,109,.05)}
+.hist-filter-pill.er.active{background:rgba(255,95,109,.15);border-color:rgba(255,95,109,.4)}
+.hist-sort-btn{margin-left:auto;display:flex;align-items:center;gap:6px;background:var(--s);border:1px solid var(--b);border-radius:20px;padding:5px 12px;font-size:11px;font-family:var(--fm);color:var(--m);cursor:pointer;transition:all .15s;white-space:nowrap}
+.hist-sort-btn:hover{color:var(--t);border-color:var(--bl)}
+.hist-kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+
+/* ══════════════════════════════════════════════
+   TRÉSORERIE — Bloc km premium + Alert strip + Table
+══════════════════════════════════════════════ */
+.km-block-premium{background:rgba(79,168,255,.05);border:1px solid rgba(79,168,255,.2);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;position:relative;overflow:hidden}
+.km-block-premium::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--a2),transparent)}
+.km-stat{text-align:center;min-width:80px}
+.km-stat-val{font-size:20px;font-weight:700;font-family:var(--fm);line-height:1;margin-bottom:2px}
+.km-stat-lbl{font-size:10px;color:var(--m)}
+/* Table trésorerie améliorée */
+.tresor-table-wrap{border:1px solid var(--b);border-radius:var(--rl);overflow:hidden;overflow-x:auto}
+.tresor-table{width:100%;border-collapse:collapse;font-size:13px;min-width:580px}
+.tresor-thead{background:var(--s);position:sticky;top:0}
+.tresor-thead th{padding:10px 12px;text-align:left;font-family:var(--fm);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);border-bottom:1px solid var(--b);white-space:nowrap}
+.tresor-thead th.amo{color:var(--a)}
+.tresor-thead th.amc{color:var(--a2)}
+.tresor-td{padding:10px 12px;border-bottom:1px solid rgba(30,45,61,.4);vertical-align:middle}
+.tresor-tr{transition:background .12s}
+.tresor-tr:hover{background:var(--c)}
+.tresor-tr:last-child .tresor-td{border-bottom:none}
+.tresor-tr.attente{background:rgba(255,181,71,.02)}
+/* Boutons paiement */
+.pay-pill{font-size:10px;font-family:var(--fm);padding:3px 10px;border-radius:8px;border:none;cursor:pointer;white-space:nowrap;transition:all .15s}
+.pay-pill.pending{background:rgba(255,181,71,.1);color:var(--w);border:1px solid rgba(255,181,71,.25)}
+.pay-pill.pending:hover{background:rgba(255,181,71,.2)}
+.pay-pill.paid{background:rgba(61,214,140,.08);color:var(--ok);border:1px solid rgba(61,214,140,.2)}
+.pay-pill.paid:hover{background:rgba(61,214,140,.15)}
+/* Alerte attente remboursements */
+.tresor-attente-strip{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(255,181,71,.04);border:1px solid rgba(255,181,71,.18);border-radius:10px;margin-bottom:14px;flex-wrap:wrap}
+.tresor-attente-dot{width:6px;height:6px;border-radius:50%;background:var(--w);animation:pulse 2s infinite;flex-shrink:0}
+.tresor-attente-text{flex:1;font-size:12px;color:var(--w);line-height:1.4}
+/* Checklist CPAM premium intégrée */
+.cpam-check-wrap{background:var(--c);border:1px solid var(--b);border-radius:var(--rl);padding:16px;margin-top:14px}
+.cpam-check-header{display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+.cpam-ring-wrap{width:64px;height:64px;position:relative;flex-shrink:0}
+.cpam-ring-wrap svg{width:64px;height:64px;transform:rotate(-90deg)}
+.cpam-ring-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.cpam-ring-pct{font-size:15px;font-weight:700;color:var(--a);font-family:var(--fs);line-height:1}
+.cpam-ring-sub{font-size:8px;color:var(--m);font-family:var(--fm)}
+.cpam-check-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;margin-bottom:5px;font-size:12px}
+.cpam-check-item:last-child{margin-bottom:0}
+.cpam-check-item.ok{background:rgba(61,214,140,.05);border:1px solid rgba(61,214,140,.15);color:var(--ok)}
+.cpam-check-item.wa{background:rgba(255,181,71,.05);border:1px solid rgba(255,181,71,.15);color:var(--w)}
+.cpam-check-item.er{background:rgba(255,95,109,.05);border:1px solid rgba(255,95,109,.15);color:var(--d)}
+.cpam-check-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.cpam-check-item.ok .cpam-check-dot{background:var(--ok)}
+.cpam-check-item.wa .cpam-check-dot{background:var(--w)}
+.cpam-check-item.er .cpam-check-dot{background:var(--d)}
+
+/* ══════════════════════════════════════════════
+   RAPPORT D'ACTIVITÉ — Carte premium
+══════════════════════════════════════════════ */
+.rapport-hero{background:linear-gradient(135deg,rgba(0,212,170,.05),rgba(79,168,255,.03));border:1px solid rgba(0,212,170,.22);border-radius:var(--rl);padding:22px;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;margin-bottom:0}
+.rapport-hero-icon{width:56px;height:56px;background:linear-gradient(135deg,var(--a),var(--a2));border-radius:14px;display:grid;place-items:center;font-size:24px;flex-shrink:0;box-shadow:0 0 20px rgba(0,212,170,.25)}
+.rapport-hero-body{flex:1;min-width:200px}
+.rapport-hero-title{font-family:var(--fs);font-size:22px;margin-bottom:4px}
+.rapport-hero-sub{font-size:12px;color:var(--m);margin-bottom:14px;font-family:var(--fm)}
+.rapport-includes{display:flex;flex-direction:column;gap:5px;margin-bottom:16px}
+.rapport-include-item{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--m)}
+.rapport-include-dot{width:5px;height:5px;border-radius:50%;background:var(--a);flex-shrink:0}
+.rapport-include-item strong{color:var(--t)}
+.rapport-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* Mobile responsive */
+@media(max-width:768px){
+  .hist-kpi-row{grid-template-columns:repeat(2,1fr)}
+  .km-block-premium{gap:12px}
+  .km-stat-val{font-size:16px}
+  .tresor-table-wrap{border-radius:10px}
+  .rapport-hero{padding:16px}
+  .rapport-hero-icon{width:44px;height:44px;font-size:18px}
+  .rapport-hero-title{font-size:18px}
+}
