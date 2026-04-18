@@ -2734,3 +2734,169 @@ window.liveStatus = function() {
   // Tentative de synchronisation API en arrière-plan (non bloquant)
   liveStatusCore().catch(() => {});
 };
+
+/* ════════════════════════════════════════════════
+   TOURNÉE CABINET MULTI-IDE — v1.0
+   ────────────────────────────────────────────────
+   optimiserTourneeCabinet()    — répartit les patients entre IDEs
+   optimiserTourneeCabinetCA()  — optimise pour maximiser les revenus
+   _renderTourneeCabinetHTML()  — rendu visuel du planning multi-IDE
+════════════════════════════════════════════════ */
+
+/**
+ * optimiserTourneeCabinet — distribue les patients du jour entre IDEs du cabinet
+ * Utilise cabinetPlanDay() + cabinetScoreDistribution() de ai-tournee.js
+ */
+async function optimiserTourneeCabinet() {
+  const result = document.getElementById('tur-cabinet-result');
+  if (!result) return;
+
+  const cab = APP.get ? APP.get('cabinet') : null;
+  if (!cab?.id || !cab.members?.length) {
+    result.innerHTML = '<div class="ai wa">Vous n\'êtes pas dans un cabinet ou aucun membre.</div>';
+    return;
+  }
+
+  // Récupérer les patients importés
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  if (!patients.length) {
+    result.innerHTML = '<div class="ai wa">Importez d\'abord vos patients via le Carnet patients.</div>';
+    return;
+  }
+
+  result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Calcul de la répartition…</p></div>';
+
+  try {
+    // Appel backend si cabinet, sinon calcul local
+    let assignments;
+    try {
+      const d = await apiCall('/webhook/cabinet-tournee', {
+        cabinet_id: cab.id,
+        patients,
+        members:    cab.members,
+      });
+      assignments = d.ok ? d.assignments : null;
+    } catch {}
+
+    // Fallback : calcul client (cabinetPlanDay de ai-tournee.js)
+    if (!assignments && typeof cabinetPlanDay === 'function') {
+      assignments = cabinetPlanDay(patients, cab.members);
+    }
+
+    if (!assignments?.length) {
+      result.innerHTML = '<div class="ai er">Impossible de calculer la répartition.</div>';
+      return;
+    }
+
+    // Calcul du score
+    const scoreData = typeof cabinetScoreDistribution === 'function'
+      ? cabinetScoreDistribution(assignments)
+      : null;
+
+    result.innerHTML = _renderTourneeCabinetHTML(assignments, scoreData);
+
+    if (typeof showToast === 'function') showToast('✅ Répartition calculée !', 'ok');
+
+  } catch(e) {
+    result.innerHTML = `<div class="ai er">Erreur : ${e.message}</div>`;
+  }
+}
+
+/**
+ * optimiserTourneeCabinetCA — optimise la répartition pour maximiser les revenus
+ */
+async function optimiserTourneeCabinetCA() {
+  const result = document.getElementById('tur-cabinet-result');
+  if (!result) return;
+
+  const cab = APP.get ? APP.get('cabinet') : null;
+  if (!cab?.id || !cab.members?.length) return;
+
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  if (!patients.length) {
+    result.innerHTML = '<div class="ai wa">Importez d\'abord vos patients.</div>';
+    return;
+  }
+
+  result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Optimisation des revenus…</p></div>';
+
+  try {
+    // Calcul initial
+    let assignments = typeof cabinetPlanDay === 'function'
+      ? cabinetPlanDay(patients, cab.members)
+      : null;
+
+    if (!assignments?.length) {
+      result.innerHTML = '<div class="ai er">Impossible de calculer.</div>';
+      return;
+    }
+
+    const before = typeof cabinetScoreDistribution === 'function'
+      ? cabinetScoreDistribution(assignments)
+      : null;
+
+    // Optimisation itérative
+    if (typeof cabinetOptimizeRevenue === 'function') {
+      assignments = cabinetOptimizeRevenue(assignments, cab.members);
+    }
+
+    const after = typeof cabinetScoreDistribution === 'function'
+      ? cabinetScoreDistribution(assignments)
+      : null;
+
+    const gain = after && before
+      ? (after.total_revenue - before.total_revenue).toFixed(2)
+      : '?';
+
+    result.innerHTML = `
+      ${gain > 0 ? `<div class="ai su" style="margin-bottom:10px;font-size:13px">⚡ Optimisation : <strong>+${gain} €</strong> par rapport à la répartition initiale</div>` : ''}
+      ${_renderTourneeCabinetHTML(assignments, after)}`;
+
+    if (typeof showToast === 'function') showToast(`⚡ Revenus optimisés +${gain} €`, 'ok');
+
+  } catch(e) {
+    result.innerHTML = `<div class="ai er">Erreur : ${e.message}</div>`;
+  }
+}
+
+/**
+ * _renderTourneeCabinetHTML — génère le HTML du planning multi-IDE
+ */
+function _renderTourneeCabinetHTML(assignments, scoreData) {
+  if (!assignments?.length) return '<div class="ai in">Aucune répartition calculée.</div>';
+
+  // Si cabinetBuildUI disponible, l'utiliser
+  if (typeof cabinetBuildUI === 'function' && scoreData) {
+    return cabinetBuildUI(assignments, scoreData);
+  }
+
+  const colors = ['var(--a)', 'var(--w)', '#4fa8ff', '#ff6b6b'];
+
+  const rows = assignments.map((a, idx) => {
+    const c = colors[idx % colors.length];
+    const nb = a.patients?.length || 0;
+    const pts = (a.patients || []).slice(0, 5).map(p =>
+      `<div style="font-size:11px;color:var(--m);padding:2px 0">· ${p.label || p.description || p.patient_id || 'Patient'}</div>`
+    ).join('');
+    const more = nb > 5 ? `<div style="font-size:11px;color:var(--m)">+ ${nb - 5} autres…</div>` : '';
+
+    return `<div style="padding:12px;border:1px solid var(--b);border-radius:10px;margin-bottom:10px;border-left:4px solid ${c}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:10px;height:10px;border-radius:50%;background:${c};flex-shrink:0"></div>
+        <strong style="font-size:14px">${a.prenom || ''} ${a.nom || a.ide_id || 'IDE'}</strong>
+        <span style="margin-left:auto;font-size:12px;background:var(--s);padding:2px 8px;border-radius:20px;border:1px solid var(--b)">${nb} patient(s)</span>
+      </div>
+      ${pts}${more}
+    </div>`;
+  }).join('');
+
+  const totalRev = scoreData?.total_revenue?.toFixed(2) || '?';
+  const totalKm  = scoreData?.total_km?.toFixed(1) || '?';
+
+  return `${rows}
+    <div style="margin-top:12px;padding:10px 14px;background:rgba(0,212,170,.08);border-radius:8px;display:flex;flex-wrap:wrap;gap:16px;font-size:13px">
+      <span>💶 <strong>${totalRev} €</strong> estimés</span>
+      <span>🚗 <strong>${totalKm} km</strong></span>
+      <span>👥 <strong>${assignments.length} IDEs</strong></span>
+    </div>`;
+}

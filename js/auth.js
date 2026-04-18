@@ -93,7 +93,13 @@ function showApp(){
 
     $('admin-cot-notice').style.display='none';
     $('priv-cot').style.display='';
-    document.querySelectorAll('.nurse-only').forEach(el=>el.style.display='flex');
+    // ⚠️ Ne forcer display:flex que sur les éléments de navigation/UI,
+    // JAMAIS sur les sections .view (elles ont leur propre display géré par navTo)
+    document.querySelectorAll('.nurse-only').forEach(el => {
+      if (!el.classList.contains('view')) {
+        el.style.display = 'flex';
+      }
+    });
     /* ── MODE ADMIN : accès fonctionnel complet pour tester l'application ──
        L'admin ne voit QUE ses propres données (base IndexedDB isolée par userId).
        Les données des infirmières sont physiquement inaccessibles (bases séparées).
@@ -117,6 +123,7 @@ function showApp(){
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
         ni.classList.remove('nurse-only');
+        ni.style.display = 'flex'; // forcer visible (était nurse-only donc potentiellement masqué)
         ni.onclick = () => navTo(v, null);
       }
     });
@@ -149,20 +156,12 @@ function showApp(){
       slLast?.prepend(liAdmin);   // admin en bas
       slLast?.prepend(liCompte);  // compte au-dessus
 
-      // ── Injecter aussi "Cabinet" dans la sidebar pour les admins (test fonctionnel) ──
-      if (!$('nav-cabinet-item')) {
-        const slOutils = document.querySelector('.side .sl:nth-child(2)');
-        if (slOutils) {
-          const liCab = document.createElement('div');
-          liCab.className = 'ni';
-          liCab.id = 'nav-cabinet-item';
-          liCab.dataset.v = 'cabinet';
-          liCab.innerHTML = `<span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span>`;
-          liCab.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', liCab); };
-          const dashItem = slOutils.querySelector('[data-v="dash"]');
-          if (dashItem && dashItem.nextSibling) slOutils.insertBefore(liCab, dashItem.nextSibling);
-          else slOutils.appendChild(liCab);
-        }
+      // nav-cabinet-item est déjà dans le HTML statique (section Système)
+      // On s'assure juste qu'il est visible pour l'admin
+      const _cabNavStatic = $('nav-cabinet-item');
+      if (_cabNavStatic) {
+        _cabNavStatic.classList.remove('nurse-only');
+        _cabNavStatic.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', _cabNavStatic); };
       }
 
       // ── Mobile : injecter bouton Panneau admin dans le menu Plus ──
@@ -243,22 +242,8 @@ function showApp(){
     // Charger la liste des prescripteurs
     loadPrescripteurs();
 
-    // ── Injecter "Cabinet" dans la sidebar (une seule fois) ──────────
-    if (!$('nav-cabinet-item')) {
-      const slOutils = document.querySelector('.side .sl:nth-child(2)');
-      if (slOutils) {
-        const liCab = document.createElement('div');
-        liCab.className = 'ni nurse-only';
-        liCab.id = 'nav-cabinet-item';
-        liCab.dataset.v = 'cabinet';
-        liCab.innerHTML = `<span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span>`;
-        liCab.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', liCab); };
-        // Insérer après "Dashboard & Statistiques" (data-v="dash")
-        const dashItem = slOutils.querySelector('[data-v="dash"]');
-        if (dashItem && dashItem.nextSibling) slOutils.insertBefore(liCab, dashItem.nextSibling);
-        else slOutils.appendChild(liCab);
-      }
-    }
+    // ── Le lien cabinet est dans le HTML statique (section Système)
+    // Il est nurse-only donc visible automatiquement côté infirmière ──
 
     // ── Injecter "Cabinet" dans le menu mobile Plus (une seule fois) ──
     const _injectCabinetMobile = () => {

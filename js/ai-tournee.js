@@ -827,3 +827,374 @@ function cabinetBuildUI(assignments, scoreData) {
     </div>
   </div>`;
 }
+
+/* ════════════════════════════════════════════════
+   COUCHE IA AVANCÉE — v2.0
+   ────────────────────────────────────────────────
+   predictDelayLive()       — prédiction de retard en temps réel
+   autoReassignIfRisk()     — réassignation auto si risque HIGH
+   smartCluster()           — clustering hybride € + géo
+   planWithRevenueTarget()  — planning piloté par objectif CA
+   _estimateFatigueFactor() — modèle fatigue IDE (heuristique)
+   _surgeScore()            — score tension zone
+   planWithTargetAndSurge() — planning objectif + surge
+════════════════════════════════════════════════ */
+
+/* ── Tarifs NGAP pour estimation locale ── */
+const _AI_TARIFS = {
+  AMI1:3.15, AMI2:6.30, AMI3:9.45, AMI4:12.60, AMI5:15.75, AMI6:18.90,
+  AIS1:2.65, AIS3:7.95, BSA:13.00, BSB:18.20, BSC:28.70, IFD:2.75,
+};
+
+function _aiTarif(code) { return _AI_TARIFS[code] || _AI_TARIFS[(code||'').toUpperCase()] || 3.15; }
+
+/* ════════════════════════════════════════════════
+   PRÉDICTION DE RETARD LIVE
+════════════════════════════════════════════════ */
+
+/**
+ * predictDelayLive — prédit les retards sur une tournée en cours
+ * @param {Object} ide — { id, pos: {lat,lng}, avg_duration_factor? }
+ * @param {Array}  route — [ { id, coords:{lat,lng}, scheduled_at:ms, actes:[] }, … ]
+ * @returns { risk_level:'LOW'|'MEDIUM'|'HIGH', total_delay_min, details }
+ */
+function predictDelayLive({ ide, route }) {
+  if (!Array.isArray(route) || !route.length) return { risk_level: 'LOW', total_delay_min: 0, details: [] };
+
+  let currentTime = Date.now();
+  let risk = 0;
+  const delays = [];
+
+  for (const stop of route) {
+    // Temps de trajet estimé (euclidien + heuristique trafic)
+    const travel = _predictTravelMs(ide?.pos, stop.coords);
+    // Durée soin avec facteur fatigue IDE
+    const care   = _predictCareDurationMs(stop, ide, { done: delays.length });
+
+    currentTime += travel + care;
+
+    const scheduled = stop.scheduled_at || stop.heure_ms || 0;
+    if (scheduled > 0) {
+      const delta = currentTime - scheduled;
+      if (delta > 5 * 60 * 1000) { // > 5 min de retard
+        risk += delta;
+        delays.push({ patient_id: stop.id, delay_min: Math.round(delta / 60000) });
+      }
+    }
+  }
+
+  const total_delay_min = Math.round(risk / 60000);
+  return {
+    risk_level:      total_delay_min > 15 ? 'HIGH' : total_delay_min > 5 ? 'MEDIUM' : 'LOW',
+    total_delay_min,
+    details: delays,
+  };
+}
+
+function _predictTravelMs(from, to) {
+  if (!from?.lat || !to?.lat) return 10 * 60 * 1000; // 10 min par défaut
+  const km  = Math.hypot(to.lat - from.lat, to.lng - from.lng) * 111;
+  const dep = _nowMinutes();
+  const { factor } = trafficFactor(dep);
+  const baseMin = (km / 40) * 60; // 40 km/h moyen
+  return Math.round(baseMin * factor * 60 * 1000);
+}
+
+function _predictCareDurationMs(stop, ide, ctx) {
+  const actes = Array.isArray(stop.actes) ? stop.actes : [];
+  let base = _estimateDuration(stop); // fonction existante dans ai-tournee.js
+  // Facteur fatigue IDE
+  const fatigue = _estimateFatigueFactor(ctx?.done || 0);
+  // Complexité patient
+  const complexity = stop.patient?.complexity || 1.0;
+  return Math.round(base * fatigue * complexity * 60 * 1000);
+}
+
+/* ════════════════════════════════════════════════
+   MODÈLE FATIGUE IDE (heuristique légère)
+════════════════════════════════════════════════ */
+
+/**
+ * _estimateFatigueFactor — estime le facteur fatigue selon l'avancement de la tournée
+ * Retourne un facteur multiplicatif de durée (1.0 = normal, >1.0 = plus lent)
+ */
+function _estimateFatigueFactor(nbStopsDone, kmDone = 0, minutesSinceStart = 0) {
+  let factor = 1.0;
+  // Fatigue progressive selon nombre de patients
+  if (nbStopsDone >= 10) factor += 0.10;
+  if (nbStopsDone >= 15) factor += 0.10;
+  if (nbStopsDone >= 20) factor += 0.10;
+  // Fatigue horaire (fin de matinée / après déjeuner)
+  const h = new Date().getHours();
+  if (h >= 11 && h < 14) factor += 0.05; // creux déjeuner
+  if (h >= 17)            factor += 0.08; // fin journée
+  // Fatigue kilométrique
+  if (kmDone > 50) factor += 0.05;
+  if (kmDone > 80) factor += 0.05;
+  return Math.min(factor, 1.4); // max +40%
+}
+
+/* ════════════════════════════════════════════════
+   AUTO-RÉASSIGNATION EN CAS DE RISQUE
+════════════════════════════════════════════════ */
+
+/**
+ * autoReassignIfRisk — vérifie chaque IDE et réassigne si risque HIGH
+ * @param {Object} planning — { [ide_id]: patients[] }
+ * @param {Array}  infirmieres — [ { id, nom, prenom, pos } ]
+ * @returns { planning, changes[] }
+ */
+function autoReassignIfRisk({ planning, infirmieres }) {
+  if (!planning || !infirmieres?.length) return { planning: planning || {}, changes: [] };
+
+  const changes = [];
+
+  for (const ide of infirmieres) {
+    const route = planning[ide.id] || [];
+    if (!route.length) continue;
+
+    const prediction = predictDelayLive({ ide, route });
+    if (prediction.risk_level !== 'HIGH') continue;
+
+    for (const delay of prediction.details) {
+      const patient = _findPatientInPlanning(planning, delay.patient_id);
+      if (!patient) continue;
+
+      const better = _findBestIDEForPatientSimple(patient, infirmieres, ide.id);
+      if (!better) continue;
+
+      // Réassigner
+      planning[ide.id] = (planning[ide.id] || []).filter(p => p.id !== patient.id);
+      if (!planning[better.ide_id]) planning[better.ide_id] = [];
+      planning[better.ide_id].push({ ...patient, performed_by: better.ide_id });
+
+      changes.push({
+        type:       'reassign',
+        patient_id: patient.id,
+        from:       ide.id,
+        to:         better.ide_id,
+        gain_min:   delay.delay_min,
+      });
+    }
+  }
+
+  return { planning, changes };
+}
+
+function _findPatientInPlanning(planning, patientId) {
+  for (const route of Object.values(planning)) {
+    const p = (route || []).find(x => x.id === patientId || x.patient_id === patientId);
+    if (p) return p;
+  }
+  return null;
+}
+
+function _findBestIDEForPatientSimple(patient, infirmieres, excludeId) {
+  let best = null, bestScore = -Infinity;
+  for (const ide of infirmieres) {
+    if (ide.id === excludeId) continue;
+    const dist  = ide.pos && patient.coords
+      ? Math.hypot(ide.pos.lat - patient.coords.lat, ide.pos.lng - patient.coords.lng) * 111
+      : 10;
+    const rev   = _estimateRevenueForPatient(patient);
+    const score = rev - dist * 0.4;
+    if (score > bestScore) { bestScore = score; best = { ide_id: ide.id, score }; }
+  }
+  return best;
+}
+
+function _estimateRevenueForPatient(patient) {
+  const actes = Array.isArray(patient.actes) ? patient.actes : [];
+  if (!actes.length) return 8.50;
+  const sorted = [...actes].sort((a, b) => _aiTarif(b.code) - _aiTarif(a.code));
+  return sorted.reduce((s, a, i) => s + _aiTarif(a.code) * (i === 0 ? 1 : 0.5), 0);
+}
+
+/* ════════════════════════════════════════════════
+   CLUSTERING INTELLIGENT € + GÉO
+════════════════════════════════════════════════ */
+
+/**
+ * smartCluster — clustering hybride géo + rentabilité
+ * Remplace le clustering purement géographique
+ */
+function smartCluster(patients, k) {
+  if (!k || k <= 1) return [patients];
+  if (!patients.length) return [];
+
+  // Initialisation géographique
+  let clusters = cabinetGeoCluster(patients, k); // fonction existante
+
+  // Itérations d'amélioration basées sur le score €
+  for (let iter = 0; iter < 20; iter++) {
+    let moved = false;
+    for (let ci = 0; ci < clusters.length; ci++) {
+      for (let pi = clusters[ci].length - 1; pi >= 0; pi--) {
+        const p = clusters[ci][pi];
+        let bestClusterIdx = ci;
+        let bestScore = _clusterScore([...clusters[ci]]);
+
+        for (let cj = 0; cj < clusters.length; cj++) {
+          if (cj === ci) continue;
+          const testSrc = clusters[ci].filter((_, i) => i !== pi);
+          const testDst = [...clusters[cj], p];
+          const scoreNew = _clusterScore(testSrc) + _clusterScore(testDst);
+          const scoreCur = _clusterScore(clusters[ci]) + _clusterScore(clusters[cj]);
+          if (scoreNew > scoreCur) { bestClusterIdx = cj; bestScore = scoreNew; }
+        }
+
+        if (bestClusterIdx !== ci) {
+          clusters[bestClusterIdx].push(p);
+          clusters[ci].splice(pi, 1);
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+
+  return clusters;
+}
+
+function _clusterScore(cluster) {
+  if (!cluster.length) return 0;
+  const revenue  = cluster.reduce((s, p) => s + _estimateRevenueForPatient(p), 0);
+  const km       = _estimateClusterKm(cluster);
+  const time     = cluster.reduce((s, p) => s + (_estimateDuration(p) || 20), 0);
+  const density  = cluster.length;
+  return revenue - km * 0.5 - time * 0.1 + density * 1.5;
+}
+
+function _estimateClusterKm(cluster) {
+  const pts = cluster.filter(p => p.lat && p.lng);
+  if (pts.length < 2) return 0;
+  let km = 0;
+  for (let i = 1; i < pts.length; i++) {
+    km += Math.hypot(pts[i].lat - pts[i-1].lat, pts[i].lng - pts[i-1].lng) * 111;
+  }
+  return km;
+}
+
+/* ════════════════════════════════════════════════
+   PLANNING PILOTÉ PAR OBJECTIF CA
+════════════════════════════════════════════════ */
+
+/**
+ * planWithRevenueTarget — génère un planning multi-IDE visant un CA cible
+ */
+function planWithRevenueTarget({ patients, members, target }) {
+  if (!patients?.length || !members?.length) return { planning: [], revenue: 0, target, reached: false };
+
+  // Plan initial avec clustering intelligent
+  const k        = members.length;
+  const clusters = smartCluster(patients, k);
+  let assignments = members.map((m, i) => ({
+    ide_id:  m.id || m.infirmiere_id || `ide_${i}`,
+    nom:     m.nom    || '',
+    prenom:  m.prenom || '',
+    patients: (clusters[i] || []).map(p => ({ ...p, performed_by: m.id || `ide_${i}` })),
+  }));
+
+  // Optimisation itérative
+  assignments = typeof cabinetOptimizeRevenue === 'function'
+    ? cabinetOptimizeRevenue(assignments, members)
+    : assignments;
+
+  let current = _computeAssignmentsRevenue(assignments);
+  let iterations = 0;
+
+  while (current < target && iterations < 50) {
+    const improved = _tryImproveRevenue(assignments, members);
+    if (!improved) break;
+    assignments = improved;
+    current = _computeAssignmentsRevenue(assignments);
+    iterations++;
+  }
+
+  return { planning: assignments, revenue: Math.round(current * 100) / 100, target, reached: current >= target };
+}
+
+function _computeAssignmentsRevenue(assignments) {
+  return (assignments || []).reduce((total, a) => {
+    return total + (a.patients || []).reduce((s, p) => s + _estimateRevenueForPatient(p), 0);
+  }, 0);
+}
+
+function _tryImproveRevenue(assignments, members) {
+  for (let i = 0; i < assignments.length; i++) {
+    for (let j = 0; j < assignments.length; j++) {
+      if (i === j || !assignments[i].patients?.length) continue;
+      const candidate = assignments.map(a => ({ ...a, patients: [...a.patients] }));
+      const moved     = candidate[i].patients.pop();
+      if (!moved) continue;
+      moved.performed_by = candidate[j].ide_id;
+      candidate[j].patients.push(moved);
+      if (_computeAssignmentsRevenue(candidate) > _computeAssignmentsRevenue(assignments)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+/* ════════════════════════════════════════════════
+   SURGE SCORE (tension zone)
+════════════════════════════════════════════════ */
+
+/**
+ * _surgeScore — calcule le score de tension d'une zone
+ */
+function _surgeScore({ demand = 1, supply = 1, delayRisk = 0, fatigueAvg = 0 }) {
+  return demand / Math.max(supply, 1) + delayRisk * 0.5 + fatigueAvg * 0.3;
+}
+
+function _normalizeSurge(s) { return Math.min(2, Math.max(0, s)); }
+
+/**
+ * planWithTargetAndSurge — planning avec objectif CA + zones de tension
+ */
+function planWithTargetAndSurge({ patients, members, target, zones = [] }) {
+  // Enrichir les patients avec le score de zone
+  const enriched = patients.map(p => {
+    const zone  = zones.find(z => z.id === p.zone_id) || {};
+    const surge = _normalizeSurge(_surgeScore({
+      demand:     zone.pending_patients || 1,
+      supply:     zone.available_IDEs  || members.length,
+      delayRisk:  zone.avg_delay_prob  || 0,
+      fatigueAvg: zone.avg_fatigue     || 0,
+    }));
+    return { ...p, _surge: surge, _priority: (p.priority || 0) + surge * 10 };
+  });
+
+  // Trier par priorité surge avant la planification
+  enriched.sort((a, b) => (b._priority || 0) - (a._priority || 0));
+
+  return planWithRevenueTarget({ patients: enriched, members, target });
+}
+
+/* ════════════════════════════════════════════════
+   BOUCLE LIVE — réassignation automatique
+════════════════════════════════════════════════ */
+
+let _liveReassignInterval = null;
+
+/**
+ * startCabinetLiveOptimization — démarre la boucle de réassignation cabinet
+ */
+function startCabinetLiveOptimization(getPlanning, getIDEs, onChanges) {
+  if (_liveReassignInterval) clearInterval(_liveReassignInterval);
+  _liveReassignInterval = setInterval(() => {
+    try {
+      const planning     = getPlanning();
+      const infirmieres  = getIDEs();
+      if (!planning || !infirmieres?.length) return;
+
+      const { changes } = autoReassignIfRisk({ planning, infirmieres });
+      if (changes.length > 0 && typeof onChanges === 'function') onChanges(changes);
+    } catch(e) { console.warn('[AI-Tournée] Live cabinet KO:', e.message); }
+  }, 15000); // toutes les 15 secondes
+}
+
+function stopCabinetLiveOptimization() {
+  if (_liveReassignInterval) { clearInterval(_liveReassignInterval); _liveReassignInterval = null; }
+}

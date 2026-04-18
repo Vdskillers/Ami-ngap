@@ -906,3 +906,194 @@ async function useLiveMyLocation() {
     });
   };
 })();
+
+/* ════════════════════════════════════════════════
+   HEATMAP DES ZONES RENTABLES — v1.0
+   ────────────────────────────────────────────────
+   computeHeatmap(cotations) — agrège les données par grille géo
+   renderHeatmap(grid)       — affiche le calque Leaflet heatmap
+   showHeatmapPanel()        — ouvre le panneau zones rentables
+   hideHeatmapPanel()        — ferme le panneau
+════════════════════════════════════════════════ */
+
+let _heatmapLayer   = null;
+let _heatmapVisible = false;
+
+/**
+ * gridKey — clé de grille géographique (précision ~110m par défaut)
+ */
+function gridKey(lat, lng, precision = 3) {
+  return `${parseFloat(lat).toFixed(precision)}_${parseFloat(lng).toFixed(precision)}`;
+}
+
+/**
+ * computeHeatmap — agrège les cotations par zone géographique
+ * @param {Array} cotations — [ { lat, lng, total, km?, duration? }, … ]
+ * @returns {Object} grid — { "lat_lng": { revenue, count, km, time, … } }
+ */
+function computeHeatmap(cotations) {
+  const grid = {};
+
+  for (const c of (cotations || [])) {
+    if (!c.lat || !c.lng) continue;
+
+    const key = gridKey(c.lat, c.lng);
+
+    if (!grid[key]) {
+      grid[key] = { revenue: 0, count: 0, km: 0, time: 0, lat: +c.lat, lng: +c.lng };
+    }
+
+    grid[key].revenue += parseFloat(c.total  || 0);
+    grid[key].count   += 1;
+    grid[key].km      += parseFloat(c.km     || 0);
+    grid[key].time    += parseFloat(c.duration || 0); // en secondes
+  }
+
+  // KPIs dérivés
+  for (const k in grid) {
+    const g = grid[k];
+    g.revenue_per_visit = g.count  > 0 ? g.revenue / g.count          : g.revenue;
+    g.revenue_per_km    = g.km     > 0 ? g.revenue / g.km              : g.revenue;
+    g.revenue_per_hour  = g.time   > 0 ? g.revenue / (g.time / 3600)   : g.revenue;
+  }
+
+  return grid;
+}
+
+/**
+ * renderHeatmap — affiche la heatmap sur la carte Leaflet
+ * Nécessite le plugin Leaflet.heat (chargé si absent)
+ */
+async function renderHeatmap(grid, metric = 'revenue_per_hour') {
+  if (!APP.map) return;
+
+  // Supprimer la couche précédente
+  if (_heatmapLayer) {
+    try { APP.map.removeLayer(_heatmapLayer); } catch(_) {}
+    _heatmapLayer = null;
+  }
+
+  const entries = Object.values(grid).filter(g => g.lat && g.lng);
+  if (!entries.length) return;
+
+  // Normaliser les valeurs pour Leaflet.heat (0..1)
+  const values = entries.map(g => g[metric] || g.revenue || 0);
+  const maxVal = Math.max(...values, 1);
+
+  const points = entries.map(g => [
+    g.lat,
+    g.lng,
+    Math.min(1, (g[metric] || g.revenue || 0) / maxVal)
+  ]);
+
+  // Charger Leaflet.heat si absent
+  if (typeof L.heatLayer !== 'function') {
+    await _loadLeafletHeat();
+  }
+
+  if (typeof L.heatLayer === 'function') {
+    _heatmapLayer = L.heatLayer(points, {
+      radius:  25,
+      blur:    15,
+      maxZoom: 17,
+      gradient: { 0.2: '#3b82f6', 0.5: '#f59e0b', 0.8: '#ef4444', 1.0: '#7c3aed' },
+    }).addTo(APP.map);
+    _heatmapVisible = true;
+  }
+
+  return grid;
+}
+
+/**
+ * _loadLeafletHeat — charge dynamiquement Leaflet.heat
+ */
+function _loadLeafletHeat() {
+  return new Promise(resolve => {
+    if (typeof L.heatLayer === 'function') { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js';
+    s.onload  = resolve;
+    s.onerror = resolve; // ne pas bloquer si indisponible
+    document.head.appendChild(s);
+  });
+}
+
+/**
+ * toggleHeatmap — affiche/masque la heatmap et le panneau de zones
+ */
+async function toggleHeatmap() {
+  if (_heatmapVisible && _heatmapLayer) {
+    try { APP.map.removeLayer(_heatmapLayer); } catch(_) {}
+    _heatmapLayer   = null;
+    _heatmapVisible = false;
+    _hideHeatmapPanel();
+    return;
+  }
+
+  // Charger les cotations depuis le cache dashboard ou l'API
+  let cotations = [];
+  try {
+    const key = typeof _dashCacheKey === 'function' ? _dashCacheKey() : '';
+    const raw = key ? localStorage.getItem(key) : null;
+    if (raw) cotations = JSON.parse(raw).data || [];
+  } catch {}
+
+  if (!cotations.length) {
+    try {
+      const d  = await fetchAPI('/webhook/ami-historique?period=3month');
+      cotations = Array.isArray(d?.data) ? d.data : [];
+    } catch {}
+  }
+
+  if (!cotations.length) {
+    if (typeof showToast === 'function') showToast('Aucune cotation avec coordonnées GPS disponible.', 'wa');
+    return;
+  }
+
+  const grid = computeHeatmap(cotations);
+  await renderHeatmap(grid);
+  _showHeatmapPanel(grid);
+}
+
+/**
+ * _showHeatmapPanel — affiche le panneau de résumé des zones
+ */
+function _showHeatmapPanel(grid) {
+  let panel = document.getElementById('heatmap-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'heatmap-panel';
+    panel.style.cssText = 'position:absolute;top:80px;right:12px;z-index:1000;background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;width:220px;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    const mapEl = document.getElementById('dep-map');
+    if (mapEl) mapEl.appendChild(panel);
+    else document.body.appendChild(panel);
+  }
+
+  const entries = Object.values(grid)
+    .sort((a, b) => (b.revenue_per_hour || 0) - (a.revenue_per_hour || 0))
+    .slice(0, 5);
+
+  const rows = entries.map(g => {
+    const rph = (g.revenue_per_hour || g.revenue || 0).toFixed(1);
+    const color = rph > 35 ? '#22c55e' : rph > 20 ? '#f59e0b' : '#ef4444';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--b);font-size:12px">
+      <span style="color:var(--m)">${g.lat.toFixed(2)}, ${g.lng.toFixed(2)}</span>
+      <strong style="color:${color}">${rph} €/h</strong>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-weight:700;font-size:13px">🔥 Zones rentables</div>
+      <button onclick="_hideHeatmapPanel();toggleHeatmap()" style="background:none;border:none;cursor:pointer;color:var(--m);font-size:16px;padding:0">×</button>
+    </div>
+    ${rows || '<div style="font-size:12px;color:var(--m)">Aucune donnée GPS.</div>'}
+    <div style="margin-top:8px;font-size:10px;color:var(--m)">Basé sur ${Object.keys(grid).length} zone(s)</div>`;
+
+  panel.style.display = 'block';
+}
+
+function _hideHeatmapPanel() {
+  const p = document.getElementById('heatmap-panel');
+  if (p) p.style.display = 'none';
+}

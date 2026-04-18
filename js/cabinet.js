@@ -70,6 +70,10 @@ async function initCabinet() {
         sync_prefs: prefs,
       });
       _updateCabinetBadge(d.members?.length || 0);
+      // Activer le toggle cabinet dans la cotation
+      if (typeof initCotationCabinetToggle === 'function') initCotationCabinetToggle();
+      // Afficher le panel cabinet dans la tournée
+      _updateTourneeCabinetPanel();
     } else {
       APP.set('cabinet', null);
       _updateCabinetBadge(0);
@@ -97,6 +101,10 @@ function _updateCabinetBadge(nbMembers) {
 async function renderCabinetSection() {
   const root = document.getElementById('cabinet-root');
   if (!root) return;
+
+  // N'afficher le spinner que si la vue cabinet est active (évite le spinner sur d'autres pages)
+  const view = document.getElementById('view-cabinet');
+  if (view && !view.classList.contains('on')) return;
 
   root.innerHTML = `<div class="card" style="text-align:center;padding:32px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto"></div><p style="margin-top:12px;color:var(--m)">Chargement cabinet…</p></div>`;
 
@@ -644,6 +652,24 @@ async function cabinetTournee(patients) {
 
 /* Exposer les fonctions globalement */
 window.initCabinet          = initCabinet;
+
+function _updateTourneeCabinetPanel() {
+  const panel = document.getElementById('tur-cabinet-panel');
+  if (!panel) return;
+  const cab = APP.get('cabinet');
+  if (cab?.id && cab.members?.length > 1) {
+    panel.style.display = 'block';
+    const nomEl = document.getElementById('tur-cabinet-nom');
+    if (nomEl) nomEl.textContent = cab.nom || '—';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// Réagir aux changements de cabinet pour la tournée
+APP.on('cabinet', () => {
+  _updateTourneeCabinetPanel();
+});
 window.renderCabinetSection = renderCabinetSection;
 window.cabinetCreate        = cabinetCreate;
 window.cabinetJoin          = cabinetJoin;
