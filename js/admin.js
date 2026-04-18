@@ -102,8 +102,6 @@ async function loadAdmStats() {
 
     // ── Stocker + rendre les stats par infirmière ──────────────────────
     _ADM_PER_USER_DATA = d.per_user || [];
-    console.log('[AMI Admin] per_user reçu :', _ADM_PER_USER_DATA.length, JSON.stringify(_ADM_PER_USER_DATA).slice(0, 300));
-    console.log('[AMI Admin] _debug worker :', JSON.stringify(d._debug || {}));
     _admRenderNurseStats(_ADM_PER_USER_DATA);
   } catch(e) {
     if (puEl) puEl.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message)}</div>`;
@@ -262,8 +260,8 @@ function _admNurseCard(u, maxCA) {
         <div style="font-size:10px;color:var(--m)">Alertes</div>
       </div>
       <div style="background:var(--c);border:1px solid var(--b);border-radius:8px;padding:7px 10px;text-align:center">
-        <div style="font-size:11px;font-weight:600;color:var(--m);font-family:var(--fm)">${inscription}</div>
-        <div style="font-size:10px;color:var(--m)">Inscrit(e)</div>
+        <div style="font-size:11px;font-weight:600;color:var(--m);font-family:var(--fm)">${u.first_activity ? new Date(u.first_activity).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}) : '—'}</div>
+        <div style="font-size:10px;color:var(--m)">1ère activité</div>
       </div>
     </div>
 
