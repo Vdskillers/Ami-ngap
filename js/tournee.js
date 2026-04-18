@@ -1837,6 +1837,367 @@ function removeAllImportedPatients() {
 }
 
 /* ============================================================
+   AJOUT PATIENT URGENT EN COURS DE TOURNÉE
+   ─────────────────────────────────────────
+   - Modale avec liste carnet patient + recherche + saisie libre
+   - Insertion à la position de détour minimal dans les restants
+   - Ajout automatique au carnet si patient inconnu
+   ============================================================ */
+
+/* Distance euclidienne (° → score relatif, suffisant pour comparer détours) */
+function _urgDist(a, b) {
+  if (!a?.lat || !b?.lat) return 9999;
+  const dlat = a.lat - b.lat;
+  const dlng = (a.lng || a.lon || 0) - (b.lng || b.lon || 0);
+  return Math.sqrt(dlat * dlat + dlng * dlng);
+}
+
+/* Calcule la position d'insertion avec détour minimal parmi les patients restants.
+   Renvoie l'index d'insertion dans le tableau complet (avant le 1er non-fait). */
+function _findBestInsertPosition(newP, allPatients) {
+  // Séparer faits / restants avec leurs indices dans allPatients
+  const remainingIdx = [];
+  allPatients.forEach((p, i) => {
+    if (!p._done && !p._absent) remainingIdx.push(i);
+  });
+  if (!remainingIdx.length) return allPatients.length;
+  if (remainingIdx.length === 1) return remainingIdx[0]; // avant le seul restant
+
+  // Position GPS courante (infirmière) ou 1er patient restant comme proxy
+  const userPos = APP.get('userPos') || APP.get('startPoint') || allPatients[remainingIdx[0]];
+
+  let bestIdx = remainingIdx[0]; // par défaut : 1ère position restante
+  let bestDetour = Infinity;
+
+  // Tester l'insertion avant chaque patient restant
+  for (let k = 0; k < remainingIdx.length; k++) {
+    const idxBefore = remainingIdx[k];
+    const prev = k === 0 ? userPos : allPatients[remainingIdx[k - 1]];
+    const curr = allPatients[idxBefore];
+    const detour = _urgDist(prev, newP) + _urgDist(newP, curr) - _urgDist(prev, curr);
+    if (detour < bestDetour) {
+      bestDetour = detour;
+      bestIdx = idxBefore; // insérer AVANT cet index
+    }
+  }
+  // Tester aussi l'insertion en toute dernière position restante
+  const lastRemaining = allPatients[remainingIdx[remainingIdx.length - 1]];
+  const prev = remainingIdx.length > 1 ? allPatients[remainingIdx[remainingIdx.length - 2]] : userPos;
+  const detourLast = _urgDist(prev, newP) + _urgDist(newP, lastRemaining) - _urgDist(prev, lastRemaining);
+  if (detourLast < bestDetour) bestIdx = remainingIdx[remainingIdx.length - 1];
+
+  return bestIdx;
+}
+
+/* Insère le patient urgent dans importedData + uberPatients, met à jour l'affichage,
+   et s'assure qu'il existe dans le carnet IDB. */
+async function _insertUrgentPatient(patientData) {
+  // ── 1. Préparer la fiche tournée ──────────────────────────────────────
+  const urgentP = {
+    ...patientData,
+    id:          patientData.id || ('urg_' + Date.now()),
+    patient_id:  patientData.id || patientData.patient_id || ('urg_' + Date.now()),
+    description: patientData.description || ((patientData.prenom || '') + ' ' + (patientData.nom || '')).trim() || 'Patient urgent',
+    texte:       patientData.texte || patientData.description || '',
+    heure_soin:  patientData.heure_soin || '',
+    urgence:     true,
+    _urgent:     true,
+    _done:       false,
+    _absent:     false,
+  };
+
+  // ── 2. Insertion positionnelle optimale ───────────────────────────────
+  if (!APP.importedData) APP.importedData = { patients: [], total: 0 };
+  if (!APP.importedData.patients) APP.importedData.patients = [];
+  const all = APP.importedData.patients;
+
+  const insertIdx = _findBestInsertPosition(urgentP, all);
+  all.splice(insertIdx, 0, urgentP);
+  APP.importedData.total = all.length;
+  storeImportedData(APP.importedData);
+
+  // Synchroniser uberPatients
+  const uber = APP.get('uberPatients') || [];
+  uber.splice(insertIdx, 0, { ...urgentP, urgence: true });
+  APP.set('uberPatients', uber);
+
+  // ── 3. Ajouter au carnet IDB si absent ────────────────────────────────
+  if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+    try {
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      const alreadyIn = rows.some(r => r.id === urgentP.id ||
+        ((r.nom || '').toLowerCase() === (urgentP.nom || '').toLowerCase() &&
+         (r.prenom || '').toLowerCase() === (urgentP.prenom || '').toLowerCase() &&
+         urgentP.nom));
+
+      if (!alreadyIn && (urgentP.nom || urgentP.prenom || urgentP.description)) {
+        const now = new Date().toISOString();
+        const newPat = {
+          id:         urgentP.id,
+          nom:        urgentP.nom || '',
+          prenom:     urgentP.prenom || '',
+          ddn:        urgentP.ddn || '',
+          amo:        urgentP.amo || '',
+          amc:        urgentP.amc || '',
+          adresse:    urgentP.adresse || urgentP.addressFull || '',
+          lat:        urgentP.lat || null,
+          lng:        urgentP.lng || null,
+          cotations:  [],
+          created_at: now,
+          updated_at: now,
+          source:     'urgent_live',
+        };
+        const row = {
+          id:         newPat.id,
+          nom:        newPat.nom,
+          prenom:     newPat.prenom,
+          _data:      (typeof _enc === 'function') ? _enc(newPat) : JSON.stringify(newPat),
+          updated_at: now,
+        };
+        await _idbPut(PATIENTS_STORE, row);
+        if (typeof _syncPatientNow === 'function') _syncPatientNow(row).catch(() => {});
+        if (typeof showToast === 'function') showToast(`👤 ${urgentP.prenom || urgentP.nom || 'Patient'} ajouté au carnet.`, 'ok');
+      }
+    } catch(e) {
+      console.warn('[AMI] _insertUrgentPatient carnet KO:', e.message);
+    }
+  }
+
+  // ── 4. Rafraîchir l'affichage ─────────────────────────────────────────
+  renderLivePatientList();
+  if (typeof selectBestPatient === 'function') selectBestPatient();
+  const pos = insertIdx + 1;
+  const total = all.length;
+  if (typeof showToast === 'function')
+    showToast(`🚨 Patient urgent inséré en position ${pos}/${total} (détour minimal).`, 'ok');
+}
+
+/* Ouvre la modale de saisie d'un patient urgent */
+async function openUrgentPatientModal() {
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const remaining = patients.filter(p => !p._done && !p._absent);
+  if (!remaining.length) {
+    if (typeof showToast === 'function') showToast('⚠️ Aucun patient restant dans la tournée.', 'warn');
+    return;
+  }
+
+  // Charger le carnet IDB
+  let carnet = [];
+  if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+    try {
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      carnet = rows.map(r => {
+        const d = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
+        return { id: r.id, nom: r.nom || d.nom || '', prenom: r.prenom || d.prenom || '',
+                 ddn: d.ddn || '', amo: d.amo || '', amc: d.amc || '',
+                 adresse: d.adresse || d.addressFull || '',
+                 lat: d.lat || null, lng: d.lng || null };
+      }).filter(p => p.nom || p.prenom);
+      carnet.sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom, 'fr'));
+    } catch(e) { console.warn('[AMI] openUrgentPatientModal carnet KO:', e.message); }
+  }
+
+  // Supprimer la modale existante si elle existe
+  const existing = document.getElementById('modal-urgent-patient');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-urgent-patient';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-start;justify-content:center;background:rgba(11,15,20,.88);backdrop-filter:blur(10px);padding:16px;overflow-y:auto';
+
+  const carnetHTML = carnet.length ? carnet.map(p => {
+    const nom = ((p.prenom || '') + ' ' + (p.nom || '')).trim();
+    const addr = p.adresse ? `<span style="font-size:10px;color:var(--m);display:block;margin-top:1px">${p.adresse.slice(0, 50)}</span>` : '';
+    const dataAttr = `data-nom="${(p.nom||'').replace(/"/g,'')}" data-prenom="${(p.prenom||'').replace(/"/g,'')}" data-id="${p.id}" data-ddn="${p.ddn||''}" data-amo="${p.amo||''}" data-amc="${p.amc||''}" data-adresse="${(p.adresse||'').replace(/"/g,'')}" data-lat="${p.lat||''}" data-lng="${p.lng||''}"`;
+    return `<div class="urg-pat-item" ${dataAttr} onclick="_urgSelectCarnet(this)" style="padding:10px 12px;border-radius:8px;border:1px solid var(--b);cursor:pointer;margin-bottom:6px;transition:background .15s">
+      <div style="font-size:13px;font-weight:600">${nom}</div>${addr}
+    </div>`;
+  }).join('') : `<div style="color:var(--m);font-size:12px;padding:12px 0;text-align:center">Aucun patient dans le carnet — saisissez les informations manuellement ci-dessous.</div>`;
+
+  modal.innerHTML = `
+  <div style="background:var(--c);border:1px solid var(--b);border-radius:20px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);margin-top:20px">
+    <!-- Header -->
+    <div style="background:rgba(255,95,109,.08);border-bottom:1px solid rgba(255,95,109,.2);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-family:var(--fs);font-size:18px;font-weight:700;color:#ff5f6d">🚨 Patient urgent</div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">Sera inséré au meilleur endroit dans les ${remaining.length} patients restants</div>
+      </div>
+      <button onclick="closeUrgentPatientModal()" style="background:var(--s);border:1px solid var(--b);color:var(--m);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:grid;place-items:center">✕</button>
+    </div>
+    <!-- Corps -->
+    <div style="padding:20px;max-height:70vh;overflow-y:auto">
+      ${carnet.length ? `
+      <!-- Recherche dans le carnet -->
+      <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin-bottom:8px">Carnet patients (${carnet.length})</div>
+      <input id="urg-search" type="text" placeholder="🔍 Rechercher nom, prénom…"
+        style="width:100%;padding:9px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;margin-bottom:10px;box-sizing:border-box"
+        oninput="_urgFilterCarnet(this.value)">
+      <div id="urg-carnet-list" style="max-height:200px;overflow-y:auto;margin-bottom:16px;border:1px solid var(--b);border-radius:var(--r);padding:8px">
+        ${carnetHTML}
+      </div>
+      <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin-bottom:8px">— ou saisir manuellement —</div>
+      ` : `<div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin-bottom:8px">Nouveau patient</div>`}
+      <!-- Formulaire saisie manuelle -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Prénom</label>
+          <input id="urg-prenom" type="text" placeholder="Prénom" style="width:100%;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Nom</label>
+          <input id="urg-nom" type="text" placeholder="Nom" style="width:100%;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Heure souhaitée</label>
+          <input id="urg-heure" type="time" style="width:100%;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Actes / Motif</label>
+          <input id="urg-acte" type="text" placeholder="ex: pansement, glycémie…" style="width:100%;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Adresse (pour calcul de position)</label>
+        <input id="urg-adresse" type="text" placeholder="ex: 12 rue de la Paix, Quimper" style="width:100%;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;box-sizing:border-box">
+      </div>
+      <!-- Champ caché : id patient carnet sélectionné -->
+      <input type="hidden" id="urg-patient-id" value="">
+      <!-- Zone de confirmation patient sélectionné depuis carnet -->
+      <div id="urg-selected-info" style="display:none;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.25);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--a)"></div>
+    </div>
+    <!-- Footer -->
+    <div style="padding:14px 20px;border-top:1px solid var(--b);display:flex;gap:10px">
+      <button class="btn bp" style="flex:1;background:rgba(255,95,109,.15);border-color:rgba(255,95,109,.4);color:#ff5f6d" onclick="_confirmUrgentPatient()">🚨 Insérer dans la tournée</button>
+      <button class="btn bs bsm" onclick="closeUrgentPatientModal()">Annuler</button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(modal);
+
+  // Focus sur la recherche si carnet disponible, sinon sur prénom
+  setTimeout(() => {
+    const focusEl = document.getElementById(carnet.length ? 'urg-search' : 'urg-prenom');
+    if (focusEl) focusEl.focus();
+  }, 80);
+}
+
+function closeUrgentPatientModal() {
+  const modal = document.getElementById('modal-urgent-patient');
+  if (modal) modal.remove();
+}
+
+/* Filtre la liste carnet en temps réel */
+function _urgFilterCarnet(query) {
+  const q = (query || '').toLowerCase().trim();
+  const items = document.querySelectorAll('.urg-pat-item');
+  items.forEach(el => {
+    const nom = (el.dataset.nom + ' ' + el.dataset.prenom).toLowerCase();
+    el.style.display = (!q || nom.includes(q)) ? 'block' : 'none';
+  });
+}
+
+/* Sélection d'un patient depuis la liste carnet */
+function _urgSelectCarnet(el) {
+  // Désélectionner les autres
+  document.querySelectorAll('.urg-pat-item').forEach(e => {
+    e.style.background = '';
+    e.style.borderColor = 'var(--b)';
+  });
+  el.style.background = 'rgba(0,212,170,.1)';
+  el.style.borderColor = 'rgba(0,212,170,.4)';
+
+  // Remplir les champs
+  const prenom = el.dataset.prenom || '';
+  const nom    = el.dataset.nom    || '';
+  const id     = el.dataset.id     || '';
+  const adresse = el.dataset.adresse || '';
+
+  const fPrenom  = document.getElementById('urg-prenom');
+  const fNom     = document.getElementById('urg-nom');
+  const fAdresse = document.getElementById('urg-adresse');
+  const fId      = document.getElementById('urg-patient-id');
+
+  if (fPrenom)  fPrenom.value  = prenom;
+  if (fNom)     fNom.value     = nom;
+  if (fAdresse && adresse) fAdresse.value = adresse;
+  if (fId)      fId.value      = id;
+
+  const infoEl = document.getElementById('urg-selected-info');
+  if (infoEl) {
+    const nomAff = (prenom + ' ' + nom).trim();
+    infoEl.innerHTML = `✅ Patient carnet sélectionné : <strong>${nomAff}</strong>${adresse ? ' · ' + adresse.slice(0,40) : ''}`;
+    infoEl.style.display = 'block';
+  }
+}
+
+/* Valide la saisie et insère le patient urgent */
+async function _confirmUrgentPatient() {
+  const prenom  = (document.getElementById('urg-prenom')?.value  || '').trim();
+  const nom     = (document.getElementById('urg-nom')?.value     || '').trim();
+  const heure   = (document.getElementById('urg-heure')?.value   || '').trim();
+  const acte    = (document.getElementById('urg-acte')?.value    || '').trim();
+  const adresse = (document.getElementById('urg-adresse')?.value || '').trim();
+  const patId   = (document.getElementById('urg-patient-id')?.value || '').trim();
+
+  if (!prenom && !nom) {
+    if (typeof showToast === 'function') showToast('⚠️ Saisissez au moins un nom ou un prénom.', 'warn');
+    return;
+  }
+
+  // Géocoder l'adresse si elle est renseignée (et pas déjà dans le carnet avec coords)
+  let lat = null, lng = null;
+  if (adresse) {
+    // Chercher les coords dans le carnet d'abord
+    if (patId && typeof _idbGetAll === 'function') {
+      try {
+        const rows = await _idbGetAll(PATIENTS_STORE);
+        const row = rows.find(r => r.id === patId);
+        if (row) {
+          const d = (typeof _dec === 'function') ? (_dec(row._data) || {}) : {};
+          lat = d.lat || null;
+          lng = d.lng || null;
+        }
+      } catch(_) {}
+    }
+    // Géocodage si pas de coords connues
+    if (!lat && typeof geocodeAddress === 'function') {
+      try {
+        const geo = await geocodeAddress(adresse);
+        if (geo?.lat) { lat = geo.lat; lng = geo.lng || geo.lon; }
+      } catch(_) {}
+    }
+  }
+
+  const patientData = {
+    id:          patId || ('urg_' + Date.now()),
+    patient_id:  patId || ('urg_' + Date.now()),
+    nom,
+    prenom,
+    heure_soin:  heure,
+    description: (prenom + ' ' + nom).trim() + (acte ? ' — ' + acte : ''),
+    texte:       acte,
+    adresse,
+    addressFull: adresse,
+    lat,
+    lng:         lng || null,
+    amo:         document.getElementById('urg-patient-id') ? '' : '',
+    urgence:     true,
+  };
+
+  closeUrgentPatientModal();
+  await _insertUrgentPatient(patientData);
+}
+
+/* Exposer globalement */
+window.openUrgentPatientModal  = openUrgentPatientModal;
+window.closeUrgentPatientModal = closeUrgentPatientModal;
+window._urgFilterCarnet        = _urgFilterCarnet;
+window._urgSelectCarnet        = _urgSelectCarnet;
+window._confirmUrgentPatient   = _confirmUrgentPatient;
+
+/* ============================================================
    MODALE COTATION — Vérification / modification après soin
    ============================================================
    Appelée :
