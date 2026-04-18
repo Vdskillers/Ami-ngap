@@ -1,140 +1,225 @@
 /* ════════════════════════════════════════════════
-   cotation.js — AMI NGAP v7
+   cotation.js — AMI NGAP v8
    ────────────────────────────────────────────────
    Cotation NGAP + Vérification IA
-   - cotation() — appel API calcul NGAP (N8N v7)
-     → preuve_soin (auto_declaration / signature_patient)
-     → upsert IDB : cotationIdx > invoice_number > invoice_number original
-     → mode édition (_editRef) : jamais de doublon
-   - renderCot() — affiche résultat N8N v7
-     → fraud (score, level, flags)
-     → preuve_soin (force_probante)
-     → cpam_simulation (anomalies, décision)
-     → suggestions_optimisation
-     → infirmiere_scoring
-   - printInv() — vérifie infos pro → modale si manquantes → PDF
-   - closeProInfoModal() — ferme la modale infos pro
-   - clrCot() — réinitialise le formulaire
+   - cotation() — appel API calcul NGAP (N8N v9)
+   - renderCot() — affiche résultat solo complet
+   - printInv() / closeProInfoModal()
+   - clrCot() — réinitialise formulaire + cabinet
    - coterDepuisRoute() — cotation depuis tournée
    - openVerify() / closeVM() / applyVerify()
-   - verifyStandalone() — vérification indépendante
-   ── CABINET MULTI-IDE (v8) ──
-   - cotationToggleCabinetMode() — active/désactive le mode cabinet
-   - cotationRenderCabinetActes() — rendu des sélecteurs "Qui fait quoi ?"
-   - cotationOptimizeDistribution() — suggestion IA de répartition optimale
-   - cotationCabinet() — pipeline cotation multi-IDE
+   - verifyStandalone()
+   ── CABINET MULTI-IDE v2 ──
+   - initCotationCabinetToggle() — affiche/masque le toggle
+   - cotationToggleCabinetMode() — ouvre/ferme panneau
+   - cotationRenderCabinetActes() — sélecteurs "Qui fait quoi ?"
+   - cotationUpdateCabinetTotal() — totaux live par IDE
+   - cotationOptimizeDistribution() — répartition IA optimale
+   - _cotBuildCabinetPayload() — construit payload multi-IDE
+   - cotationCabinet() — pipeline multi-IDE complet
+   - renderCotCabinet() — résultat enrichi par IDE
 
-   Tarifs NGAP 2026 (référence — calcul officiel côté N8N) :
-   AMI=3,15€ · AIS=2,65€ · BSA=13€ · BSB=18,20€ · BSC=28,70€
-   IFD=2,75€ · MCI=5€ · MIE=3,15€ · NUIT=9,15€ · NUIT_PROF=18,30€
-   DIM=8,50€ · IK=km×2×0,35€
+   Tarifs NGAP 2026 :
+   AMI1=3,15€ AMI2=6,30€ AMI3=9,45€ AMI4=12,60€ AMI5=15,75€ AMI6=18,90€
+   AIS1=2,65€ AIS3=7,95€ BSA=13€ BSB=18,20€ BSC=28,70€
+   IFD=2,75€ IK=km×2×0,35€ MCI=5€ MIE=3,15€ NUIT=9,15€ NUIT_PROF=18,30€ DIM=8,50€
    Règles : acte principal×1, secondaires×0,5, majorations×1
    AIS+BSx : INTERDIT — BSA/BSB/BSC : mutuellement exclusifs
 ════════════════════════════════════════════════ */
 
 let VM_DATA = null;
-let _pendingPrintData = null; // données facture en attente d'impression
+let _pendingPrintData = null;
 
 /* ════════════════════════════════════════════════
-   MODE CABINET — UX Cotation multi-IDE
+   CABINET MULTI-IDE — CONSTANTES
 ════════════════════════════════════════════════ */
 
-// Tarifs locaux pour estimation cabinet côté client
 const _COT_TARIFS = {
-  AMI1:3.15, AMI2:6.30, AMI3:9.45, AMI4:12.60, AMI5:15.75, AMI6:18.90,
-  AIS1:2.65, AIS3:7.95, BSA:13.00, BSB:18.20, BSC:28.70, IFD:2.75,
+  AMI1:3.15,  AMI2:6.30,  AMI3:9.45,  AMI4:12.60, AMI5:15.75, AMI6:18.90,
+  AIS1:2.65,  AIS3:7.95,
+  BSA:13.00,  BSB:18.20,  BSC:28.70,
+  IFD:2.75,   MCI:5.00,   MIE:3.15,
+  NUIT:9.15,  NUIT_PROF:18.30, DIM:8.50,
 };
 
-// Actes NGAP détectés depuis le texte libre (pour le sélecteur multi-IDE)
+// NLP côté client — détection complète des actes NGAP depuis le texte libre
 const _COT_NLP_PATTERNS = [
-  { rx: /injection|insuline|anticoagulant|héparine|piqûre/i,     code:'AMI1', label:'Injection SC/IM' },
-  { rx: /intraveineuse|ivd|iv directe/i,                          code:'AMI2', label:'Injection IV directe' },
-  { rx: /prélèvement|prise de sang|pds|bilan sanguin/i,           code:'AMI1', label:'Prélèvement veineux' },
-  { rx: /pansement complexe|escarre|plaie chronique|nécrose/i,    code:'AMI4', label:'Pansement complexe' },
-  { rx: /pansement/i,                                             code:'AMI1', label:'Pansement simple' },
-  { rx: /perfusion.*>.*1h|perfusion.*longue/i,                    code:'AMI6', label:'Perfusion longue (>1h)' },
-  { rx: /perfusion|perf\b/i,                                      code:'AMI5', label:'Perfusion' },
-  { rx: /toilette.*totale|grabataire|nursing.*lourd/i,            code:'BSC', label:'Bilan soins C (dép. lourde)' },
-  { rx: /toilette.*modér|dépendance modér/i,                      code:'BSB', label:'Bilan soins B (dép. modérée)' },
-  { rx: /toilette|nursing|bilan soins|bsi/i,                      code:'BSA', label:'Bilan soins A (dép. légère)' },
-  { rx: /ecg|électrocardiogramme/i,                               code:'AMI3', label:'ECG' },
+  // Actes techniques
+  { rx: /intraveineuse|ivd|iv directe/i,                                code:'AMI2', label:'Injection IV directe', group:'acte' },
+  { rx: /injection|insuline|anticoagulant|héparine|fragmine|lovenox|piqûre/i, code:'AMI1', label:'Injection SC/IM', group:'acte' },
+  { rx: /prélèvement|prise de sang|bilan sanguin/i,                     code:'AMI1', label:'Prélèvement veineux', group:'acte' },
+  { rx: /perfusion.*(?:>|plus d[eu]|longue|>1h)/i,                     code:'AMI6', label:'Perfusion longue >1h', group:'acte' },
+  { rx: /perfusion|perf\b/i,                                            code:'AMI5', label:'Perfusion', group:'acte' },
+  { rx: /pansement.*(?:complexe|escarre|nécrose|chirurgical|post.op|ulcère)/i, code:'AMI4', label:'Pansement complexe', group:'acte' },
+  { rx: /pansement|plaie/i,                                             code:'AMI1', label:'Pansement simple', group:'acte' },
+  { rx: /ecg|électrocardiogramme/i,                                     code:'AMI3', label:'ECG', group:'acte' },
+  // Bilans soins infirmiers
+  { rx: /toilette.*(?:totale|alité|alit[ée]|grabataire|dépendance lourde)/i, code:'BSC', label:'BSC — Dépendance lourde', group:'bsi' },
+  { rx: /toilette.*(?:modér|intermédiaire)/i,                           code:'BSB', label:'BSB — Dépendance modérée', group:'bsi' },
+  { rx: /toilette|nursing|bilan soins|bsi/i,                            code:'BSA', label:'BSA — Dépendance légère', group:'bsi' },
+  // Majorations — toujours affichées car impactent l'attribution
+  { rx: /domicile|chez le patient|à domicile/i,                         code:'IFD',      label:'IFD — Déplacement domicile', group:'maj' },
+  { rx: /(?:23h|00h|01h|02h|03h|04h|nuit profonde)/i,                  code:'NUIT_PROF', label:'Majoration nuit profonde', group:'maj' },
+  { rx: /(?:20h|21h|22h|05h|06h|07h|nuit)\b/i,                        code:'NUIT',     label:'Majoration nuit', group:'maj' },
+  { rx: /dimanche|férié|ferie/i,                                        code:'DIM',      label:'Majoration dimanche/férié', group:'maj' },
+  { rx: /enfant|nourrisson|< ?7 ?ans/i,                                 code:'MIE',      label:'Majoration enfant <7 ans', group:'maj' },
+  { rx: /coordination|pluridisciplinaire|mci/i,                         code:'MCI',      label:'Majoration coordination', group:'maj' },
 ];
 
+// Couleurs par IDE (jusqu'à 5 IDEs)
+const _IDE_COLORS = ['#00d4aa','#4fa8ff','#ff9f43','#a29bfe','#fd79a8'];
+
 /**
- * Détecte les actes depuis le texte libre (NLP léger côté client)
- * Retourne [ { code, label }, … ] sans doublons
+ * Détecte les actes depuis le texte libre, sans doublons par code
  */
 function _cotDetectActes(texte) {
   const found = [], seenCodes = new Set();
   for (const pat of _COT_NLP_PATTERNS) {
     if (pat.rx.test(texte) && !seenCodes.has(pat.code)) {
-      found.push({ code: pat.code, label: pat.label });
+      found.push({ code: pat.code, label: pat.label, group: pat.group });
       seenCodes.add(pat.code);
     }
   }
-  if (!found.length) found.push({ code: 'AMI1', label: 'Acte infirmier (à préciser)' });
+  if (!found.length) found.push({ code:'AMI1', label:'Acte infirmier (à préciser)', group:'acte' });
   return found;
 }
 
 /**
- * cotationToggleCabinetMode — active/désactive le panneau multi-IDE
+ * Calcule l'estimation NGAP correcte pour une liste d'actes assignés à un IDE
+ * Applique la règle : acte principal plein tarif, suivants ×0.5
  */
+function _cotEstimateNGAP(actesIDE) {
+  const principaux = actesIDE.filter(a => ['AMI1','AMI2','AMI3','AMI4','AMI5','AMI6','AIS1','AIS3'].includes(a.code));
+  const majorations = actesIDE.filter(a => ['IFD','NUIT','NUIT_PROF','DIM','MIE','MCI'].includes(a.code));
+  const bilans = actesIDE.filter(a => ['BSA','BSB','BSC'].includes(a.code));
+
+  // Trier les actes principaux par tarif décroissant
+  principaux.sort((a, b) => (_COT_TARIFS[b.code]||0) - (_COT_TARIFS[a.code]||0));
+
+  let total = 0;
+  principaux.forEach((a, i) => {
+    a._coeff = i === 0 ? 1 : 0.5;
+    a._montant = (_COT_TARIFS[a.code]||3.15) * a._coeff;
+    total += a._montant;
+  });
+  bilans.forEach(a => {
+    a._coeff = 1; a._montant = _COT_TARIFS[a.code]||0; total += a._montant;
+  });
+  majorations.forEach(a => {
+    a._coeff = 1; a._montant = _COT_TARIFS[a.code]||0; total += a._montant;
+  });
+  return { total: Math.round(total * 100) / 100, actes: [...principaux, ...bilans, ...majorations] };
+}
+
+/* ════════════════════════════════════════════════
+   INIT & TOGGLE
+════════════════════════════════════════════════ */
+
+function initCotationCabinetToggle() {
+  const wrap = $('cot-cabinet-toggle-wrap');
+  if (!wrap) return;
+  const cab = APP.get('cabinet');
+  // Admins inclus (pour tester) — masquer si pas de cabinet
+  wrap.style.display = cab?.id ? 'block' : 'none';
+}
+
 function cotationToggleCabinetMode(active) {
   const panel = $('cot-cabinet-panel');
   if (!panel) return;
   panel.style.display = active ? 'block' : 'none';
   if (active) cotationRenderCabinetActes();
+  else { // Réinitialiser les totaux si désactivé
+    const totals = $('cot-cabinet-totals');
+    if (totals) totals.remove();
+    const gain = $('cot-cabinet-gain');
+    if (gain) gain.remove();
+  }
 }
 
-/**
- * cotationRenderCabinetActes — affiche un sélecteur IDE par acte détecté
- */
+APP.on('cabinet', () => { initCotationCabinetToggle(); });
+
+document.addEventListener('input', e => {
+  if (e.target?.id === 'f-txt' && $('cot-cabinet-mode')?.checked) {
+    cotationRenderCabinetActes();
+  }
+});
+
+/* ════════════════════════════════════════════════
+   RENDU DU PANNEAU "QUI FAIT QUOI ?"
+════════════════════════════════════════════════ */
+
 function cotationRenderCabinetActes() {
   const list = $('cot-cabinet-actes-list');
   if (!list) return;
 
-  const cab = APP.get('cabinet');
+  const cab     = APP.get('cabinet');
   const members = cab?.members || [];
-  const texte = gv('f-txt');
+  const texte   = gv('f-txt');
 
   if (!members.length) {
-    list.innerHTML = `<div class="ai wa" style="font-size:12px">⚠️ Vous n'êtes pas dans un cabinet. <a href="#" onclick="if(typeof navTo==='function')navTo('cabinet',null);return false;" style="color:var(--a)">Rejoindre un cabinet →</a></div>`;
+    list.innerHTML = `<div class="ai wa" style="font-size:12px">
+      ⚠️ Vous n'êtes pas dans un cabinet.
+      <a href="#" onclick="if(typeof navTo==='function')navTo('cabinet',null);return false;" style="color:var(--a)">Rejoindre un cabinet →</a>
+    </div>`;
     return;
   }
 
   const actes = _cotDetectActes(texte);
   const meId  = APP.user?.id || 'moi';
-  const meLabel = ((APP.user?.prenom||'') + ' ' + (APP.user?.nom||'')).trim() || 'Moi';
+  const meLabel = ((APP.user?.prenom||'')+' '+(APP.user?.nom||'')).trim() || 'Moi';
 
-  const memberOptions = [
-    `<option value="${meId}">${meLabel} (moi)</option>`,
-    ...members.filter(m => m.id !== meId).map(m =>
-      `<option value="${m.id}">${m.prenom} ${m.nom}</option>`
-    )
-  ].join('');
+  // Options IDE avec couleur
+  const allIDEs = [
+    { id: meId, label: `${meLabel} (moi)`, color: _IDE_COLORS[0] },
+    ...members
+      .filter(m => m.id !== meId)
+      .map((m, i) => ({ id: m.id, label: `${m.prenom} ${m.nom}`, color: _IDE_COLORS[(i+1) % _IDE_COLORS.length] }))
+  ];
 
-  list.innerHTML = actes.map((acte, i) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--b);border-radius:8px;background:var(--s);flex-wrap:wrap">
-      <div style="flex:1;min-width:120px">
-        <div style="font-weight:600;font-size:13px">${acte.label}</div>
-        <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${acte.code} · ${(_COT_TARIFS[acte.code]||3.15).toFixed(2)} €</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-        <span style="font-size:11px;color:var(--m)">→ Réalisé par :</span>
-        <select id="cot-cab-ide-${i}" data-acte="${acte.code}" data-idx="${i}"
-          onchange="cotationUpdateCabinetTotal()"
-          style="padding:6px 10px;background:var(--s);border:1px solid var(--b);border-radius:6px;color:var(--t);font-size:12px">
-          ${memberOptions}
-        </select>
-      </div>
+  const memberOptions = allIDEs.map(ide =>
+    `<option value="${ide.id}">${ide.label}</option>`
+  ).join('');
+
+  // Grouper par type pour clarté visuelle
+  const groupLabels = { acte: '🩺 Actes techniques', bsi: '🛁 Bilans soins', maj: '⚡ Majorations' };
+  const grouped = {};
+  actes.forEach(a => {
+    if (!grouped[a.group]) grouped[a.group] = [];
+    grouped[a.group].push(a);
+  });
+
+  list.innerHTML = Object.entries(grouped).map(([grp, items]) => `
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;font-family:var(--fm);color:var(--m);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${groupLabels[grp]||grp}</div>
+      ${items.map((acte, gi) => {
+        const globalIdx = actes.indexOf(acte);
+        const tarif = _COT_TARIFS[acte.code];
+        const tarifStr = tarif ? `${tarif.toFixed(2)} €` : '—';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--b);border-radius:8px;background:var(--s);flex-wrap:wrap;margin-bottom:6px">
+          <div style="flex:1;min-width:120px">
+            <div style="font-weight:600;font-size:13px">${acte.label}</div>
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${acte.code} · ${tarifStr}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span style="font-size:11px;color:var(--m)">→</span>
+            <select id="cot-cab-ide-${globalIdx}"
+              data-acte="${acte.code}" data-idx="${globalIdx}" data-group="${acte.group}"
+              onchange="cotationUpdateCabinetTotal()"
+              style="padding:6px 10px;background:var(--c);border:1px solid var(--b);border-radius:6px;color:var(--t);font-size:12px">
+              ${memberOptions}
+            </select>
+          </div>
+        </div>`;
+      }).join('')}
     </div>`).join('');
 
   cotationUpdateCabinetTotal();
 }
 
-/**
- * cotationUpdateCabinetTotal — recalcule et affiche les totaux par IDE
- */
+/* ════════════════════════════════════════════════
+   CALCUL DES TOTAUX EN TEMPS RÉEL
+════════════════════════════════════════════════ */
+
 function cotationUpdateCabinetTotal() {
   const list = $('cot-cabinet-actes-list');
   if (!list) return;
@@ -142,150 +227,354 @@ function cotationUpdateCabinetTotal() {
   const selectors = list.querySelectorAll('select[id^="cot-cab-ide-"]');
   if (!selectors.length) return;
 
-  const totals = {};
+  // Grouper les actes par IDE
+  const byIDE = {};
   selectors.forEach(sel => {
-    const code  = sel.dataset.acte;
     const ideId = sel.value;
-    const tarif = _COT_TARIFS[code] || 3.15;
-    totals[ideId] = (totals[ideId] || 0) + tarif;
+    if (!byIDE[ideId]) byIDE[ideId] = [];
+    byIDE[ideId].push({ code: sel.dataset.acte, group: sel.dataset.group });
   });
 
   const cab     = APP.get('cabinet');
   const members = cab?.members || [];
   const meId    = APP.user?.id || 'moi';
-  const meLabel = ((APP.user?.prenom||'') + ' ' + (APP.user?.nom||'')).trim() || 'Moi';
+  const meLabel = ((APP.user?.prenom||'')+' '+(APP.user?.nom||'')).trim() || 'Moi';
 
-  // Afficher les totaux estimés
-  const existing = $('cot-cabinet-totals');
-  const wrap = existing || document.createElement('div');
-  wrap.id = 'cot-cabinet-totals';
-  wrap.style.cssText = 'margin-top:10px;padding:10px;background:rgba(0,212,170,.06);border-radius:8px;font-size:13px';
+  // Calculer NGAP correct par IDE
+  const resultsByIDE = Object.entries(byIDE).map(([ideId, actes], i) => {
+    const m   = members.find(x => x.id === ideId);
+    const nm  = ideId === meId ? meLabel : (m ? `${m.prenom} ${m.nom}` : ideId.slice(0,8)+'…');
+    const col = _IDE_COLORS[i % _IDE_COLORS.length];
+    const { total, actes: actesCalc } = _cotEstimateNGAP(actes);
+    return { ideId, nm, col, total, actes: actesCalc };
+  });
 
-  const lines = Object.entries(totals).map(([id, total]) => {
-    const m  = members.find(x => x.id === id);
-    const nm = id === meId ? meLabel : (m ? `${m.prenom} ${m.nom}` : id.slice(0,8)+'…');
-    return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-      <span>${nm}</span>
-      <strong style="color:var(--a)">${total.toFixed(2)} €</strong>
+  const grandTotal   = resultsByIDE.reduce((s, r) => s + r.total, 0);
+  const totalSolo    = _cotEstimateNGAP(Array.from(selectors).map(s => ({ code: s.dataset.acte, group: s.dataset.group }))).total;
+  const gainCabinet  = grandTotal - totalSolo;
+  const nbIDEs       = resultsByIDE.length;
+
+  // Bloc totaux
+  let totalsEl = $('cot-cabinet-totals');
+  if (!totalsEl) {
+    totalsEl = document.createElement('div');
+    totalsEl.id = 'cot-cabinet-totals';
+    const panel = $('cot-cabinet-panel');
+    const actesWrap = $('cot-cabinet-actes-list');
+    if (panel && actesWrap) panel.insertBefore(totalsEl, actesWrap.nextSibling);
+  }
+
+  totalsEl.style.cssText = 'margin-top:10px;padding:12px 14px;background:rgba(0,212,170,.06);border-radius:10px;border:1px solid rgba(0,212,170,.15)';
+
+  const rows = resultsByIDE.map(r => {
+    const actesDetail = r.actes
+      .filter(a => a._montant !== undefined)
+      .map(a => `<span style="font-size:10px;color:var(--m);font-family:var(--fm)">${a.code}${a._coeff < 1 ? '×0.5' : ''}</span>`)
+      .join(' ');
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:10px;height:10px;border-radius:50%;background:${r.col};flex-shrink:0"></div>
+        <div>
+          <div style="font-size:13px;font-weight:600">${r.nm}</div>
+          <div style="margin-top:2px">${actesDetail}</div>
+        </div>
+      </div>
+      <strong style="color:${r.col};font-size:14px;flex-shrink:0">${r.total.toFixed(2)} €</strong>
     </div>`;
   }).join('');
 
-  const grand = Object.values(totals).reduce((s, v) => s + v, 0);
-  wrap.innerHTML = lines + `<div style="border-top:1px solid var(--b);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><strong>TOTAL CABINET</strong><strong style="color:var(--a);font-size:15px">${grand.toFixed(2)} €</strong></div>`;
+  const gainHtml = gainCabinet > 0.01
+    ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(34,197,94,.08);border-radius:6px;font-size:12px;display:flex;justify-content:space-between">
+        <span>💡 Gain vs cotation solo</span>
+        <strong style="color:#22c55e">+${gainCabinet.toFixed(2)} €</strong>
+      </div>` : '';
 
-  if (!existing) {
-    const panel = $('cot-cabinet-panel');
-    if (panel) {
-      const actesWrap = $('cot-cabinet-actes-list');
-      if (actesWrap && actesWrap.nextSibling) panel.insertBefore(wrap, actesWrap.nextSibling);
-      else if (panel) panel.appendChild(wrap);
-    }
-  }
+  totalsEl.innerHTML = `
+    <div style="font-size:10px;font-family:var(--fm);color:var(--m);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Estimation NGAP par IDE</div>
+    ${rows}
+    <div style="border-top:1px solid rgba(0,212,170,.2);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;align-items:center">
+      <strong style="font-size:13px">TOTAL CABINET (${nbIDEs} IDE${nbIDEs>1?'s':''})</strong>
+      <strong style="color:var(--a);font-size:16px">${grandTotal.toFixed(2)} €</strong>
+    </div>
+    ${gainHtml}`;
 }
 
-/**
- * cotationOptimizeDistribution — suggestion IA de répartition optimale
- * Trie par tarif décroissant et répartit en alternant les IDEs
- */
+/* ════════════════════════════════════════════════
+   OPTIMISATION AUTOMATIQUE DE LA RÉPARTITION
+════════════════════════════════════════════════ */
+
 function cotationOptimizeDistribution() {
   const list = $('cot-cabinet-actes-list');
   if (!list) return;
 
   const selectors = Array.from(list.querySelectorAll('select[id^="cot-cab-ide-"]'));
-  if (!selectors.length) { if (typeof showToast==='function') showToast('Aucun acte détecté.', 'wa'); return; }
+  if (!selectors.length) {
+    if (typeof showToast==='function') showToast('Aucun acte détecté — saisissez la description du soin.', 'wa');
+    return;
+  }
 
   const cab = APP.get('cabinet');
   if (!cab?.members?.length) return;
 
-  const meId = APP.user?.id || 'moi';
-  // IDEs disponibles : moi + membres
-  const ideIds = [meId, ...cab.members.filter(m => m.id !== meId).map(m => m.id)];
+  const meId  = APP.user?.id || 'moi';
+  const allIDEs = [meId, ...cab.members.filter(m => m.id !== meId).map(m => m.id)];
+  const nbIDEs  = allIDEs.length;
 
-  // Trier les actes par tarif décroissant (acte le plus valorisé en premier)
-  const sorted = [...selectors].sort((a, b) =>
-    (_COT_TARIFS[b.dataset.acte] || 0) - (_COT_TARIFS[a.dataset.acte] || 0)
+  // Séparer actes principaux et majorations
+  const principaux   = selectors.filter(s => s.dataset.group !== 'maj');
+  const majorations  = selectors.filter(s => s.dataset.group === 'maj');
+
+  // Trier les actes principaux par tarif décroissant
+  const sortedPrincipaux = [...principaux].sort((a, b) =>
+    (_COT_TARIFS[b.dataset.acte]||0) - (_COT_TARIFS[a.dataset.acte]||0)
   );
 
-  // Répartir : IDE 0 prend le plus cher, IDE 1 le suivant, etc.
-  sorted.forEach((sel, i) => {
-    sel.value = ideIds[i % ideIds.length];
-  });
+  // Répartition optimale : IDE 0 prend le plus valorisé, IDE 1 le suivant…
+  // = chaque IDE a son acte principal au tarif plein
+  sortedPrincipaux.forEach((sel, i) => { sel.value = allIDEs[i % nbIDEs]; });
+
+  // Les majorations IFD, NUIT, DIM, MIE → attribuer à l'IDE ayant le moins d'actes principaux
+  // pour optimiser leur coefficient (majorations toujours ×1 quelle que soit l'IDE)
+  majorations.forEach(sel => { sel.value = allIDEs[0]; }); // par défaut : moi
 
   cotationUpdateCabinetTotal();
 
+  // Calculer et afficher le gain
+  const selAll  = Array.from(list.querySelectorAll('select[id^="cot-cab-ide-"]'));
+  const soloAcH = selAll.map(s => ({ code: s.dataset.acte, group: s.dataset.group }));
+  const soloTot = _cotEstimateNGAP(soloAcH).total;
+
+  const byIDE = {};
+  selAll.forEach(sel => {
+    if (!byIDE[sel.value]) byIDE[sel.value] = [];
+    byIDE[sel.value].push({ code: sel.dataset.acte, group: sel.dataset.group });
+  });
+  const cabTot = Object.values(byIDE).reduce((s, a) => s + _cotEstimateNGAP(a).total, 0);
+  const gain   = cabTot - soloTot;
+
   const sugg = $('cot-cabinet-suggestion');
   if (sugg) {
-    sugg.textContent = '✅ Répartition optimisée — chaque IDE a son acte principal à tarif plein';
+    sugg.innerHTML = gain > 0.01
+      ? `✅ Répartition optimisée${gain > 0.01 ? ` — gain vs solo : <strong style="color:var(--a)">+${gain.toFixed(2)} €</strong>` : ''}`
+      : '✅ Répartition optimisée — chaque IDE a son acte principal au tarif plein';
     sugg.style.display = 'block';
-    setTimeout(() => { sugg.style.display = 'none'; }, 4000);
+    setTimeout(() => { sugg.style.display = 'none'; }, 5000);
   }
 }
 
-/**
- * Construit le payload multi-IDE depuis les sélecteurs cabinet
- */
+/* ════════════════════════════════════════════════
+   PAYLOAD MULTI-IDE
+════════════════════════════════════════════════ */
+
 function _cotBuildCabinetPayload() {
   const list = $('cot-cabinet-actes-list');
   if (!list) return null;
-
   const selectors = list.querySelectorAll('select[id^="cot-cab-ide-"]');
   if (!selectors.length) return null;
-
   const actes = [];
-  selectors.forEach(sel => {
-    actes.push({
-      code:         sel.dataset.acte,
-      performed_by: sel.value,
-    });
-  });
+  selectors.forEach(sel => actes.push({ code: sel.dataset.acte, performed_by: sel.value }));
   return actes;
 }
 
-/**
- * renderCotCabinet — affiche le résultat multi-IDE
- */
+/* ════════════════════════════════════════════════
+   PIPELINE COTATION CABINET
+════════════════════════════════════════════════ */
+
+async function cotationCabinet(txt) {
+  ld('btn-cot', true);
+  $('res-cot').classList.remove('show');
+  $('cerr').style.display = 'none';
+
+  const _btnEl   = $('btn-cot');
+  const _origHTML = _btnEl?.innerHTML;
+  const _slow = [];
+  const _showSlow = m => { if (_btnEl) _btnEl.innerHTML = `<span style="font-size:12px;font-weight:400">${m}</span>`; };
+  _slow.push(setTimeout(() => _showSlow('🏥 Cotation cabinet en cours…'), 5000));
+  _slow.push(setTimeout(() => _showSlow('🤖 Calcul multi-IDE — patience…'), 15000));
+  _slow.push(setTimeout(() => _showSlow('🤖 Encore quelques secondes…'), 30000));
+  const _clear = () => { _slow.forEach(t => clearTimeout(t)); if (_btnEl && _origHTML) _btnEl.innerHTML = _origHTML; };
+
+  try {
+    const cab    = APP.get('cabinet');
+    const u      = S?.user || {};
+    const actes  = _cotBuildCabinetPayload();
+
+    if (!actes?.length) {
+      _clear(); ld('btn-cot', false);
+      return cotation(); // fallback solo
+    }
+
+    // Vérifier si plusieurs IDEs distincts — sinon fallback solo
+    const uniqIDEs = [...new Set(actes.map(a => a.performed_by))];
+    if (uniqIDEs.length < 2) {
+      _clear(); ld('btn-cot', false);
+      return cotation();
+    }
+
+    const payload = {
+      cabinet_mode: true,
+      cabinet_id:   cab.id,
+      actes,
+      texte:        txt,
+      mode:         'ngap',
+      date_soin:    gv('f-ds') || new Date().toISOString().slice(0,10),
+      heure_soin:   gv('f-hs') || '',
+      exo:          gv('f-exo') || '',
+      regl:         gv('f-regl') || 'patient',
+      infirmiere:   ((u.prenom||'')+' '+(u.nom||'')).trim(),
+      adeli:        u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
+      // Preuve soin
+      preuve_soin: {
+        type: 'auto_declaration', timestamp: new Date().toISOString(), certifie_ide: true, force_probante: 'STANDARD',
+      },
+    };
+
+    const d = await apiCall('/webhook/cabinet-calcul', payload);
+    _clear();
+
+    if (!d.ok) throw new Error(d.error || 'Erreur cotation cabinet');
+
+    $('cbody').innerHTML = renderCotCabinet(d);
+    $('res-cot').classList.add('show');
+
+    // Scroll vers résultat
+    setTimeout(() => document.getElementById('res-cot')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100);
+
+    if (typeof showToast === 'function') showToast(`✅ Cabinet : ${(d.total_global||0).toFixed(2)} € (${d.nb_ide||uniqIDEs.length} IDEs)`, 'ok');
+
+  } catch(e) {
+    _clear();
+    $('cerr').style.display = 'flex';
+    $('cerr-m').textContent = e.message;
+    $('res-cot').classList.add('show');
+  }
+  ld('btn-cot', false);
+}
+
+/* ════════════════════════════════════════════════
+   RENDU RÉSULTAT CABINET — enrichi
+════════════════════════════════════════════════ */
+
 function renderCotCabinet(d) {
   const cotations = d.cotations || [];
-  const cab = APP.get('cabinet');
-  const members = cab?.members || [];
-  const meId = APP.user?.id || 'moi';
-  const meLabel = ((APP.user?.prenom||'') + ' ' + (APP.user?.nom||'')).trim() || 'Moi';
+  const cab       = APP.get('cabinet');
+  const members   = cab?.members || [];
+  const meId      = APP.user?.id || 'moi';
+  const meLabel   = ((APP.user?.prenom||'')+' '+(APP.user?.nom||'')).trim() || 'Moi';
 
-  const cotHTML = cotations.map(cot => {
-    const m  = members.find(x => x.id === cot.ide_id);
-    const nm = cot.ide_id === meId ? meLabel : (m ? `${m.prenom} ${m.nom}` : cot.ide_id?.slice(0,8)+'…');
+  function getIDEName(ideId) {
+    if (ideId === meId) return meLabel + ' (moi)';
+    const m = members.find(x => x.id === ideId);
+    return m ? `${m.prenom} ${m.nom}` : ideId?.slice(0,8)+'…';
+  }
+
+  const cotHTML = cotations.map((cot, i) => {
+    const nm  = getIDEName(cot.ide_id);
+    const col = _IDE_COLORS[i % _IDE_COLORS.length];
+
+    // Détail des actes
     const actesList = (cot.actes || []).map(a =>
-      `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--b)">
-        <span>${a.nom||a.code}</span>
-        <span style="font-family:var(--fm)">${(a.total||0).toFixed(2)} €</span>
+      `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:5px 0;border-bottom:1px solid var(--b)">
+        <div style="flex:1">
+          <span style="font-weight:600;font-size:11px;color:${col};font-family:var(--fm);margin-right:6px">${a.code||'?'}</span>
+          <span style="color:var(--t)">${a.nom||''}</span>
+          ${a.coefficient < 1 ? `<span style="font-size:10px;color:var(--m);margin-left:4px">×${a.coefficient?.toFixed(1)}</span>` : ''}
+          ${i === 0 && (cot.actes||[]).indexOf(a) === 0 ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);padding:1px 5px;border-radius:10px;margin-left:4px;font-family:var(--fm)">principal</span>` : ''}
+        </div>
+        <span style="font-family:var(--fm);font-weight:600">${(a.total||0).toFixed(2)} €</span>
       </div>`
     ).join('');
 
-    return `<div class="cab-cot-result">
-      <div class="cab-cot-header">
-        <span>👤 ${nm}</span>
-        <span class="cab-cot-total">${(cot.total||0).toFixed(2)} €</span>
+    // Alertes NGAP de cette cotation
+    const alerts = (cot.alerts || []).filter(a => !a.startsWith('✅'));
+    const alertsHtml = alerts.length
+      ? `<div style="margin-top:6px">${alerts.map(a => `<div style="font-size:10px;color:${a.startsWith('🚨') ? '#ef4444' : '#f59e0b'};padding:2px 0">${a}</div>`).join('')}</div>`
+      : '';
+
+    // Badge fraud si disponible
+    const fraud = cot.fraud || {};
+    const fraudBadge = fraud.level && fraud.level !== 'LOW'
+      ? `<span style="font-size:10px;padding:1px 8px;border-radius:20px;font-family:var(--fm);background:${fraud.level==='HIGH'?'rgba(239,68,68,.12)':'rgba(251,191,36,.12)'};color:${fraud.level==='HIGH'?'#ef4444':'#f59e0b'}">${fraud.level==='HIGH'?'🔴':'🟡'} Fraude ${fraud.level}</span>`
+      : '';
+
+    return `
+    <div style="border:1px solid var(--b);border-left:4px solid ${col};border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <!-- En-tête IDE -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${col}0f;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:${col}22;border:2px solid ${col};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">👤</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">${nm}</div>
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${(cot.actes||[]).length} acte(s) ${cot.fallback ? '· estimation locale' : '· calculé par IA'}</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:700;color:${col};font-family:var(--fs)">${(cot.total||0).toFixed(2)} €</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">AMO : ${(cot.part_amo||cot.total*0.6||0).toFixed(2)} € · Patient : ${(cot.part_patient||cot.total*0.4||0).toFixed(2)} €</div>
+        </div>
       </div>
-      <div class="cab-cot-body">${actesList || '<span style="color:var(--m)">—</span>'}</div>
+      <!-- Détail actes -->
+      <div style="padding:10px 14px">
+        ${actesList || '<span style="font-size:12px;color:var(--m)">—</span>'}
+        ${alertsHtml}
+        ${fraudBadge ? `<div style="margin-top:6px">${fraudBadge}</div>` : ''}
+      </div>
+      <!-- Actions par IDE -->
+      <div style="padding:8px 14px;border-top:1px solid var(--b);display:flex;gap:8px;flex-wrap:wrap;background:var(--s)">
+        ${cot.invoice_number ? `<button class="btn bv bsm" onclick="openSignatureModal('${cot.invoice_number}')">✍️ Signature patient</button>` : ''}
+        ${cot.invoice_number ? `<button class="btn bs bsm" onclick="printInv(${JSON.stringify({...cot,total:cot.total}).replace(/'/g,'&#39;')})">📥 Facture</button>` : ''}
+      </div>
     </div>`;
   }).join('');
 
+  // Comparaison solo vs cabinet
+  const totalSolo   = _cotEstimateNGAP(cotations.flatMap(c => (c.actes||[]).map(a => ({ code: a.code, group: ['IFD','NUIT','NUIT_PROF','DIM','MIE','MCI'].includes(a.code) ? 'maj' : 'acte' })))).total;
+  const gainCabinet = (d.total_global||0) - totalSolo;
+
+  const gainBloc = gainCabinet > 0.01 ? `
+    <div style="margin-top:10px;padding:10px 14px;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#22c55e">💡 Gain mode cabinet</div>
+        <div style="font-size:11px;color:var(--m)">vs cotation solo (avec décotes NGAP)</div>
+      </div>
+      <strong style="font-size:18px;color:#22c55e">+${gainCabinet.toFixed(2)} €</strong>
+    </div>` : '';
+
   return `<div class="card">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <div style="font-size:22px;font-family:var(--fs);font-weight:700">🏥 Cotation cabinet</div>
-      <div style="background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:11px;padding:2px 10px;font-family:var(--fm)">${cotations.length} IDE(s)</div>
+    <!-- Titre -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="font-size:20px;font-family:var(--fs);font-weight:700">🏥 Cotation cabinet</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span style="background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:11px;padding:2px 10px;font-family:var(--fm)">${cotations.length} IDE(s)</span>
+        <span style="background:rgba(0,212,170,.08);color:var(--a);border-radius:20px;font-size:11px;padding:2px 10px;font-family:var(--fm)">NGAP 2026</span>
+      </div>
     </div>
-    ${cotHTML}
-    <div style="margin-top:14px;padding:12px;background:rgba(0,212,170,.08);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
-      <strong>TOTAL CABINET</strong>
-      <strong style="font-size:20px;color:var(--a);font-family:var(--fs)">${(d.total_global||0).toFixed(2)} €</strong>
+
+    <!-- Cotations par IDE -->
+    ${cotHTML || '<div class="ai wa">Aucune cotation retournée.</div>'}
+
+    <!-- Total cabinet -->
+    <div style="padding:14px;background:rgba(0,212,170,.08);border-radius:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:13px;font-weight:700">TOTAL CABINET</div>
+        <div style="font-size:11px;color:var(--m)">${cotations.length} infirmière(s) · ${cotations.reduce((s,c)=>(c.actes||[]).length+s,0)} acte(s)</div>
+      </div>
+      <div style="font-size:24px;font-weight:700;color:var(--a);font-family:var(--fs)">${(d.total_global||0).toFixed(2)} €</div>
     </div>
-    ${d.cabinet_mode ? `<div class="ai in" style="margin-top:10px;font-size:11px">🏥 Mode cabinet — chaque IDE bénéficie de son acte principal au tarif plein</div>` : ''}
+
+    <!-- Gain cabinet vs solo -->
+    ${gainBloc}
+
+    <!-- Info NGAP cabinet -->
+    <div class="ai in" style="margin-top:10px;font-size:11px">
+      🏥 <strong>Mode cabinet actif</strong> — Chaque infirmière bénéficie de son <strong>acte principal au tarif plein</strong>.
+      Les décotes NGAP s'appliquent uniquement au sein des actes d'une même IDE, pas entre IDEs.
+    </div>
   </div>`;
 }
 
 /* ════════════════════════════════════════════════
-   COTATION
+   COTATION SOLO — pipeline principal
 ════════════════════════════════════════════════ */
 async function cotation() {
   const txt = gv('f-txt');
@@ -297,6 +586,7 @@ async function cotation() {
     await cotationCabinet(txt);
     return;
   }
+
   ld('btn-cot', true);
   $('res-cot').classList.remove('show');
   $('cerr').style.display = 'none';
@@ -1188,97 +1478,6 @@ ${d.dre_requise ? '<div class="dre">📋 <strong>DRE requise</strong> — Demand
 }
 
 /* ════════════════════════════════════════════════
-   COTATION CABINET — pipeline multi-IDE
-════════════════════════════════════════════════ */
-
-/**
- * cotationCabinet — appelle /webhook/cabinet-calcul avec les actes répartis par IDE
- */
-async function cotationCabinet(txt) {
-  ld('btn-cot', true);
-  $('res-cot').classList.remove('show');
-  $('cerr').style.display = 'none';
-
-  const _btnEl = $('btn-cot');
-  const _origHTML = _btnEl?.innerHTML;
-  const _slow = [];
-  const _showSlow = m => { if (_btnEl) _btnEl.innerHTML = `<span style="font-size:12px;font-weight:400">${m}</span>`; };
-  _slow.push(setTimeout(() => _showSlow('🏥 Cotation cabinet en cours…'), 5000));
-  _slow.push(setTimeout(() => _showSlow('🤖 Calcul multi-IDE…'), 15000));
-  const _clear = () => { _slow.forEach(t => clearTimeout(t)); if (_btnEl && _origHTML) _btnEl.innerHTML = _origHTML; };
-
-  try {
-    const cab    = APP.get('cabinet');
-    const u      = S?.user || {};
-    const actes  = _cotBuildCabinetPayload();
-
-    if (!actes?.length) {
-      // Fallback : cotation solo si pas d'actes distribués
-      _clear();
-      ld('btn-cot', false);
-      return cotation(); // re-appel sans mode cabinet
-    }
-
-    const payload = {
-      cabinet_mode:  true,
-      cabinet_id:    cab.id,
-      actes,
-      texte:         txt,
-      mode:          'ngap',
-      date_soin:     gv('f-ds') || new Date().toISOString().slice(0,10),
-      heure_soin:    gv('f-hs') || '',
-      exo:           gv('f-exo') || '',
-      regl:          gv('f-regl') || 'patient',
-      infirmiere:    ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
-      adeli:         u.adeli || '',
-      rpps:          u.rpps  || '',
-      structure:     u.structure || '',
-    };
-
-    const d = await apiCall('/webhook/cabinet-calcul', payload);
-    _clear();
-
-    if (!d.ok) throw new Error(d.error || 'Erreur cotation cabinet');
-
-    // Afficher résultat multi-IDE
-    $('cbody').innerHTML = renderCotCabinet(d);
-    $('res-cot').classList.add('show');
-
-    if (typeof showToast === 'function') showToast(`✅ Cabinet — Total : ${(d.total_global||0).toFixed(2)} €`, 'ok');
-
-  } catch(e) {
-    _clear();
-    $('cerr').style.display = 'flex';
-    $('cerr-m').textContent = e.message;
-    $('res-cot').classList.add('show');
-  }
-  ld('btn-cot', false);
-}
-
-/**
- * initCotationCabinetToggle — affiche/masque le toggle cabinet selon APP.cabinet
- * Appelé par cabinet.js après initCabinet()
- */
-function initCotationCabinetToggle() {
-  const wrap = $('cot-cabinet-toggle-wrap');
-  if (!wrap) return;
-  const cab = APP.get('cabinet');
-  wrap.style.display = (cab?.id && APP.role !== 'admin') ? 'block' : 'none';
-}
-
-// Réagir aux changements d'état cabinet
-APP.on('cabinet', () => {
-  initCotationCabinetToggle();
-});
-
-// Réagir aux modifications du texte pour rafraîchir les actes cabinet
-document.addEventListener('input', e => {
-  if (e.target?.id === 'f-txt' && $('cot-cabinet-mode')?.checked) {
-    cotationRenderCabinetActes();
-  }
-});
-
-/* ════════════════════════════════════════════════
    VÉRIFICATION IA (modale)
 ════════════════════════════════════════════════ */
 async function openVerify() {
@@ -1357,22 +1556,29 @@ function clrCot() {
   ['f-pr','f-pr-rp','f-pr-dt','f-pt','f-ddn','f-sec','f-amo','f-amc','f-txt','f-ds','f-hs']
     .forEach(id => { const e = $(id); if (e) e.value = ''; });
   ['f-exo','f-regl'].forEach(id => { const e = $(id); if (e) e.selectedIndex = 0; });
-  // Réinitialiser le select prescripteur
   const prescSel = $('f-prescripteur-select');
   if (prescSel) prescSel.value = '';
-  // Masquer le numéro de facture
   const invSec = $('invoice-number-section');
   if (invSec) invSec.style.display = 'none';
   const invDisplay = $('invoice-number-display');
   if (invDisplay) invDisplay.textContent = '';
   $('res-cot').classList.remove('show');
-  // Réinitialiser le sélecteur patient
   if (typeof cotClearPatient === 'function') cotClearPatient();
-  // Masquer les reco live
   const liveReco = $('live-reco');
   if (liveReco) liveReco.style.display = 'none';
-  // Réinitialiser l'édition de cotation en cours
   window._editingCotation = null;
+
+  // ── Réinitialiser le mode cabinet ─────────────────────────────────────
+  const cb = $('cot-cabinet-mode');
+  if (cb) cb.checked = false;
+  const panel = $('cot-cabinet-panel');
+  if (panel) panel.style.display = 'none';
+  const totals = $('cot-cabinet-totals');
+  if (totals) totals.remove();
+  const sugg = $('cot-cabinet-suggestion');
+  if (sugg) { sugg.textContent = ''; sugg.style.display = 'none'; }
+  const actesList = $('cot-cabinet-actes-list');
+  if (actesList) actesList.innerHTML = '<div class="ai in" style="font-size:12px">Saisissez la description des soins ci-dessus pour assigner les actes aux IDEs.</div>';
 }
 
 function coterDepuisRoute(desc, nomPatient) {
