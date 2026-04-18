@@ -127,6 +127,148 @@ async function _sigDelete(id) {
 }
 
 /* ════════════════════════════════════════════════
+   SYNC SIGNATURES — PC ↔ Mobile via Supabase
+   ────────────────────────────────────────────────
+   Les PNG sont chiffrés AES-256-GCM AVANT envoi.
+   Le serveur ne stocke que des blobs opaques (RGPD/HDS).
+   La clé de chiffrement reste sur l'appareil.
+════════════════════════════════════════════════ */
+
+/* Chiffre un PNG base64 via AES-256-GCM (Web Crypto) — retourne base64 */
+async function _sigEncrypt(pngBase64) {
+  const uid = (typeof S !== 'undefined') ? (S?.user?.id || S?.user?.email || 'local') : 'local';
+  const rawKey = await crypto.subtle.importKey(
+    'raw',
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sig_enc_' + uid)),
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder().encode(pngBase64);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, rawKey, enc);
+  // Concatène iv (12 bytes) + ciphertext, encode en base64
+  const combined = new Uint8Array(12 + cipher.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(cipher), 12);
+  return btoa(String.fromCharCode(...combined));
+}
+
+/* Déchiffre un blob base64 chiffré par _sigEncrypt */
+async function _sigDecrypt(encBase64) {
+  const uid = (typeof S !== 'undefined') ? (S?.user?.id || S?.user?.email || 'local') : 'local';
+  const rawKey = await crypto.subtle.importKey(
+    'raw',
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sig_enc_' + uid)),
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+  const combined = Uint8Array.from(atob(encBase64), c => c.charCodeAt(0));
+  const iv       = combined.slice(0, 12);
+  const cipher   = combined.slice(12);
+  const plain    = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, rawKey, cipher);
+  return new TextDecoder().decode(plain);
+}
+
+/* Pousse toutes les signatures locales vers le serveur */
+async function syncSignaturesToServer() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    const all = await _sigExec(db => new Promise((res, rej) => {
+      const tx  = db.transaction(SIG_STORE, 'readonly');
+      const req = tx.objectStore(SIG_STORE).getAll();
+      req.onsuccess = () => res(req.result || []);
+      req.onerror   = () => rej(req.error);
+    }));
+    if (!all.length) return;
+
+    const signatures = [];
+    for (const sig of all) {
+      if (!sig.invoice_id || !sig.png) continue;
+      try {
+        const encrypted_data = await _sigEncrypt(sig.png);
+        signatures.push({
+          invoice_id:     sig.invoice_id,
+          encrypted_data,
+          updated_at:     sig.signed_at || new Date().toISOString(),
+        });
+      } catch(_) {}
+    }
+    if (!signatures.length) return;
+
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    const res = await wpost('/webhook/signatures-push', { signatures });
+    if (res?.ok) console.info('[AMI:Sig] Sync push OK :', signatures.length);
+  } catch(e) {
+    console.warn('[AMI:Sig] Sync push KO :', e.message);
+  }
+}
+
+/* Tire les signatures du serveur et fusionne avec l'IDB local */
+async function syncSignaturesFromServer() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    const res = await wpost('/webhook/signatures-pull', {});
+    if (!res?.ok || !Array.isArray(res.signatures) || !res.signatures.length) return;
+
+    // Charger les locales pour comparaison par date
+    const localAll = await _sigExec(db => new Promise((res2, rej) => {
+      const tx  = db.transaction(SIG_STORE, 'readonly');
+      const req = tx.objectStore(SIG_STORE).getAll();
+      req.onsuccess = () => res2(req.result || []);
+      req.onerror   = () => rej(req.error);
+    }));
+    const localMap = new Map(localAll.map(s => [s.invoice_id, s]));
+
+    let merged = 0;
+    for (const remote of res.signatures) {
+      if (!remote.invoice_id || !remote.encrypted_data) continue;
+      const local = localMap.get(remote.invoice_id);
+      const remoteDate = new Date(remote.updated_at || 0).getTime();
+      const localDate  = local ? new Date(local.signed_at || 0).getTime() : 0;
+      if (!local || remoteDate > localDate) {
+        try {
+          const png = await _sigDecrypt(remote.encrypted_data);
+          await _sigPut({
+            invoice_id: remote.invoice_id,
+            png,
+            signed_at:  remote.updated_at || new Date().toISOString(),
+            user_agent: 'sync',
+          });
+          merged++;
+        } catch(_) {}
+      }
+    }
+    if (merged > 0) {
+      console.info('[AMI:Sig] Sync pull OK :', merged, 'signatures fusionnées');
+      if (typeof showToastSafe === 'function') showToastSafe(`✍️ ${merged} signature(s) reçue(s).`);
+      if (typeof loadSignatureList === 'function') loadSignatureList();
+    }
+  } catch(e) {
+    console.warn('[AMI:Sig] Sync pull KO :', e.message);
+  }
+}
+
+/* Push immédiat d'une signature après sauvegarde */
+async function _syncSignatureNow(invoiceId, png, signedAt) {
+  if (typeof S === 'undefined' || !S?.token) return;
+  try {
+    const encrypted_data = await _sigEncrypt(png);
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    await wpost('/webhook/signatures-push', {
+      signatures: [{ invoice_id: invoiceId, encrypted_data, updated_at: signedAt || new Date().toISOString() }]
+    });
+  } catch(e) {
+    console.warn('[AMI:Sig] _syncSignatureNow KO :', e.message);
+  }
+}
+
+/* ════════════════════════════════════════════════
    MODAL SIGNATURE
 ════════════════════════════════════════════════ */
 function openSignatureModal(invoiceId) {
@@ -151,7 +293,7 @@ function openSignatureModal(invoiceId) {
         </div>
         <p style="font-size:12px;color:var(--m);margin-bottom:14px">
           Signez dans le cadre ci-dessous pour valider le soin et autoriser la télétransmission.
-          La signature est stockée localement et n'est jamais transmise au serveur.
+          La signature est chiffrée (AES-256) et synchronisée entre vos appareils.
         </p>
         <div style="position:relative;border:2px dashed var(--b);border-radius:var(--r);
           background:var(--s);overflow:hidden;touch-action:none" id="sig-wrap">
@@ -264,12 +406,16 @@ async function saveSignature() {
   }
 
   const png = _sigCanvas.toDataURL('image/png');
+  const signedAt = new Date().toISOString();
   await _sigPut({
     invoice_id:  _currentInvoiceId,
     png,
-    signed_at:   new Date().toISOString(),
+    signed_at:   signedAt,
     user_agent:  navigator.userAgent.slice(0, 100),
   });
+
+  // Sync immédiate vers le serveur (chiffrée)
+  _syncSignatureNow(_currentInvoiceId, png, signedAt).catch(() => {});
 
   closeSignatureModal();
 
@@ -291,6 +437,13 @@ async function getSignature(invoiceId) {
 
 async function deleteSignature(invoiceId) {
   await _sigDelete(invoiceId);
+  // Supprimer aussi côté serveur
+  try {
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    if (typeof S !== 'undefined' && S?.token)
+      wpost('/webhook/signatures-delete', { invoice_id: invoiceId }).catch(() => {});
+  } catch(_) {}
   if (typeof showToast === 'function') showToast('🗑️ Signature supprimée.', 'ok');
 }
 
@@ -327,6 +480,8 @@ window.saveSignature       = saveSignature;
 window.getSignature        = getSignature;
 window.deleteSignature     = deleteSignature;
 window.injectSignatureInPDF = injectSignatureInPDF;
+window.syncSignaturesToServer   = syncSignaturesToServer;
+window.syncSignaturesFromServer = syncSignaturesFromServer;
 
 /* ── Patch printInv pour injecter la signature automatiquement ── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -410,5 +565,19 @@ async function loadSignatureList() {
 
 /* Charger la liste quand on navigue vers #view-sig */
 document.addEventListener('ui:navigate', e => {
-  if (e.detail?.view === 'sig') loadSignatureList();
+  if (e.detail?.view === 'sig') {
+    loadSignatureList();
+    // Sync pull au chargement de la vue signatures
+    syncSignaturesFromServer().catch(() => {});
+  }
+});
+
+/* Sync pull au login (quand la session est disponible) */
+document.addEventListener('ami:login', () => {
+  syncSignaturesFromServer().catch(() => {});
+});
+
+/* Sync push au logout (pour s'assurer que tout est envoyé) */
+document.addEventListener('ami:logout', () => {
+  syncSignaturesToServer().catch(() => {});
 });
