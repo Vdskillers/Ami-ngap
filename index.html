@@ -2179,7 +2179,7 @@ async function hist() {
         <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
         <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
         <td>${alertes}</td>
-        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, ${JSON.stringify(r.invoice_number||'')})" title="Supprimer cette cotation">🗑️</button></td>
+        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
 
@@ -2188,7 +2188,11 @@ async function hist() {
   }
 }
 
-async function delHist(id, invoiceNumber) {
+async function delHist(id, btnOrInvoice) {
+  // Accepte soit un element bouton (data-inv) soit une string directe (retrocompat)
+  const invoiceNumber = (btnOrInvoice instanceof Element)
+    ? (btnOrInvoice.dataset.inv || '')
+    : (btnOrInvoice || '');
   if (!confirm(`Supprimer la cotation #${id} ?`)) return;
   try {
     await (typeof wpost === 'function'
