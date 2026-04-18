@@ -112,6 +112,13 @@ document.addEventListener('ui:navigate', e => {
     }, 80);
   }
 
+  /* Cabinet multi-IDE → rendre la section cabinet */
+  if (v === 'cabinet') {
+    setTimeout(() => {
+      if (typeof renderCabinetSection === 'function') renderCabinetSection();
+    }, 80);
+  }
+
   log('navTo →', v);
 });
 

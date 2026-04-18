@@ -211,6 +211,42 @@ function showApp(){
     if(invSec) invSec.style.display='';
     // Charger la liste des prescripteurs
     loadPrescripteurs();
+
+    // ── Injecter "Cabinet" dans la sidebar (une seule fois) ──────────
+    if (!$('nav-cabinet-item')) {
+      const slOutils = document.querySelector('.side .sl:nth-child(2)');
+      if (slOutils) {
+        const liCab = document.createElement('div');
+        liCab.className = 'ni nurse-only';
+        liCab.id = 'nav-cabinet-item';
+        liCab.dataset.v = 'cabinet';
+        liCab.innerHTML = `<span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span>`;
+        liCab.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', liCab); };
+        // Insérer après "Dashboard & Statistiques" (data-v="dash")
+        const dashItem = slOutils.querySelector('[data-v="dash"]');
+        if (dashItem && dashItem.nextSibling) slOutils.insertBefore(liCab, dashItem.nextSibling);
+        else slOutils.appendChild(liCab);
+      }
+    }
+
+    // ── Injecter "Cabinet" dans le menu mobile Plus (une seule fois) ──
+    const _injectCabinetMobile = () => {
+      if (document.getElementById('btn-cabinet-mobile')) return;
+      const mobileGrid = document.querySelector('#mobile-menu > div');
+      if (!mobileGrid) { setTimeout(_injectCabinetMobile, 200); return; }
+      const btnCab = document.createElement('button');
+      btnCab.id = 'btn-cabinet-mobile';
+      btnCab.className = 'bn-item nurse-only';
+      btnCab.style.cssText = 'background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none';
+      btnCab.innerHTML = '<span class="bn-ic">🏥</span>Cabinet';
+      btnCab.setAttribute('data-v', 'cabinet');
+      btnCab.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', null); if (typeof toggleMobileMenu === 'function') toggleMobileMenu(); };
+      // Insérer avant le bouton "Quitter"
+      const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
+      if (btnQuitter) mobileGrid.insertBefore(btnCab, btnQuitter);
+      else mobileGrid.appendChild(btnCab);
+    };
+    setTimeout(_injectCabinetMobile, 250);
   }
 
   // Correction Leaflet après changement de layout
@@ -255,6 +291,8 @@ async function login(){
     /* ── Sécurité RGPD : chiffrement + audit ── */
     if(typeof initSecurity==='function') initSecurity(d.token);
     showApp();
+    /* ── Initialiser le cabinet (mode multi-IDE) ── */
+    if (typeof initCabinet === 'function') setTimeout(() => initCabinet(), 300);
   }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
 }
 async function register(){

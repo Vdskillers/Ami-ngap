@@ -19,6 +19,7 @@ window.APP = {
     user: null, token: null, role: null,
     startPoint: null, userPos: null,
     importedData: null, uberPatients: [], nextPatient: null,
+    cabinet: null,  // { id, nom, my_role, members[], sync_prefs }
   },
 
   /* Namespace Leaflet — défini par map.js via APP.map.register() */
@@ -57,6 +58,8 @@ window.APP = {
   set role(v)  { this.state.role = v; },
   get user()   { return this.state.user; },
   set user(v)  { this.state.user = v; },
+  get cabinet()  { return this.state.cabinet; },
+  set cabinet(v) { this.set('cabinet', v); },
 
   /* Écoute réactive d'une clé spécifique */
   on(key, fn) {

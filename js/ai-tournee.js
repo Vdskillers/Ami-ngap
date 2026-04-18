@@ -618,3 +618,212 @@ function _minToTime(min) {
   const m = Math.round(min % 60);
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
+
+/* ════════════════════════════════════════════════
+   MODE CABINET — Couche multi-IDE additive v1.0
+   ──────────────────────────────────────────────
+   Fonctions qui complètent le moteur solo existant
+   pour le cas où plusieurs IDEs partagent un cabinet.
+
+   Principe : chaque IDE passe dans le pipeline solo
+   existant — on ajoute seulement le clustering et
+   la distribution. Rien n'est modifié dans le code
+   solo au-dessus.
+
+   API publique :
+     cabinetPlanDay(patients, members)
+     cabinetScoreDistribution(assignments)
+     cabinetOptimizeRevenue(assignments, members)
+════════════════════════════════════════════════ */
+
+/** TARIFS NGAP pour estimation revenue cabinet (côté client) */
+const _CABINET_TARIFS = {
+  AMI1: 3.15, AMI2: 6.30, AMI3: 9.45, AMI4: 12.60, AMI5: 15.75, AMI6: 18.90,
+  AIS1: 2.65, AIS3: 7.95,
+  BSA: 13.00, BSB: 18.20, BSC: 28.70,
+  IFD: 2.75,
+};
+
+/**
+ * Estime le revenu NGAP pour une liste d'actes (côté client, approximatif).
+ * Le vrai calcul se fait côté N8N — ceci est uniquement pour le scoring cabinet.
+ */
+function _cabinetEstimateRevenue(actes = []) {
+  if (!actes.length) return 0;
+  const sorted = [...actes].sort((a, b) => (_CABINET_TARIFS[b.code] || 0) - (_CABINET_TARIFS[a.code] || 0));
+  let total = 0, principal = true;
+  for (const acte of sorted) {
+    const tarif = _CABINET_TARIFS[acte.code] || 3.15;
+    total += principal ? tarif : tarif * 0.5;
+    if (['AMI1','AMI2','AMI3','AMI4','AMI5','AMI6','AIS1','AIS3'].includes(acte.code)) {
+      principal = false; // les suivants à 0.5
+    }
+  }
+  return Math.round(total * 100) / 100;
+}
+
+/**
+ * K-means géographique côté client (identique à la version worker).
+ * @param {Array} patients — liste avec .lat/.lng optionnels
+ * @param {number} k       — nombre de clusters (= nombre d'IDEs)
+ * @returns {Array[]}      — tableau de k tableaux de patients
+ */
+function cabinetGeoCluster(patients, k) {
+  if (!k || k <= 1) return [patients];
+  const withGeo = patients.filter(p => p.lat && p.lng);
+  const noGeo   = patients.filter(p => !p.lat || !p.lng);
+  if (!withGeo.length) {
+    const clusters = Array.from({ length: k }, () => []);
+    patients.forEach((p, i) => clusters[i % k].push(p));
+    return clusters;
+  }
+  let centers = withGeo.slice(0, k).map(p => ({ lat: p.lat, lng: p.lng }));
+  let clusters = [];
+  for (let iter = 0; iter < 8; iter++) {
+    clusters = Array.from({ length: k }, () => []);
+    for (const p of withGeo) {
+      let best = 0, bestDist = Infinity;
+      centers.forEach((c, i) => {
+        const d = Math.hypot(p.lat - c.lat, p.lng - c.lng);
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      clusters[best].push(p);
+    }
+    centers = clusters.map((cl, i) => {
+      if (!cl.length) return centers[i];
+      return {
+        lat: cl.reduce((s, p) => s + p.lat, 0) / cl.length,
+        lng: cl.reduce((s, p) => s + p.lng, 0) / cl.length,
+      };
+    });
+  }
+  noGeo.forEach(p => {
+    const smallest = clusters.reduce((min, cl, i) => cl.length < clusters[min].length ? i : min, 0);
+    clusters[smallest].push(p);
+  });
+  return clusters;
+}
+
+/**
+ * cabinetPlanDay — génère un planning multi-IDE à partir d'une liste de patients
+ * et d'une liste de membres du cabinet.
+ *
+ * @param {Array} patients  — liste de patients (avec .lat/.lng si disponibles, .actes optionnel)
+ * @param {Array} members   — liste d'IDEs : [{ id, nom, prenom }]
+ * @returns {Array}         — assignments : [{ ide_id, nom, prenom, patients: [...] }]
+ *
+ * Utilise le moteur optimizeTour() existant pour chaque IDE.
+ */
+function cabinetPlanDay(patients, members) {
+  if (!patients.length || !members.length) return [];
+  const k        = members.length;
+  const clusters = cabinetGeoCluster(patients, k);
+
+  return members.map((member, idx) => {
+    const idePatients  = clusters[idx] || [];
+    // Optimiser la route pour cet IDE via le moteur solo existant
+    const optimized = (typeof optimizeTour === 'function')
+      ? optimizeTour(idePatients, member.start_lat || null, member.start_lng || null)
+      : idePatients;
+
+    return {
+      ide_id:   member.id || member.infirmiere_id || `ide_${idx}`,
+      nom:      member.nom    || '',
+      prenom:   member.prenom || '',
+      patients: optimized.map(p => ({ ...p, performed_by: member.id || `ide_${idx}` })),
+    };
+  });
+}
+
+/**
+ * cabinetScoreDistribution — score un planning cabinet (€/h, km, nb patients).
+ * Utilisé pour comparer deux distributions.
+ */
+function cabinetScoreDistribution(assignments) {
+  if (!assignments.length) return { score: 0, total_revenue: 0, total_km: 0, details: [] };
+  const details = assignments.map(a => {
+    const patients = a.patients || [];
+    const revenue  = patients.reduce((s, p) => {
+      const actes = Array.isArray(p.actes) ? p.actes : [];
+      return s + _cabinetEstimateRevenue(actes);
+    }, 0);
+    const km = patients.reduce((s, p) => s + (p.distance_km || 0), 0);
+    return { ide_id: a.ide_id, nb_patients: patients.length, revenue: Math.round(revenue * 100) / 100, km: Math.round(km * 10) / 10 };
+  });
+  const total_revenue = details.reduce((s, d) => s + d.revenue, 0);
+  const total_km      = details.reduce((s, d) => s + d.km, 0);
+  // Pénaliser les déséquilibres (écart-type des revenus)
+  const mean = total_revenue / details.length;
+  const variance = details.reduce((s, d) => s + Math.pow(d.revenue - mean, 2), 0) / details.length;
+  const penalty  = Math.sqrt(variance) * 0.5;
+  const score    = Math.round((total_revenue - total_km * 0.2 - penalty) * 100) / 100;
+  return { score, total_revenue: Math.round(total_revenue * 100) / 100, total_km: Math.round(total_km * 10) / 10, details };
+}
+
+/**
+ * cabinetOptimizeRevenue — améliore itérativement un planning cabinet
+ * en déplaçant des patients entre IDEs pour maximiser le score.
+ * Max 30 itérations pour rester léger côté client.
+ *
+ * @param {Array} assignments — sortie de cabinetPlanDay()
+ * @param {Array} members     — membres du cabinet
+ * @returns {Array}           — assignments améliorés
+ */
+function cabinetOptimizeRevenue(assignments, members) {
+  if (assignments.length <= 1) return assignments;
+  let best = assignments.map(a => ({ ...a, patients: [...(a.patients || [])] }));
+  let bestScore = cabinetScoreDistribution(best).score;
+
+  for (let iter = 0; iter < 30; iter++) {
+    let improved = false;
+    for (let i = 0; i < best.length; i++) {
+      for (let j = 0; j < best.length; j++) {
+        if (i === j || !best[i].patients.length) continue;
+        // Essayer de déplacer le premier patient de l'IDE i vers l'IDE j
+        const candidate = best.map(a => ({ ...a, patients: [...a.patients] }));
+        const moved = candidate[i].patients.shift();
+        if (!moved) continue;
+        moved.performed_by = candidate[j].ide_id;
+        candidate[j].patients.push(moved);
+        const candidateScore = cabinetScoreDistribution(candidate).score;
+        if (candidateScore > bestScore) {
+          best = candidate;
+          bestScore = candidateScore;
+          improved = true;
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  return best;
+}
+
+/**
+ * cabinetBuildUI — génère le HTML résumé pour affichage dans l'UI cabinet.
+ * Utilisé par tournee.js ou uber.js pour afficher le planning multi-IDE.
+ */
+function cabinetBuildUI(assignments, scoreData) {
+  if (!assignments.length) return '<p style="color:var(--m)">Aucun membre dans ce cabinet.</p>';
+  const rows = assignments.map((a, idx) => {
+    const d    = (scoreData?.details || [])[idx] || {};
+    const color = ['var(--a)', 'var(--w)', '#00d4aa', '#ff6b6b'][idx % 4];
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--b)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0"></span>
+        <strong style="font-size:13px">${a.prenom} ${a.nom}</strong>
+        <span style="margin-left:auto;font-size:11px;color:var(--m)">${a.patients.length} patient(s)</span>
+      </div>
+      <div style="font-size:12px;color:var(--m);display:flex;gap:12px">
+        <span>💶 ${(d.revenue || 0).toFixed(2)} €</span>
+        <span>🚗 ${(d.km || 0).toFixed(1)} km</span>
+      </div>
+    </div>`;
+  });
+  const total = scoreData?.total_revenue || 0;
+  return `<div>
+    ${rows.join('')}
+    <div style="padding:10px 0;font-size:13px;font-weight:700;color:var(--a)">
+      💰 Total cabinet : ${total.toFixed(2)} €
+    </div>
+  </div>`;
+}
