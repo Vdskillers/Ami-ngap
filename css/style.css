@@ -678,8 +678,7 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   /* Table patients mobile — réduire colonnes visibles */
   .ht table{min-width:480px}
   /* Planning hebdo solo : scroll horizontal sur mobile (7 colonnes) */
-  #pbody .pla-week-grid-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  #pbody .pla-week-grid-wrap > div{min-width:700px}
+  /* Planning hebdo solo : layout vertical — pas de scroll horizontal nécessaire */
   .pt-avatar{width:28px;height:28px;font-size:11px}
 
   /* BOUTONS — pleine largeur sur mobile */
