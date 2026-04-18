@@ -625,24 +625,32 @@
               style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0">
             <div>
               <div style="font-weight:600;font-size:13px">🏥 Mode cabinet — cotation multi-IDE</div>
-              <div style="font-size:11px;color:var(--m);margin-top:2px">Répartissez les actes entre les infirmières de votre cabinet pour maximiser les revenus NGAP</div>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">Assignez chaque acte à une infirmière — chacune bénéficie de son acte principal au tarif plein (suppression des décotes NGAP)</div>
             </div>
           </label>
         </div>
 
-        <!-- ══ PANNEAU MULTI-IDE (affiché si mode cabinet actif) ══ -->
-        <div id="cot-cabinet-panel" style="display:none;margin-bottom:14px">
-          <div style="font-size:12px;font-weight:600;color:var(--a);margin-bottom:8px;font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase">👥 Qui réalise chaque acte ?</div>
-          <div id="cot-cabinet-actes-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-            <!-- Rempli dynamiquement par cotationRenderCabinetActes() -->
+        <!-- ══ PANNEAU MULTI-IDE ══ -->
+        <div id="cot-cabinet-panel" style="display:none;margin-bottom:14px;border:1px solid rgba(0,212,170,.2);border-radius:10px;overflow:hidden">
+
+          <!-- En-tête panneau -->
+          <div style="background:rgba(0,212,170,.06);padding:10px 14px;border-bottom:1px solid rgba(0,212,170,.15);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:13px;font-weight:700">👥 Qui réalise chaque acte ?</div>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">Basé sur la description saisie ci-dessus — mis à jour en temps réel</div>
+            </div>
+            <button class="btn bs bsm" onclick="cotationOptimizeDistribution()">
+              <span>⚡</span> Optimiser la répartition
+            </button>
+          </div>
+
+          <!-- Liste des actes détectés avec sélecteur IDE -->
+          <div id="cot-cabinet-actes-list" style="padding:12px 14px;display:flex;flex-direction:column;gap:6px">
             <div class="ai in" style="font-size:12px">Saisissez la description des soins ci-dessus pour assigner les actes aux IDEs.</div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn bs bsm" onclick="cotationOptimizeDistribution()">
-              <span>⚡</span> Optimiser la répartition IA
-            </button>
-            <span id="cot-cabinet-suggestion" style="font-size:12px;color:var(--a);display:none"></span>
-          </div>
+
+          <!-- Feedback optimisation -->
+          <div id="cot-cabinet-suggestion" style="display:none;padding:6px 14px 10px;font-size:12px;color:var(--a)"></div>
         </div>
 
         <div class="ar-row">
