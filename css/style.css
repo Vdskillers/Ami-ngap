@@ -1237,3 +1237,91 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .cot-res-premium .ta{font-size:44px;letter-spacing:-1px}
   .cot-res-premium .rg{grid-template-columns:1fr}
 }
+
+/* ══════════════════════════════════════════════
+   COTATION FORMULAIRE PREMIUM
+══════════════════════════════════════════════ */
+/* Carte formulaire avec fond subtilement teinté */
+.cot-form-premium{
+  background:linear-gradient(180deg,rgba(0,212,170,.025) 0%,transparent 120px) !important;
+  border:1px solid var(--b) !important;
+}
+/* En-tête de section avec icône ronde */
+.cot-section-header{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:14px;
+}
+.cot-section-icon{
+  width:30px;height:30px;border-radius:50%;
+  background:var(--s);border:1px solid var(--b);
+  display:grid;place-items:center;
+  font-size:14px;flex-shrink:0;
+}
+.cot-section-title{
+  font-size:12px;font-weight:700;color:var(--t);
+  font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase;
+}
+/* Séparateur entre sections */
+.cot-section-divider{
+  height:1px;background:var(--b);margin:20px 0 20px;
+  position:relative;
+}
+/* Grille de champs avec gap plus généreux */
+.cot-fg{
+  gap:16px !important;
+}
+.cot-fg .f label{
+  font-size:10px;letter-spacing:1.2px;color:var(--m);margin-bottom:5px;display:block;
+}
+.cot-fg input:focus,
+.cot-fg select:focus{
+  border-color:var(--a);
+  box-shadow:0 0 0 3px rgba(0,212,170,.1);
+  background:rgba(0,212,170,.02);
+}
+/* Textarea description — plus grande et accentuée */
+.cot-txt-wrap textarea{
+  min-height:110px;
+  border-radius:12px !important;
+  border-color:rgba(0,212,170,.2) !important;
+  background:rgba(0,212,170,.015) !important;
+  font-size:14px !important;
+  line-height:1.7 !important;
+  resize:vertical;
+  transition:border-color .15s,box-shadow .15s,background .15s;
+}
+.cot-txt-wrap textarea:focus{
+  border-color:var(--a) !important;
+  box-shadow:0 0 0 3px rgba(0,212,170,.12) !important;
+  background:rgba(0,212,170,.03) !important;
+}
+/* Barre d'actions en bas */
+.cot-actions-bar{
+  display:flex;gap:10px;flex-wrap:wrap;
+  margin-top:20px;padding-top:20px;
+  border-top:1px solid var(--b);
+  align-items:center;
+}
+/* Bouton coter — plus grand et impactant */
+.cot-btn-primary{
+  padding:13px 28px !important;
+  font-size:15px !important;
+  font-weight:700 !important;
+  gap:10px !important;
+  box-shadow:0 4px 24px rgba(0,212,170,.3) !important;
+  flex-shrink:0;
+}
+.cot-btn-primary:hover:not(:disabled){
+  box-shadow:0 6px 32px rgba(0,212,170,.45) !important;
+  transform:translateY(-2px) !important;
+}
+/* Mobile */
+@media(max-width:768px){
+  .cot-section-icon{width:26px;height:26px;font-size:12px}
+  .cot-section-title{font-size:11px}
+  .cot-actions-bar{flex-direction:column}
+  .cot-actions-bar .btn{width:100%;justify-content:center}
+  .cot-btn-primary{font-size:14px !important;padding:12px 20px !important}
+}
