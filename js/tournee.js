@@ -740,46 +740,67 @@ async function renderPlanning(d){
     `;
   }
 
-  // ── Rendu vue SOLO (grille jours standard) ────────────────────────────────
-  // ── Rendu vue SOLO — même disposition tableau que la vue cabinet ─────────
+  // ── Rendu vue SOLO — disposition verticale identique à la vue cabinet ────
+  // Lignes = jours (lundi → dimanche), colonne label 80px + colonne contenu
   function renderSoloView() {
-    const headerCols = JOURS.map((j, ji) => {
+
+    // En-tête : même structure que cabinet — "Jour" + colonne "Mes patients"
+    const totalPatients = patientsToShow.length;
+    const totalCotVal   = patientsToShow.filter(p => p._cotation?.validated).length;
+    const header = `
+      <div style="display:grid;grid-template-columns:80px 1fr;border-radius:8px 8px 0 0;overflow:hidden">
+        <div style="padding:8px;background:var(--s);border:1px solid var(--b);border-radius:8px 0 0 0;display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;color:var(--m);font-family:var(--fm);text-align:center">Jour</span>
+        </div>
+        <div style="padding:8px 12px;background:rgba(0,212,170,.06);border-top:3px solid var(--a);border:1px solid var(--b);border-left:none;display:flex;align-items:center;gap:10px">
+          <div style="font-weight:700;font-size:13px;color:var(--a)">Planning de la semaine</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-left:auto">
+            ${totalPatients} patient${totalPatients > 1 ? 's' : ''}
+            ${totalCotVal > 0 ? ` · ${totalCotVal} coté${totalCotVal > 1 ? 's' : ''}` : ''}
+          </div>
+        </div>
+      </div>`;
+
+    // Lignes jours — même structure exacte que renderCabinetView dayRows
+    const dayRows = JOURS.map((j, ji) => {
       const dateJ   = weekDates[ji];
       const isToday = dateJ.toISOString().slice(0,10) === todayISO;
       const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
       const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
       const pDay    = byDay[j].patients;
-      return `<div style="padding:8px 10px;background:${isToday ? 'rgba(0,212,170,.06)' : 'var(--s)'};border-top:2px solid ${isToday ? 'var(--a)' : 'var(--b)'};text-align:center;border-right:1px solid var(--b)">
-        <div style="font-weight:700;font-size:13px;color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
-        <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${dateStr}${isToday ? ' · <span style="color:var(--a)">Auj.</span>' : ''}</div>
-        ${pDay.length ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 6px;border-radius:10px;display:inline-block;margin-top:4px">${pDay.length} patient${pDay.length > 1 ? 's' : ''}</div>` : ''}
+
+      return `<div style="display:grid;grid-template-columns:80px 1fr;border-bottom:1px solid var(--b)${isToday ? ';background:rgba(0,212,170,.025)' : ''}">
+        <div style="padding:8px;border-right:1px solid var(--b);display:flex;flex-direction:column;justify-content:center;flex-shrink:0">
+          <div style="font-size:12px;font-weight:${isToday ? '700' : '600'};color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">${dateStr}</div>
+          ${isToday ? '<div style="font-size:9px;color:var(--a);font-family:var(--fm)">Aujourd\'hui</div>' : ''}
+          ${pDay.length ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 6px;border-radius:10px;display:inline-block;margin-top:4px;text-align:center">${pDay.length}</div>` : ''}
+        </div>
+        <div style="padding:6px 8px;min-height:44px">
+          ${pDay.length
+            ? pDay.map(p => renderPatientCard(p, isToday ? 'var(--a)' : null)).join('')
+            : `<div style="font-size:11px;color:var(--b);padding:12px 0;text-align:center">—</div>`}
+        </div>
       </div>`;
     }).join('');
 
-    const dayContent = JOURS.map((j, ji) => {
-      const dateJ   = weekDates[ji];
-      const isToday = dateJ.toISOString().slice(0,10) === todayISO;
-      const pDay    = byDay[j].patients;
-      return `<div style="padding:8px;min-height:60px;border-right:1px solid var(--b);background:${isToday ? 'rgba(0,212,170,.02)' : 'transparent'};vertical-align:top">
-        ${pDay.length
-          ? pDay.map(p => renderPatientCard(p, isToday ? 'var(--a)' : null)).join('')
-          : `<div style="font-size:11px;color:var(--b);text-align:center;padding:16px 0">—</div>`}
-      </div>`;
-    }).join('');
+    // Total cotations semaine
+    const totalCot = patientsToShow.reduce((s, p) => s + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
 
     return `
-      <div class="pla-week-grid-wrap">
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--b);border-radius:8px 8px 0 0;overflow:hidden">
-          ${headerCols}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--b);border-top:none;border-radius:0 0 8px 8px;overflow:hidden;align-items:start">
-          ${dayContent}
-        </div>
-      </div>`;
+      ${header}
+      <div style="border:1px solid var(--b);border-top:none;border-radius:0 0 8px 8px;overflow:hidden">
+        ${dayRows}
+      </div>
+      ${totalCot > 0 ? `
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(0,212,170,.08);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span style="font-size:13px;font-weight:600">💶 Total cotations validées cette semaine</span>
+        <strong style="font-size:16px;color:var(--a)">${totalCot.toFixed(2)} €</strong>
+      </div>` : ''}`;
   }
 
   // ── Assemblage final ──────────────────────────────────────────────────────
-  // cabinetBar uniquement en mode cabinet actif — jamais en vue solo
+  // cabinetBar uniquement en mode cabinet (jamais en solo)
   const cabinetBar = cabinetActive ? `
     <div style="margin-bottom:16px;padding:10px 14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px">🏥 <strong>${cab.nom}</strong></span>
