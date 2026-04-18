@@ -1195,3 +1195,45 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
 .km-elec-label input[type=checkbox]{accent-color:var(--a2);width:14px;height:14px}
 .km-prefs-info{font-size:10px;font-family:var(--fm);color:var(--a2);margin-left:auto;white-space:nowrap;opacity:.8}
 @media(max-width:768px){.km-prefs-info{display:none}}
+
+/* ══════════════════════════════════════════════
+   COTATION RÉSULTAT PREMIUM
+══════════════════════════════════════════════ */
+/* Carte résultat cotation avec bordure accent verte */
+.cot-res-premium{
+  background:linear-gradient(135deg,rgba(0,212,170,.04) 0%,rgba(79,168,255,.02) 100%);
+  border:1px solid rgba(0,212,170,.25) !important;
+  box-shadow:0 0 40px rgba(0,212,170,.06),var(--sh) !important;
+  animation:pop .25s ease;
+}
+/* Total cotation — taille augmentée + gradient */
+.cot-res-premium .ta{
+  font-size:62px;
+  letter-spacing:-3px;
+}
+/* RC cards — top-border déjà géré, renforcer les couleurs des montants */
+.cot-res-premium .rc.am .ra{color:var(--a)}
+.cot-res-premium .rc.mc .ra{color:var(--a2)}
+.cot-res-premium .rc.pa .ra{color:var(--w)}
+/* Ligne d'acte premium — padding renforcé + hover */
+.cot-res-premium .ar{
+  padding:11px 14px;
+  transition:background .12s,border-color .12s;
+}
+.cot-res-premium .ar:hover{
+  background:var(--c);
+  border-color:var(--bl);
+}
+/* Prix acte aligné à droite — monospace pour l'alignement */
+.cot-res-premium .at{
+  font-family:var(--fm);
+  font-size:14px;
+  font-weight:700;
+  color:var(--t);
+  min-width:70px;
+  text-align:right;
+}
+@media(max-width:768px){
+  .cot-res-premium .ta{font-size:44px;letter-spacing:-1px}
+  .cot-res-premium .rg{grid-template-columns:1fr}
+}
