@@ -2633,12 +2633,17 @@ async function editFromHist(data) {
     }
 
     // Date et heure du soin d'origine
+    const fDs = document.getElementById('f-ds');
+    const fHs = document.getElementById('f-hs');
     if (data.date_soin) {
       const _d = new Date(data.date_soin);
-      const fDs = document.getElementById('f-ds');
-      const fHs = document.getElementById('f-hs');
       if (fDs) fDs.value = _d.toISOString().slice(0, 10);
-      if (fHs) { fHs.value = (data.heure_soin || _d.toTimeString().slice(0, 5)); fHs._userEdited = true; }
+    }
+    if (fHs) {
+      // Toujours conserver l'heure d'origine — ne jamais laisser cotation.js
+      // l'écraser avec l'heure actuelle lors d'une modification.
+      fHs.value = (data.heure_soin || '').trim().slice(0, 5); // vide si non renseignée
+      fHs._userEdited = true; // bloque l'écrasement par cotation.js dans tous les cas
     }
 
     // Données patient depuis l'IDB (si trouvées)
