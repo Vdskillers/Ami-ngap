@@ -276,6 +276,25 @@
       </div>
       <div id="adm-top-actes" style="margin-bottom:24px"></div>
 
+      <!-- Stats par infirmière -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="lbl">👩‍⚕️ Statistiques par infirmier(ère)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="adm-nurse-search" type="text" placeholder="🔍 Rechercher…" oninput="_admFilterNurses(this.value)"
+            style="padding:6px 10px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;width:140px">
+          <select id="adm-nurse-sort" onchange="_admSortNurses(this.value)"
+            style="padding:6px 10px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+            <option value="ca_desc">CA ↓</option>
+            <option value="ca_asc">CA ↑</option>
+            <option value="actes_desc">Actes ↓</option>
+            <option value="alpha">Alphabétique</option>
+            <option value="last_activity">Dernière activité</option>
+          </select>
+          <button class="btn bs bsm" onclick="loadAdmStats()" style="padding:6px 12px;font-size:12px">↻</button>
+        </div>
+      </div>
+      <div id="adm-per-user-stats"><div class="ai in" style="font-size:12px">Chargement…</div></div>
+
       <!-- Stats sécurité -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <div class="lbl">🔐 Sécurité temps réel</div>
