@@ -39,6 +39,10 @@ function _showCacheInfo(cache) {
     ? `🔴 Mode hors ligne — données en cache (${min} min)`
     : `🟡 Données en cache (${min} min)`;
   el.style.display = 'block';
+  // Toast informatif
+  if (typeof showToast === 'function') {
+    if (cache.expired) showToast('warning', 'Mode hors ligne', `Données en cache (${min} min)`, 4000);
+  }
 }
 function _hideCacheInfo() {
   const el = $('dash-cache-info');
@@ -130,7 +134,19 @@ function _renderAdminDashDemo() {
     🛡️ Aucune cotation — les actes s'afficheront ici avec les barres de fréquence</div>`;
 
   // Prévision
-  $('dash-prevision').innerHTML = `<span style="color:var(--m)">— Projection disponible avec des données réelles</span>`;
+  $('dash-prevision').innerHTML = `
+    <div class="dash-ring-wrap" style="margin:0 auto 12px">
+      <svg viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="44" cy="44" r="34" fill="none" stroke="var(--b)" stroke-width="7"/>
+      </svg>
+      <div class="dash-ring-label"><div class="dash-ring-pct" style="font-size:12px;color:var(--m)">—</div><div class="dash-ring-sub">objectif</div></div>
+    </div>
+    <div class="dash-prev-row"><span>Projection</span><strong style="color:var(--m)">—</strong></div>
+    <div class="dash-prev-row"><span>Moy/jour</span><strong style="color:var(--m)">—</strong></div>`;
+
+  // Heatmap vide
+  const heatEl = $('dash-heatmap');
+  if (heatEl) heatEl.innerHTML = Array(13).fill(0).map(()=>`<div class="hm-cell h0"></div>`).join('');
 
   // Alerte perte
   $('dash-loss').innerHTML = `<div class="ai in" style="font-size:12px">🔔 Alertes revenus manqués : aucune donnée à analyser</div>`;
@@ -211,33 +227,60 @@ function renderDashboard(arr) {
     })();
   } catch {}
 
-  // KPIs enrichis + km
-  $('dash-kpis').innerHTML=[
-    {icon:'💶',val:total.toFixed(2)+'€',label:'CA total (mois)',cls:'g'},
-    {icon:'🏦',val:amo.toFixed(2)+'€',label:'Part AMO',cls:'b'},
-    {icon:'🏥',val:amc.toFixed(2)+'€',label:'Part AMC',cls:'b'},
-    {icon:'👤',val:partPat.toFixed(2)+'€',label:'Part Patient',cls:'o'},
-    {icon:'☀️',val:todayRev.toFixed(2)+'€',label:'Revenus du jour',cls:'o'},
-    {icon:'🏆',val:best.toFixed(2)+'€',label:'Meilleure facture',cls:'g'},
-    {icon:'📋',val:dre,label:'DRE requises',cls:'r'},
-    {icon:'📊',val:avg.toFixed(2)+'€',label:'Moy. par passage',cls:'b'},
-    ...(kmMois>0 ? [{icon:'🚗',val:kmMois+'km',label:'Km ce mois',cls:'b'}] : []),
-    ...(kmDeduction>0 ? [{icon:'💸',val:kmDeduction+'€',label:'Déd. fiscale km',cls:'g'}] : []),
-  ].map(k=>`<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
+  // ── KPIs Premium — avec accent top-border + delta tendance ──────────────
+  // Calcul delta mois précédent (estimation sur 15 jours glissants vs 15 précédents)
+  const midPoint = Math.floor(arr.length / 2);
+  const recentHalf = arr.slice(midPoint).reduce((s, r) => s + parseFloat(r.total || 0), 0);
+  const olderHalf  = arr.slice(0, midPoint).reduce((s, r) => s + parseFloat(r.total || 0), 0);
+  const deltaPct   = olderHalf > 0 ? ((recentHalf - olderHalf) / olderHalf * 100) : 0;
+  const deltaHtml  = (pct, suffix='') => {
+    if (Math.abs(pct) < 0.5) return `<span class="sc-delta nt">→ stable${suffix}</span>`;
+    return pct > 0
+      ? `<span class="sc-delta up">↑ +${Math.abs(pct).toFixed(1)}%${suffix}</span>`
+      : `<span class="sc-delta dn">↓ −${Math.abs(pct).toFixed(1)}%${suffix}</span>`;
+  };
 
-  // Graphique 30 jours
+  $('dash-kpis').innerHTML=[
+    {icon:'💶', val:total.toFixed(2)+'€',    label:'CA total (mois)',   cls:'g', delta:deltaHtml(deltaPct)},
+    {icon:'🏦', val:amo.toFixed(2)+'€',      label:'Part AMO',          cls:'b', delta:''},
+    {icon:'🏥', val:amc.toFixed(2)+'€',      label:'Part AMC',          cls:'b', delta:''},
+    {icon:'👤', val:partPat.toFixed(2)+'€',  label:'Part Patient',      cls:'o', delta:''},
+    {icon:'☀️', val:todayRev.toFixed(2)+'€', label:'Revenus du jour',   cls:'o', delta:''},
+    {icon:'🏆', val:best.toFixed(2)+'€',     label:'Meilleure facture', cls:'g', delta:''},
+    {icon:'📋', val:dre,                      label:'DRE requises',      cls:'r', delta: dre>0?'<span class="sc-delta dn">à vérifier</span>':'<span class="sc-delta up">OK</span>'},
+    {icon:'📊', val:avg.toFixed(2)+'€',      label:'Moy. par passage',  cls:'b', delta:''},
+    ...(kmMois>0 ? [{icon:'🚗', val:kmMois+'km', label:'Km ce mois', cls:'b', delta:''}] : []),
+    ...(kmDeduction>0 ? [{icon:'💸', val:kmDeduction+'€', label:'Déd. fiscale km', cls:'g', delta:''}] : []),
+  ].map(k=>`<div class="sc ${k.cls}">
+    <div class="si">${k.icon}</div>
+    <div class="sv">${k.val}</div>
+    <div class="sn">${k.label}</div>
+    ${k.delta ? k.delta : ''}
+  </div>`).join('');
+
+  // Graphique 30 jours — barres premium (today = vert, high = bleu fort, normal = bleu doux, low = foncé)
   const days30=[];
   for(let i=29;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days30.push(d.toISOString().split('T')[0]);}
   const vals=days30.map(d=>daily[d]||0);
   const maxVal=Math.max(...vals,1);
-  $('dash-chart').innerHTML=vals.map((v,i)=>`<div style="flex:1;background:${v>0?'var(--a)':'var(--b)'};border-radius:3px 3px 0 0;height:${Math.max(4,Math.round(v/maxVal*140))}px;opacity:${v>0?1:0.3};transition:height .3s;cursor:help" title="${days30[i]}: ${v.toFixed(2)}€"></div>`).join('');
+  const avgVal=vals.filter(v=>v>0).reduce((a,b)=>a+b,0)/Math.max(vals.filter(v=>v>0).length,1);
+  $('dash-chart').innerHTML=vals.map((v,i)=>{
+    const isToday = i===29;
+    const cls = isToday ? 'today' : v > avgVal*1.3 ? 'high' : v > 0 ? 'normal' : 'low';
+    return `<div class="dash-bar ${cls}" style="height:${Math.max(4,Math.round(v/maxVal*140))}px" title="${days30[i]}: ${v.toFixed(2)}€"></div>`;
+  }).join('');
   $('dash-chart-labels').innerHTML=days30.map((d,i)=>`<div style="flex:1;font-family:var(--fm);font-size:9px;color:var(--m);text-align:center;overflow:hidden">${i%7===0?d.slice(5):''}</div>`).join('');
 
-  // Top actes
+  // Top actes — version premium avec rang + barre gradient
   const topActes=Object.entries(actesFreq).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const maxCount=topActes[0]?.[1]||1;
   $('dash-top-actes').innerHTML=topActes.length
-    ? topActes.map(([code,count])=>`<div class="ar"><div class="ac">${code}</div><div class="an"><div style="height:6px;background:var(--a);border-radius:3px;width:${Math.round(count/maxCount*100)}%;transition:width .4s"></div></div><div class="at" style="color:var(--a)">${count}×</div></div>`).join('')
+    ? topActes.map(([code,count],i)=>`<div class="acte-row-prem">
+        <div class="acte-rank">${i+1}</div>
+        <div class="acte-code-pill">${code}</div>
+        <div class="acte-bar-track"><div class="acte-bar-fill-prem" style="width:${Math.round(count/maxCount*100)}%"></div></div>
+        <div class="acte-count-lbl">${count}×</div>
+      </div>`).join('')
     : '<div class="ai wa">Aucune cotation enregistrée</div>';
 
   // Bandeau km si données disponibles
@@ -247,14 +290,86 @@ function renderDashboard(arr) {
     if (kmMois > 0) kmBandeau.innerHTML = `🚗 <strong>${kmMois} km</strong> parcourus ce mois · déduction fiscale estimée : <strong style="color:#22c55e">${kmDeduction} €</strong> (barème 5CV 2025) · <span id="dash-km-patients" style="color:var(--m)"></span>`;
   }
 
-  // Prévision intelligente
+  // Prévision — anneau SVG + sidebar layout
   const forecast = forecastRevenue(daily);
+  const daysRemaining = daysInMonth - dayOfMonth;
   if (forecast) {
-    const trendIcon = forecast.trend>0 ? '📈 hausse' : forecast.trend<0 ? '📉 baisse' : '➡️ stable';
-    $('dash-prevision').innerHTML=`📈 Projection fin de mois : <strong>${forecast.projection.toFixed(2)} €</strong> · Tendance : ${trendIcon} · Moy/jour : <strong>${forecast.avg.toFixed(2)} €</strong> (${daysInMonth-dayOfMonth} jours restants)`;
+    const trendIcon = forecast.trend>0 ? '↑ hausse' : forecast.trend<0 ? '↓ baisse' : '→ stable';
+    const trendCls  = forecast.trend>0 ? 'style="color:var(--ok)"' : forecast.trend<0 ? 'style="color:var(--d)"' : '';
+    // Anneau : % de l'objectif (projection / objectif estimé = projection * 1.15)
+    const objectif = forecast.projection * 1.1;
+    const pctObj   = Math.min(100, Math.round((Object.values(daily).reduce((a,b)=>a+b,0) / objectif) * 100));
+    const circumf  = 2 * Math.PI * 34;
+    const dashOffset = circumf * (1 - pctObj/100);
+    $('dash-prevision').innerHTML=`
+      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+        <div class="dash-ring-wrap">
+          <svg viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="44" cy="44" r="34" fill="none" stroke="var(--b)" stroke-width="7"/>
+            <circle cx="44" cy="44" r="34" fill="none" stroke="var(--a)" stroke-width="7"
+              stroke-dasharray="${circumf.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"
+              stroke-linecap="round" style="transition:stroke-dashoffset .6s ease"/>
+          </svg>
+          <div class="dash-ring-label">
+            <div class="dash-ring-pct">${pctObj}%</div>
+            <div class="dash-ring-sub">objectif</div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div class="dash-prev-row"><span>Réalisé ce mois</span><strong>${Object.values(daily).reduce((a,b)=>a+b,0).toFixed(2)} €</strong></div>
+          <div class="dash-prev-row"><span>Projection fin mois</span><strong>${forecast.projection.toFixed(2)} €</strong></div>
+          <div class="dash-prev-row"><span>Moy/jour</span><strong>${forecast.avg.toFixed(2)} €</strong></div>
+          <div class="dash-prev-row"><span>Tendance</span><strong ${trendCls}>${trendIcon}</strong></div>
+          <div class="dash-prev-row"><span>Jours restants</span><strong>${daysRemaining}</strong></div>
+        </div>
+      </div>`;
   } else {
     const prevision = dayOfMonth>0 ? (monthRev/dayOfMonth)*daysInMonth : 0;
-    $('dash-prevision').innerHTML=`📈 Sur la base de vos <strong>${arr.length} cotation(s)</strong> ce mois, prévision : <strong>${prevision.toFixed(2)} €</strong> (${daysInMonth-dayOfMonth} jours restants)`;
+    $('dash-prevision').innerHTML=`
+      <div class="dash-ring-wrap" style="margin:0 auto 12px">
+        <svg viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="44" cy="44" r="34" fill="none" stroke="var(--b)" stroke-width="7"/>
+          <circle cx="44" cy="44" r="34" fill="none" stroke="var(--a)" stroke-width="7"
+            stroke-dasharray="213" stroke-dashoffset="180" stroke-linecap="round"/>
+        </svg>
+        <div class="dash-ring-label"><div class="dash-ring-pct" style="font-size:12px">—</div></div>
+      </div>
+      <div class="dash-prev-row"><span>Prévision</span><strong>${prevision.toFixed(2)} €</strong></div>
+      <div class="dash-prev-row"><span>Cotations</span><strong>${arr.length}</strong></div>`;
+  }
+
+  // Heatmap horaire — analyse répartition par tranche horaire
+  const heatHours = new Array(13).fill(0); // tranches 6h→18h (1h chacune)
+  arr.forEach(r => {
+    const h = parseInt((r.heure_soin||'').slice(0,2),10);
+    if (h>=6 && h<=18) heatHours[h-6]++;
+  });
+  const maxHeat = Math.max(...heatHours, 1);
+  const heatEl = $('dash-heatmap');
+  if (heatEl) {
+    heatEl.innerHTML = heatHours.map((v,i) => {
+      const intensity = v===0 ? 0 : v < maxHeat*0.25 ? 1 : v < maxHeat*0.5 ? 2 : v < maxHeat*0.75 ? 3 : 4;
+      return `<div class="hm-cell h${intensity}" title="${6+i}h : ${v} soins"></div>`;
+    }).join('');
+  }
+
+  // Chart footer stats
+  const peakVal = Math.max(...vals.filter(v=>v>0), 0);
+  const el_avg = document.getElementById('cs-avg');
+  const el_peak = document.getElementById('cs-peak');
+  const el_mpp = document.getElementById('cs-mpp');
+  const el_count = document.getElementById('cs-count');
+  if (el_avg) el_avg.textContent = avgVal > 0 ? avgVal.toFixed(2)+'€/j' : '—';
+  if (el_peak) el_peak.textContent = peakVal > 0 ? peakVal.toFixed(2)+'€' : '—';
+  if (el_mpp) el_mpp.textContent = arr.length ? avg.toFixed(2)+'€' : '—';
+  if (el_count) el_count.textContent = arr.length;
+
+  // Badge tendance graphique
+  const trendBadge = document.getElementById('dash-chart-trend-badge');
+  if (trendBadge) {
+    if (deltaPct > 1) { trendBadge.textContent='↑ hausse'; trendBadge.className='dash-section-badge'; }
+    else if (deltaPct < -1) { trendBadge.textContent='↓ baisse'; trendBadge.className='dash-section-badge r'; }
+    else { trendBadge.textContent='→ stable'; trendBadge.className='dash-section-badge b'; }
   }
 
   // Modules IA
@@ -265,6 +380,27 @@ function renderDashboard(arr) {
   renderAI(explanations, suggestions);
   const lossResult = computeLoss(arr);
   showLossAlert(lossResult);
+
+  // Alert strip — afficher si des pertes détectées
+  const alertStrip = document.getElementById('dash-alert-strip-loss');
+  const alertText  = document.getElementById('dash-alert-strip-text');
+  const lossBadge  = document.getElementById('dash-loss-badge');
+  if (alertStrip && lossResult.total >= 1) {
+    alertStrip.style.display = 'flex';
+    if (alertText) alertText.innerHTML = `<strong>${lossResult.total.toFixed(2)} €</strong> de revenus manqués détectés ce mois`;
+    if (lossBadge) lossBadge.style.display = 'inline-block';
+    // Badge sidebar nav Dashboard
+    const navDashBadge = document.getElementById('nav-dash-badge');
+    if (navDashBadge) { navDashBadge.style.display = 'inline-block'; navDashBadge.textContent = '−' + lossResult.total.toFixed(0) + '€'; }
+    // Toast alerte revenus
+    if (typeof showToast === 'function') {
+      showToast('warning', 'Revenus manqués détectés', `${lossResult.total.toFixed(2)} € non facturés ce mois`, 5000);
+    }
+  } else if (alertStrip) {
+    alertStrip.style.display = 'none';
+    const navDashBadge = document.getElementById('nav-dash-badge');
+    if (navDashBadge) navDashBadge.style.display = 'none';
+  }
 
   // Notice admin si applicable
   const isAdmin = typeof S !== 'undefined' && S?.role === 'admin';
@@ -305,11 +441,11 @@ function renderAnomalies(result) {
     return;
   }
   const avg=result.avg.toFixed(2), std=result.std.toFixed(2);
-  el.innerHTML=`<div style="font-size:12px;color:var(--m);margin-bottom:10px;font-family:var(--fm)">Moy/jour : ${avg}€ · Écart-type : ${std}€</div>`
-    +result.anomalies.slice(0,8).map(a=>{
-      if(a.type==='critical_low') return`<div class="ai er">🔴 Chute anormale le <strong>${a.date}</strong> : ${a.value.toFixed(2)}€ <span style="font-size:10px;opacity:.7">(score: ${a.score}σ)</span></div>`;
-      if(a.type==='critical_high') return`<div class="ai wa">🟠 Pic inhabituel le <strong>${a.date}</strong> : ${a.value.toFixed(2)}€ <span style="font-size:10px;opacity:.7">(score: ${a.score}σ)</span></div>`;
-      return`<div class="ai in">🟡 Activité faible le <strong>${a.date}</strong> : ${a.value.toFixed(2)}€</div>`;
+  el.innerHTML=`<div style="font-size:11px;color:var(--m);margin-bottom:10px;font-family:var(--fm)">Moy/jour : ${avg}€ · Écart-type : ${std}€</div>`
+    +result.anomalies.slice(0,6).map(a=>{
+      if(a.type==='critical_low') return`<div class="anomaly-prem"><div class="anomaly-prem-indicator cr"></div><div><div class="anomaly-prem-title">Chute anormale — ${a.date}</div><div class="anomaly-prem-desc">${a.value.toFixed(2)}€ · score ${a.score}σ en dessous de la moyenne</div></div></div>`;
+      if(a.type==='critical_high') return`<div class="anomaly-prem" style="background:rgba(255,181,71,.04);border-color:rgba(255,181,71,.18)"><div class="anomaly-prem-indicator hi"></div><div><div class="anomaly-prem-title" style="color:var(--w)">Pic inhabituel — ${a.date}</div><div class="anomaly-prem-desc">${a.value.toFixed(2)}€ · vérifier conformité NGAP</div></div></div>`;
+      return`<div class="anomaly-prem" style="background:rgba(79,168,255,.04);border-color:rgba(79,168,255,.18)"><div class="anomaly-prem-indicator lo"></div><div><div class="anomaly-prem-title" style="color:var(--a2)">Activité faible — ${a.date}</div><div class="anomaly-prem-desc">${a.value.toFixed(2)}€ · journée sous la moyenne habituelle</div></div></div>`;
     }).join('');
 }
 
@@ -390,27 +526,39 @@ function suggestOptimizations(rows) {
 function renderAI(explanations, suggestions) {
   const el=$('dash-ai');
   if (!el) return;
-  let html='';
 
-  if (explanations.length) {
-    html+='<div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin-bottom:8px">Explications anomalies</div>';
-    explanations.forEach(e=>{
-      const icon=e.type==='critical_low'?'🔴':e.type==='critical_high'?'🟠':'🟡';
-      html+=`<div class="ai wa" style="margin-bottom:6px">${icon} <strong>${e.date}</strong> — ${e.reason}${e.actesCount?' ('+e.actesCount+' acte(s))':''}</div>`;
-      e.insights.forEach(ins=>{ html+=`<div class="ai in" style="margin-bottom:4px;margin-left:20px">💡 ${ins}</div>`; });
-    });
-  }
+  // Classifier les suggestions par colonne thématique
+  const cotations = suggestions.filter(s => ['lost_revenue','optimization'].includes(s.type));
+  const errors    = suggestions.filter(s => s.type === 'error');
+  const checks    = suggestions.filter(s => s.type === 'check');
 
-  if (suggestions.length) {
-    html+='<div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--m);text-transform:uppercase;margin:14px 0 8px">Optimisations NGAP détectées</div>';
-    suggestions.slice(0,8).forEach(s=>{
-      const icon=s.type==='error'?'❌':s.type==='lost_revenue'?'💸':s.type==='check'?'🔍':'💡';
-      html+=`<div class="ai ${s.type==='error'?'er':s.type==='lost_revenue'?'wa':'in'}" style="margin-bottom:6px">${icon} ${s.msg}</div>`;
-    });
-  }
+  // Construire les lignes des colonnes
+  const colCot = cotations.length
+    ? cotations.slice(0,3).map(s=>`<p>💸 ${s.msg}</p>`).join('')
+    : '<p style="color:var(--ok)">✅ Aucune optimisation manquante détectée</p>';
 
-  if (!html) html='<div class="ai su">✅ Aucun problème ou optimisation détecté</div>';
-  el.innerHTML=html;
+  const anomBullets = explanations.length
+    ? explanations.slice(0,3).map(e=>`<p>${e.type==='critical_low'?'🔴':e.type==='critical_high'?'🟠':'🟡'} <strong>${e.date}</strong> — ${e.reason}</p>`).join('')
+    : '<p style="color:var(--ok)">✅ Aucune anomalie détectée</p>';
+
+  const conformBullets = errors.length || checks.length
+    ? [...errors.slice(0,2), ...checks.slice(0,2)].map(s=>`<p>${s.type==='error'?'❌':'🔍'} ${s.msg}</p>`).join('')
+    : '<p style="color:var(--ok)">✅ 100 % des cotations conformes</p>';
+
+  el.innerHTML = `<div class="dash-ia-grid">
+    <div class="dash-ia-col g">
+      <div class="dash-ia-col-lbl">Cotations</div>
+      ${colCot}
+    </div>
+    <div class="dash-ia-col b">
+      <div class="dash-ia-col-lbl">Anomalies</div>
+      ${anomBullets}
+    </div>
+    <div class="dash-ia-col o">
+      <div class="dash-ia-col-lbl">Conformité</div>
+      ${conformBullets}
+    </div>
+  </div>`;
 }
 
 /* ============================================================
@@ -613,21 +761,25 @@ async function loadDashCabinet() {
     { icon: '📅', val: `~${(caEstime * 22).toFixed(0)} €`, label: 'Projection mensuelle', cls: 'o' },
   ].map(k => `<div class="sc ${k.cls}"><div class="si">${k.icon}</div><div class="sv">${k.val}</div><div class="sn">${k.label}</div></div>`).join('');
 
-  // Revenus par IDE (estimation basée sur les membres)
+  // Revenus par IDE — avec avatars colorés
   if (revsEl) {
+    const avatarColors = ['col-a', 'col-b', 'col-c', 'col-d', 'col-e'];
     revsEl.innerHTML = members.map((m, i) => {
-      const colors = ['var(--a)', 'var(--w)', '#4fa8ff', '#ff6b6b'];
-      const c = colors[i % colors.length];
+      const colorVar = ['var(--a)', 'var(--a2)', 'var(--w)', 'var(--d)', 'var(--ok)'][i % 5];
       const pct = Math.round(100 / members.length);
-      return `<div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:600">${m.prenom} ${m.nom}</span>
-          <span style="font-size:13px;color:${c}">~${(caEstime).toFixed(0)} €/jour</span>
+      const initials = ((m.prenom||'').charAt(0) + (m.nom||'').charAt(0)).toUpperCase();
+      return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div class="pt-avatar ${avatarColors[i % 5]}" style="width:36px;height:36px;font-size:13px">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+            <span style="font-size:13px;font-weight:600">${m.prenom} ${m.nom}</span>
+            <span style="font-size:13px;color:${colorVar};font-family:var(--fm);font-weight:600">~${(caEstime).toFixed(0)} €/j</span>
+          </div>
+          <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${colorVar};border-radius:3px;transition:width .5s"></div>
+          </div>
+          <div style="font-size:10px;color:var(--m);margin-top:3px;font-family:var(--fm)">${m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre'}</div>
         </div>
-        <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${c};border-radius:4px;transition:width .5s"></div>
-        </div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px;font-family:var(--fm)">${m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre'}</div>
       </div>`;
     }).join('') || '<div class="ai in" style="font-size:12px">Aucun membre.</div>';
   }
@@ -739,10 +891,20 @@ function runCabinetCATarget() {
 /* Déclencher le dashboard cabinet quand APP.cabinet change */
 if (typeof APP !== 'undefined' && APP.on) {
   APP.on('cabinet', () => {
-    // Si le dashboard est visible, recharger la section cabinet
     const dashBody = document.getElementById('dash-body');
     if (dashBody && dashBody.style.display !== 'none') {
       loadDashCabinet();
     }
   });
+}
+
+/* ── setDashPeriod — gère la période pill ── */
+function setDashPeriod(btn, period) {
+  // Mettre à jour le select caché
+  const sel = document.getElementById('dash-period');
+  if (sel) sel.value = period;
+  // Mettre à jour les boutons pill
+  document.querySelectorAll('.dpp-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadDash();
 }
