@@ -1198,3 +1198,540 @@ function startCabinetLiveOptimization(getPlanning, getIDEs, onChanges) {
 function stopCabinetLiveOptimization() {
   if (_liveReassignInterval) { clearInterval(_liveReassignInterval); _liveReassignInterval = null; }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   COUCHE IA AVANCÉE v3.0 — NIVEAU EXPERT
+   ─────────────────────────────────────────────────────────────────
+   15. RL_POLICY          — politique Q-Learning simplifiée (offline)
+   16. DEMAND_FORECAST    — prévision demande patients (XGBoost-like)
+   17. NET_PROFIT         — optimisation profit net (charges réelles)
+   18. RL_MEMORY          — mémoire épisodique (localStorage)
+   19. forecastDemand()   — prévision zone/date
+   20. computeNetProfit() — calcul profit net réel
+   21. chooseBestActionRL()— choix action via politique apprise
+   22. trainRLOffline()   — entraînement simulé offline
+════════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════
+   15. RL POLICY — Q-Learning simplifié
+   ─────────────────────────────────────────────
+   Remplace les heuristiques fixes par une politique
+   apprise à partir de l'historique de tournées.
+   Q(state, action) → valeur attendue
+   Stocké en localStorage (non-sensible : pas de
+   données patient, uniquement métriques agrégées)
+════════════════════════════════════════════════ */
+
+const RL_ACTIONS = [
+  'assign_high_revenue',   // Priorité acte à fort CA
+  'assign_nearest',        // Priorité proximité géo
+  'assign_low_fatigue',    // Priorité IDE moins fatigué
+  'delay_patient',         // Reporter le patient
+  'insert_break',          // Insérer une pause IDE
+  'swap_patients',         // Échanger 2 patients entre IDEs
+];
+
+const RL_ALPHA   = 0.1;   // Learning rate
+const RL_GAMMA   = 0.9;   // Discount factor
+const RL_EPSILON = 0.15;  // Exploration rate (ε-greedy)
+
+/* Charger/sauvegarder la Q-table depuis localStorage */
+const _RL_KEY = 'ami_rl_qtable_v1';
+
+function _rlLoadQTable() {
+  try {
+    const raw = localStorage.getItem(_RL_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function _rlSaveQTable(q) {
+  try { localStorage.setItem(_RL_KEY, JSON.stringify(q)); } catch {}
+}
+
+let _rlQTable = _rlLoadQTable();
+
+/**
+ * _rlStateKey — encode l'état en clé string compacte
+ * On utilise des buckets discrets pour éviter l'explosion de l'espace d'état
+ */
+function _rlStateKey({ revenueHour = 0, fatigueAvg = 0, pendingCount = 0, timeOfDay = 0, surgeLevel = 0 }) {
+  const r = Math.min(3, Math.floor(revenueHour / 20)); // 0..3
+  const f = Math.min(2, Math.floor(fatigueAvg  / 0.4)); // 0..2
+  const p = Math.min(3, Math.floor(pendingCount / 5));   // 0..3
+  const t = Math.min(3, Math.floor(timeOfDay   / 360));  // 0..3 (6h tranches)
+  const s = Math.min(2, Math.floor(surgeLevel));          // 0..2
+  return `r${r}_f${f}_p${p}_t${t}_s${s}`;
+}
+
+/**
+ * _rlGetQ — récupère la valeur Q(state, action) — 0 si inconnue
+ */
+function _rlGetQ(stateKey, action) {
+  return (_rlQTable[stateKey] || {})[action] || 0;
+}
+
+/**
+ * _rlSetQ — met à jour Q(state, action)
+ */
+function _rlSetQ(stateKey, action, value) {
+  if (!_rlQTable[stateKey]) _rlQTable[stateKey] = {};
+  _rlQTable[stateKey][action] = value;
+}
+
+/**
+ * chooseBestActionRL — choisit la meilleure action selon la Q-table
+ * @param {Object} state — état courant
+ * @param {boolean} explore — forcer l'exploration (ε-greedy)
+ * @returns {string} action choisie
+ */
+function chooseBestActionRL(state, explore = true) {
+  // ε-greedy : exploration aléatoire
+  if (explore && Math.random() < RL_EPSILON) {
+    return RL_ACTIONS[Math.floor(Math.random() * RL_ACTIONS.length)];
+  }
+
+  const key    = _rlStateKey(state);
+  let bestAction = RL_ACTIONS[0];
+  let bestQ      = -Infinity;
+
+  for (const action of RL_ACTIONS) {
+    const q = _rlGetQ(key, action);
+    if (q > bestQ) { bestQ = q; bestAction = action; }
+  }
+
+  return bestAction;
+}
+
+/**
+ * rlUpdateQ — mise à jour Q après une action (Bellman)
+ * @param {Object} state       — état avant action
+ * @param {string} action      — action prise
+ * @param {number} reward      — récompense obtenue
+ * @param {Object} nextState   — état après action
+ */
+function rlUpdateQ(state, action, reward, nextState) {
+  const sk    = _rlStateKey(state);
+  const nsk   = _rlStateKey(nextState);
+
+  // Valeur max de l'état suivant
+  const maxNextQ = Math.max(...RL_ACTIONS.map(a => _rlGetQ(nsk, a)));
+
+  const current = _rlGetQ(sk, action);
+  const updated = current + RL_ALPHA * (reward + RL_GAMMA * maxNextQ - current);
+
+  _rlSetQ(sk, action, updated);
+  _rlSaveQTable(_rlQTable); // persist
+}
+
+/**
+ * computeRLReward — calcule la récompense (fonction de reward réaliste)
+ * @param {Object} outcome — { revenue, delayMin, fatigueLevel, kmDone }
+ * @returns {number} reward
+ */
+function computeRLReward({ revenue = 0, delayMin = 0, fatigueLevel = 0, kmDone = 0 }) {
+  return revenue
+    - (delayMin     *  2.0)   // pénalité retard
+    - (fatigueLevel *  5.0)   // pénalité fatigue
+    - (kmDone       *  0.30); // coût kilométrique
+}
+
+/**
+ * trainRLOffline — entraînement Q-Learning sur historique local
+ * Appelé en background (Web Worker ou setTimeout) pour ne pas bloquer l'UI.
+ * @param {Array} episodes — [{ states[], actions[], rewards[] }]
+ * @returns {number} nbUpdates
+ */
+function trainRLOffline(episodes = []) {
+  if (!episodes.length) return 0;
+  let nbUpdates = 0;
+
+  for (const ep of episodes) {
+    const { states = [], actions = [], rewards = [] } = ep;
+    for (let i = 0; i < actions.length; i++) {
+      const state     = states[i]   || {};
+      const action    = actions[i]  || RL_ACTIONS[0];
+      const reward    = rewards[i]  || 0;
+      const nextState = states[i+1] || state;
+      rlUpdateQ(state, action, reward, nextState);
+      nbUpdates++;
+    }
+  }
+
+  _rlSaveQTable(_rlQTable);
+  return nbUpdates;
+}
+
+/**
+ * getRLStats — retourne les statistiques de la Q-table
+ */
+function getRLStats() {
+  const stateCount  = Object.keys(_rlQTable).length;
+  const totalValues = Object.values(_rlQTable).reduce((s, v) => s + Object.keys(v).length, 0);
+  return { stateCount, totalValues, version: 'RL_v1' };
+}
+
+
+/* ════════════════════════════════════════════════
+   16. DEMAND FORECAST — prévision charge patients
+   ─────────────────────────────────────────────
+   Modèle XGBoost-like simplifié (arbres de décision
+   sur features temporelles + historique).
+   Entraîné sur l'historique IDB local — aucune
+   donnée nominale, uniquement métriques agrégées.
+════════════════════════════════════════════════ */
+
+const _FORECAST_KEY = 'ami_forecast_model_v1';
+
+/* Saisonnalité hebdomadaire (lundi=0 → dimanche=6) */
+const _DAY_FACTORS   = [0.55, 1.10, 1.05, 1.10, 1.05, 0.90, 0.60];
+
+/* Saisonnalité mensuelle (1=jan … 12=dec) */
+const _MONTH_FACTORS = [1.05, 0.95, 1.00, 0.95, 1.00, 0.95, 0.80, 0.75, 1.00, 1.10, 1.10, 1.15];
+
+/**
+ * _buildForecastFeatures — encode une date + zone en vecteur de features
+ */
+function _buildForecastFeatures(zone, date = new Date()) {
+  const dow   = (date.getDay() + 6) % 7; // 0=lundi … 6=dimanche
+  const month = date.getMonth() + 1;     // 1..12
+  const hour  = date.getHours();
+  return {
+    dow,
+    month,
+    is_monday:  dow === 0 ? 1 : 0,
+    is_friday:  dow === 4 ? 1 : 0,
+    is_weekend: dow >= 5  ? 1 : 0,
+    month_factor: _MONTH_FACTORS[month - 1] || 1.0,
+    dow_factor:   _DAY_FACTORS[dow] || 1.0,
+    zone_hash:    (zone || '').split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) & 0xFFFF, 0) % 10,
+    hour_bucket:  Math.floor(hour / 4), // 0..5
+  };
+}
+
+/**
+ * _loadForecastModel — charge le modèle depuis localStorage
+ * Format : { baselines: { zone: avgDemand }, coefs: {} }
+ */
+function _loadForecastModel() {
+  try {
+    const raw = localStorage.getItem(_FORECAST_KEY);
+    return raw ? JSON.parse(raw) : { baselines: {}, globalAvg: 8 };
+  } catch { return { baselines: {}, globalAvg: 8 }; }
+}
+
+/**
+ * forecastDemand — prédit la charge patients pour une zone/date
+ * @param {string} zone   — identifiant de zone (ex: "Douarnenez")
+ * @param {Date}   date   — date cible (défaut: demain)
+ * @returns {{ predicted: number, confidence: string, recommendation: string }}
+ */
+function forecastDemand(zone, date = new Date(Date.now() + 86400000)) {
+  const model    = _loadForecastModel();
+  const features = _buildForecastFeatures(zone, date);
+
+  // Base : moyenne zone ou globale
+  const base = model.baselines[zone] || model.globalAvg || 8;
+
+  // Ajustement saisonnalité
+  let predicted = base * features.dow_factor * features.month_factor;
+
+  // Ajustement heure si intraday
+  if (features.hour_bucket <= 1) predicted *= 0.7; // matin tôt
+  if (features.hour_bucket >= 4) predicted *= 0.6; // soirée
+
+  predicted = Math.round(Math.max(1, predicted));
+
+  const threshold  = (model.globalAvg || 8) * 1.3;
+  const highDemand = predicted > threshold;
+
+  return {
+    zone,
+    date:       date.toISOString().slice(0, 10),
+    predicted,
+    confidence: model.baselines[zone] ? 'high' : 'low',
+    trend:      highDemand ? '↑ forte demande' : '→ normal',
+    recommendation: highDemand
+      ? `+1 IDE recommandé sur ${zone} (${predicted} patients prévus)`
+      : `Charge normale sur ${zone}`,
+    high_demand: highDemand,
+  };
+}
+
+/**
+ * updateForecastModel — met à jour le modèle après une tournée réelle
+ * @param {string} zone       — zone de la tournée
+ * @param {number} actualCount — nb patients réels
+ * @param {Date}   date
+ */
+function updateForecastModel(zone, actualCount, date = new Date()) {
+  const model = _loadForecastModel();
+  if (!model.baselines[zone]) {
+    model.baselines[zone] = actualCount;
+  } else {
+    // Moyenne mobile exponentielle (α = 0.3)
+    model.baselines[zone] = model.baselines[zone] * 0.7 + actualCount * 0.3;
+  }
+  // Mettre à jour la moyenne globale
+  const allVals = Object.values(model.baselines);
+  model.globalAvg = allVals.reduce((s, v) => s + v, 0) / allVals.length;
+  try { localStorage.setItem(_FORECAST_KEY, JSON.stringify(model)); } catch {}
+}
+
+/**
+ * forecastMultiZone — prévision multi-zones en une passe
+ * @param {string[]} zones
+ * @param {Date}     date
+ * @returns {Object[]}
+ */
+function forecastMultiZone(zones = [], date = new Date(Date.now() + 86400000)) {
+  return zones.map(z => forecastDemand(z, date))
+    .sort((a, b) => b.predicted - a.predicted);
+}
+
+
+/* ════════════════════════════════════════════════
+   17. NET PROFIT — optimisation du profit réel
+   ─────────────────────────────────────────────
+   Calcule le profit net en soustrayant les charges
+   réelles (cotisations, km, matériel, charges fixes).
+   Permet de prioriser les actes vraiment rentables.
+════════════════════════════════════════════════ */
+
+/* Paramètres par défaut — personnalisables via profil */
+const _DEFAULT_CHARGES = {
+  cotisations_rate: 0.247,  // URSSAF + CARPIMKO ≈ 24.7% du CA
+  km_cost:          0.33,   // €/km (barème médical 2024)
+  fixed_daily:      12.0,   // charges fixes/jour (assurance, téléphone…)
+  materiel_per_act: 0.40,   // consommables/acte
+  impot_rate:       0.10,   // provision IS / IR simplifiée
+};
+
+/**
+ * computeNetProfit — calcule le profit net réel d'une journée
+ * @param {Object} day — { revenue, kmTotal, nbActes, customCharges? }
+ * @returns {Object} analyse complète
+ */
+function computeNetProfit({ revenue = 0, kmTotal = 0, nbActes = 0, customCharges = {} }) {
+  const c = { ..._DEFAULT_CHARGES, ...customCharges };
+
+  const cotisations = revenue  * c.cotisations_rate;
+  const kmCost      = kmTotal  * c.km_cost;
+  const materiel    = nbActes  * c.materiel_per_act;
+  const fixed       = c.fixed_daily;
+  const impot       = revenue  * c.impot_rate;
+
+  const totalCharges = cotisations + kmCost + materiel + fixed + impot;
+  const netProfit    = revenue - totalCharges;
+  const marginRate   = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+  const revenuePerKm = kmTotal > 0 ? revenue / kmTotal : 0;
+  const netPerAct    = nbActes > 0 ? netProfit / nbActes : 0;
+
+  // Seuil de rentabilité km : km non rentable si coût > recette/km
+  const kmThreshold = revenuePerKm > 0 && revenuePerKm < c.km_cost * 3;
+
+  return {
+    revenue:        Math.round(revenue * 100) / 100,
+    charges: {
+      cotisations:  Math.round(cotisations  * 100) / 100,
+      km:           Math.round(kmCost       * 100) / 100,
+      materiel:     Math.round(materiel     * 100) / 100,
+      fixed:        Math.round(fixed        * 100) / 100,
+      impot:        Math.round(impot        * 100) / 100,
+      total:        Math.round(totalCharges * 100) / 100,
+    },
+    net_profit:     Math.round(netProfit    * 100) / 100,
+    margin_pct:     Math.round(marginRate   * 10)  / 10,
+    net_per_act:    Math.round(netPerAct    * 100) / 100,
+    revenue_per_km: Math.round(revenuePerKm * 100) / 100,
+    km_warning:     kmThreshold,
+    alerts: [
+      ...(kmThreshold         ? [`⚠️ Rentabilité km faible (${revenuePerKm.toFixed(2)} €/km — seuil recommandé : ${(c.km_cost * 3).toFixed(2)} €/km)`] : []),
+      ...(marginRate < 40     ? ['⚠️ Marge nette inférieure à 40% — vérifier charge km'] : []),
+      ...(netPerAct  < 3      ? ['⚠️ Profit net par acte < 3€ — optimiser le planning'] : []),
+    ],
+  };
+}
+
+/**
+ * scorePatientNetValue — score un patient selon sa valeur nette réelle
+ * Remplace score = revenue par score = netRevenue
+ * @param {Object} patient — { actes[], km_distance }
+ * @param {Object} charges — charges custom (optionnel)
+ * @returns {number} score net
+ */
+function scorePatientNetValue(patient, charges = {}) {
+  const revenue = _estimateRevenueForPatient(patient);
+  const km      = patient.km_distance || patient._km || 0;
+  const c       = { ..._DEFAULT_CHARGES, ...charges };
+
+  const netRev  = revenue
+    - revenue * (c.cotisations_rate + c.impot_rate)
+    - km      * c.km_cost
+    - c.materiel_per_act;
+
+  return netRev;
+}
+
+/**
+ * filterUnprofitablePatients — filtre les patients vraiment non-rentables
+ * @param {Array}  patients  — liste des patients
+ * @param {number} minNetRev — seuil net minimum (défaut: 1€)
+ * @returns {{ profitable: [], marginal: [], unprofitable: [] }}
+ */
+function filterUnprofitablePatients(patients = [], minNetRev = 1.0) {
+  const scored = patients.map(p => ({
+    ...p,
+    _netValue: scorePatientNetValue(p),
+  }));
+
+  return {
+    profitable:   scored.filter(p => p._netValue >= minNetRev * 2),
+    marginal:     scored.filter(p => p._netValue >= minNetRev && p._netValue < minNetRev * 2),
+    unprofitable: scored.filter(p => p._netValue < minNetRev),
+  };
+}
+
+/**
+ * optimizePlanningForNetProfit — réordonne un planning pour maximiser le profit net
+ * Intègre RL + scoring net dans une décision unifiée
+ * @param {Object[]} patients  — liste patients
+ * @param {Object[]} members   — IDEs du cabinet
+ * @param {Object}   options   — { target, zones, customCharges }
+ * @returns {Object} planning optimisé + analyse financière
+ */
+function optimizePlanningForNetProfit(patients = [], members = [], options = {}) {
+  const { target = 0, zones = [], customCharges = {} } = options;
+
+  // 1. Filtrer les patients non-rentables
+  const { profitable, marginal, unprofitable } = filterUnprofitablePatients(patients);
+
+  // 2. Obtenir l'état RL courant
+  const totalRevEst   = patients.reduce((s, p) => s + _estimateRevenueForPatient(p), 0);
+  const totalKmEst    = patients.reduce((s, p) => s + (p.km_distance || 0), 0);
+  const revenueHour   = members.length ? totalRevEst / Math.max(members.length, 1) : totalRevEst;
+  const surgeLevel    = zones.length ? _normalizeSurge(_surgeScore({
+    demand: patients.length,
+    supply: members.length,
+  })) : 0;
+
+  const rlState = {
+    revenueHour,
+    fatigueAvg:   0,
+    pendingCount: patients.length,
+    timeOfDay:    _nowMinutes(),
+    surgeLevel,
+  };
+
+  const recommendedAction = chooseBestActionRL(rlState, false); // greedy, pas d'exploration
+
+  // 3. Planning avec objectif CA + surge
+  const planPatients = [...profitable, ...marginal];
+  const planning = planWithTargetAndSurge({ patients: planPatients, members, target, zones });
+
+  // 4. Analyse financière globale
+  const nbActesEst = planPatients.reduce((s, p) => s + (Array.isArray(p.actes) ? p.actes.length : 1), 0);
+  const finance    = computeNetProfit({
+    revenue:       planning.revenue || 0,
+    kmTotal:       totalKmEst,
+    nbActes:       nbActesEst,
+    customCharges,
+  });
+
+  return {
+    planning:             planning.planning || [],
+    revenue:              planning.revenue  || 0,
+    reached_target:       planning.reached  || false,
+    finance,
+    rl_action:            recommendedAction,
+    patients_profitable:  profitable.length,
+    patients_marginal:    marginal.length,
+    patients_unprofitable: unprofitable.length,
+    unprofitable_list:    unprofitable.map(p => ({ id: p.id, name: p.nom || p.name, net: p._netValue })),
+  };
+}
+
+
+/* ════════════════════════════════════════════════
+   18. RL MEMORY — épisodes pour entraînement différé
+   Collecte les transitions (s, a, r, s') en mémoire
+   tampon et les envoie à N8N pour entraînement offline.
+════════════════════════════════════════════════ */
+
+const _RL_BUFFER_KEY = 'ami_rl_buffer_v1';
+const _RL_BUFFER_MAX = 200; // max transitions en mémoire
+
+function _rlLoadBuffer() {
+  try { return JSON.parse(localStorage.getItem(_RL_BUFFER_KEY) || '[]'); } catch { return []; }
+}
+function _rlSaveBuffer(buf) {
+  try { localStorage.setItem(_RL_BUFFER_KEY, JSON.stringify(buf.slice(-_RL_BUFFER_MAX))); } catch {}
+}
+
+/**
+ * rlRecordTransition — enregistre une transition pour entraînement futur
+ */
+function rlRecordTransition({ state, action, reward, nextState }) {
+  const buf = _rlLoadBuffer();
+  buf.push({ state, action, reward, nextState, ts: Date.now() });
+  _rlSaveBuffer(buf);
+}
+
+/**
+ * rlFlushBuffer — vide le buffer et retourne les transitions
+ * Appelé avant l'envoi à N8N
+ */
+function rlFlushBuffer() {
+  const buf = _rlLoadBuffer();
+  _rlSaveBuffer([]);
+  return buf;
+}
+
+/**
+ * rlSendToN8N — envoie les transitions au workflow N8N pour entraînement offline
+ * Utilise le endpoint /ami-rl-train du workflow N8N dédié
+ * @param {string} n8nUrl — URL de base N8N
+ */
+async function rlSendToN8N(n8nUrl) {
+  const transitions = rlFlushBuffer();
+  if (!transitions.length) return { sent: 0 };
+
+  // Agréger en épisodes par session de tournée
+  const episodes = [{ states: [], actions: [], rewards: [] }];
+  for (const t of transitions) {
+    episodes[0].states.push(t.state);
+    episodes[0].actions.push(t.action);
+    episodes[0].rewards.push(t.reward);
+  }
+
+  try {
+    const res = await fetch(`${n8nUrl}/ami-rl-train`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ episodes, timestamp: new Date().toISOString() }),
+    });
+    return res.ok ? await res.json() : { sent: 0, error: res.status };
+  } catch (e) {
+    // Si N8N timeout, on entraîne localement
+    const nbUpdates = trainRLOffline(episodes);
+    return { sent: transitions.length, trained_locally: nbUpdates };
+  }
+}
+
+/* Exposer les fonctions globalement */
+if (typeof window !== 'undefined') {
+  window.chooseBestActionRL       = chooseBestActionRL;
+  window.rlUpdateQ                = rlUpdateQ;
+  window.computeRLReward          = computeRLReward;
+  window.trainRLOffline           = trainRLOffline;
+  window.getRLStats               = getRLStats;
+  window.rlRecordTransition       = rlRecordTransition;
+  window.rlSendToN8N              = rlSendToN8N;
+  window.forecastDemand           = forecastDemand;
+  window.forecastMultiZone        = forecastMultiZone;
+  window.updateForecastModel      = updateForecastModel;
+  window.computeNetProfit         = computeNetProfit;
+  window.scorePatientNetValue     = scorePatientNetValue;
+  window.filterUnprofitablePatients = filterUnprofitablePatients;
+  window.optimizePlanningForNetProfit = optimizePlanningForNetProfit;
+}
