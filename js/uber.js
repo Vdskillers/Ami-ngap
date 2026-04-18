@@ -159,6 +159,8 @@ function stopLiveTracking() {
    1. Auto-cotation (API NGAP + fallback local)
    2. Import cotation dans le carnet patient (IDB)
    3. Enregistrement km incrémental dans le journal kilométrique
+   Toutes les dépendances IDB/enc/dec sont appelées de façon
+   défensive (typeof guard) pour ne jamais bloquer le rendu.
    ============================================================ */
 async function _autoCoterEtImporterPatient(p) {
   const today    = new Date().toISOString();
@@ -166,130 +168,142 @@ async function _autoCoterEtImporterPatient(p) {
   const u        = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
   /* ── 1. AUTO-COTATION ── */
-  if (!p._cotation?.validated) {
-    let actesRecurrents = '';
-    try {
-      if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-        const rows = await _idbGetAll(PATIENTS_STORE);
-        const row  = rows.find(r => r.id === p.patient_id || r.id === p.id);
-        if (row) {
-          const pat = { ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}) };
-          if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
-        }
-      }
-    } catch (_) {}
-
-    const texteImport = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
-    const _pathoConverti = p.pathologies
-      ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(p.pathologies) : p.pathologies)
-      : '';
-    const texte = actesRecurrents
-      ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
-      : (texteImport || _pathoConverti);
-
-    if (texte) {
-      /* Fallback local immédiat */
-      let cot = (typeof autoCotationLocale === 'function')
-        ? autoCotationLocale(texte)
-        : { actes: [], total: 0 };
-      /* Tenter l'API en arrière-plan */
+  try {
+    if (!p._cotation?.validated) {
+      let actesRecurrents = '';
       try {
-        const d = await (typeof apiCall === 'function' ? apiCall('/webhook/ami-calcul', {
-          mode: 'ngap', texte,
-          infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
-          adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
-          date_soin: todayStr,
-          heure_soin: p.heure_soin || p.heure_preferee || '',
-          _live_auto: true,
-        }) : Promise.reject('no apiCall'));
-        if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
-      } catch { /* silencieux */ }
-      p._cotation = { actes: cot.actes || [], total: parseFloat(cot.total || 0), auto: true, validated: true };
+        if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          const rows = await _idbGetAll(PATIENTS_STORE);
+          const row  = rows.find(r => r.id === p.patient_id || r.id === p.id);
+          if (row && typeof _dec === 'function') {
+            const pat = _dec(row._data) || {};
+            if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
+          }
+        }
+      } catch (_e) {}
+
+      const texteImport  = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
+      const _pathoConv   = p.pathologies
+        ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(p.pathologies) : p.pathologies)
+        : '';
+      const texte = actesRecurrents
+        ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
+        : (texteImport || _pathoConv);
+
+      if (texte) {
+        let cot = (typeof autoCotationLocale === 'function')
+          ? autoCotationLocale(texte) : { actes: [], total: 0 };
+        try {
+          const d = await (typeof apiCall === 'function' ? apiCall('/webhook/ami-calcul', {
+            mode: 'ngap', texte,
+            infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
+            adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
+            date_soin: todayStr,
+            heure_soin: p.heure_soin || p.heure_preferee || '',
+            _live_auto: true,
+          }) : Promise.reject('no apiCall'));
+          if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
+        } catch (_e) { /* silencieux — fallback local déjà prêt */ }
+        p._cotation = { actes: cot.actes || [], total: parseFloat(cot.total || 0), auto: true, validated: true };
+      }
     }
-  }
+  } catch (_e) { console.warn('[AMI] Cotation auto KO:', _e?.message); }
 
   /* ── 2. IMPORT COTATION → CARNET PATIENT (IDB) ── */
-  if (p._cotation?.validated) {
-    try {
-      if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-        const rows = await _idbGetAll(PATIENTS_STORE);
-        let row    = rows.find(r => r.id === p.patient_id || r.id === p.id);
-        let pat;
-        if (row) {
-          pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}) };
-        } else {
-          const newId = p.patient_id || p.id || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
-          const parts = (p.nom ? [p.prenom||'', p.nom] : (p.description || p.texte || 'Patient').split(' '));
-          pat = {
-            id: newId,
-            nom:    p.nom    || parts.slice(-1)[0]           || 'Patient',
-            prenom: p.prenom || parts.slice(0,-1).join(' ')  || '',
-            adresse: p.adresse || p.addressFull || '',
-            lat: p.lat || null, lng: p.lng || null,
-            created_at: today, updated_at: today, cotations: [],
-          };
-        }
-        if (!pat.cotations) pat.cotations = [];
-        pat.cotations.push({
-          date:   today,
-          actes:  p._cotation.actes || [],
-          total:  parseFloat(p._cotation.total || 0),
-          soin:   (p.description || p.texte || '').slice(0, 120),
-          source: 'tournee_live',
-        });
-        pat.updated_at = today;
-        if (typeof _idbPut === 'function' && typeof _enc === 'function') {
-          await _idbPut(PATIENTS_STORE, {
-            id: pat.id, nom: pat.nom, prenom: pat.prenom,
-            _data: _enc(pat), updated_at: today,
-          });
-        }
+  try {
+    if (p._cotation?.validated
+        && typeof _idbGetAll === 'function'
+        && typeof _idbPut    === 'function'
+        && typeof _enc       === 'function'
+        && typeof PATIENTS_STORE !== 'undefined') {
+
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      let row    = rows.find(r => r.id === p.patient_id || r.id === p.id);
+      let pat;
+
+      if (row) {
+        pat = { id: row.id, nom: row.nom, prenom: row.prenom,
+                ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}) };
+      } else {
+        const newId = p.patient_id || p.id
+          || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
+        const parts = (p.nom
+          ? [p.prenom||'', p.nom]
+          : (p.description || p.texte || 'Patient').split(' '));
+        pat = {
+          id: newId,
+          nom:    p.nom    || parts.slice(-1)[0]          || 'Patient',
+          prenom: p.prenom || parts.slice(0,-1).join(' ') || '',
+          adresse: p.adresse || p.addressFull || '',
+          lat: p.lat || null, lng: p.lng || null,
+          created_at: today, updated_at: today, cotations: [],
+        };
       }
-    } catch (e) { console.warn('[AMI] markUberDone — import IDB KO:', e.message); }
-  }
+
+      if (!pat.cotations) pat.cotations = [];
+      pat.cotations.push({
+        date:   today,
+        actes:  p._cotation.actes || [],
+        total:  parseFloat(p._cotation.total || 0),
+        soin:   (p.description || p.texte || '').slice(0, 120),
+        source: 'tournee_live',
+      });
+      pat.updated_at = today;
+
+      await _idbPut(PATIENTS_STORE, {
+        id: pat.id, nom: pat.nom, prenom: pat.prenom,
+        _data: _enc(pat), updated_at: today,
+      });
+    }
+  } catch (_e) { console.warn('[AMI] Import IDB KO:', _e?.message); }
 
   /* ── 3. KM INCRÉMENTAL ── */
   try {
     if (p.lat && p.lng) {
       const prev = APP.get('_lastVisitedPos') || APP.get('startPoint');
       if (prev?.lat && prev?.lng) {
-        const _hav = (la1, lo1, la2, lo2) => {
-          const R = 6371, dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
-          const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
-          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        };
-        const km = _hav(parseFloat(prev.lat), parseFloat(prev.lng), parseFloat(p.lat), parseFloat(p.lng));
+        const R = 6371;
+        const dLat = (parseFloat(p.lat) - parseFloat(prev.lat)) * Math.PI / 180;
+        const dLon = (parseFloat(p.lng) - parseFloat(prev.lng)) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2
+          + Math.cos(parseFloat(prev.lat)*Math.PI/180)
+          * Math.cos(parseFloat(p.lat)*Math.PI/180)
+          * Math.sin(dLon/2)**2;
+        const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const curKm = parseFloat(APP.get('tourneeKmJour') || 0);
         APP.set('tourneeKmJour', curKm + km);
-        try { localStorage.setItem('ami_tournee_km', String(curKm + km)); } catch {}
+        try { localStorage.setItem('ami_tournee_km', String(curKm + km)); } catch (_e) {}
       }
       APP.set('_lastVisitedPos', { lat: p.lat, lng: p.lng });
     }
-  } catch (_) {}
+  } catch (_e) {}
 
-  /* ── Sync Supabase ── */
-  if (typeof _syncCotationsToSupabase === 'function') {
-    _syncCotationsToSupabase([p]).catch(() => {});
-  }
+  /* ── Sync Supabase silencieux ── */
+  try {
+    if (typeof _syncCotationsToSupabase === 'function') {
+      _syncCotationsToSupabase([p]).catch(() => {});
+    }
+  } catch (_e) {}
 }
 
 async function markUberDone() {
   const p = APP.get('nextPatient'); if (!p) return;
   p.done = true;
 
-  /* ── Déclencher cotation + import + km pour ce patient ── */
+  /* Déclencher cotation + import + km pour ce patient (non bloquant) */
   _autoCoterEtImporterPatient(p).catch(e => console.warn('[AMI] markUberDone async KO:', e));
 
   selectBestPatient();
   _updateUberProgress();
   if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
 
-  /* ── Vérifier si tous les patients sont terminés ── */
+  /* Toast si tous les patients sont terminés */
   const remaining = (APP.get('uberPatients') || []).filter(q => !q.done && !q.absent);
   if (!remaining.length && typeof showToast === 'function') {
-    showToast('✅ Tous les patients visités — cliquez sur 🏁 Terminer la tournée pour clôturer la journée');
+    showToast('✅ Tous les patients visités — cliquez sur 🏁 Clôturer la journée');
   }
 }
+
 function markUberAbsent() {
   const p = APP.get('nextPatient'); if (!p) return;
   p.absent = true;
