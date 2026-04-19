@@ -205,7 +205,22 @@ function pilRenderMedsList() {
 function _pilMedSet(idx, key, val) {
   if (!_pilMeds[idx]) return;
   _pilMeds[idx][key] = val;
+  // Si on coche/décoche une prise globale, mettre à jour tous les jours
+  if (['matin','midi','soir','nuit'].includes(key)) {
+    if (!_pilMeds[idx].jours) _pilMeds[idx].jours = {};
+    _pilMeds[idx].jours[key] = Array(7).fill(!!val);
+  }
   pilRenderSemainier();
+}
+
+/* Met à jour l'état d'une case spécifique jour×prise dans le semainier */
+function _pilSetJour(medIdx, priseKey, jourIdx, checked) {
+  if (!_pilMeds[medIdx]) return;
+  if (!_pilMeds[medIdx].jours) _pilMeds[medIdx].jours = {};
+  if (!_pilMeds[medIdx].jours[priseKey]) {
+    _pilMeds[medIdx].jours[priseKey] = Array(7).fill(!!_pilMeds[medIdx][priseKey]);
+  }
+  _pilMeds[medIdx].jours[priseKey][jourIdx] = checked;
 }
 
 function _pilMedRemove(idx) {
@@ -234,6 +249,17 @@ function pilRenderSemainier() {
 
   const prises = PRISES.filter(pr => meds.some(m => m[pr.key]));
 
+  // Initialiser jours par défaut si absent : prise active = tous les jours cochés
+  meds.forEach(m => {
+    if (!m.jours) m.jours = {};
+    PRISES.forEach(pr => {
+      if (!m.jours[pr.key]) {
+        // Si la prise est active et pas encore de données par jour → cocher tous les jours
+        m.jours[pr.key] = Array(7).fill(!!m[pr.key]);
+      }
+    });
+  });
+
   let html = `<table style="border-collapse:collapse;min-width:520px;font-size:12px;font-family:var(--fm)">
     <thead>
       <tr style="background:var(--s)">
@@ -254,10 +280,17 @@ function pilRenderSemainier() {
           ${pi===0?`<strong>${m.nom}</strong>`:''}
           <span style="color:var(--m);font-size:10px;display:block">${pr.label}${m.remarque&&pi===0?` · ${m.remarque}`:''}</span>
         </td>
-        ${JOURS.map((_, ji) => `
-          <td style="text-align:center;border:1px solid var(--b);padding:4px">
-            <input type="checkbox" style="accent-color:var(--a);width:16px;height:16px;cursor:pointer" id="pil-check-${mi}-${pi}-${ji}">
-          </td>`).join('')}
+        ${JOURS.map((_, ji) => {
+          // Lire l'état sauvegardé par jour
+          const checked = m.jours?.[pr.key]?.[ji] ?? !!m[pr.key];
+          const medIdx = _pilMeds.indexOf(m);
+          return `<td style="text-align:center;border:1px solid var(--b);padding:4px">
+            <input type="checkbox" ${checked ? 'checked' : ''}
+              style="accent-color:var(--a);width:16px;height:16px;cursor:pointer"
+              id="pil-check-${medIdx}-${pr.key}-${ji}"
+              onchange="_pilSetJour(${medIdx},'${pr.key}',${ji},this.checked)">
+          </td>`;
+        }).join('')}
       </tr>`;
     });
   });
@@ -270,10 +303,19 @@ async function pilSave() {
   if (!_pilCurrentPatient || !_pilMeds.length) {
     showToast('warning', 'Données incomplètes', 'Sélectionnez un patient et ajoutez des médicaments.'); return;
   }
+
+  // S'assurer que jours est à jour avant sauvegarde
+  _pilMeds.forEach(m => {
+    if (!m.jours) m.jours = {};
+    ['matin','midi','soir','nuit'].forEach(pr => {
+      if (!m.jours[pr]) m.jours[pr] = Array(7).fill(!!m[pr]);
+    });
+  });
+
   const obj = {
     patient_id:     _pilCurrentPatient,
     user_id:        APP?.user?.id || '',
-    meds:           JSON.parse(JSON.stringify(_pilMeds)),
+    meds:           JSON.parse(JSON.stringify(_pilMeds)), // inclut jours[]
     semaine_debut:  document.getElementById('pil-semaine-debut')?.value || _getMondayISO(),
     preparateur:    document.getElementById('pil-preparateur')?.value?.trim() || '',
     date_creation:  new Date().toISOString(),
@@ -354,12 +396,29 @@ async function pilLoadFromHistory(id) {
     req.onerror   = e => rej(e.target.error);
   });
   if (!obj) return;
+
+  // Charger les méds avec leurs états jours sauvegardés
   _pilMeds = JSON.parse(JSON.stringify(obj.meds || []));
+
+  // Restaurer jours si absent (rétrocompat anciens piluliers sans jours)
+  _pilMeds.forEach(m => {
+    if (!m.jours) m.jours = {};
+    ['matin','midi','soir','nuit'].forEach(pr => {
+      if (!m.jours[pr]) m.jours[pr] = Array(7).fill(!!m[pr]);
+    });
+  });
+
+  // Restaurer la semaine
   const sd = document.getElementById('pil-semaine-debut');
   if (sd && obj.semaine_debut) sd.value = obj.semaine_debut;
+
+  // Restaurer le préparateur
+  const prep = document.getElementById('pil-preparateur');
+  if (prep && obj.preparateur) prep.value = obj.preparateur;
+
   pilRenderMedsList();
   pilRenderSemainier();
-  showToast('info', 'Pilulier chargé');
+  showToast('info', 'Pilulier chargé', `Semaine du ${obj.semaine_debut || '—'}`);
 }
 
 async function pilDeleteHistory(id) {

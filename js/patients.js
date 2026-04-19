@@ -330,6 +330,13 @@ function _pilInjectData(pil) {
   // Injecter les médicaments dans _pilMeds (variable globale de pilulier.js)
   if (typeof _pilMeds !== 'undefined') {
     _pilMeds = JSON.parse(JSON.stringify(pil.meds || []));
+    // Restaurer jours si absent (rétrocompat anciens piluliers)
+    _pilMeds.forEach(m => {
+      if (!m.jours) m.jours = {};
+      ['matin','midi','soir','nuit'].forEach(pr => {
+        if (!m.jours[pr]) m.jours[pr] = Array(7).fill(!!m[pr]);
+      });
+    });
   }
   // Semaine de début
   const sd = document.getElementById('pil-semaine-debut');
@@ -927,52 +934,61 @@ function _patTabRender(tab, id, p, notes) {
 
     /* Génère le tableau semainier avec les 7 jours */
     function _renderPilTableau(pil) {
-      const meds        = (pil.meds||[]).filter(m => m.nom);
-      const debutISO    = pil.semaine_debut || '';
-      const debut       = debutISO ? new Date(debutISO) : null;
+      const meds     = (pil.meds||[]).filter(m => m.nom);
+      const debutISO = pil.semaine_debut || '';
+      const debut    = debutISO ? new Date(debutISO) : null;
 
-      /* En-têtes jours avec dates si disponibles */
+      /* En-têtes colonnes jours */
       const joursHeaders = JOURS_SEMAINE.map((j, ji) => {
-        if (!debut) return `<th style="padding:5px 6px;border:1px solid var(--b);color:var(--m);text-align:center;font-size:10px;min-width:52px">${j[0]+j[1]}</th>`;
-        const d = new Date(debut);
-        d.setDate(debut.getDate() + ji);
-        const dateStr = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
-        return `<th style="padding:5px 6px;border:1px solid var(--b);color:var(--m);text-align:center;font-size:10px;min-width:52px">${j.slice(0,3)}<br><span style="font-weight:400;font-size:9px">${dateStr}</span></th>`;
-      }).join('');
+        const dateStr = debut
+          ? (() => { const d = new Date(debut); d.setDate(debut.getDate()+ji); return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}); })()
+          : '';
+        return `<th style="padding:5px 6px;border:1px solid var(--b);color:var(--m);text-align:center;font-size:10px;min-width:48px">${j.slice(0,3)}${dateStr?`<br><span style="font-weight:400;font-size:9px">${dateStr}</span>`:''}`;
+      }).join('') + '</th>'.repeat(0); // th déjà fermé dans le template
 
       if (!meds.length) return '<div style="font-size:12px;color:var(--m)">Aucun médicament renseigné.</div>';
 
-      /* Lignes : une par médicament × prise active */
-      const rows = meds.flatMap(m => {
-        const prisesActives = PRISES.filter(pr => m[pr]);
-        if (!prisesActives.length) return [];
-        return prisesActives.map((pr, pi) => `
-          <tr style="${pi===0?'border-top:1px solid var(--b)':''}">
-            <td style="padding:5px 8px;border:1px solid var(--b);font-weight:${pi===0?'600':'400'};font-size:11px;color:${pi===0?'var(--t)':'var(--m)'}">
-              ${pi===0 ? m.nom : ''}
-              <span style="font-size:10px;color:var(--m);display:${pi===0&&m.nom?'block':'inline'}">${PRISE_LABELS[pr]||pr}</span>
-            </td>
-            ${JOURS_SEMAINE.map(() => `
-              <td style="padding:4px 6px;border:1px solid var(--b);text-align:center;font-size:13px">✅</td>
-            `).join('')}
-          </tr>`);
-      });
+      /* Une ligne par médicament : nom + état de chaque prise + ✅/— par jour */
+      const rows = meds.map(m => {
+        const prisesLabels = PRISES.map(pr => {
+          const actif = !!m[pr];
+          return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:var(--fm);color:${actif?'var(--a)':'var(--m)'}">
+            ${PRISE_LABELS[pr]} ${actif?'✅':'—'}
+          </span>`;
+        }).join('<span style="color:var(--b);margin:0 3px">·</span>');
 
-      if (!rows.length) return '<div style="font-size:12px;color:var(--m)">Aucune prise renseignée.</div>';
+        const joursCells = JOURS_SEMAINE.map(() => {
+          // Le pilulier quotidien : même traitement chaque jour
+          // Afficher ✅ si au moins une prise active, — sinon
+          const hasActive = PRISES.some(pr => m[pr]);
+          return `<td style="padding:5px 6px;border:1px solid var(--b);text-align:center;font-size:13px">${hasActive?'✅':'—'}</td>`;
+        }).join('');
+
+        return `<tr>
+          <td style="padding:6px 10px;border:1px solid var(--b)">
+            <div style="font-size:12px;font-weight:600;color:var(--t);margin-bottom:4px">${m.nom}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">${prisesLabels}</div>
+            ${m.remarque?`<div style="font-size:10px;color:var(--m);margin-top:3px">💬 ${m.remarque}</div>`:''}
+          </td>
+          ${joursCells}
+        </tr>`;
+      }).join('');
 
       return `
         <div style="overflow-x:auto;margin-top:8px">
           <table style="border-collapse:collapse;font-size:11px;font-family:var(--fm);width:100%;min-width:540px">
             <thead><tr style="background:var(--s)">
-              <th style="padding:5px 8px;border:1px solid var(--b);text-align:left;color:var(--m);min-width:120px">Médicament / Prise</th>
-              ${joursHeaders}
+              <th style="padding:5px 10px;border:1px solid var(--b);text-align:left;color:var(--m);min-width:160px">Médicament / Prises</th>
+              ${JOURS_SEMAINE.map((j, ji) => {
+                const dateStr = debut
+                  ? (() => { const d = new Date(debut); d.setDate(debut.getDate()+ji); return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}); })()
+                  : '';
+                return `<th style="padding:5px 6px;border:1px solid var(--b);color:var(--m);text-align:center;font-size:10px;min-width:48px">${j.slice(0,3)}${dateStr?`<br><span style="font-weight:400;font-size:9px">${dateStr}</span>`:''}</th>`;
+              }).join('')}
             </tr></thead>
-            <tbody>${rows.join('')}</tbody>
+            <tbody>${rows}</tbody>
           </table>
-        </div>
-        ${meds.some(m=>m.remarque) ? `<div style="margin-top:8px;font-size:11px;color:var(--m)">
-          ${meds.filter(m=>m.remarque).map(m=>`💬 <strong>${m.nom}</strong> : ${m.remarque}`).join(' · ')}
-        </div>` : ''}`;
+        </div>`;
     }
 
     el.innerHTML = `
