@@ -50,22 +50,36 @@ Ce champ, présent dans chaque fiche patient, permet de décrire en langage natu
 ### Que se passe-t-il si le champ « Actes Récurrents » est vide ?
 💡 Si ce champ est vide, AMI utilise automatiquement le champ **Pathologies** et le convertit en actes médicaux NGAP applicables pour générer la cotation lors de la Tournée IA et du Pilotage de journée.
 
-| Pathologie détectée | Actes NGAP générés |
-| Diabète (type 1/2) | Injection insuline SC|
-| Plaie / ulcère / escarre | Pansement complexe BSB, détersion |
-| Anticoagulants / HBPM | Injection SC, surveillance INR |
-| Perfusion / antibio | Perfusion IV domicile, IFD |
-| Nursing / grabataire / Alzheimer | AMI 4, nursing complet, prévention escarre |
-| HTA / insuffisance cardiaque | Prise TA, surveillance, éducation |
-| Soins palliatifs | AMI 4, gestion douleur, nursing |
-| Bilan sanguin / prélèvement | BSA, IFD |
-| Sonde / stomie / trachéo | AMI 2, surveillance appareillage |
-| Morphine / douleur | Injection antalgique, évaluation EVA |
-| Asthme / BPCO | Aérosol, surveillance saturation, IFD |
-| Post-op / chirurgie | Pansement, surveillance cicatrice |
-| Psychiatrie / dépression | Suivi psychiatrique, éducation traitement |
+AMI reconnaît un large spectre de pathologies et d'abréviations médicales courantes :
 
-> **Conseil** : renseignez le champ *Actes Récurrents* dès la création de la fiche patient pour des cotations automatiques encore plus précises. Le champ *Pathologies* reste utile comme filet de sécurité pour les patients dont vous n'avez pas encore détaillé les soins habituels.
+| Pathologie / Abréviation reconnue | Actes NGAP générés automatiquement |
+|---|---|
+| Diabète, DT1, DT2, DNID, DID, T1D, T2D | Injection insuline SC, surveillance glycémie capillaire, éducation thérapeutique |
+| Plaie, ulcère, escarre, nécrose, brûlure, fistule | Pansement complexe, détersion, surveillance plaie, IFD |
+| Anticoagulants, HBPM, AVK, AOD, NACO, Lovenox, apixaban, dabigatran, rivaroxaban | Injection SC HBPM, surveillance INR, éducation anticoagulant |
+| Perfusion, antibiotique, chimio, KT, VVP, VVC, cathéter central, nutrition parentérale | Perfusion IV domicile, IFD, surveillance tolérance et abord veineux |
+| Nursing, grabataire, dépendance, GIR 1-4, Alzheimer, Parkinson, tétraplégie, hémiplégie, SLA | Nursing complet, AMI 4, aide toilette BSC, prévention escarres |
+| HTA, hypertension, IC, insuffisance cardiaque, FA, ACFA, SCA, IDM, post-IDM, angor | Prise TA, surveillance cardiaque, surveillance poids/œdèmes, éducation traitement |
+| Soins palliatifs, fin de vie, phase terminale, cancer terminal | Soins palliatifs, AMI 4, gestion douleur, nursing complet, surveillance EVA |
+| NFS, CRP, HbA1c, INR, bilan sanguin, prélèvement, glycémie capillaire | Prélèvement veineux à domicile, BSA, IFD |
+| Sonde urinaire, SAD, stomie, colostomie, trachéotomie, gastrostomie, PEG, SNG | Soin appareillage, surveillance et entretien sonde, AMI 2 |
+| Douleur, morphine, oxycodone, antalgique, PCA, patch morphine | Injection antalgique SC/IV, surveillance EVA, gestion PCA |
+| Asthme, BPCO, MPOC, VNI, OHD, oxygénothérapie, aérosol, nébulisation, dyspnée | Aérosol médicamenteux, surveillance saturation SpO2, éducation inhalateurs |
+| Post-op, chirurgie, TVP, EP, embolie pulmonaire, phlébite, suture, agrafes, drain | Soins post-opératoires, pansement, surveillance cicatrice, injection HBPM si prescrite |
+| Psychiatrie, dépression, schizophrénie, trouble bipolaire, TSA, addiction | Suivi infirmier psychiatrique, surveillance observance, éducation thérapeutique |
+| IRC, IRT, MRC, DFG, hémodialyse, dialyse péritonéale | Surveillance paramètres rénaux, TA, poids/œdèmes, gestion fistule si dialyse |
+| Cancer, lymphome, leucémie, tumeur, néoplasie, HAD oncologique | Soins oncologiques, perfusion chimio, surveillance tolérance, gestion cathéter |
+| AVC, AIT, SEP, SLA, séquelles AVC, neuropathie | Soins rééducation infirmière, nursing, surveillance neurologique, prévention escarres |
+| Insuffisance veineuse, lymphœdème, bandage compressif, contention | Pose bandage compressif, soins de contention, surveillance circulation |
+| NE, NP, nutrition entérale/parentérale, dénutrition, sonde naso-gastrique | Gestion nutrition, entretien sonde, surveillance digestive |
+| HBP, LUTS, rétention urinaire, incontinence, troubles mictionnels | Sondage urinaire évacuateur, soins SAD, éducation patient |
+| SAS, SAOS, PPC, CPAP, BPAP, apnée du sommeil | Surveillance appareillage PPC/VNI, éducation utilisation masque |
+| Prévention escarre, Braden, matelas anti-escarre, risque cutané | Soins préventifs escarres, nursing, changements de position, éducation aidants |
+| SSIAD, HAD, maintien à domicile, sortie d'hospit, retour domicile | Soins infirmiers à domicile, évaluation globale, coordination HAD/SSIAD |
+
+> **Conseil :** renseignez le champ *Actes Récurrents* dès la création de la fiche patient pour des cotations automatiques encore plus précises. Le champ *Pathologies* est le filet de sécurité pour les patients dont vous n'avez pas encore détaillé les soins habituels.
+
+> **Note :** si la pathologie n'est pas reconnue, AMI transmet quand même le texte brut à l'IA pour qu'elle tente une cotation par contexte.
 
 ---
 
@@ -94,8 +108,10 @@ AMI enregistre la cotation dans une file d'attente hors-ligne. Dès que la conne
 ### Quels sont les tarifs 2026 intégrés ?
 
 | Acte | Tarif |
+|---|---|
 | AMI 1 (injection, prélèvement…) | 3,15 € |
 | AMI 4 (pansement complexe, perfusion) | 12,60 € |
+| AMI 6 (perfusion longue durée > 1h) | 18,90 € |
 | BSA (dépendance légère) | 13,00 € |
 | BSB (dépendance intermédiaire) | 18,20 € |
 | BSC (dépendance lourde) | 28,70 € |
@@ -131,23 +147,71 @@ Dans **Tournée**, appuyez sur **Optimiser ma tournée**. L'IA calcule l'ordre o
 Oui. En mode **Pilotage live**, bouton **+ Urgent** : le patient est inséré au meilleur endroit dans la tournée restante sans tout recalculer.
 
 ### Comment naviguer vers un patient ?
-Appuyez sur le bouton **GPS** sur la fiche patient de la tournée. Si l'adresse est bien géocodée, la navigation GPS démarre directement. Sinon, l'adresse texte est transmise à Google Maps / Plans.
+Appuyez sur le bouton **GPS** sur la fiche patient de la tournée. Si l'adresse est bien géocodée, la navigation GPS démarre directement.
+
+### Comment AMI génère-t-il la cotation automatiquement pendant la tournée ?
+Quand vous appuyez sur **Coter** pour un patient pendant le pilotage, AMI construit le texte de soin dans cet ordre de priorité :
+
+1. **Actes récurrents** de la fiche patient (le plus précis)
+2. **Description importée** — si elle contient déjà des actes NGAP explicites
+3. **Pathologies converties** — si la description est une pathologie brute (ex : "Diabète"), AMI l'enrichit automatiquement avec les actes correspondants avant de les envoyer à l'IA
 
 ### Qu'est-ce que le Mode Uber Médical ?
 Ce mode affiche automatiquement le prochain patient à voir sans que vous ayez à interagir avec l'écran. Pratique entre deux soins.
 
 ### Comment facturer automatiquement en fin de tournée ?
-Lorsque vous terminez la tournée, AMI vous propose de générer automatiquement les cotations pour tous les patients marqués comme "fait". Les montants estimés sont pré-remplis.
+Lorsque vous terminez la tournée, AMI vous propose de générer automatiquement les cotations pour tous les patients marqués comme "fait".
 
 ### La tournée fonctionne-t-elle hors-ligne ?
 L'optimisation de la tournée et la navigation GPS fonctionnent hors-ligne si les tuiles de carte ont été téléchargées au préalable (dans **Paramètres** → **Télécharger la carte**).
 
 ---
 
+## 🏥 Mode Cabinet multi-IDE
+
+### Qu'est-ce que le mode Cabinet ?
+Le mode Cabinet permet à plusieurs infirmières d'un même cabinet de coordonner leurs tournées, répartir les patients et partager les cotations multi-IDE. Un toggle **Mode Cabinet** apparaît dans la cotation et la tournée dès que vous êtes membre d'un cabinet.
+
+### Comment créer ou rejoindre un cabinet ?
+Dans **Mon Cabinet** → **Créer un cabinet** (vous obtenez un ID à partager) ou **Rejoindre** (entrez l'ID reçu d'une collègue).
+
+### Comment fonctionne la synchronisation cabinet ?
+Vous choisissez explicitement **quoi** synchroniser (planning, patients, cotations, ordonnances…) et **avec qui**. Rien n'est partagé sans votre accord.
+
+---
+
+## 📊 Modules cliniques
+
+### Constantes patients
+Suivez les paramètres vitaux de vos patients (TA, glycémie, SpO2, T°, FC, EVA, poids) avec des graphiques Canvas et des alertes automatiques en rouge si les valeurs sont hors des seuils ANSM.
+
+### Pilulier / Semainier
+Créez des semainiers médicamenteux personnalisés pour chaque patient (7 jours × 4 prises). Impression directe pour remettre au patient ou à la famille.
+
+### BSI — Bilan de Soins Infirmiers
+Évaluez le niveau de dépendance en 10 critères. AMI calcule automatiquement le niveau BSI 1/2/3 et pré-remplit la cotation. Alerte de renouvellement à 90 jours.
+
+### Consentements éclairés
+6 types de consentements disponibles (sonde urinaire, perfusion, soins palliatifs, photo de plaie, pansement complexe, injections). Signature canvas + archivage local.
+
+### Alertes médicamenteuses
+Détection automatique des interactions médicamenteuses à risque (14 règles ANSM 2026) dès que vous saisissez un soin. Niveaux : CI (contre-indication absolue), DANGER, ATTENTION.
+
+### Simulateur audit CPAM
+Analysez votre historique de cotations sur 3, 6 ou 12 mois et simulez un contrôle CPAM selon 8 règles NGAP. Identifiez les risques avant qu'ils ne deviennent un problème.
+
+### Compte-rendu de passage
+Rédigez et archivez vos comptes-rendus de passage (constantes, actes réalisés, transmissions, niveau d'urgence). Impression PDF incluse.
+
+### Transmissions infirmières
+Rédigez vos transmissions en format SOAP ou DAR, adressez-les à une IDE spécifique ou à tout le cabinet. Badge de notifications pour les transmissions non lues.
+
+---
+
 ## 💰 Trésorerie & Rapports
 
 ### Comment consulter mes revenus du mois ?
-Dans **Trésorerie**, sélectionnez la période souhaitée. Vous voyez le total des cotations, la part AMO, la part AMC, la part patient, et une estimation des pertes (impayés estimés).
+Dans **Trésorerie**, sélectionnez la période souhaitée. Vous voyez le total des cotations, la part AMO, la part AMC, la part patient, et une estimation des pertes.
 
 ### Comment générer mon rapport mensuel ?
 Dans **Rapport mensuel** → sélectionnez le mois → **Générer**. Vous obtenez un rapport PDF imprimable avec le récapitulatif NGAP, les statistiques et un état de santé de l'application.
@@ -165,9 +229,6 @@ Le Copilote est un assistant conversationnel spécialisé NGAP. Posez-lui des qu
 ### Le Copilote a-t-il accès à mes données patients ?
 Non. Le Copilote répond à des questions générales sur la nomenclature NGAP. Il n'accède pas à votre carnet patients.
 
-### Comment accéder au Copilote sur mobile ?
-Sur mobile, le Copilote est accessible via le menu **Plus** → **Copilote IA**.
-
 ---
 
 ## 🎙️ Dictée vocale
@@ -183,15 +244,12 @@ Oui. La reconnaissance vocale utilise l'API native de votre appareil, qui foncti
 ## 🛠️ Outils professionnels
 
 ### Quels outils professionnels sont disponibles ?
-Dans **Outils IDEL** :
+
 - **Simulateur de charges** : calcul annuel URSSAF + CARPIMKO + IR selon votre CA — barème 2026
 - **Journal kilométrique** : saisie trajets, barème IK selon la puissance fiscale, export CSV pour déclaration
-- **Modèles de soins** : créez des descriptions réutilisables (ex. : "pansement escarre jambe gauche") pour coter en 1 clic
+- **Modèles de soins** : créez des descriptions réutilisables pour coter en 1 clic
 - **Simulateur de majorations** : entrez l'heure et le type de soin pour connaître instantanément les majorations applicables
 - **Suivi ordonnances** : enregistrez vos ordonnances, AMI vous alerte 30 jours avant expiration
-
-### Comment créer un modèle de soin ?
-Dans **Outils IDEL** → **Modèles de soins** → **+ Nouveau modèle**. Donnez un nom et une description complète. Depuis la cotation, tapez le nom du modèle pour l'utiliser directement.
 
 ---
 
@@ -203,9 +261,6 @@ Pour la plupart des fonctions, oui : carnet patients, tournée (avec carte pré-
 ### Comment installer AMI sur mon téléphone ?
 Sur Chrome (Android) ou Safari (iPhone) : une bannière d'installation apparaît automatiquement. Sinon, menu du navigateur → **Ajouter à l'écran d'accueil**. AMI se comporte comme une application native.
 
-### Comment télécharger la carte pour utilisation hors-ligne ?
-Dans **Paramètres** (ou **Profil**) → **Télécharger les tuiles de carte**. Sélectionnez votre zone géographique. La carte est ensuite disponible sans connexion.
-
 ---
 
 ## ❓ Problèmes fréquents
@@ -213,14 +268,14 @@ Dans **Paramètres** (ou **Profil**) → **Télécharger les tuiles de carte**. 
 ### L'IA répond "indisponible" — que faire ?
 Cela arrive rarement (surcharge momentanée du serveur IA). AMI bascule automatiquement sur un calcul local de secours. Le résultat peut être moins précis sur les cas complexes — vérifiez manuellement les majorations. Réessayez dans quelques minutes pour un calcul IA complet.
 
+### La cotation ne génère que la majoration dimanche sans l'acte principal — pourquoi ?
+Vérifiez que le champ **Pathologies** ou **Actes Récurrents** de la fiche patient est bien renseigné. Si le champ contient uniquement un mot très court comme "Diabète", AMI v6.1 l'enrichit automatiquement avec les actes correspondants. Si le problème persiste, renseignez directement les actes dans le champ **Actes Récurrents** (ex : *"Injection insuline SC 2x/jour"*).
+
 ### Ma tournée ne s'affiche pas sur la carte — que faire ?
 Vérifiez que vos patients ont une adresse complète (numéro + rue + code postal + ville). Si l'adresse n'est pas géocodée, appuyez sur **Recalculer position** depuis la fiche patient.
 
 ### Un patient a disparu de mon carnet — pourquoi ?
 Si vous utilisez AMI sur plusieurs appareils, chaque appareil a sa propre base locale. Les données ne sont pas automatiquement synchronisées d'un appareil à l'autre (par choix de confidentialité). Utilisez **Export** sur l'appareil source et **Import** sur le nouvel appareil.
-
-### Je ne reçois plus les alertes d'ordonnances expirantes ?
-Vérifiez que les notifications sont autorisées pour AMI dans les réglages de votre téléphone. Sur iPhone : Réglages → Notifications → AMI → Autoriser.
 
 ### Comment changer mon mot de passe ?
 Dans **Profil** → **Changer le mot de passe**. L'ancien mot de passe est requis pour confirmer.
@@ -236,4 +291,4 @@ Depuis l'application : **Menu** → **Contact** → rédigez votre message. L'é
 
 ---
 
-*Guide AMI v7 — NGAP 2026 · Mise à jour : avril 2026*
+*Guide AMI v2.0 — NGAP 2026 · Mise à jour : avril 2026*
