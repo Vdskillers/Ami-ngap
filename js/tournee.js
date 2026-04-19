@@ -1377,11 +1377,24 @@ function detectDelay(currentPatient){
 async function autoFacturation(patient){
   // Génère la cotation automatique — ne met plus à jour le CA directement
   // (c'est la modale de vérification qui l'incrémente après validation)
-  if(!patient?.description)return;
+  if(!patient?.description && !patient?.texte && !patient?.actes_recurrents && !patient?.pathologies)return;
   try{
     const u=S?.user||{};
+    /* Enrichissement : si la description est une pathologie brute (ex: "Diabète")
+       sans actes NGAP explicites, on la convertit via pathologiesToActes()
+       pour que l'IA reçoive "Diabète — Injection insuline SC, surveillance glycémie..."
+       et génère les bons actes techniques (AMI1, glycémie...) en plus des majorations. */
+    const _rawDesc = (patient.actes_recurrents || patient.description || patient.texte || '').trim();
+    const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol|insuline|glycémie/i.test(_rawDesc);
+    const _pathoConverti = patient.pathologies && typeof pathologiesToActes === 'function'
+      ? pathologiesToActes(patient.pathologies)
+      : '';
+    const _texteEnrichi = (_rawDesc && !_hasActeKeyword && _pathoConverti)
+      ? (_rawDesc + ' — ' + _pathoConverti)
+      : (_rawDesc || _pathoConverti || 'soin infirmier à domicile');
+
     const d=await apiCall('/webhook/ami-calcul',{
-      mode:'ngap',texte:patient.description,
+      mode:'ngap',texte:_texteEnrichi,
       infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
       adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
       date_soin:new Date().toISOString().split('T')[0],
@@ -1869,6 +1882,17 @@ function autoCotationLocale(texte) {
   // ── Majorations ──
   if (/domicile|chez le patient|ifd/.test(t)) {
     actes.push({ code:'IFD', nom:'Déplacement domicile', total:2.75 }); total += 2.75;
+  }
+  // Dimanche / Férié — détecté depuis le texte OU depuis la date actuelle
+  const _isDimanche = /dimanche|f[eé]ri[eé]|dim\b/.test(t) || new Date().getDay() === 0;
+  const _isNuitProf = /(?:23h|00h|01h|02h|03h|04h|nuit profonde|nuit_prof)/.test(t);
+  const _isNuit     = !_isNuitProf && /(?:20h|21h|22h|05h|06h|07h|\bnuit\b)/.test(t);
+  if (_isDimanche) {
+    actes.push({ code:'DIM', nom:'Majoration dimanche/férié', total:8.50 }); total += 8.50;
+  } else if (_isNuitProf) {
+    actes.push({ code:'NUIT_PROF', nom:'Majoration nuit profonde', total:18.30 }); total += 18.30;
+  } else if (_isNuit) {
+    actes.push({ code:'NUIT', nom:'Majoration nuit', total:9.15 }); total += 9.15;
   }
   if (/enfant|nourrisson|< ?7 ?ans|mie/.test(t)) {
     actes.push({ code:'MIE', nom:'Majoration enfant', total:3.15 }); total += 3.15;
