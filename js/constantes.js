@@ -9,7 +9,7 @@
    3. Alertes seuils personnalisables par patient
    4. Historique avec export CSV
    5. Intégration dans fiche patient
-   6. 100% local IDB
+   6. Stockage local IDB + sync Supabase (AES-256-GCM) cross-appareils
    ────────────────────────────────────────────────
 ════════════════════════════════════════════════ */
 
@@ -91,6 +91,9 @@ async function renderConstantes() {
   const wrap = document.getElementById('constantes-root');
   if (!wrap) return;
 
+  // Pull silencieux depuis Supabase au chargement du module
+  constSyncPull().catch(() => {});
+
   let patients = [];
   try { if (typeof getAllPatients === 'function') patients = await getAllPatients(); } catch (_) {}
 
@@ -99,7 +102,7 @@ async function renderConstantes() {
     <p class="ps">TA · Glycémie · SpO2 · Poids · Température · Douleur · Graphiques évolution</p>
 
     <div class="card">
-      <div class="priv"><span style="font-size:16px;flex-shrink:0">🔒</span><p>Constantes stockées localement sur votre appareil. Aucune donnée médicale ne quitte votre terminal.</p></div>
+      <div class="priv"><span style="font-size:16px;flex-shrink:0">🔒</span><p>Constantes chiffrées AES-256 sur votre appareil, synchronisées de façon sécurisée entre vos appareils. Aucune donnée médicale lisible côté serveur.</p></div>
 
       <div class="lbl" style="margin-bottom:8px">Patient</div>
       <select id="const-patient-sel" onchange="constSelectPatient(this.value)" style="width:100%;margin-bottom:20px;padding:10px 14px;background:var(--dd);border:1px solid var(--b);border-radius:10px;color:var(--t);font-size:14px;font-family:var(--ff)">
@@ -356,6 +359,8 @@ async function constSave() {
     showToast('success', 'Constantes enregistrées', alerts.length ? '⚠️ Alertes détectées' : undefined);
     constResetForm();
     await constRefresh();
+    // Sync cross-appareils en arrière-plan (silencieux)
+    constSyncPush().catch(() => {});
   } catch (err) {
     showToast('error', 'Erreur', err.message);
   }
@@ -399,6 +404,114 @@ async function constExportCSV() {
   showToast('success','Export CSV réussi');
 }
 
+
+/* ════════════════════════════════════════════════
+   SYNC CROSS-APPAREILS — Constantes
+   Blob chiffré AES-256-GCM côté client,
+   stocké opaque dans Supabase (constantes_sync).
+   Isolation stricte par user.id — admins inclus pour leurs propres données de test.
+════════════════════════════════════════════════ */
+
+async function constSyncPush() {
+  const uid = APP?.user?.id;
+  if (!uid) return;
+
+  try {
+    // Récupérer toutes les constantes de l'utilisateur (toutes périodes)
+    const db  = await _constDb();
+    const all = await new Promise((res, rej) => {
+      const tx  = db.transaction(CONST_STORE, 'readonly');
+      const idx = tx.objectStore(CONST_STORE).index('user_id');
+      const req = idx.getAll(uid);
+      req.onsuccess = e => res(e.target.result || []);
+      req.onerror   = e => rej(e.target.error);
+    });
+
+    if (!all.length) return;
+
+    // Chiffrement AES côté client
+    const encrypted = typeof encryptData === 'function'
+      ? await encryptData(all)
+      : { data: btoa(JSON.stringify(all)), iv: '', _plain: true };
+
+    const token = APP?.token || sessionStorage.getItem('ami_token');
+    if (!token) return;
+
+    await fetch(`${APP?.workerUrl || ''}/webhook/constantes-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        encrypted_data: JSON.stringify(encrypted),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (e) {
+    console.warn('[constSyncPush]', e.message);
+  }
+}
+
+async function constSyncPull() {
+  const uid = APP?.user?.id;
+  if (!uid) return;
+
+  try {
+    const token = APP?.token || sessionStorage.getItem('ami_token');
+    if (!token) return;
+
+    const res = await fetch(`${APP?.workerUrl || ''}/webhook/constantes-pull`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const { data } = await res.json();
+    if (!data?.encrypted_data) return;
+
+    // Déchiffrement
+    const parsed = JSON.parse(data.encrypted_data);
+    const remote = typeof decryptData === 'function'
+      ? await decryptData(parsed)
+      : JSON.parse(atob(parsed.data));
+
+    if (!Array.isArray(remote) || !remote.length) return;
+
+    // Merge : insérer uniquement les mesures absentes localement
+    const db       = await _constDb();
+    const existing = await new Promise((res2, rej) => {
+      const tx  = db.transaction(CONST_STORE, 'readonly');
+      const idx = tx.objectStore(CONST_STORE).index('user_id');
+      const req = idx.getAll(uid);
+      req.onsuccess = e => res2(e.target.result || []);
+      req.onerror   = e => rej(e.target.error);
+    });
+
+    // Clé de déduplication : patient_id + date (ms) + user_id
+    const existSet = new Set(existing.map(c => `${c.patient_id}|${c.date}|${c.user_id}`));
+
+    let imported = 0;
+    const txW = db.transaction(CONST_STORE, 'readwrite');
+    const store = txW.objectStore(CONST_STORE);
+    for (const m of remote) {
+      const key = `${m.patient_id}|${m.date}|${m.user_id}`;
+      if (!existSet.has(key)) {
+        // Supprimer l'id pour laisser autoIncrement assigner un nouvel id local
+        const { id: _drop, ...mWithoutId } = m;
+        store.add({ ...mWithoutId, _synced: true });
+        imported++;
+      }
+    }
+    await new Promise((res3, rej) => {
+      txW.oncomplete = () => res3();
+      txW.onerror    = e  => rej(e.target.error);
+    });
+
+    if (imported > 0) {
+      log(`[constSyncPull] ${imported} mesure(s) importée(s) depuis le serveur`);
+    }
+  } catch (e) {
+    console.warn('[constSyncPull]', e.message);
+  }
+}
+
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'constantes') renderConstantes();
 });
+

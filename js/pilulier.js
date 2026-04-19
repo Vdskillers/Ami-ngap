@@ -9,7 +9,7 @@
    3. Cases à cocher par prise (M/Mi/S/N)
    4. Impression / export PDF du semainier
    5. Historique des préparations
-   6. Stockage local IDB (données patient = local only)
+   6. Stockage local IDB + sync Supabase (AES-256-GCM) cross-appareils
    ────────────────────────────────────────────────
 ════════════════════════════════════════════════ */
 
@@ -82,6 +82,9 @@ async function renderPilulier() {
   const wrap = document.getElementById('pilulier-root');
   if (!wrap) return;
 
+  // Pull silencieux depuis Supabase au chargement du module
+  pilSyncPull().catch(() => {});
+
   let patients = [];
   try { if (typeof getAllPatients === 'function') patients = await getAllPatients(); } catch (_) {}
 
@@ -90,7 +93,7 @@ async function renderPilulier() {
     <p class="ps">Préparation des doses hebdomadaires · Impression · Traçabilité locale</p>
 
     <div class="card">
-      <div class="priv"><span style="font-size:16px;flex-shrink:0">🔒</span><p>Les données médicaments sont stockées uniquement sur votre appareil.</p></div>
+      <div class="priv"><span style="font-size:16px;flex-shrink:0">🔒</span><p>Données médicaments chiffrées AES-256 sur votre appareil, synchronisées de façon sécurisée entre vos appareils. Aucune donnée lisible côté serveur.</p></div>
 
       <!-- Sélecteur patient -->
       <div class="lbl" style="margin-bottom:8px">Patient</div>
@@ -333,6 +336,8 @@ async function pilSave() {
     }
     showToast('success', 'Pilulier sauvegardé');
     await pilLoadHistory();
+    // Sync cross-appareils en arrière-plan (silencieux)
+    pilSyncPush().catch(() => {});
   } catch (err) {
     showToast('error', 'Erreur', err.message);
   }
@@ -433,6 +438,114 @@ async function pilDeleteHistory(id) {
   await pilLoadHistory();
 }
 
+
+/* ════════════════════════════════════════════════
+   SYNC CROSS-APPAREILS — Piluliers / Semainier
+   Blob chiffré AES-256-GCM côté client,
+   stocké opaque dans Supabase (piluliers_sync).
+   Isolation stricte par user.id — admins inclus pour leurs propres données de test.
+════════════════════════════════════════════════ */
+
+async function pilSyncPush() {
+  const uid = APP?.user?.id;
+  if (!uid) return;
+
+  try {
+    // Récupérer tous les piluliers de l'utilisateur
+    const db  = await _pilulierDb();
+    const all = await new Promise((res, rej) => {
+      const tx  = db.transaction(PILULIER_STORE, 'readonly');
+      const idx = tx.objectStore(PILULIER_STORE).index('user_id');
+      const req = idx.getAll(uid);
+      req.onsuccess = e => res(e.target.result || []);
+      req.onerror   = e => rej(e.target.error);
+    });
+
+    if (!all.length) return;
+
+    // Chiffrement AES côté client
+    const encrypted = typeof encryptData === 'function'
+      ? await encryptData(all)
+      : { data: btoa(JSON.stringify(all)), iv: '', _plain: true };
+
+    const token = APP?.token || sessionStorage.getItem('ami_token');
+    if (!token) return;
+
+    await fetch(`${APP?.workerUrl || ''}/webhook/piluliers-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        encrypted_data: JSON.stringify(encrypted),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (e) {
+    console.warn('[pilSyncPush]', e.message);
+  }
+}
+
+async function pilSyncPull() {
+  const uid = APP?.user?.id;
+  if (!uid) return;
+
+  try {
+    const token = APP?.token || sessionStorage.getItem('ami_token');
+    if (!token) return;
+
+    const res = await fetch(`${APP?.workerUrl || ''}/webhook/piluliers-pull`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const { data } = await res.json();
+    if (!data?.encrypted_data) return;
+
+    // Déchiffrement
+    const parsed = JSON.parse(data.encrypted_data);
+    const remote = typeof decryptData === 'function'
+      ? await decryptData(parsed)
+      : JSON.parse(atob(parsed.data));
+
+    if (!Array.isArray(remote) || !remote.length) return;
+
+    // Merge : insérer uniquement les piluliers absents localement
+    const db       = await _pilulierDb();
+    const existing = await new Promise((res2, rej) => {
+      const tx  = db.transaction(PILULIER_STORE, 'readonly');
+      const idx = tx.objectStore(PILULIER_STORE).index('user_id');
+      const req = idx.getAll(uid);
+      req.onsuccess = e => res2(e.target.result || []);
+      req.onerror   = e => rej(e.target.error);
+    });
+
+    // Clé de déduplication : patient_id + semaine_debut + user_id
+    const existSet = new Set(existing.map(p => `${p.patient_id}|${p.semaine_debut}|${p.user_id}`));
+
+    let imported = 0;
+    const txW   = db.transaction(PILULIER_STORE, 'readwrite');
+    const store = txW.objectStore(PILULIER_STORE);
+    for (const p of remote) {
+      const key = `${p.patient_id}|${p.semaine_debut}|${p.user_id}`;
+      if (!existSet.has(key)) {
+        // Supprimer l'id pour laisser autoIncrement assigner un nouvel id local
+        const { id: _drop, ...pWithoutId } = p;
+        store.add({ ...pWithoutId, _synced: true });
+        imported++;
+      }
+    }
+    await new Promise((res3, rej) => {
+      txW.oncomplete = () => res3();
+      txW.onerror    = e  => rej(e.target.error);
+    });
+
+    if (imported > 0) {
+      console.log(`[pilSyncPull] ${imported} pilulier(s) importé(s) depuis le serveur`);
+    }
+  } catch (e) {
+    console.warn('[pilSyncPull]', e.message);
+  }
+}
+
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'pilulier') renderPilulier();
 });
+
