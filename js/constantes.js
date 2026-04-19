@@ -434,16 +434,9 @@ async function constSyncPush() {
       ? await encryptData(all)
       : { data: btoa(JSON.stringify(all)), iv: '', _plain: true };
 
-    const token = APP?.token || sessionStorage.getItem('ami_token');
-    if (!token) return;
-
-    await fetch(`${APP?.workerUrl || ''}/webhook/constantes-push`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        encrypted_data: JSON.stringify(encrypted),
-        updated_at: new Date().toISOString(),
-      }),
+    await wpost('/webhook/constantes-push', {
+      encrypted_data: JSON.stringify(encrypted),
+      updated_at: new Date().toISOString(),
     });
   } catch (e) {
     console.warn('[constSyncPush]', e.message);
@@ -455,14 +448,8 @@ async function constSyncPull() {
   if (!uid) return;
 
   try {
-    const token = APP?.token || sessionStorage.getItem('ami_token');
-    if (!token) return;
-
-    const res = await fetch(`${APP?.workerUrl || ''}/webhook/constantes-pull`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const { data } = await res.json();
+    const resp = await wpost('/webhook/constantes-pull', {});
+    const { data } = resp;
     if (!data?.encrypted_data) return;
 
     // Déchiffrement

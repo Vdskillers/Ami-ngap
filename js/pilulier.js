@@ -468,16 +468,9 @@ async function pilSyncPush() {
       ? await encryptData(all)
       : { data: btoa(JSON.stringify(all)), iv: '', _plain: true };
 
-    const token = APP?.token || sessionStorage.getItem('ami_token');
-    if (!token) return;
-
-    await fetch(`${APP?.workerUrl || ''}/webhook/piluliers-push`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        encrypted_data: JSON.stringify(encrypted),
-        updated_at: new Date().toISOString(),
-      }),
+    await wpost('/webhook/piluliers-push', {
+      encrypted_data: JSON.stringify(encrypted),
+      updated_at: new Date().toISOString(),
     });
   } catch (e) {
     console.warn('[pilSyncPush]', e.message);
@@ -489,14 +482,8 @@ async function pilSyncPull() {
   if (!uid) return;
 
   try {
-    const token = APP?.token || sessionStorage.getItem('ami_token');
-    if (!token) return;
-
-    const res = await fetch(`${APP?.workerUrl || ''}/webhook/piluliers-pull`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const { data } = await res.json();
+    const resp = await wpost('/webhook/piluliers-pull', {});
+    const { data } = resp;
     if (!data?.encrypted_data) return;
 
     // Déchiffrement
