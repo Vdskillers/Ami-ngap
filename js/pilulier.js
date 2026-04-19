@@ -280,6 +280,10 @@ async function pilSave() {
   };
   try {
     await _pilulierSave(obj);
+    // ── Écriture dans la fiche patient du carnet ──────────────────────
+    if (typeof patientAddPilulier === 'function') {
+      await patientAddPilulier(_pilCurrentPatient, obj);
+    }
     showToast('success', 'Pilulier sauvegardé');
     await pilLoadHistory();
   } catch (err) {

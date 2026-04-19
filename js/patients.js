@@ -204,61 +204,90 @@ async function _idbGetByIndex(store, indexName, val) {
 }
 
 /* ════════════════════════════════════════════════
-   HELPERS GLOBAUX — utilisés par les modules
-   cliniques (transmissions, constantes, pilulier,
-   BSI, consentements, alertes, compte-rendu)
-   ────────────────────────────────────────────────
-   Accessibles admin ET infirmière : chaque compte
-   voit uniquement sa propre base IDB isolée.
+   HELPERS GLOBAUX — modules cliniques v2
+   Accessibles admin ET infirmière.
+   Chaque compte voit uniquement sa base IDB isolée.
 ════════════════════════════════════════════════ */
 
-/**
- * Retourne tous les patients de la base locale.
- * Déchiffre les données et fusionne nom/prenom.
- * @returns {Promise<Array>}
- */
 async function getAllPatients() {
   try {
-    await initPatientsDB(); // garantit que la DB est ouverte pour l'utilisateur courant
+    await initPatientsDB();
     const rows = await _idbGetAll(PATIENTS_STORE);
-    return rows.map(r => ({
-      id:     r.id,
-      nom:    r.nom    || '',
-      prenom: r.prenom || '',
-      ...(_dec(r._data) || {}),
-    }));
-  } catch (e) {
-    console.warn('[getAllPatients]', e.message);
-    return [];
-  }
+    return rows.map(r => ({ id: r.id, nom: r.nom||'', prenom: r.prenom||'', ...(_dec(r._data)||{}) }));
+  } catch (e) { console.warn('[getAllPatients]', e.message); return []; }
 }
 
-/**
- * Retourne un patient par son id.
- * @param {string} id
- * @returns {Promise<Object|null>}
- */
 async function getPatientById(id) {
   try {
     await initPatientsDB();
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === id);
     if (!row) return null;
-    return {
-      id:     row.id,
-      nom:    row.nom    || '',
-      prenom: row.prenom || '',
-      ...(_dec(row._data) || {}),
-    };
-  } catch (e) {
-    console.warn('[getPatientById]', e.message);
-    return null;
-  }
+    return { id: row.id, nom: row.nom||'', prenom: row.prenom||'', ...(_dec(row._data)||{}) };
+  } catch (e) { console.warn('[getPatientById]', e.message); return null; }
 }
 
-/* ════════════════════════════════════════════════
-   GESTION PATIENTS
-════════════════════════════════════════════════ */
+async function patientAddConstante(patientId, mesure) {
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    if (!Array.isArray(p.constantes)) p.constantes = [];
+    p.constantes.push({ ...mesure, _saved_at: new Date().toISOString() });
+    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+  } catch (e) { console.warn('[patientAddConstante]', e.message); }
+}
+
+async function patientAddPilulier(patientId, pilulier) {
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    if (!Array.isArray(p.piluliers)) p.piluliers = [];
+    const existIdx = p.piluliers.findIndex(x => x.semaine_debut === pilulier.semaine_debut);
+    const entry = { ...pilulier, _saved_at: new Date().toISOString() };
+    if (existIdx >= 0) p.piluliers[existIdx] = entry;
+    else p.piluliers.push(entry);
+    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+  } catch (e) { console.warn('[patientAddPilulier]', e.message); }
+}
+
+async function _deleteConstante(patientId, idx) {
+  if (!confirm('Supprimer cette mesure ?')) return;
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    if (!Array.isArray(p.constantes)) return;
+    // idx est issu du slice().reverse() → index réel = length-1-idx
+    p.constantes.splice(p.constantes.length - 1 - idx, 1);
+    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    if (typeof showToast === 'function') showToast('info', 'Mesure supprimée');
+    _patTab('constantes', patientId);
+  } catch (e) { if (typeof showToast === 'function') showToast('error', 'Erreur', e.message); }
+}
+
+async function _deletePilulierPatient(patientId, idx) {
+  if (!confirm('Supprimer ce pilulier ?')) return;
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    if (!Array.isArray(p.piluliers)) return;
+    p.piluliers.splice(p.piluliers.length - 1 - idx, 1);
+    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    if (typeof showToast === 'function') showToast('info', 'Pilulier supprimé');
+    _patTab('pilulier', patientId);
+  } catch (e) { if (typeof showToast === 'function') showToast('error', 'Erreur', e.message); }
+}
 
 let _editingPatientId = null;
 
@@ -531,6 +560,8 @@ async function openPatientDetail(id) {
         <button id="tab-cotations" style="${tabStyle(false)}" onclick="_patTab('cotations','${id}')">🧾 Cotations ${p.cotations?.length ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.cotations.length+'</span>' : ''}</button>
         <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
         <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
+        <button id="tab-constantes" style="${tabStyle(false)}" onclick="_patTab('constantes','${id}')">📊 Constantes <span style='background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.constantes||[]).length||''}</span></button>
+        <button id="tab-pilulier"   style="${tabStyle(false)}" onclick="_patTab('pilulier','${id}')">💊 Semainier <span style='background:rgba(79,168,255,.12);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.piluliers||[]).length||''}</span></button>
       </div>
     </div>
 
@@ -546,7 +577,7 @@ async function openPatientDetail(id) {
 
 /* ── Sélecteur d'onglet ── */
 function _patTab(tab, id) {
-  ['infos','ordos','cotations','notes'].forEach(t => {
+  ['infos','ordos','cotations','notes','constantes','pilulier'].forEach(t => {
     const btn = $('tab-'+t);
     if (!btn) return;
     if (t === tab) {
@@ -758,6 +789,131 @@ function _patTabRender(tab, id, p, notes) {
           : '<div style="color:var(--m);font-size:13px">Aucune note. Ajoutez la première observation ci-dessus.</div>'}
         </div>
       </div>`;
+  }
+
+  /* ── Onglet Constantes patients ── */
+  if (tab === 'constantes') {
+    const constantes = (p.constantes || []).slice().reverse();
+    const SEUILS_REF = {
+      ta_sys: {min:90,max:140,unit:'mmHg'}, ta_dia: {min:60,max:90,unit:'mmHg'},
+      glycemie: {min:0.7,max:1.8,unit:'g/L'}, spo2: {min:94,max:100,unit:'%'},
+      temperature: {min:36,max:37.5,unit:'°C'}, fc: {min:50,max:100,unit:'bpm'},
+      eva: {min:null,max:3,unit:'/10'}, poids: {min:null,max:null,unit:'kg'},
+    };
+    const _alert = (key, val) => {
+      const s = SEUILS_REF[key]; if (!s || val == null || val === '') return false;
+      return (s.min != null && val < s.min) || (s.max != null && val > s.max);
+    };
+    const _cell = (key, val) => {
+      if (val == null || val === '') return '—';
+      const a = _alert(key, val);
+      const u = SEUILS_REF[key]?.unit || '';
+      return `<span style="color:${a?'#ef4444':'var(--t)'};font-weight:${a?'700':'400'}">${val}${u}${a?' ⚠️':''}</span>`;
+    };
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div class="ct" style="margin-bottom:0">📊 Constantes patients</div>
+          <button class="btn bp bsm" onclick="navTo('constantes',null);setTimeout(()=>{const s=document.getElementById('const-patient-sel');if(s){s.value='${id}';constSelectPatient('${id}');}},300)">
+            + Nouvelle mesure
+          </button>
+        </div>
+        ${!constantes.length
+          ? `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucune constante enregistrée. Utilisez le module <strong>Constantes patients</strong> pour saisir des mesures.</div>`
+          : `<div style="overflow-x:auto">
+              <table style="border-collapse:collapse;width:100%;font-size:12px;font-family:var(--fm)">
+                <thead><tr style="background:var(--s)">
+                  <th style="padding:8px;border:1px solid var(--b);text-align:left;color:var(--m)">Date</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">TA</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">Glycémie</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">SpO2</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">T°</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">FC</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">EVA</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">Poids</th>
+                  <th style="padding:8px;border:1px solid var(--b);color:var(--m)">Note</th>
+                  <th style="padding:8px;border:1px solid var(--b)"></th>
+                </tr></thead>
+                <tbody>
+                ${constantes.slice(0,30).map((c,ri) => {
+                  const realIdx = constantes.length - 1 - ri;
+                  const d = new Date(c.date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+                  const ta = (c.ta_sys && c.ta_dia) ? `${c.ta_sys}/${c.ta_dia}mmHg` : '—';
+                  const taAlert = _alert('ta_sys', c.ta_sys) || _alert('ta_dia', c.ta_dia);
+                  return `<tr>
+                    <td style="padding:6px 8px;border:1px solid var(--b);white-space:nowrap">${d}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center;color:${taAlert?'#ef4444':'var(--t)'};font-weight:${taAlert?700:400}">${ta}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${_cell('glycemie',c.glycemie)}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${_cell('spo2',c.spo2)}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${_cell('temperature',c.temperature)}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${_cell('fc',c.fc)}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${_cell('eva',c.eva)}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${c.poids!=null?c.poids+'kg':'—'}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);font-size:11px;color:var(--m)">${c.note||''}</td>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">
+                      <button onclick="_deleteConstante('${id}',${realIdx})" style="background:none;border:none;color:var(--d);cursor:pointer;font-size:12px">🗑</button>
+                    </td>
+                  </tr>`;
+                }).join('')}
+                </tbody>
+              </table>
+            </div>`}
+      </div>`;
+    return;
+  }
+
+  /* ── Onglet Semainier / Pilulier ── */
+  if (tab === 'pilulier') {
+    const piluliers = (p.piluliers || []).slice().reverse();
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div class="ct" style="margin-bottom:0">💊 Semainier / Pilulier</div>
+          <button class="btn bp bsm" onclick="navTo('pilulier',null);setTimeout(()=>{const s=document.getElementById('pil-patient-sel');if(s){s.value='${id}';pilSelectPatient('${id}');}},300)">
+            + Nouveau pilulier
+          </button>
+        </div>
+        ${!piluliers.length
+          ? `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun pilulier enregistré. Utilisez le module <strong>Semainier / Pilulier</strong> pour en créer un.</div>`
+          : piluliers.slice(0,10).map((pil, ri) => {
+              const realIdx = piluliers.length - 1 - ri;
+              const d = new Date(pil.date_creation).toLocaleDateString('fr-FR');
+              const meds = (pil.meds||[]).filter(m => m.nom);
+              const prises = ['matin','midi','soir','nuit'];
+              return `
+                <div style="border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px">
+                  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+                    <div>
+                      <div style="font-size:13px;font-weight:600">Semaine du ${pil.semaine_debut||'—'}</div>
+                      <div style="font-size:11px;color:var(--m);margin-top:2px">
+                        Créé le ${d}${pil.preparateur?' par '+pil.preparateur:''} · ${meds.length} médicament(s)
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:6px">
+                      <button class="btn bs bsm" style="font-size:10px" onclick="navTo('pilulier',null);setTimeout(()=>{const s=document.getElementById('pil-patient-sel');if(s){s.value='${id}';pilSelectPatient('${id}').then(()=>pilLoadFromHistory(${pil._idb_id||0}));}},400)">📂 Charger</button>
+                      <button onclick="_deletePilulierPatient('${id}',${realIdx})" style="background:none;border:none;color:var(--d);cursor:pointer;font-size:14px;padding:2px 8px">🗑</button>
+                    </div>
+                  </div>
+                  ${meds.length ? `
+                  <table style="border-collapse:collapse;font-size:11px;font-family:var(--fm);width:100%">
+                    <thead><tr style="background:var(--s)">
+                      <th style="padding:5px 8px;border:1px solid var(--b);text-align:left;color:var(--m)">Médicament</th>
+                      ${prises.map(pr=>`<th style="padding:5px 8px;border:1px solid var(--b);color:var(--m);text-align:center">${pr[0].toUpperCase()+pr.slice(1)}</th>`).join('')}
+                      <th style="padding:5px 8px;border:1px solid var(--b);color:var(--m)">Remarque</th>
+                    </tr></thead>
+                    <tbody>
+                    ${meds.map(m=>`<tr>
+                      <td style="padding:5px 8px;border:1px solid var(--b);font-weight:600">${m.nom}</td>
+                      ${prises.map(pr=>`<td style="padding:5px 8px;border:1px solid var(--b);text-align:center">${m[pr]?'✅':'—'}</td>`).join('')}
+                      <td style="padding:5px 8px;border:1px solid var(--b);color:var(--m)">${m.remarque||''}</td>
+                    </tr>`).join('')}
+                    </tbody>
+                  </table>` : '<div style="font-size:12px;color:var(--m)">Aucun médicament renseigné.</div>'}
+                </div>`;
+            }).join('')}
+      </div>`;
+    return;
   }
 }
 

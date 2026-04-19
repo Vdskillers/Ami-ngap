@@ -349,6 +349,10 @@ async function constSave() {
 
   try {
     await _constSave(obj);
+    // ── Écriture dans la fiche patient du carnet ──────────────────────
+    if (typeof patientAddConstante === 'function') {
+      await patientAddConstante(_constCurrentPatient, obj);
+    }
     showToast('success', 'Constantes enregistrées', alerts.length ? '⚠️ Alertes détectées' : undefined);
     constResetForm();
     await constRefresh();
