@@ -582,22 +582,9 @@ function renderCotCabinet(d) {
    Retourne true si on peut continuer, false si on attend le choix utilisateur.
 ════════════════════════════════════════════════ */
 async function _cotationCheckDoublon(onUpdate, onNew) {
-  // 1. Choix explicite déjà fait → bypass
+  // Seul _userChose (choix explicite de l'utilisateur dans cette session) bypasse la modale.
+  // cotationIdx et invoice_number ne bypasses PAS la modale — ils servent uniquement à l'upsert.
   if (window._editingCotation && window._editingCotation._userChose) return true;
-
-  // 2. Mode édition déjà posé ET résolu (index ou invoice_number connu)
-  //    → mise à jour intentionnelle d'une cotation identifiée, bypass la modale
-  //    ⚠️ _fromTournee SEUL ne suffit PAS : il est posé dès l'ouverture de la page
-  //    même quand il n'y a pas encore de cotation existante → on vérifie toujours l'IDB
-  const _ref = window._editingCotation;
-  if (_ref && (
-    (_ref.cotationIdx != null && _ref.cotationIdx >= 0) ||
-    _ref.invoice_number
-  )) {
-    // Marquer comme choix utilisateur pour éviter toute re-vérification dans ce cycle
-    window._editingCotation = { ..._ref, _userChose: true };
-    return true;
-  }
 
   try {
     const _patNomCheck = (gv('f-pt') || '').trim();
@@ -1035,15 +1022,19 @@ async function _cotationPipeline() {
       // Dispatch pour tout listener externe
       document.dispatchEvent(new CustomEvent('ami:cotation_done', { detail: { invoice_number: _invoiceId } }));
     }
-    // ── Nettoyer _editingCotation après pipeline (auto-détecté ET choix utilisateur via modale) ──
-    // Ne pas toucher aux refs posées explicitement depuis la fiche patient (_fromTournee sans _userChose)
-    if (window._editingCotation?._autoDetected || window._editingCotation?._userChose) {
+    // ── Nettoyer _editingCotation après pipeline ──────────────────────────────
+    // Couvre : auto-détection, choix explicite modale, et résolution depuis tournée/planning
+    if (window._editingCotation?._autoDetected ||
+        window._editingCotation?._userChose ||
+        window._editingCotation?._fromTournee) {
       window._editingCotation = null;
     }
 
   } catch (e) {
     // Nettoyer aussi en cas d'erreur
-    if (window._editingCotation?._autoDetected || window._editingCotation?._userChose) {
+    if (window._editingCotation?._autoDetected ||
+        window._editingCotation?._userChose ||
+        window._editingCotation?._fromTournee) {
       window._editingCotation = null;
     }
     _clearSlowTimers();

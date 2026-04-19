@@ -2979,15 +2979,16 @@ async function _openCotationComplete() {
           );
           if (_existIdxOC >= 0) {
             const _existCotOC = _patOC.cotations[_existIdxOC];
-            // Cotation existante trouvée → enrichir _editingCotation + marquer _userChose
-            // _userChose: true → _cotationCheckDoublon ne re-affichera PAS la modale doublon
-            // (l'utilisateur a déjà validé le choix via openCotationPatient ou vient ici intentionnellement)
+            // Cotation existante trouvée → enrichir _editingCotation avec l'index résolu.
+            // ⚠️ PAS de _userChose ici : c'est une résolution automatique, pas un choix
+            // explicite. _cotationCheckDoublon affichera la modale pour que l'utilisateur
+            // confirme s'il veut mettre à jour ou créer une nouvelle cotation.
             window._editingCotation = {
               invoice_number: _existCotOC.invoice_number || existingInvoice,
               patientId:      _rowOC.id,
               cotationIdx:    _existIdxOC,
               _fromTournee:   true,
-              _userChose:     true,
+              // _userChose intentionnellement absent → la modale doublon s'affichera
             };
           }
         }
