@@ -355,7 +355,12 @@
   .ht {
     border: 1px solid var(--mp-border) !important;
     border-radius: 16px !important;
-    overflow: hidden;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .ht table {
+    min-width: 640px !important;
   }
 
   th {
