@@ -9,15 +9,35 @@
    3. Cases à cocher par prise (M/Mi/S/N)
    4. Impression / export PDF du semainier
    5. Historique des préparations
-   6. Stockage local IDB + sync Supabase (AES-256-GCM) cross-appareils
+   6. IDB isolée par userId (ami_piluliers_<uid>) + sync Supabase cross-appareils
    ────────────────────────────────────────────────
 ════════════════════════════════════════════════ */
 
 const PILULIER_STORE = 'piluliers';
 
+/* ── IDB isolée par userId — même pattern que patients.js ── */
+let _pilulierDB         = null;
+let _pilulierDBUserId   = null;
+let _pilulierDBOpening  = null;
+
+function _pilulierDbName() {
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  return 'ami_piluliers_' + uid.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 async function _pilulierDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('ami_piluliers', 1);
+  const currentUid = S?.user?.id || S?.user?.email || 'local';
+
+  // Fermer si changement d'utilisateur
+  if (_pilulierDB && _pilulierDBUserId !== currentUid) {
+    try { _pilulierDB.close(); } catch (_) {}
+    _pilulierDB = null; _pilulierDBUserId = null; _pilulierDBOpening = null;
+  }
+  if (_pilulierDB) return _pilulierDB;
+  if (_pilulierDBOpening) return _pilulierDBOpening;
+
+  _pilulierDBOpening = new Promise((resolve, reject) => {
+    const req = indexedDB.open(_pilulierDbName(), 1);
     req.onupgradeneeded = e => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(PILULIER_STORE)) {
@@ -26,10 +46,26 @@ async function _pilulierDb() {
         s.createIndex('user_id',    'user_id',    { unique: false });
       }
     };
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
+    req.onsuccess = e => {
+      _pilulierDB       = e.target.result;
+      _pilulierDBUserId = currentUid;
+      _pilulierDBOpening = null;
+      _pilulierDB.onclose = () => {
+        _pilulierDB = null; _pilulierDBUserId = null; _pilulierDBOpening = null;
+      };
+      resolve(_pilulierDB);
+    };
+    req.onerror  = () => { _pilulierDBOpening = null; reject(req.error); };
+    req.onblocked = () => console.warn('[AMI] ami_piluliers IDB bloquée');
   });
+  return _pilulierDBOpening;
 }
+
+/* Fermer la DB au logout (auth.js dispatche ami:logout) */
+document.addEventListener('ami:logout', () => {
+  try { if (_pilulierDB) _pilulierDB.close(); } catch (_) {}
+  _pilulierDB = null; _pilulierDBUserId = null; _pilulierDBOpening = null;
+});
 
 async function _pilulierSave(obj) {
   const db = await _pilulierDb();
@@ -43,12 +79,12 @@ async function _pilulierSave(obj) {
 
 async function _pilulierGetAll(patientId) {
   const db = await _pilulierDb();
-  const uid = APP?.user?.id || '';
   return new Promise((resolve, reject) => {
     const tx  = db.transaction(PILULIER_STORE, 'readonly');
     const idx = tx.objectStore(PILULIER_STORE).index('patient_id');
     const req = idx.getAll(patientId);
-    req.onsuccess = e => resolve((e.target.result||[]).filter(p => p.user_id === uid).sort((a,b) => new Date(b.date_creation) - new Date(a.date_creation)));
+    // La base est déjà isolée par userId — pas de filtre supplémentaire
+    req.onsuccess = e => resolve((e.target.result||[]).sort((a,b) => new Date(b.date_creation) - new Date(a.date_creation)));
     req.onerror   = e => reject(e.target.error);
   });
 }
@@ -454,9 +490,9 @@ async function pilSyncPush() {
     // Récupérer tous les piluliers de l'utilisateur
     const db  = await _pilulierDb();
     const all = await new Promise((res, rej) => {
+      // Base isolée par userId — getAll() retourne uniquement les données de cet user
       const tx  = db.transaction(PILULIER_STORE, 'readonly');
-      const idx = tx.objectStore(PILULIER_STORE).index('user_id');
-      const req = idx.getAll(uid);
+      const req = tx.objectStore(PILULIER_STORE).getAll();
       req.onsuccess = e => res(e.target.result || []);
       req.onerror   = e => rej(e.target.error);
     });
@@ -497,9 +533,9 @@ async function pilSyncPull() {
     // Merge : insérer uniquement les piluliers absents localement
     const db       = await _pilulierDb();
     const existing = await new Promise((res2, rej) => {
+      // Base isolée par userId — getAll() retourne uniquement les données de cet user
       const tx  = db.transaction(PILULIER_STORE, 'readonly');
-      const idx = tx.objectStore(PILULIER_STORE).index('user_id');
-      const req = idx.getAll(uid);
+      const req = tx.objectStore(PILULIER_STORE).getAll();
       req.onsuccess = e => res2(e.target.result || []);
       req.onerror   = e => rej(e.target.error);
     });
@@ -534,5 +570,10 @@ async function pilSyncPull() {
 
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'pilulier') renderPilulier();
+});
+
+/* Sync pull au login — attend que la session soit disponible */
+document.addEventListener('ami:login', () => {
+  pilSyncPull().catch(() => {});
 });
 

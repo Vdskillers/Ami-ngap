@@ -9,15 +9,35 @@
    3. Alertes seuils personnalisables par patient
    4. Historique avec export CSV
    5. Intégration dans fiche patient
-   6. Stockage local IDB + sync Supabase (AES-256-GCM) cross-appareils
+   6. IDB isolée par userId (ami_constantes_<uid>) + sync Supabase cross-appareils
    ────────────────────────────────────────────────
 ════════════════════════════════════════════════ */
 
 const CONST_STORE = 'constantes';
 
+/* ── IDB isolée par userId — même pattern que patients.js ── */
+let _constDB        = null;
+let _constDBUserId  = null;
+let _constDBOpening = null;
+
+function _constDbName() {
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  return 'ami_constantes_' + uid.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 async function _constDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('ami_constantes', 1);
+  const currentUid = S?.user?.id || S?.user?.email || 'local';
+
+  // Fermer si changement d'utilisateur
+  if (_constDB && _constDBUserId !== currentUid) {
+    try { _constDB.close(); } catch (_) {}
+    _constDB = null; _constDBUserId = null; _constDBOpening = null;
+  }
+  if (_constDB) return _constDB;
+  if (_constDBOpening) return _constDBOpening;
+
+  _constDBOpening = new Promise((resolve, reject) => {
+    const req = indexedDB.open(_constDbName(), 1);
     req.onupgradeneeded = e => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(CONST_STORE)) {
@@ -27,10 +47,26 @@ async function _constDb() {
         s.createIndex('date',       'date',        { unique: false });
       }
     };
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
+    req.onsuccess = e => {
+      _constDB       = e.target.result;
+      _constDBUserId = currentUid;
+      _constDBOpening = null;
+      _constDB.onclose = () => {
+        _constDB = null; _constDBUserId = null; _constDBOpening = null;
+      };
+      resolve(_constDB);
+    };
+    req.onerror  = () => { _constDBOpening = null; reject(req.error); };
+    req.onblocked = () => console.warn('[AMI] ami_constantes IDB bloquée');
   });
+  return _constDBOpening;
 }
+
+/* Fermer la DB au logout */
+document.addEventListener('ami:logout', () => {
+  try { if (_constDB) _constDB.close(); } catch (_) {}
+  _constDB = null; _constDBUserId = null; _constDBOpening = null;
+});
 
 async function _constSave(obj) {
   const db = await _constDb();
@@ -43,16 +79,16 @@ async function _constSave(obj) {
 }
 
 async function _constGetAll(patientId, days = 90) {
-  const db  = await _constDb();
-  const uid = APP?.user?.id || '';
+  const db    = await _constDb();
   const since = new Date(Date.now() - days * 86400000).toISOString();
   return new Promise((resolve, reject) => {
     const tx  = db.transaction(CONST_STORE, 'readonly');
     const idx = tx.objectStore(CONST_STORE).index('patient_id');
     const req = idx.getAll(patientId);
+    // Base isolée par userId — filtre uniquement sur la date
     req.onsuccess = e => resolve(
       (e.target.result||[])
-        .filter(c => c.user_id === uid && c.date >= since)
+        .filter(c => c.date >= since)
         .sort((a,b) => new Date(a.date) - new Date(b.date))
     );
     req.onerror = e => reject(e.target.error);
@@ -417,12 +453,11 @@ async function constSyncPush() {
   if (!uid) return;
 
   try {
-    // Récupérer toutes les constantes de l'utilisateur (toutes périodes)
+    // Base isolée par userId — getAll() retourne uniquement les données de cet user
     const db  = await _constDb();
     const all = await new Promise((res, rej) => {
       const tx  = db.transaction(CONST_STORE, 'readonly');
-      const idx = tx.objectStore(CONST_STORE).index('user_id');
-      const req = idx.getAll(uid);
+      const req = tx.objectStore(CONST_STORE).getAll();
       req.onsuccess = e => res(e.target.result || []);
       req.onerror   = e => rej(e.target.error);
     });
@@ -463,9 +498,9 @@ async function constSyncPull() {
     // Merge : insérer uniquement les mesures absentes localement
     const db       = await _constDb();
     const existing = await new Promise((res2, rej) => {
+      // Base isolée par userId — getAll() retourne uniquement les données de cet user
       const tx  = db.transaction(CONST_STORE, 'readonly');
-      const idx = tx.objectStore(CONST_STORE).index('user_id');
-      const req = idx.getAll(uid);
+      const req = tx.objectStore(CONST_STORE).getAll();
       req.onsuccess = e => res2(e.target.result || []);
       req.onerror   = e => rej(e.target.error);
     });
@@ -500,5 +535,10 @@ async function constSyncPull() {
 
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'constantes') renderConstantes();
+});
+
+/* Sync pull au login — attend que la session soit disponible */
+document.addEventListener('ami:login', () => {
+  constSyncPull().catch(() => {});
 });
 

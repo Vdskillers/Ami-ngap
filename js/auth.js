@@ -311,6 +311,16 @@ async function login(){
       _sigDB = null;
       if (typeof _sigDBUserId !== 'undefined') _sigDBUserId = null;
     }
+    if (typeof _pilulierDB !== 'undefined' && _pilulierDB) {
+      try { _pilulierDB.close(); } catch(_) {}
+      _pilulierDB = null;
+      if (typeof _pilulierDBUserId !== 'undefined') _pilulierDBUserId = null;
+    }
+    if (typeof _constDB !== 'undefined' && _constDB) {
+      try { _constDB.close(); } catch(_) {}
+      _constDB = null;
+      if (typeof _constDBUserId !== 'undefined') _constDBUserId = null;
+    }
 
     ss.save(d.token,d.role,d.user);
     /* ── Sécurité RGPD : chiffrement + audit ── */
@@ -356,6 +366,19 @@ function logout(){
     _sigDB = null;
     if (typeof _sigDBUserId !== 'undefined') _sigDBUserId = null;
   }
+  // Fermer les bases pilulier et constantes isolées par userId
+  if (typeof _pilulierDB !== 'undefined' && _pilulierDB) {
+    try { _pilulierDB.close(); } catch(_) {}
+    _pilulierDB = null;
+    if (typeof _pilulierDBUserId !== 'undefined') _pilulierDBUserId = null;
+  }
+  if (typeof _constDB !== 'undefined' && _constDB) {
+    try { _constDB.close(); } catch(_) {}
+    _constDB = null;
+    if (typeof _constDBUserId !== 'undefined') _constDBUserId = null;
+  }
+  // Dispatcher ami:logout pour les modules qui en ont besoin
+  document.dispatchEvent(new CustomEvent('ami:logout'));
   showAuthOv();
   switchTab('l');
   const pw=$('l-pw');if(pw)pw.value='';
