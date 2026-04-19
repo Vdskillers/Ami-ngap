@@ -86,7 +86,7 @@ let _bsiScores = {};
    RENDU PRINCIPAL
 ════════════════════════════════════════════════ */
 async function renderBSI() {
-  const wrap = document.getElementById('view-bsi');
+  const wrap = document.getElementById('bsi-root');
   if (!wrap) return;
 
   let patients = [];

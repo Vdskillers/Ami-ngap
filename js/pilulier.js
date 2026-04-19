@@ -79,7 +79,7 @@ const PRISES = [
    RENDU PRINCIPAL
 ════════════════════════════════════════════════ */
 async function renderPilulier() {
-  const wrap = document.getElementById('view-pilulier');
+  const wrap = document.getElementById('pilulier-root');
   if (!wrap) return;
 
   let patients = [];

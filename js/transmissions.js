@@ -77,7 +77,7 @@ let _transMode = 'SOAP'; // 'SOAP' | 'DAR'
    RENDU PRINCIPAL — vue transmissions
 ════════════════════════════════════════════════ */
 async function renderTransmissions() {
-  const wrap = document.getElementById('view-transmissions');
+  const wrap = document.getElementById('transmissions-root');
   if (!wrap) return;
 
   // Charger la liste des patients
@@ -363,3 +363,4 @@ document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'transmissions') {
     renderTransmissions();
   }
+});

@@ -57,7 +57,7 @@ async function _crGetAll(patientId) {
 let _crCurrentPatient = null;
 
 async function renderCompteRendu() {
-  const wrap = document.getElementById('view-compte-rendu');
+  const wrap = document.getElementById('compte-rendu-root');
   if (!wrap) return;
 
   let patients = [];
@@ -394,7 +394,7 @@ function _scoreBar(score, color) {
    RENDU PRINCIPAL
 ════════════════════════════════════════════════ */
 async function renderAuditCPAM() {
-  const wrap = document.getElementById('view-audit-cpam');
+  const wrap = document.getElementById('audit-cpam-root');
   if (!wrap) return;
 
   wrap.innerHTML = `

@@ -136,7 +136,7 @@ let _consentLastPos = null;
    RENDU PRINCIPAL
 ════════════════════════════════════════════════ */
 async function renderConsentements() {
-  const wrap = document.getElementById('view-consentements');
+  const wrap = document.getElementById('consentements-root');
   if (!wrap) return;
 
   let patients = [];

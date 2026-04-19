@@ -163,7 +163,7 @@ function renderPatientMedAlerts(patientId, medications, containerId) {
 
 /* ── Rendu vue dédiée ────────────────────────── */
 async function renderAlertesView() {
-  const wrap = document.getElementById('view-alertes-med');
+  const wrap = document.getElementById('alertes-med-root');
   if (!wrap) return;
 
   let patients = [];

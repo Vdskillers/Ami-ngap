@@ -88,7 +88,7 @@ let _constPeriod = 30;
    RENDU PRINCIPAL
 ════════════════════════════════════════════════ */
 async function renderConstantes() {
-  const wrap = document.getElementById('view-constantes');
+  const wrap = document.getElementById('constantes-root');
   if (!wrap) return;
 
   let patients = [];
