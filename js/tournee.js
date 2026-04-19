@@ -2974,13 +2974,36 @@ function _openCotationComplete() {
     setV('f-exo', patient.exo  || '');
     setV('f-pr',  patient.medecin || '');
 
-    // Pré-remplir avec les actes actuels de la cotation (pas la description brute)
+    // Pré-remplir f-txt avec les actes de la cotation existante
+    // Priorité : soin (description d'origine) > actes codés > description brute
     const fTxt = document.getElementById('f-txt');
     if (fTxt) {
       const cotActes = (patient._cotation?.actes || []);
-      const actesTxt = cotActes.length
-        ? cotActes.map(a => (a.code || '') + (a.nom ? ' ' + a.nom : '')).join(' + ')
-        : (patient.actes_recurrents || patient.texte || patient.description || '').trim();
+      const cotSoin  = patient._cotation?.soin || '';
+
+      let actesTxt = '';
+      if (cotActes.length) {
+        // Construire un texte lisible par l'IA : "AMI1 Injection SC/IM + DIM Majoration dimanche/férié"
+        // Inclure nom/label pour que l'IA comprenne ce qu'elle recalcule
+        actesTxt = cotActes
+          .map(a => [a.code, a.nom || a.label || a.description].filter(Boolean).join(' '))
+          .join(' + ');
+      }
+      // Si les actes ne donnent qu'un code court sans description, enrichir avec le soin d'origine
+      if (!actesTxt || actesTxt === cotActes.map(a => a.code).join(' + ')) {
+        actesTxt = cotSoin || actesTxt;
+      }
+      // Dernier fallback : description brute enrichie via pathologiesToActes si pathologie brute
+      if (!actesTxt) {
+        const rawFallback = (patient.actes_recurrents || patient.texte || patient.description || '').trim();
+        const _hasActeKw = /injection|pansement|prélèvement|perfusion|nursing|insuline/i;
+        if (rawFallback && !_hasActeKw.test(rawFallback) && typeof pathologiesToActes === 'function') {
+          const conv = pathologiesToActes(rawFallback);
+          actesTxt = conv && conv !== rawFallback ? rawFallback + ' — ' + conv : rawFallback;
+        } else {
+          actesTxt = rawFallback;
+        }
+      }
       if (actesTxt) {
         fTxt.value = actesTxt;
         if (typeof renderLiveReco === 'function') renderLiveReco(actesTxt);
@@ -2995,13 +3018,13 @@ function _openCotationComplete() {
     const fDs = document.getElementById('f-ds');
     const fHs = document.getElementById('f-hs');
     if (fDs) {
-      const dateSoin = (patient.date || patient.date_soin || '').slice(0, 10);
-      if (dateSoin) fDs.value = dateSoin;
-      else fDs.value = new Date().toISOString().slice(0, 10); // aujourd'hui si aucune date
+      // Priorité : date de la cotation existante > date du patient > aujourd'hui
+      const dateSoin = (patient._cotation?.date || patient.date || patient.date_soin || '').slice(0, 10);
+      fDs.value = dateSoin || new Date().toISOString().slice(0, 10);
     }
     if (fHs) {
-      // Heure du soin : priorité heure_soin > heure_preferee > heure > vide
-      fHs.value = (patient.heure_soin || patient.heure_preferee || patient.heure || '').trim().slice(0, 5);
+      // Priorité : heure de la cotation existante > heure_soin du patient > vide
+      fHs.value = (patient._cotation?.heure || patient.heure_soin || patient.heure_preferee || patient.heure || '').trim().slice(0, 5);
       fHs._userEdited = true; // bloque tout écrasement ultérieur
     }
 
@@ -3057,7 +3080,9 @@ async function openCotationPatient(patientIndex) {
   // ── Vérification doublon IDB avant l'appel IA ────────────────────────────
   // Si une cotation existe déjà dans le carnet pour ce patient à cette date
   // (qu'elle soit validée ou non), proposer de la mettre à jour ou d'en créer une nouvelle.
+  // Chercher par date du patient (Planning) OU aujourd'hui (Pilotage)
   const _todayCheck = new Date().toISOString().slice(0, 10);
+  const _patientDate = (patient.date || patient.date_soin || _todayCheck).slice(0, 10);
   try {
     if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
       const _patId  = patient.patient_id || patient.id;
@@ -3070,7 +3095,10 @@ async function openCotationPatient(patientIndex) {
       if (_row && typeof _dec === 'function') {
         const _pat = { ...(_dec(_row._data) || {}), id: _row.id };
         if (Array.isArray(_pat.cotations)) {
-          const _existIdx = _pat.cotations.findIndex(c => c.date === _todayCheck);
+          // Chercher par date du patient (YYYY-MM-DD) — couvre Planning et Pilotage
+          const _existIdx = _pat.cotations.findIndex(c =>
+            (c.date || '').slice(0, 10) === _patientDate
+          );
           if (_existIdx >= 0) {
             const _existCot = _pat.cotations[_existIdx];
             const _total    = parseFloat(_existCot.total || 0).toFixed(2);
@@ -3123,6 +3151,18 @@ async function openCotationPatient(patientIndex) {
                   invoice_number: _existCot.invoice_number || null,
                   _fromTournee:   true,
                   _userChose:     true,
+                };
+                // ── Synchroniser patient._cotation avec la cotation IDB existante ──
+                // Indispensable pour que _openCotationComplete remplisse f-txt avec
+                // les vrais actes (AMI1 + DIM) et non la description brute ("Diabète")
+                patient._cotation = {
+                  actes:          _existCot.actes || [],
+                  total:          parseFloat(_existCot.total || 0),
+                  validated:      true,
+                  invoice_number: _existCot.invoice_number || null,
+                  heure:          _existCot.heure || '',
+                  date:           _existCot.date || '',
+                  soin:           _existCot.soin || patient.description || '',
                 };
                 showCotationModal(patient, _existCot, null);
                 resolve('update');
