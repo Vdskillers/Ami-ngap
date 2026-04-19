@@ -749,7 +749,7 @@ async function cabinetPullSync() {
 
     const items = d.items || [];
     if (!items.length) {
-      _syncOk('ℹ️ Aucune donnée disponible à recevoir — votre collègue n\'a pas encore effectué de push, ou les données ont expiré (> 7 jours).');
+      _syncOk('ℹ️ Aucune donnée reçue — vérifiez que votre collègue a coché votre nom dans "Avec qui je synchronise" et a cliqué ⬆️ Envoyer.');
       return;
     }
 
@@ -897,12 +897,13 @@ async function cabinetSyncStatus() {
 
     const members = d.members || [];
     result.innerHTML = `
-      <div class="ct" style="font-size:12px;margin-bottom:10px">État de la synchronisation</div>
+      <div class="ct" style="font-size:12px;margin-bottom:10px">Dernier envoi par membre</div>
+      <div style="font-size:11px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">📌 Indique quand chaque IDE a cliqué "Envoyer mes données"</div>
       ${members.map(m => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--b)">
           <div style="width:8px;height:8px;border-radius:50%;background:${m.last_sync ? '#00d4aa' : '#888'};flex-shrink:0"></div>
-          <div style="flex:1;font-size:12px"><strong>${m.prenom} ${m.nom}</strong></div>
-          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${m.last_sync ? new Date(m.last_sync).toLocaleString('fr-FR') : 'Jamais synchronisé'}</div>
+          <div style="flex:1;font-size:12px"><strong>${m.prenom} ${m.nom}</strong>${m.id === APP.user?.id ? ' <span style="font-size:10px;color:var(--a)">(moi)</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${m.last_sync ? new Date(m.last_sync).toLocaleString('fr-FR') : 'N'a pas encore envoyé'}</div>
         </div>`).join('')}`;
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
