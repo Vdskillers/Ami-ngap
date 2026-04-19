@@ -1831,32 +1831,63 @@ function renderLiveReco(texte) {
    AUTO-COTATION LOCALE (réponse immédiate sans réseau)
    ============================================================ */
 function autoCotationLocale(texte) {
+  // Fallback local — déclenché si l'API N8N est indisponible.
+  // Aligné avec les textes produits par pathologiesToActes() v2.
   const t = texte.toLowerCase();
   const actes = []; let total = 0;
 
-  if (t.includes('injection') || t.includes('insuline') || t.includes('piquer')) {
+  // ── Actes techniques ──
+  if (/injection|insuline|piquer|hbpm|lovenox|fragmine|anticoagul|sc|im/.test(t)) {
     actes.push({ code:'AMI1', nom:'Injection SC/IM', total:3.15 }); total += 3.15;
   }
-  if (t.includes('pansement complexe') || t.includes('escarre') || t.includes('plaie')) {
+  if (/perfusion|perf|intraveineux|iv|antibio|chimio/.test(t)) {
+    actes.push({ code:'AMI5', nom:'Perfusion à domicile', total:15.75 }); total += 15.75;
+  } else if (/pansement.*(complexe|escarre|n[eé]crose|chirurgical|plaie)|escarre|ulc[eè]re|d[eé]tersion/.test(t)) {
     actes.push({ code:'AMI4', nom:'Pansement complexe', total:12.60 }); total += 12.60;
-  } else if (t.includes('pansement')) {
+  } else if (/pansement|plaie/.test(t)) {
     actes.push({ code:'AMI1', nom:'Pansement simple', total:3.15 }); total += 3.15;
   }
-  if (t.includes('prélèvement') || t.includes('prise de sang')) {
-    actes.push({ code:'AMI1', nom:'Prélèvement sanguin', total:3.15 }); total += 3.15;
+  if (/pr[eé]l[eè]vement|prise de sang|bilan sanguin|glyc[eé]mie capillaire/.test(t)) {
+    actes.push({ code:'AMI1', nom:'Prélèvement/Glycémie capillaire', total:3.15 }); total += 3.15;
   }
-  if (t.includes('toilette')) {
-    actes.push({ code:'BSC', nom:'Bilan soins infirmiers C', total:28.00 }); total += 28.00;
+  if (/a[eé]rosol|n[eé]buli/.test(t)) {
+    actes.push({ code:'AMI2', nom:'Aérosol médicamenteux', total:6.30 }); total += 6.30;
   }
-  if (t.includes('domicile') || t.includes('chez')) {
+  if (/ecg|[eé]lectrocardiogramme/.test(t)) {
+    actes.push({ code:'AMI3', nom:'ECG', total:9.45 }); total += 9.45;
+  }
+
+  // ── Bilans soins infirmiers ──
+  if (/nursing complet|bsc|d[eé]pendance lourde|grabataire/.test(t)) {
+    actes.push({ code:'BSC', nom:'BSC — Dépendance lourde', total:28.70 }); total += 28.70;
+  } else if (/bsb|d[eé]pendance mod/.test(t)) {
+    actes.push({ code:'BSB', nom:'BSB — Dépendance modérée', total:18.20 }); total += 18.20;
+  } else if (/toilette|nursing|bsa|aide.{0,20}toilette/.test(t)) {
+    actes.push({ code:'BSA', nom:'BSA — Aide à la toilette', total:13.00 }); total += 13.00;
+  }
+
+  // ── Majorations ──
+  if (/domicile|chez le patient|ifd/.test(t)) {
     actes.push({ code:'IFD', nom:'Déplacement domicile', total:2.75 }); total += 2.75;
+  }
+  if (/enfant|nourrisson|< ?7 ?ans|mie/.test(t)) {
+    actes.push({ code:'MIE', nom:'Majoration enfant', total:3.15 }); total += 3.15;
+  }
+  if (/coordination|mci/.test(t)) {
+    actes.push({ code:'MCI', nom:'Majoration coordination', total:5.00 }); total += 5.00;
   }
   const kmM = t.match(/(\d+)\s*km/);
   if (kmM) {
-    const ik = parseInt(kmM[1]) * 0.35;
-    actes.push({ code:'IK', nom:`${kmM[1]} km`, total: Math.round(ik*100)/100 }); total += ik;
+    const ik = Math.round(parseInt(kmM[1]) * 2 * 0.35 * 100) / 100;
+    actes.push({ code:'IK', nom:`Indemnité kilométrique (${kmM[1]} km)`, total: ik }); total += ik;
   }
-  return { actes, total: Math.round(total*100)/100, source:'local' };
+
+  // Filet de sécurité : si aucun acte détecté mais texte non vide → AMI1 par défaut
+  if (!actes.length && t.trim()) {
+    actes.push({ code:'AMI1', nom:'Acte infirmier (à préciser)', total:3.15 }); total += 3.15;
+  }
+
+  return { actes, total: Math.round(total*100)/100, source:'local_fallback' };
 }
 
 /* Patch startDay pour démarrer timer + optimisation live */
@@ -3025,14 +3056,32 @@ async function openCotationPatient(patientIndex) {
     }
   } catch (_) {}
 
-  /* Priorité : actes_recurrents > texte importé > pathologies (converties en actes réels) */
+  /* Priorité : actes_recurrents > (texte importé + pathologies converties) > pathologies seules
+     BUG FIX : texteImport seul peut ne contenir que "Diabète" sans actes NGAP.
+     On enrichit TOUJOURS avec _pathoConverti quand disponible, même si texteImport existe.
+     Cela garantit que l'IA reçoit "Diabète — Injection insuline SC, surveillance glycémie..."
+     plutôt que simplement "Diabète" qui ne génère aucun acte technique. */
   const texteImport = (patient.texte || patient.description || '').trim();
   const _pathoConverti = patient.pathologies
     ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(patient.pathologies) : patient.pathologies)
     : '';
+
+  // Fusionner : texteImport + _pathoConverti (si différents pour éviter doublon)
+  const _texteBase = (() => {
+    if (!texteImport && !_pathoConverti) return 'soin infirmier à domicile';
+    if (!texteImport) return _pathoConverti;
+    if (!_pathoConverti) return texteImport;
+    // Si le texteImport est une pathologie brute (court, pas d'acte NGAP dedans),
+    // enrichir avec la conversion — sinon garder le texteImport seul (déjà détaillé)
+    const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol/i.test(texteImport);
+    return _hasActeKeyword
+      ? texteImport  // texte déjà bien décrit → on garde tel quel
+      : (texteImport + ' — ' + _pathoConverti);  // pathologie brute → enrichir
+  })();
+
   const texteForCot = actesRecurrents
-    ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
-    : (texteImport || _pathoConverti);
+    ? (actesRecurrents + (_texteBase ? ' — ' + _texteBase : ''))
+    : _texteBase;
 
   let cotation = null;
   try {

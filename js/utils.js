@@ -208,52 +208,204 @@ function requireAuth(){
   return true;
 }
 
-/* ── 10. CONVERSION PATHOLOGIES → ACTES NGAP ────
+/* ── 10. CONVERSION PATHOLOGIES → ACTES NGAP ────────────────────────────────
+   _PATHO_MAP v2.0 — Enrichi avec toutes les abréviations médicales courantes
    Utilisée quand actes_recurrents est vide.
-   Traduit un champ Pathologies (ex : "Diabète type 2, HTA")
+   Traduit un champ Pathologies (ex : "Diabète type 2, HTA, plaie pied")
    en description d'actes médicaux réels applicables,
    directement exploitable par l'IA NGAP pour la cotation.
-─────────────────────────────────────────────── */
+
+   Abréviations couvertes : DT1/DT2, IRC/IRT, IC, BPCO/MPOC, EP, TVP, AVC,
+   SEP, SLA, HBPM, AVK, AOD, INR, HbA1c, NFS, CRP, SAD, PEG, HAD, SSIAD,
+   ALD, MRC, SCA, FA/ACFA, HTAP, AAA, AOMI, IEC, SAS/SAOS, HBP, LUTS...
+──────────────────────────────────────────────────────────────────────────── */
 const _PATHO_MAP = [
-  /* ── Diabète ── */
-  { re: /diab[eè]te?\s*(type\s*[12]|insulino|instable)?/i,
-    actes: 'Injection insuline SC, surveillance glycémie capillaire, éducation thérapeutique' },
-  /* ── Plaies / pansements ── */
-  { re: /plaie|ulc[eè]re|escarre|pansement|cicatric|d[eé]bridement/i,
-    actes: 'Pansement complexe (BSB), détersion, surveillance plaie' },
-  /* ── Anticoagulants ── */
-  { re: /anticoagul|héparin|[lL]ovenox|HBPM|AVK|warfarin|rivaroxaban/i,
-    actes: 'Injection sous-cutanée HBPM, surveillance INR, éducation anticoagulant' },
-  /* ── Perfusions / voie veineuse ── */
-  { re: /perfus|antibio\w+|chimio|voie\s*vein|KT\s*perf/i,
-    actes: 'Perfusion intraveineuse à domicile, IFD, surveillance tolérance' },
-  /* ── Nursing / dépendance ── */
-  { re: /nursing|grabataire|d[eé]pendance|ALD\s*\d*\s*perte|d[eé]mence|Alzheimer/i,
-    actes: 'Soins de nursing complets, AMI 4, aide à la toilette, prévention escarre' },
-  /* ── HTA / cardio ── */
-  { re: /HTA|hypertension|insuffisance\s*cardiaque|cardio/i,
-    actes: 'Prise de tension artérielle, surveillance cardiaque, éducation traitement' },
-  /* ── Soins palliatifs ── */
-  { re: /palliatif|fin\s*de\s*vie|soins\s*confort/i,
-    actes: 'Soins palliatifs à domicile, AMI 4, gestion douleur, nursing complet' },
-  /* ── Prise de sang / bilan ── */
-  { re: /bilan\s*sanguin|prise\s*de\s*sang|NFS|CRP|HbA1c|prélévement/i,
-    actes: 'Prélèvement veineux à domicile, BSA, IFD' },
-  /* ── Sonde / appareillage ── */
-  { re: /sonde\s*urinaire|SAD|stomie|trachéo|gastrostomie|PEG/i,
-    actes: 'Soin sur appareillage, surveillance sonde, AMI 2' },
-  /* ── Douleur / morphine ── */
-  { re: /douleur|morphine|antalgique|PCA/i,
-    actes: 'Injection antalgique, surveillance douleur, évaluation EVA' },
-  /* ── Asthme / BPCO / respiratoire ── */
-  { re: /asthme|BPCO|insuffisance\s*resp|aérosol|nébulisation/i,
-    actes: 'Aérosol médicamenteux, surveillance saturation, IFD' },
-  /* ── Post-op / rééducation ── */
-  { re: /post.op|chirurgi|rééducation|kiné|phlébite/i,
-    actes: 'Soins post-opératoires, pansement, surveillance cicatrice' },
-  /* ── Psychiatrie / troubles cognitifs ── */
-  { re: /psychiatr|dépression|schizophrénie|trouble\s*bipolaire|psychose/i,
-    actes: 'Suivi infirmier psychiatrique, surveillance traitement, éducation thérapeutique' },
+
+  /* ════════════════════════════════════════════
+     DIABÈTE — Toutes formes et abréviations
+  ════════════════════════════════════════════ */
+  {
+    re: /diab[eè]te?(?:\s*(?:type\s*[12]|insulino[- ]d[eé]pendant|non\s*insulino|instable|d[eé]s[eé]quilibr))?|\bDT[12]\b|\bDNID\b|\bDID\b|\bT[12]D\b/i,
+    actes: 'Injection insuline SC, surveillance glycémie capillaire, éducation thérapeutique diabète'
+  },
+
+  /* ════════════════════════════════════════════
+     PLAIES, PANSEMENTS, CICATRISATION
+  ════════════════════════════════════════════ */
+  {
+    re: /plaie|ulc[eè]re|escarre|pansement|cicatric|d[eé]bridement|n[eé]crose|fistule|br[uû]lure|dermite/i,
+    actes: 'Pansement complexe, détersion, surveillance plaie, IFD domicile'
+  },
+
+  /* ════════════════════════════════════════════
+     ANTICOAGULANTS — HBPM, AVK, AOD
+  ════════════════════════════════════════════ */
+  {
+    re: /anticoagul|h[eé]parin|lovenox|fragmine|innohep|HBPM|\bAVK\b|warfarin|acenocoumarol|sintrom|rivaroxaban|apixaban|dabigatran|\bAOD\b|\bNACO\b/i,
+    actes: 'Injection sous-cutanée HBPM, surveillance INR, éducation anticoagulant, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     PERFUSIONS — Antibiotiques, chimio, hydratation
+  ════════════════════════════════════════════ */
+  {
+    re: /perfus|antibio\w*|chimio|voie\s*vein(?:euse)?|\bKT\b|\bVVP\b|\bVVC\b|cathéter\s*(?:veineux|central|périph)|nutri(?:tion)?\s*parent/i,
+    actes: 'Perfusion intraveineuse à domicile, IFD, surveillance tolérance et abord veineux'
+  },
+
+  /* ════════════════════════════════════════════
+     NURSING / DÉPENDANCE / DÉMENCE
+  ════════════════════════════════════════════ */
+  {
+    re: /nursing|grabataire|d[eé]pendance|ALD\s*\d*\s*perte|d[eé]mence|Alzheimer|Parkinson|\bGIR\s*[1-4]\b|perte\s*d.autonomie|t[eé]traplég|h[eé]miplég|\.\bSLA\b/i,
+    actes: 'Soins de nursing complets, AMI 4, aide à la toilette BSC, prévention escarres, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     INSUFFISANCE CARDIAQUE / HTA / CARDIO
+  ════════════════════════════════════════════ */
+  {
+    re: /\bHTA\b|hypertension|insuffisance\s*cardiaque|\bIC\b(?!\s*[a-z])|cardio(?:myopathie|pathie|logie)?|\bFA\b|\bACFA\b|fibrillation\s*atriale|\bSCA\b|angor|angine\s*de\s*poitrine|infarctus|\bIDM\b|post.\s*(?:IDM|infarctus)/i,
+    actes: 'Prise de tension artérielle, surveillance cardiaque, surveillance poids et œdèmes, éducation traitement, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     SOINS PALLIATIFS / FIN DE VIE
+  ════════════════════════════════════════════ */
+  {
+    re: /palliatif|fin\s*de\s*vie|soins\s*confort|phase\s*terminale|cancer\s*(?:stade|terminal)|soins\s*support/i,
+    actes: 'Soins palliatifs à domicile, AMI 4, gestion douleur, nursing complet, IFD, surveillance EVA'
+  },
+
+  /* ════════════════════════════════════════════
+     PRÉLÈVEMENTS / BILANS SANGUINS
+  ════════════════════════════════════════════ */
+  {
+    re: /bilan\s*sanguin|prise\s*de\s*sang|pr[eé]l[eè]ve|\bNFS\b|\bCRP\b|\bHbA1c\b|\bINR\b|\bTP\b|\bTCA\b|\bCK\b|\bBNP\b|\bNT.proBNP\b|ionogramme|cr[eé]atinin|bilan\s*r[eé]nal|bilan\s*h[eé]patique|glyc[eé]mie\s*(?:veineuse|capillaire|à\s*jeun)/i,
+    actes: 'Prélèvement veineux à domicile, BSA, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     SONDE URINAIRE / STOMIE / APPAREILLAGE
+  ════════════════════════════════════════════ */
+  {
+    re: /sonde\s*urinaire|\bSAD\b|\bSAV\b|stomie|colostomie|iléostomie|trachéo(?:tomie|stomie)?|gastrostomie|\bPEG\b|\bJEJ\b|sonde\s*naso(?:gastrique|duodénale)|\bSNG\b/i,
+    actes: 'Soin sur appareillage, surveillance et entretien sonde, AMI 2, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     DOULEUR / MORPHINE / ANTALGIQUES
+  ════════════════════════════════════════════ */
+  {
+    re: /douleur\s*(?:chronique|intense|nociceptive|neuropathique)?|morphine|oxycodone|fentanyl|antalgique|\bPCA\b|patch\s*(?:morphin|fentanyl)|pompe\s*(?:à\s*morphine|antalg)/i,
+    actes: 'Injection antalgique SC ou IV, surveillance douleur EVA, gestion pompe PCA si besoin, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     ASTHME / BPCO / INSUFFISANCE RESPIRATOIRE
+  ════════════════════════════════════════════ */
+  {
+    re: /asthme|\bBPCO\b|\bMPOC\b|insuffisance\s*resp(?:iratoire)?|aérosol|nébulisation|\bVNI\b|\bOHD\b|oxygéno(?:thérapie)?|oxygen|sat(?:uration)?\s*<|dyspn[eé]e/i,
+    actes: 'Aérosol médicamenteux, surveillance saturation SpO2, éducation inhalateurs, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     POST-OPÉRATOIRE / CHIRURGIE / PHLÉBITE
+  ════════════════════════════════════════════ */
+  {
+    re: /post[- .]op(?:ératoire)?|chirurgi|\bTVP\b|\bEP\b(?!\s*[a-z])|phlébite|thrombose\s*veineuse|embolie\s*pulmonaire|suture|agrafes?|drain(?:age)?|\bJ[0-9]+\s*post/i,
+    actes: 'Soins post-opératoires, pansement, surveillance cicatrice, injection HBPM si prescrite, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     PSYCHIATRIE / TROUBLES COGNITIFS
+  ════════════════════════════════════════════ */
+  {
+    re: /psychiatr|d[eé]pression|schizophr[eè]nie|trouble\s*(?:bipolaire|de\s*la\s*personnalit[eé])|psychose|\bTSA\b|trouble\s*anxieux|\bTOC\b|anorexie|boulimie|addiction/i,
+    actes: 'Suivi infirmier psychiatrique, surveillance observance traitement, éducation thérapeutique, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     INSUFFISANCE RÉNALE — IRC, IRT, dialyse
+  ════════════════════════════════════════════ */
+  {
+    re: /insuffisance\s*r[eé]nale|\bIRC\b|\bIRT\b|\bMRC\b|dialyse|hémodialyse|dialyse\s*p[eé]riton[eé]ale|\bDFG\b|\bDFGe\b|cr[eé]atinin(?:ine)?\s*(?:élevée|augment)/i,
+    actes: 'Surveillance paramètres rénaux, prise de tension, surveillance poids et œdèmes, gestion fistule si dialyse, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     CANCER / ONCOLOGIE / HAD
+  ════════════════════════════════════════════ */
+  {
+    re: /cancer|carcinome|sarcome|lymphome|leucémie|tumeur|n[eé]oplasie|\bHAD\b|hospitalisation\s*à\s*domicile|oncologi/i,
+    actes: 'Soins oncologiques à domicile, perfusion chimio si prescrite, surveillance tolérance, gestion cathéter, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     AVC / NEUROLOGIE
+  ════════════════════════════════════════════ */
+  {
+    re: /\bAVC\b|accident\s*(?:vasculaire\s*cérébral|ischémique|hémorragique)|\bAIT\b|séquelles?\s*(?:AVC|neuro)|\bSEP\b|sclérose\s*(?:en\s*plaques|latérale)|\bSLA\b|neuropathie/i,
+    actes: 'Soins de rééducation infirmière, nursing, surveillance neurologique, prévention escarres, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     INSUFFISANCE VEINEUSE / LYMPHŒDÈME
+  ════════════════════════════════════════════ */
+  {
+    re: /insuffisance\s*veineuse|varic(?:e|osité)|lymph[oœ]d[eè]me|bandage\s*(?:compressif|contentif)|contention|bas\s*de\s*contention/i,
+    actes: 'Pose bandage compressif, soins de contention, surveillance circulation, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     NUTRITION ENTÉRALE / PARENTÉRALE
+  ════════════════════════════════════════════ */
+  {
+    re: /nutrition\s*(?:ent[eé]rale|parent[eé]rale|artificielle)|sonde\s*(?:naso)?gastrique|\bNE\b(?:\s+)|\bNP\b(?:\s+)|d[eé]nutrition|malnutrition|poids\s*(?:<|bas|insuffisant)/i,
+    actes: 'Gestion nutrition entérale ou parentérale, entretien sonde, surveillance tolérance digestive, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     RÉTENTION / TROUBLES URINAIRES / HBP
+  ════════════════════════════════════════════ */
+  {
+    re: /r[eé]tention\s*urinaire|\bHBP\b|hyperplasie\s*(?:b[eé]nigne\s*)?prostate|troubles?\s*(?:mictionnels?|urinaires?)|\bLUTS\b|incontinence/i,
+    actes: 'Sondage urinaire évacuateur, soins sonde à demeure, éducation patient, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     APNÉE DU SOMMEIL / SAS / PPC
+  ════════════════════════════════════════════ */
+  {
+    re: /apn[eé]e\s*(?:du\s*sommeil|obstructive)?|\bSAS\b|\bSAOS\b|\bPPC\b|\bCPAP\b|\bBPAP\b|ventilation\s*non\s*invasive/i,
+    actes: 'Surveillance appareillage PPC/VNI, éducation utilisation masque, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     CONSTIPATION / OCCLUSION / SOINS DIGESTIFS
+  ════════════════════════════════════════════ */
+  {
+    re: /constipation|\bFCO\b|fécalome|occlusion\s*intestinale|lavement|irrigation\s*colique|soins\s*digestifs/i,
+    actes: 'Soins digestifs, lavement évacuateur si prescrit, surveillance transit, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     ESCARRES / PRÉVENTION — doublon ciblé si
+     pas de plaie déclarée mais risque élevé
+  ════════════════════════════════════════════ */
+  {
+    re: /pr[eé]vention\s*escarre|\bBraden\b|risque\s*(?:cutané|escarres?)|matelas\s*(?:anti[- ]escarre|dynamique)/i,
+    actes: 'Soins préventifs escarres, nursing, changements de position, éducation aidants, IFD'
+  },
+
+  /* ════════════════════════════════════════════
+     SSIAD / HAD / SOINS À DOMICILE — contexte
+  ════════════════════════════════════════════ */
+  {
+    re: /\bSSIAD\b|\bHAD\b|maintien\s*à\s*domicile|soins\s*à\s*domicile|retour\s*(?:à|au)\s*domicile|sortie\s*(?:d.?hospit|HAD)/i,
+    actes: 'Soins infirmiers à domicile, évaluation globale, coordination HAD/SSIAD, IFD'
+  },
+
 ];
 
 /**
