@@ -814,6 +814,7 @@ function _patTabRender(tab, id, p, notes) {
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn bp bsm" style="font-size:11px" onclick="syncCotationsPatient('${id}')">🔄 Synchroniser les cotations</button>
             <button class="btn bs bsm" style="font-size:11px" onclick="facturePatientMois('${id}')">📄 Facture du mois</button>
+            ${p.cotations?.length ? `<button class="btn bs bsm" style="font-size:11px;color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="deleteAllCotationsPatient('${id}')">🗑️ Tout supprimer</button>` : ''}
           </div>
         </div>
         ${p.cotations?.length ? `
@@ -1345,6 +1346,53 @@ async function deleteCotationPatient(patientId, cotationIdx) {
   showToastSafe('🗑️ Cotation supprimée.');
 
   // Rafraîchir l'Historique des soins s'il est actuellement affiché
+  try {
+    if (typeof hist === 'function' &&
+        (document.querySelector('#his-section:not(.hidden)') ||
+         document.querySelector('[data-v="his"].active') ||
+         document.querySelector('.nav-item.active[data-v="his"]'))) {
+      hist();
+    }
+  } catch (_) {}
+}
+
+
+/* ════════════════════════════════════════════════
+   SUPPRIMER TOUTES LES COTATIONS D'UN PATIENT
+════════════════════════════════════════════════ */
+async function deleteAllCotationsPatient(patientId) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  const nb = p.cotations?.length || 0;
+  if (!nb) { showToastSafe('ℹ️ Aucune cotation à supprimer.'); return; }
+
+  const nomAff = `${p.prenom||''} ${p.nom||''}`.trim() || 'ce patient';
+  if (!confirm(`Supprimer les ${nb} cotation(s) de ${nomAff} ?\n\nCette action est irréversible.`)) return;
+
+  // Collecter les invoice_number pour suppression Supabase
+  const invoiceNums = (p.cotations || []).map(c => c.invoice_number).filter(Boolean);
+
+  p.cotations   = [];
+  p.updated_at  = new Date().toISOString();
+  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+  await _idbPut(PATIENTS_STORE, toStore);
+
+  if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+
+  // Suppression côté Supabase pour chaque cotation
+  if (invoiceNums.length && typeof wpost === 'function') {
+    for (const inv of invoiceNums) {
+      try { await wpost('/webhook/ami-supprimer', { invoice_number: inv }); }
+      catch (e) { console.warn('[patients] suppression Supabase échouée :', inv, e?.message); }
+    }
+  }
+
+  await openPatientDetail(patientId);
+  showToastSafe(`🗑️ ${nb} cotation(s) supprimée(s).`);
+
+  // Rafraîchir l'historique des soins si ouvert
   try {
     if (typeof hist === 'function' &&
         (document.querySelector('#his-section:not(.hidden)') ||
