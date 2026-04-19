@@ -204,6 +204,59 @@ async function _idbGetByIndex(store, indexName, val) {
 }
 
 /* ════════════════════════════════════════════════
+   HELPERS GLOBAUX — utilisés par les modules
+   cliniques (transmissions, constantes, pilulier,
+   BSI, consentements, alertes, compte-rendu)
+   ────────────────────────────────────────────────
+   Accessibles admin ET infirmière : chaque compte
+   voit uniquement sa propre base IDB isolée.
+════════════════════════════════════════════════ */
+
+/**
+ * Retourne tous les patients de la base locale.
+ * Déchiffre les données et fusionne nom/prenom.
+ * @returns {Promise<Array>}
+ */
+async function getAllPatients() {
+  try {
+    await initPatientsDB(); // garantit que la DB est ouverte pour l'utilisateur courant
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    return rows.map(r => ({
+      id:     r.id,
+      nom:    r.nom    || '',
+      prenom: r.prenom || '',
+      ...(_dec(r._data) || {}),
+    }));
+  } catch (e) {
+    console.warn('[getAllPatients]', e.message);
+    return [];
+  }
+}
+
+/**
+ * Retourne un patient par son id.
+ * @param {string} id
+ * @returns {Promise<Object|null>}
+ */
+async function getPatientById(id) {
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === id);
+    if (!row) return null;
+    return {
+      id:     row.id,
+      nom:    row.nom    || '',
+      prenom: row.prenom || '',
+      ...(_dec(row._data) || {}),
+    };
+  } catch (e) {
+    console.warn('[getPatientById]', e.message);
+    return null;
+  }
+}
+
+/* ════════════════════════════════════════════════
    GESTION PATIENTS
 ════════════════════════════════════════════════ */
 
