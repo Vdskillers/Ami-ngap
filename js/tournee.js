@@ -1258,7 +1258,7 @@ function _updateLiveCADisplay() {
    vers le worker pour persistance dans planning_patients.
    Silencieux en cas d'erreur (l'IDB reste la source de vérité locale).
 ══════════════════════════════════════════════════════════════ */
-async function _syncCotationsToSupabase(patients) {
+async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
   try {
     const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
     if (isAdmin) return; // admins: cotations de test, pas de sync
@@ -1268,36 +1268,38 @@ async function _syncCotationsToSupabase(patients) {
       p._cotation?.validated && parseFloat(p._cotation?.total || 0) > 0 && !p._cotation?._synced
     );
 
-    // Source 2 : cotations IDB locales non encore envoyées (source = tournee_auto/tournee_local)
+    // Source 2 : cotations IDB locales non encore envoyées
+    // skipIDB=true quand appelé depuis _validateCotationLive : la cotation vient d'être
+    // créée en mémoire, elle n'a pas encore d'invoice_number en IDB → évite INSERT double
     let fromIDB = [];
-    try {
-      if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-        const rows = await _idbGetAll(PATIENTS_STORE);
-        const today = new Date().toISOString().slice(0, 10);
-        for (const row of rows) {
-          const p = { id: row.id, ...((typeof _dec === 'function' ? _dec(row._data) : {}) || {}) };
-          if (!Array.isArray(p.cotations)) continue;
-          for (const cot of p.cotations) {
-            // Synchroniser uniquement les cotations récentes non encore synchro
-            if (cot._synced) continue;
-            // Ne pas re-envoyer les cotations déjà corrigées via PATCH (worker)
-            if (cot.source === 'cotation_edit' || cot.source === 'ngap_edit') continue;
-            const cotDate = (cot.date || '').slice(0, 10);
-            // Fenêtre élargie : 7 derniers jours pour rattraper les cotations manquées
-            const sevenDaysAgo = new Date(Date.now() - 7*24*3600*1000).toISOString().slice(0,10);
-            if (cotDate < sevenDaysAgo) continue;
-            if (parseFloat(cot.total || 0) <= 0) continue;
-            fromIDB.push({
-              _idb_patient_id: row.id,
-              _idb_cot: cot,
-              _cotation: { actes: cot.actes || [], total: parseFloat(cot.total), validated: true, auto: cot.source === 'tournee_auto' },
-              heure_soin: cot.heure || null,
-              description: cot.soin || '',
-            });
+    if (!skipIDB) {
+      try {
+        if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          const rows = await _idbGetAll(PATIENTS_STORE);
+          for (const row of rows) {
+            const p = { id: row.id, ...((typeof _dec === 'function' ? _dec(row._data) : {}) || {}) };
+            if (!Array.isArray(p.cotations)) continue;
+            for (const cot of p.cotations) {
+              if (cot._synced) continue;
+              if (cot.source === 'cotation_edit' || cot.source === 'ngap_edit') continue;
+              // Ne pas re-envoyer les cotations déjà envoyées depuis la mémoire (même invoice_number)
+              if (cot.invoice_number && fromMemory.some(m => m._cotation?.invoice_number === cot.invoice_number)) continue;
+              const cotDate = (cot.date || '').slice(0, 10);
+              const sevenDaysAgo = new Date(Date.now() - 7*24*3600*1000).toISOString().slice(0,10);
+              if (cotDate < sevenDaysAgo) continue;
+              if (parseFloat(cot.total || 0) <= 0) continue;
+              fromIDB.push({
+                _idb_patient_id: row.id,
+                _idb_cot: cot,
+                _cotation: { actes: cot.actes || [], total: parseFloat(cot.total), validated: true, auto: cot.source === 'tournee_auto' },
+                heure_soin: cot.heure || null,
+                description: cot.soin || '',
+              });
+            }
           }
         }
-      }
-    } catch(e) { console.warn('[AMI] Lecture IDB pour sync KO:', e.message); }
+      } catch(e) { console.warn('[AMI] Lecture IDB pour sync KO:', e.message); }
+    }
 
     const allToSync = [...fromMemory, ...fromIDB];
     if (!allToSync.length) return;
@@ -1800,8 +1802,10 @@ function _stopDayInternal(caOverride) {
     caFinal = Math.max(LIVE_CA_TOTAL, caFromCotations, caFromAmounts, caFromAll);
   }
 
-  // Synchroniser toutes les cotations non encore envoyées à Supabase
-  _syncCotationsToSupabase(allPatients).catch(() => {});
+  // Rattrapage : sync uniquement les cotations IDB des jours précédents non encore envoyées
+  // (skipIDB=false ici car c'est le seul passage qui peut rattraper les cotations manquées)
+  // Les cotations du jour viennent d'être synced individuellement dans _validateCotationLive
+  _syncCotationsToSupabase([], { skipIDB: false }).catch(() => {});
 
   // Reset badge
   const badge = $('live-badge');
@@ -2824,9 +2828,8 @@ function _validateCotationLive() {
     _tournee_date:  patient._cotation?._tournee_date || new Date().toISOString().slice(0, 10),
   };
 
-  _syncCotationsToSupabase([patient]).catch(() => {});
-
-  // Upsert IDB : remplace si cotation tournee existe aujourd'hui, sinon cree
+  // Sync Supabase + sauvegarde IDB en séquence pour garantir la cohérence
+  // skipIDB=true : évite que _syncCotationsToSupabase relise l'IDB et double-envoie
   (async () => {
     try {
       const pid = patient?.patient_id || patient?.id;
@@ -2867,18 +2870,56 @@ function _validateCotationLive() {
         updated_at:     new Date().toISOString(),
       };
       if (existingIdx >= 0) {
-        // Cotation existante → mise à jour stricte
         p.cotations[existingIdx] = cotEntry;
       } else if (!existingInvoice) {
-        // Pas d'invoice existant → première cotation de ce patient aujourd'hui
         p.cotations.push(cotEntry);
       }
-      // existingInvoice présent mais introuvable → NE PAS push (évite doublon)
       p.updated_at = new Date().toISOString();
       const _tsLive = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at };
       await _idbPut(PATIENTS_STORE, _tsLive);
-      // Sync immédiate vers carnet_patients — propagation inter-appareils
       if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsLive).catch(() => {});
+
+      // ── Sync Supabase après IDB (skipIDB=true : évite double INSERT) ──────
+      // On passe l'invoice_number déjà connu pour faire un PATCH si correction
+      try {
+        const isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+        if (!isAdmin) {
+          const _CODES_MAJ_SB = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+          const _hasTechSB = actes.some(a => !_CODES_MAJ_SB.has((a.code||'').toUpperCase()));
+          if (_hasTechSB) {
+            const sbRes = await apiCall('/webhook/ami-save-cotation', {
+              cotations: [{
+                actes,
+                total,
+                date_soin:      today,
+                heure_soin:     patient.heure_soin || patient.heure_preferee || null,
+                soin:           soinLabel,
+                source:         'tournee',
+                invoice_number: cotEntry.invoice_number || null,
+                patient_id:     pid,
+              }]
+            });
+            // Mettre à jour l'invoice_number retourné dans IDB + mémoire
+            const invReturned = sbRes?.invoice_numbers?.[0] || sbRes?.invoice_number || null;
+            if (invReturned) {
+              // En mémoire
+              if (patient._cotation) patient._cotation.invoice_number = invReturned;
+              // En IDB
+              const finalIdx = p.cotations.findIndex(c =>
+                c.source === 'tournee' && (c.date||'').slice(0,10) === today && !c._synced
+              );
+              if (finalIdx >= 0) {
+                p.cotations[finalIdx].invoice_number = invReturned;
+                p.cotations[finalIdx]._synced = true;
+                p.updated_at = new Date().toISOString();
+                const _tsLive2 = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at };
+                await _idbPut(PATIENTS_STORE, _tsLive2);
+                if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsLive2).catch(() => {});
+              }
+            }
+          }
+        }
+      } catch(_sbErr) { console.warn('[AMI] Sync Supabase KO (silencieux):', _sbErr.message); }
     } catch(e) { console.warn('[AMI] Sauvegarde cotation IDB KO:', e.message); }
   })();
 
