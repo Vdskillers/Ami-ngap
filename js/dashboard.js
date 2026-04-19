@@ -608,7 +608,16 @@ function computeLoss(rows) {
     // Seulement si le texte mentionne explicitement le domicile
     // ET que ni IFD ni IK (déplacement) ne sont cotés
     const mentionDomicile = txt.includes('domicile') || txt.includes(' chez ');
-    const aIFD = actes.includes('IFD') || actes.includes('ifd');
+    let aIFD = false;
+    try {
+      const actesArr = typeof actes === 'string' ? JSON.parse(actes) : (Array.isArray(actes) ? actes : []);
+      aIFD = actesArr.some(a => {
+        const c = (a.code || a.Code || '').toUpperCase();
+        return c === 'IFD' || c === 'IK';
+      });
+    } catch {
+      aIFD = actes.includes('IFD') || actes.includes('"IFD"') || actes.includes('IK') || actes.includes('"IK"');
+    }
     if (mentionDomicile && !aIFD) {
       details.push({ type: 'ifd', montant: 2.75, label: 'IFD manquant', date, nom });
       byType.ifd += 2.75;
@@ -618,7 +627,13 @@ function computeLoss(rows) {
     // ── IK manquant ─────────────────────────────────────────
     // Uniquement si un nombre de km est explicitement mentionné
     const kmMatch = txt.match(/(\d+(?:[.,]\d+)?)\s*km/);
-    const aIK     = actes.includes('IK') || actes.includes(' ik');
+    let aIK = false;
+    try {
+      const actesArr = typeof actes === 'string' ? JSON.parse(actes) : (Array.isArray(actes) ? actes : []);
+      aIK = actesArr.some(a => (a.code || a.Code || '').toUpperCase() === 'IK');
+    } catch {
+      aIK = actes.includes('IK') || actes.includes('"IK"') || actes.includes(' ik');
+    }
     if (kmMatch && !aIK) {
       const km       = parseFloat(kmMatch[1].replace(',', '.'));
       const montantIK = Math.round(km * 0.35 * 100) / 100;
@@ -630,7 +645,18 @@ function computeLoss(rows) {
     // ── Majoration nuit manquante ────────────────────────────
     // Seulement si l'heure est hors plage 08:00–20:00
     // ET qu'aucun code majoration nuit n'est présent
-    const aNuit = actes.includes('MN') || actes.toLowerCase().includes('nuit') || actes.includes('majoration_nuit');
+    let aNuit = false;
+    try {
+      const actesArr = typeof actes === 'string' ? JSON.parse(actes) : (Array.isArray(actes) ? actes : []);
+      aNuit = actesArr.some(a => {
+        const c = (a.code || a.Code || '').toUpperCase();
+        return c === 'NUIT' || c === 'NUIT_PROF' || c === 'MN' || c === 'MN2';
+      });
+    } catch {
+      aNuit = actes.includes('NUIT') || actes.includes('MN') ||
+              actes.toLowerCase().includes('nuit') ||
+              actes.includes('majoration_nuit');
+    }
     if (h && !aNuit) {
       const hh = parseInt(h.slice(0, 2), 10);
       const mm = parseInt(h.slice(3, 5) || '0', 10);
@@ -650,11 +676,26 @@ function computeLoss(rows) {
     // ── Dimanche/férié sans majoration ──────────────────────
     if (date) {
       const dow = new Date(date).getDay();
-      const aDim = actes.includes('MD') || actes.toLowerCase().includes('dimanche') || actes.toLowerCase().includes('ferie') || actes.toLowerCase().includes('férié');
+      // Détecte le code DIM dans le JSON des actes (format tableau ou texte brut)
+      let aDim = false;
+      try {
+        const actesArr = typeof actes === 'string' ? JSON.parse(actes) : (Array.isArray(actes) ? actes : []);
+        aDim = actesArr.some(a => {
+          const c = (a.code || a.Code || '').toUpperCase();
+          return c === 'DIM' || c === 'MD';
+        });
+      } catch {
+        // fallback texte brut si actes n'est pas du JSON
+        aDim = actes.includes('DIM') || actes.includes('"DIM"') ||
+               actes.includes('MD') ||
+               actes.toLowerCase().includes('dimanche') ||
+               actes.toLowerCase().includes('ferie') ||
+               actes.toLowerCase().includes('férié');
+      }
       if ((dow === 0) && !aDim) {
-        details.push({ type: 'dimanche', montant: 9.15, label: 'Majoration dimanche/férié manquante', date, nom });
-        byType.dimanche += 9.15;
-        total           += 9.15;
+        details.push({ type: 'dimanche', montant: 8.50, label: 'Majoration dimanche/férié manquante', date, nom });
+        byType.dimanche += 8.50;
+        total           += 8.50;
       }
     }
 
