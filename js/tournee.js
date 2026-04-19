@@ -2937,21 +2937,65 @@ function _validateCotationLive() {
 }
 
 /* Ouvre la section cotation complète en pré-remplissant le texte */
-function _openCotationComplete() {
+async function _openCotationComplete() {
   const patient = _cotModalState.patient;
   const modal   = document.getElementById('cot-modal-live');
   if (modal) modal.remove();
 
   // Poser _editingCotation AVANT la navigation pour que renderCot affiche
-  // le bouton 'Mettre à jour' et que cotation() fasse un upsert
+  // le bouton 'Mettre à jour' et que cotation() fasse un upsert.
+  // ── Résolution IDB préalable ──────────────────────────────────────────────
+  // Si invoice_number est absent, chercher en IDB pour résoudre cotationIdx.
+  // Sans cela, _cotationCheckDoublon ne peut pas détecter la cotation existante
+  // et crée un doublon dans l'historique des soins.
   const existingInvoice = patient?._cotation?.invoice_number || null;
   const patientIDBId    = patient?.patient_id || patient?.id || null;
+  const _dateForCheck   = (patient._cotation?.date || patient.date || patient.date_soin || new Date().toISOString()).slice(0, 10);
+
+  // Valeur par défaut — sera enrichie si IDB résolu
   window._editingCotation = {
     invoice_number: existingInvoice,
     patientId:      patientIDBId,
-    cotationIdx:    null,      // sera résolu par cotation.js via invoice_number
-    _fromTournee:   true,      // flag pour distinguer la source
+    cotationIdx:    null,
+    _fromTournee:   true,
   };
+
+  // Résolution asynchrone IDB : chercher une cotation existante pour ce patient/date
+  if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+    try {
+      const _allRowsOC  = await _idbGetAll(PATIENTS_STORE);
+      const _nomCheckOC = ([patient.prenom, patient.nom].filter(Boolean).join(' ') || patient._nomAff || '').trim().toLowerCase();
+      const _rowOC = patientIDBId
+        ? _allRowsOC.find(r => r.id === patientIDBId)
+        : _allRowsOC.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomCheckOC) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomCheckOC)
+          );
+      if (_rowOC && typeof _dec === 'function') {
+        const _patOC = { ...(_dec(_rowOC._data) || {}), id: _rowOC.id };
+        if (Array.isArray(_patOC.cotations)) {
+          const _existIdxOC = _patOC.cotations.findIndex(c =>
+            (c.date || '').slice(0, 10) === _dateForCheck
+          );
+          if (_existIdxOC >= 0) {
+            const _existCotOC = _patOC.cotations[_existIdxOC];
+            // Cotation existante trouvée → enrichir _editingCotation + marquer _userChose
+            // _userChose: true → _cotationCheckDoublon ne re-affichera PAS la modale doublon
+            // (l'utilisateur a déjà validé le choix via openCotationPatient ou vient ici intentionnellement)
+            window._editingCotation = {
+              invoice_number: _existCotOC.invoice_number || existingInvoice,
+              patientId:      _rowOC.id,
+              cotationIdx:    _existIdxOC,
+              _fromTournee:   true,
+              _userChose:     true,
+            };
+          }
+        }
+      }
+    } catch (_ocErr) {
+      console.warn('[_openCotationComplete] IDB resolution:', _ocErr.message);
+    }
+  }
 
   if (typeof navTo === 'function') navTo('cot', null);
 

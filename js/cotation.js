@@ -582,9 +582,22 @@ function renderCotCabinet(d) {
    Retourne true si on peut continuer, false si on attend le choix utilisateur.
 ════════════════════════════════════════════════ */
 async function _cotationCheckDoublon(onUpdate, onNew) {
-  // Si l'utilisateur a déjà fait un choix explicite via la modale de ce cycle,
-  // on ne re-affiche pas la modale (évite une boucle infinie)
+  // 1. Choix explicite déjà fait → bypass
   if (window._editingCotation && window._editingCotation._userChose) return true;
+
+  // 2. Mode édition déjà posé ET résolu (index ou invoice_number connu)
+  //    → mise à jour intentionnelle d'une cotation identifiée, bypass la modale
+  //    ⚠️ _fromTournee SEUL ne suffit PAS : il est posé dès l'ouverture de la page
+  //    même quand il n'y a pas encore de cotation existante → on vérifie toujours l'IDB
+  const _ref = window._editingCotation;
+  if (_ref && (
+    (_ref.cotationIdx != null && _ref.cotationIdx >= 0) ||
+    _ref.invoice_number
+  )) {
+    // Marquer comme choix utilisateur pour éviter toute re-vérification dans ce cycle
+    window._editingCotation = { ..._ref, _userChose: true };
+    return true;
+  }
 
   try {
     const _patNomCheck = (gv('f-pt') || '').trim();
@@ -602,7 +615,10 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
     const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
     if (!Array.isArray(_foundPat.cotations)) return true;
 
-    const _existIdx = _foundPat.cotations.findIndex(c => c.date === _dateCheck);
+    // Comparer en YYYY-MM-DD (f-ds retourne ce format, c.date peut être ISO complet)
+    const _existIdx = _foundPat.cotations.findIndex(c =>
+      (c.date || '').slice(0, 10) === _dateCheck.slice(0, 10)
+    );
     if (_existIdx < 0) return true; // Pas de cotation existante → continuer normalement
 
     // ── Cotation existante détectée → afficher modale de choix ──
@@ -765,8 +781,10 @@ async function _cotationPipeline() {
           if (_foundRow && typeof _dec === 'function') {
             const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
             if (Array.isArray(_foundPat.cotations)) {
-              // Chercher une cotation existante à la même date
-              const _existIdx = _foundPat.cotations.findIndex(c => c.date === _dateCheck);
+              // Chercher une cotation existante à la même date (comparaison YYYY-MM-DD)
+              const _existIdx = _foundPat.cotations.findIndex(c =>
+                (c.date || '').slice(0, 10) === _dateCheck.slice(0, 10)
+              );
               if (_existIdx >= 0) {
                 const _existCot = _foundPat.cotations[_existIdx];
                 // Renseigner automatiquement _editingCotation
@@ -929,24 +947,30 @@ async function _cotationPipeline() {
 
           // Résoudre l'index à mettre à jour (ordre de priorité)
           let _idx = -1;
-          // 1. cotationIdx direct (depuis fiche patient)
+          // 1. cotationIdx direct (depuis fiche patient / carnet)
           if (typeof _editRef?.cotationIdx === 'number' && _editRef.cotationIdx >= 0)
             _idx = _editRef.cotationIdx;
-          // 2. Par invoice_number (tournée ou re-cotation)
+          // 2. Par invoice_number retourné par l'API
           if (_idx < 0 && _invNum)
             _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
-          // 3. Par invoice_number original du ref (cas correction post-tournée)
+          // 3. Par invoice_number original du ref (cas correction post-tournée / planning)
           if (_idx < 0 && _editRef?.invoice_number)
             _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
+          // 4. Par date YYYY-MM-DD (fallback robuste : couvre les dates ISO complètes vs courtes)
+          if (_idx < 0 && _editRef && _cotDate) {
+            _idx = _pat.cotations.findIndex(c =>
+              (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
+            );
+          }
 
           if (_idx >= 0) {
-            // Cotation existante trouvée → mettre à jour
+            // Cotation existante trouvée → mettre à jour (upsert)
             _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
           } else if (!_editRef) {
-            // Aucun index ET pas en mode édition → première cotation pour ce patient (OK d'ajouter)
+            // Aucun index ET pas en mode édition → première cotation pour ce patient
             _pat.cotations.push(_newCot);
           }
-          // Si _editRef mais pas d'index → ne rien faire (eviter les doublons)
+          // Si _editRef mais pas d'index → ne rien faire (évite les doublons)
 
           _pat.updated_at = new Date().toISOString();
           const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
