@@ -39,44 +39,98 @@
   .lp-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
     background-image:radial-gradient(ellipse 90% 55% at 50% -5%,rgba(0,212,170,.14) 0%,transparent 65%),radial-gradient(ellipse 40% 40% at 85% 70%,rgba(79,168,255,.06) 0%,transparent 60%),linear-gradient(rgba(0,212,170,.016) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,170,.016) 1px,transparent 1px);
     background-size:100% 100%,100% 100%,48px 48px,48px 48px}
-  .lp-wrap{position:relative;z-index:1;max-width:700px;width:100%;padding:52px 28px 100px}
-  .lp-logo{display:flex;align-items:center;gap:13px;margin-bottom:44px}
+  .lp-wrap{position:relative;z-index:1;max-width:720px;width:100%;padding:52px 28px 110px}
+  /* Logo */
+  .lp-logo{display:flex;align-items:center;gap:13px;margin-bottom:48px}
   .lp-mark{width:48px;height:48px;background:linear-gradient(135deg,#0b1a14,#102a1e);border:2px solid rgba(0,212,170,.5);border-radius:14px;display:grid;place-items:center;font-family:var(--fs);font-size:24px;color:#00d4aa;text-shadow:0 0 16px rgba(0,212,170,.9);box-shadow:0 0 24px rgba(0,212,170,.3),inset 0 1px 0 rgba(0,212,170,.15);flex-shrink:0}
   .lp-app-name{font-family:var(--fs);font-size:24px;color:#ffffff;line-height:1}
   .lp-app-sub{font-family:var(--fm);font-size:9px;color:#ffffff;opacity:.7;letter-spacing:2px;text-transform:uppercase;margin-top:3px}
-  .lp-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.22);border-radius:20px;padding:5px 15px;font-family:var(--fm);font-size:10px;letter-spacing:2px;color:#00d4aa;text-transform:uppercase;margin-bottom:24px}
-  .lp-h1{font-family:var(--fs);font-size:clamp(34px,6.5vw,56px);line-height:1.08;color:#ffffff;margin-bottom:20px}
+  /* Badge */
+  .lp-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.22);border-radius:20px;padding:5px 15px;font-family:var(--fm);font-size:10px;letter-spacing:2px;color:#00d4aa;text-transform:uppercase;margin-bottom:22px}
+  /* Hero */
+  .lp-h1{font-family:var(--fs);font-size:clamp(32px,6vw,54px);line-height:1.08;color:#ffffff;margin-bottom:18px}
   .lp-h1 em{font-style:italic;color:#00d4aa}
-  .lp-lead{font-size:17px;color:#d0dfe8;line-height:1.68;max-width:580px;margin-bottom:36px}
-  .lp-lead strong{color:#ffffff;font-weight:700}
-  .lp-shout{background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.18);border-left:3px solid #00d4aa;border-radius:0 14px 14px 0;padding:20px 26px;margin-bottom:44px}
-  .lp-shout p{font-family:var(--fs);font-size:20px;color:#ffffff;line-height:1.38;font-style:italic}
-  .lp-shout small{display:block;margin-top:9px;font-family:var(--fm);font-size:10px;color:#d0e8e0;letter-spacing:1.5px;text-transform:uppercase}
-  .lp-sec-title{font-family:var(--fm);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#a0bbd0;margin-bottom:14px}
-  .lp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:44px}
-  @media(max-width:520px){.lp-grid{grid-template-columns:1fr}}
-  .lp-card{background:rgba(14,20,30,.9);border:1px solid rgba(30,45,61,.9);border-radius:14px;padding:20px 22px;transition:border-color .2s,transform .2s}
-  .lp-card:hover{border-color:rgba(0,212,170,.28);transform:translateY(-1px)}
-  .lp-card-icon{font-size:22px;margin-bottom:10px;display:block}
-  .lp-card-t{font-size:14px;font-weight:700;color:#ffffff;margin-bottom:6px}
-  .lp-card-d{font-size:13px;color:#b8cdd8;line-height:1.56}
-  .lp-result{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:44px}
-  @media(max-width:480px){.lp-result{grid-template-columns:1fr 1fr}}
-  .lp-stat{background:rgba(14,20,30,.9);border:1px solid rgba(30,45,61,.9);border-radius:12px;padding:18px 12px;text-align:center}
-  .lp-stat-v{font-family:var(--fs);font-size:32px;color:#ffffff;line-height:1}
-  .lp-stat-l{font-size:11px;color:#b8cdd8;margin-top:7px;line-height:1.4}
-  .lp-sec{background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12);border-radius:14px;padding:22px 26px;margin-bottom:44px}
-  .lp-sec-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:12px}
-  .lp-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:#d0e4ee;white-space:nowrap}
-  .lp-pill::before{content:'✓';color:#00d4aa;font-weight:800;font-size:12px}
-  .lp-cta-wrap{text-align:center;padding-top:4px}
+  .lp-subtitle{font-size:17px;color:#d0dfe8;line-height:1.65;max-width:600px;margin-bottom:24px}
+  .lp-subtitle strong{color:#ffffff;font-weight:700}
+  .lp-promise{display:flex;flex-direction:column;gap:8px;margin-bottom:36px}
+  .lp-promise-item{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600;color:#ffffff}
+  .lp-promise-item::before{content:'👉';font-size:15px}
+  /* CTA hero */
+  .lp-cta-wrap{text-align:center;padding-top:4px;margin-bottom:52px}
   .lp-cta{display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,#00e0b5,#00c49a);color:#ffffff;border:none;border-radius:16px;padding:19px 56px;font-family:var(--ff);font-size:18px;font-weight:800;cursor:pointer;transition:all .22s;margin-bottom:14px;letter-spacing:.3px;text-shadow:0 1px 4px rgba(0,0,0,.4);box-shadow:0 6px 28px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.3)}
   .lp-cta:hover{transform:translateY(-2px);box-shadow:0 10px 36px rgba(0,212,170,.55),0 2px 8px rgba(0,0,0,.3)}
-  .lp-cta:active{transform:translateY(0);box-shadow:0 4px 16px rgba(0,212,170,.35)}
+  .lp-cta:active{transform:translateY(0)}
   .lp-cta-sub{font-family:var(--fm);font-size:10px;color:#a0bbd0;letter-spacing:1px;text-transform:uppercase}
+  /* Section titles */
+  .lp-sec-label{font-family:var(--fm);font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#00d4aa;margin-bottom:10px}
+  .lp-sec-h2{font-family:var(--fs);font-size:clamp(22px,4vw,32px);color:#ffffff;line-height:1.15;margin-bottom:20px}
+  .lp-sec-h2 em{font-style:italic;color:#00d4aa}
+  /* Problème */
+  .lp-problem{background:rgba(255,95,109,.04);border:1px solid rgba(255,95,109,.15);border-radius:16px;padding:28px 30px;margin-bottom:52px}
+  .lp-prob-list{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .lp-prob-item{display:flex;align-items:flex-start;gap:10px;font-size:14px;color:#e0d0d0;line-height:1.5}
+  .lp-prob-item::before{content:'✗';color:#ff5f6d;font-weight:800;font-size:15px;flex-shrink:0;margin-top:1px}
+  /* Solution */
+  .lp-solution{background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.14);border-radius:16px;padding:28px 30px;margin-bottom:52px}
+  .lp-sol-list{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+  .lp-sol-item{display:flex;align-items:center;gap:10px;font-size:14px;color:#d0e8e0;font-weight:500}
+  .lp-sol-item::before{content:'✦';color:#00d4aa;font-size:12px;flex-shrink:0}
+  .lp-sol-note{margin-top:16px;font-family:var(--fm);font-size:11px;color:#00d4aa;letter-spacing:1px}
+  /* Features */
+  .lp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:52px}
+  @media(max-width:540px){.lp-grid{grid-template-columns:1fr}}
+  .lp-card{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 24px;transition:border-color .2s,transform .2s;display:flex;flex-direction:column;gap:0}
+  .lp-card:hover{border-color:rgba(0,212,170,.3);transform:translateY(-2px)}
+  .lp-card-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .lp-card-icon{font-size:20px;flex-shrink:0}
+  .lp-card-t{font-size:14px;font-weight:700;color:#ffffff}
+  .lp-card-d{font-size:12.5px;color:#b8cdd8;line-height:1.55;margin-bottom:10px}
+  .lp-card-list{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+  .lp-card-li{font-size:12px;color:#a0bbd0;display:flex;gap:6px;line-height:1.4}
+  .lp-card-li::before{content:'·';color:#00d4aa;font-weight:800;flex-shrink:0}
+  .lp-card-tag{font-family:var(--fm);font-size:10px;color:#00d4aa;border-top:1px solid rgba(0,212,170,.12);padding-top:8px;margin-top:auto;letter-spacing:.5px}
+  /* Cible */
+  .lp-audience{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:52px}
+  @media(max-width:480px){.lp-audience{grid-template-columns:1fr}}
+  .lp-aud-card{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:24px}
+  .lp-aud-icon{font-size:28px;margin-bottom:10px}
+  .lp-aud-t{font-size:16px;font-weight:700;color:#ffffff;margin-bottom:12px}
+  .lp-aud-list{display:flex;flex-direction:column;gap:7px}
+  .lp-aud-item{font-size:13px;color:#b8cdd8;display:flex;gap:8px}
+  .lp-aud-item::before{content:'✓';color:#00d4aa;font-weight:800;flex-shrink:0}
+  /* Stats */
+  .lp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:52px}
+  @media(max-width:560px){.lp-stats{grid-template-columns:1fr 1fr}}
+  .lp-stat{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:14px;padding:18px 10px;text-align:center}
+  .lp-stat-v{font-family:var(--fs);font-size:28px;color:#ffffff;line-height:1}
+  .lp-stat-l{font-size:11px;color:#b8cdd8;margin-top:7px;line-height:1.4}
+  /* Comparatif */
+  .lp-compare{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;overflow:hidden;margin-bottom:52px}
+  .lp-compare table{width:100%;border-collapse:collapse;font-size:13px}
+  .lp-compare th{padding:12px 18px;text-align:left;font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#a0bbd0;border-bottom:1px solid rgba(30,45,61,.95)}
+  .lp-compare th:last-child{color:#00d4aa}
+  .lp-compare td{padding:11px 18px;color:#b8cdd8;border-bottom:1px solid rgba(30,45,61,.5)}
+  .lp-compare td:last-child{color:#ffffff;font-weight:600}
+  .lp-compare tr:last-child td{border-bottom:none}
+  .lp-compare td.x{color:#ff5f6d}
+  .lp-compare td.ok{color:#00d4aa}
+  /* Stack tech */
+  .lp-stack{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:52px}
+  .lp-stack-pill{background:rgba(79,168,255,.07);border:1px solid rgba(79,168,255,.18);border-radius:20px;padding:7px 16px;font-family:var(--fm);font-size:11px;color:#a0c8ff;letter-spacing:.5px}
+  /* RGPD */
+  .lp-sec-rgpd{background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12);border-radius:16px;padding:24px 28px;margin-bottom:52px}
+  .lp-pill-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:12px}
+  .lp-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:#d0e4ee;white-space:nowrap}
+  .lp-pill::before{content:'✓';color:#00d4aa;font-weight:800;font-size:12px}
+  /* CTA final */
+  .lp-final{background:linear-gradient(135deg,rgba(0,212,170,.07),rgba(79,168,255,.04));border:1px solid rgba(0,212,170,.18);border-radius:20px;padding:44px 32px;text-align:center;margin-bottom:4px}
+  .lp-final-h{font-family:var(--fs);font-size:clamp(24px,4.5vw,38px);color:#ffffff;line-height:1.15;margin-bottom:10px}
+  .lp-final-h em{color:#00d4aa;font-style:italic}
+  .lp-final-sub{font-size:15px;color:#b8cdd8;margin-bottom:28px}
+  /* Animations */
   @keyframes lpFadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
   .lp-wrap>*{animation:lpFadeUp .5s ease both}
-  .lp-wrap>*:nth-child(1){animation-delay:.04s}.lp-wrap>*:nth-child(2){animation-delay:.09s}.lp-wrap>*:nth-child(3){animation-delay:.14s}.lp-wrap>*:nth-child(4){animation-delay:.19s}.lp-wrap>*:nth-child(5){animation-delay:.23s}.lp-wrap>*:nth-child(6){animation-delay:.27s}.lp-wrap>*:nth-child(7){animation-delay:.31s}.lp-wrap>*:nth-child(8){animation-delay:.34s}.lp-wrap>*:nth-child(9){animation-delay:.37s}.lp-wrap>*:nth-child(10){animation-delay:.4s}
+  .lp-wrap>*:nth-child(1){animation-delay:.04s}.lp-wrap>*:nth-child(2){animation-delay:.08s}.lp-wrap>*:nth-child(3){animation-delay:.12s}.lp-wrap>*:nth-child(4){animation-delay:.16s}.lp-wrap>*:nth-child(5){animation-delay:.20s}.lp-wrap>*:nth-child(6){animation-delay:.24s}.lp-wrap>*:nth-child(7){animation-delay:.28s}.lp-wrap>*:nth-child(8){animation-delay:.31s}.lp-wrap>*:nth-child(9){animation-delay:.34s}.lp-wrap>*:nth-child(10){animation-delay:.37s}.lp-wrap>*:nth-child(11){animation-delay:.40s}.lp-wrap>*:nth-child(12){animation-delay:.43s}
 </style>
 </head>
 <body>
@@ -86,6 +140,7 @@
   <div class="lp-bg"></div>
   <div class="lp-wrap">
 
+    <!-- Logo -->
     <div class="lp-logo">
       <div class="lp-mark">A</div>
       <div>
@@ -94,64 +149,204 @@
       </div>
     </div>
 
-    <div><span class="lp-badge">✦ Assistant Médical Infirmier</span></div>
+    <!-- Badge -->
+    <div><span class="lp-badge">✦ Assistant Médical Infirmier · Infirmières libérales &amp; Cabinets multi-IDE</span></div>
 
-    <h1 class="lp-h1">Tu fais le soin.<br><em>AMI s'occupe du reste.</em></h1>
+    <!-- HERO -->
+    <h1 class="lp-h1">Tu fais le soin.<br><em>AMI sécurise, optimise<br>et facture à ta place.</em></h1>
 
-    <p class="lp-lead">
-      Tu écris ce que tu as fait — <strong>AMI cote automatiquement</strong>, optimise ta facturation, détecte les erreurs NGAP et garde une preuve de chaque soin.<br>
-      <strong>Zéro paperasse. Zéro risque CPAM.</strong>
+    <p class="lp-subtitle">
+      Cotation NGAP automatique, tournée optimisée, conformité CPAM en temps réel.<br>
+      <strong>Pensé pour les infirmières libérales et cabinets multi-IDE.</strong>
     </p>
 
-    <div class="lp-shout">
-      <p>« Un logiciel qui te dit comment coter, t'évite les erreurs, et te protège si la CPAM te tombe dessus. »</p>
-      <small>Conçu pour les infirmier(e)s libérales</small>
+    <div class="lp-promise">
+      <div class="lp-promise-item">Écris ton soin → AMI fait le reste</div>
+      <div class="lp-promise-item">Plus de revenus. Moins de stress. Zéro erreur.</div>
     </div>
 
-    <div class="lp-sec-title">Ce qu'AMI fait pour toi</div>
+    <div class="lp-cta-wrap">
+      <button class="lp-cta" onclick="closeLanding()">🚀 Essayer gratuitement — aucune carte requise</button>
+      <div class="lp-cta-sub">Connexion · Création de compte · Sans engagement</div>
+    </div>
+
+    <!-- PROBLÈME -->
+    <div class="lp-sec-label">⚡ Le problème</div>
+    <div class="lp-sec-h2">Aujourd'hui, tu fais <em>tout à la main</em></div>
+    <div class="lp-problem">
+      <div class="lp-prob-list">
+        <div class="lp-prob-item">Cotation NGAP complexe et risquée</div>
+        <div class="lp-prob-item">Erreurs fréquentes → redressements CPAM</div>
+        <div class="lp-prob-item">Tournées mal optimisées → perte de temps et fatigue</div>
+        <div class="lp-prob-item">Paperasse et preuves de soins dispersées</div>
+        <div class="lp-prob-item">Aucun pilotage réel de ton chiffre d'affaires</div>
+      </div>
+    </div>
+
+    <!-- SOLUTION -->
+    <div class="lp-sec-label">💎 La solution</div>
+    <div class="lp-sec-h2">AMI = ton <em>copilote intelligent</em> infirmier</div>
+    <div class="lp-solution">
+      <div class="lp-sol-list">
+        <div class="lp-sol-item">IA médicale + moteur NGAP hybride</div>
+        <div class="lp-sol-item">Optimisation économique terrain</div>
+        <div class="lp-sol-item">Protection médico-légale intégrée</div>
+        <div class="lp-sol-item">Organisation cabinet multi-IDE</div>
+      </div>
+      <div class="lp-sol-note">👉 Tout dans une seule app.</div>
+    </div>
+
+    <!-- FEATURES -->
+    <div class="lp-sec-label">🚀 Fonctionnalités clés</div>
+    <div class="lp-sec-h2">Ce qui te <em>différencie</em></div>
     <div class="lp-grid">
+
       <div class="lp-card">
-        <span class="lp-card-icon">🧠</span>
-        <div class="lp-card-t">Cotation automatique</div>
-        <div class="lp-card-d">Décris ton soin en français. AMI sélectionne les bons codes NGAP, optimise et te signale si tu oublies un acte facturable.</div>
+        <div class="lp-card-head"><span class="lp-card-icon">🧠</span><div class="lp-card-t">Cotation NGAP automatique</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Analyse NLP de tes soins</div>
+          <div class="lp-card-li">Sélection automatique des actes</div>
+          <div class="lp-card-li">Optimisation des majorations</div>
+          <div class="lp-card-li">Vérification NGAP officielle</div>
+        </div>
+        <div class="lp-card-tag">Moteur hybride IA + règles + ML</div>
       </div>
+
       <div class="lp-card">
-        <span class="lp-card-icon">🛡️</span>
-        <div class="lp-card-t">Protection CPAM</div>
-        <div class="lp-card-d">Simulation de contrôle en temps réel. AMI bloque les cotations risquées et t'alerte avant qu'il soit trop tard.</div>
+        <div class="lp-card-head"><span class="lp-card-icon">🛡️</span><div class="lp-card-t">Protection CPAM temps réel</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Simulation d'audit CPAM intégrée</div>
+          <div class="lp-card-li">Détection fraude / erreurs</div>
+          <div class="lp-card-li">Blocage intelligent des cotations risquées</div>
+        </div>
+        <div class="lp-card-tag">Tu es protégé avant facturation</div>
       </div>
+
       <div class="lp-card">
-        <span class="lp-card-icon">✍️</span>
-        <div class="lp-card-t">Preuve de soin</div>
-        <div class="lp-card-d">Signature électronique et photo pour chaque acte. Ta défense est prête si tu reçois un courrier CPAM.</div>
+        <div class="lp-card-head"><span class="lp-card-icon">✍️</span><div class="lp-card-t">Preuve médico-légale</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Signature patient + hash sécurisé</div>
+          <div class="lp-card-li">Photo (non stockée → RGPD)</div>
+          <div class="lp-card-li">Horodatage + géozone</div>
+        </div>
+        <div class="lp-card-tag">Défense prête en cas de contrôle</div>
       </div>
+
       <div class="lp-card">
-        <span class="lp-card-icon">🗺️</span>
-        <div class="lp-card-t">Tournée optimisée</div>
-        <div class="lp-card-d">L'IA calcule la meilleure route pour ta journée. Moins de kilomètres, plus de patients, moins de fatigue.</div>
+        <div class="lp-card-head"><span class="lp-card-icon">🗺️</span><div class="lp-card-t">Tournée IA intelligente</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Optimisation trajets (TSP + clustering)</div>
+          <div class="lp-card-li">Prédiction retards / fatigue</div>
+          <div class="lp-card-li">Score zones rentables</div>
+        </div>
+        <div class="lp-card-tag">Moins de km, plus de CA</div>
       </div>
+
       <div class="lp-card">
-        <span class="lp-card-icon">📊</span>
-        <div class="lp-card-t">Tableau de bord</div>
-        <div class="lp-card-d">Revenus, actes réalisés, alertes manquantes. Toute ta facturation d'un seul coup d'œil.</div>
+        <div class="lp-card-head"><span class="lp-card-icon">🏥</span><div class="lp-card-t">Cabinet multi-IDE</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Gestion d'équipe infirmière</div>
+          <div class="lp-card-li">Répartition intelligente des soins</div>
+          <div class="lp-card-li">Planning partagé + vision globale</div>
+        </div>
+        <div class="lp-card-tag">Ultra rare — différenciation majeure</div>
       </div>
+
       <div class="lp-card">
-        <span class="lp-card-icon">📴</span>
-        <div class="lp-card-t">100% hors-ligne</div>
-        <div class="lp-card-d">Fonctionne sans connexion. Tes données patients restent sur ton appareil, chiffrées. Jamais sur nos serveurs.</div>
+        <div class="lp-card-head"><span class="lp-card-icon">📊</span><div class="lp-card-t">Pilotage business</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">KPI multi-IDE en temps réel</div>
+          <div class="lp-card-li">Simulation revenus + objectifs CA</div>
+          <div class="lp-card-li">Forecast semaine</div>
+        </div>
+        <div class="lp-card-tag">Tu pilotes ton activité comme une entreprise</div>
       </div>
+
+      <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">📁</span><div class="lp-card-t">Modules cliniques complets</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Transmissions SOAP / DAR</div>
+          <div class="lp-card-li">Constantes · Pilulier · BSI</div>
+          <div class="lp-card-li">Consentements · Alertes ANSM</div>
+        </div>
+        <div class="lp-card-tag">Tout est intégré, rien à rajouter</div>
+      </div>
+
+      <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">🔒</span><div class="lp-card-t">Sécurité maximale</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Données stockées localement uniquement</div>
+          <div class="lp-card-li">Chiffrement AES-256</div>
+          <div class="lp-card-li">RGPD by design · Zéro fuite serveur</div>
+        </div>
+        <div class="lp-card-tag">Tu gardes le contrôle total</div>
+      </div>
+
     </div>
 
-    <div class="lp-sec-title">Résultats concrets</div>
-    <div class="lp-result">
+    <!-- RÉSULTATS -->
+    <div class="lp-sec-label">📈 Résultats prouvés</div>
+    <div class="lp-sec-h2">Avec AMI, <em>concrètement</em></div>
+    <div class="lp-stats">
       <div class="lp-stat"><div class="lp-stat-v">−80%</div><div class="lp-stat-l">d'erreurs de cotation</div></div>
-      <div class="lp-stat"><div class="lp-stat-v">+15%</div><div class="lp-stat-l">de revenus en moyenne</div></div>
-      <div class="lp-stat"><div class="lp-stat-v">0€</div><div class="lp-stat-l">de pénalité CPAM</div></div>
+      <div class="lp-stat"><div class="lp-stat-v">+25%</div><div class="lp-stat-l">de revenus</div></div>
+      <div class="lp-stat"><div class="lp-stat-v">0</div><div class="lp-stat-l">redressement CPAM</div></div>
+      <div class="lp-stat"><div class="lp-stat-v">+2h</div><div class="lp-stat-l">gagnées par jour</div></div>
     </div>
 
-    <div class="lp-sec">
-      <div class="lp-sec-title">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
-      <div class="lp-sec-row">
+    <!-- POUR QUI -->
+    <div class="lp-sec-label">⚡ Pour qui ?</div>
+    <div class="lp-audience">
+      <div class="lp-aud-card">
+        <div class="lp-aud-icon">👩‍⚕️</div>
+        <div class="lp-aud-t">Infirmière libérale</div>
+        <div class="lp-aud-list">
+          <div class="lp-aud-item">Sécuriser ta facturation</div>
+          <div class="lp-aud-item">Gagner du temps chaque jour</div>
+          <div class="lp-aud-item">Augmenter ton chiffre d'affaires</div>
+        </div>
+      </div>
+      <div class="lp-aud-card">
+        <div class="lp-aud-icon">🏥</div>
+        <div class="lp-aud-t">Cabinet infirmier</div>
+        <div class="lp-aud-list">
+          <div class="lp-aud-item">Coordination multi-IDE fluide</div>
+          <div class="lp-aud-item">Optimisation globale des tournées</div>
+          <div class="lp-aud-item">Vision business + performance</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPARATIF -->
+    <div class="lp-sec-label">🧠 AMI vs les autres</div>
+    <div class="lp-compare">
+      <table>
+        <thead><tr><th>Fonctionnalité</th><th>Autres logiciels</th><th>AMI ✦</th></tr></thead>
+        <tbody>
+          <tr><td>Cotation</td><td class="x">Manuelle</td><td class="ok">Automatique + IA</td></tr>
+          <tr><td>Protection CPAM</td><td class="x">Aucune</td><td class="ok">Simulation intégrée</td></tr>
+          <tr><td>Optimisation revenus</td><td class="x">Absente</td><td class="ok">IA + prédictif</td></tr>
+          <tr><td>Multi-utilisateurs</td><td class="x">Mono-utilisateur</td><td class="ok">Multi-IDE cabinet</td></tr>
+          <tr><td>Données</td><td class="x">Cloud tiers</td><td class="ok">Locales + chiffrées</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- STACK TECH -->
+    <div class="lp-sec-label">🔥 Stack technique</div>
+    <div class="lp-stack">
+      <span class="lp-stack-pill">IA hybride (Rule Engine + ML + RL)</span>
+      <span class="lp-stack-pill">N8N Smart Agent</span>
+      <span class="lp-stack-pill">AES-256 chiffrement</span>
+      <span class="lp-stack-pill">Sync temps réel PC / mobile</span>
+      <span class="lp-stack-pill">RAG BM25 NGAP</span>
+      <span class="lp-stack-pill">Moteur adaptatif</span>
+    </div>
+
+    <!-- RGPD -->
+    <div class="lp-sec-rgpd">
+      <div class="lp-sec-label">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
+      <div class="lp-pill-row">
         <span class="lp-pill">Données stockées sur ton appareil uniquement</span>
         <span class="lp-pill">Chiffrement AES-256</span>
         <span class="lp-pill">Mots de passe bcrypt</span>
@@ -160,13 +355,15 @@
         <span class="lp-pill">Droit à l'effacement</span>
         <span class="lp-pill">Export de tes données</span>
         <span class="lp-pill">Logs d'accès</span>
-        <span class="lp-pill">Hébergement sécurisé</span>
       </div>
     </div>
 
-    <div class="lp-cta-wrap">
-      <button class="lp-cta" onclick="closeLanding()">✦ Commencer gratuitement</button>
-      <div class="lp-cta-sub">Connexion · Création de compte · Aucune CB requise</div>
+    <!-- CTA FINAL -->
+    <div class="lp-final">
+      <div class="lp-final-h">Arrête de subir la NGAP.<br><em>Commence à l'exploiter.</em></div>
+      <div class="lp-final-sub">Rejoins les infirmières qui gagnent du temps, gagnent plus et dorment tranquilles.</div>
+      <button class="lp-cta" onclick="closeLanding()">🚀 Essayer gratuitement maintenant</button>
+      <div class="lp-cta-sub" style="margin-top:12px">Aucune carte requise · Sans engagement · Données 100% privées</div>
     </div>
 
   </div>
@@ -483,31 +680,18 @@
 <div id="app" style="display:none">
   <header class="top">
     <div class="logo"><div class="lmark">A</div><div><div class="ltext">AMI</div><div class="lsub">NGAP IA</div></div></div>
-    <!-- Séparateur + statut sync (desktop uniquement) -->
-    <div class="top-sep" id="top-sep-status" style="display:none"></div>
-    <div class="top-status" id="top-sync-status" style="display:none">
-      <div class="top-status-dot" id="top-status-dot"></div>
-      <span id="top-status-text">En ligne</span>
-    </div>
     <div id="mobile-header-fabs"></div>
     <div class="tr">
       <button id="btn-install-header" onclick="installApp()" style="display:none;background:var(--ad);border:1px solid var(--a);color:var(--a);font-family:var(--fm);font-size:10px;padding:4px 12px;border-radius:20px;cursor:pointer;transition:all .15s">📱 Installer AMI</button>
       <div class="badge">NGAP 2026</div>
-      <!-- Recherche globale (desktop) -->
-      <button class="top-search-btn" id="top-search-btn" onclick="openGlobalSearch()" style="display:none">🔍 Rechercher <kbd>⌘K</kbd></button>
       <button class="bvoice" id="voice-topbtn" onclick="toggleVoice()">🎤 Vocal</button>
-      <!-- Notifications -->
-      <button class="top-notif-btn" id="top-notif-btn" onclick="toggleNotifPanel()" style="display:none" title="Notifications">
-        🔔
-        <div class="top-notif-dot" id="top-notif-dot"></div>
-      </button>
-      <!-- Mode admin -->
+      <!-- Mode admin : badge + déconnexion (visible desktop ET mobile, géré par CSS/JS) -->
       <div id="admin-header-controls" style="display:none;align-items:center;gap:8px">
         <div class="admin-mode-badge" id="admin-mode-badge">🛡️ MODE ADMIN SÉCURISÉ</div>
         <button class="bout" style="font-size:11px;padding:5px 12px" onclick="logout()">⏻ Déconnexion</button>
         <div id="mobile-greeting" style="display:none;flex-direction:column;line-height:1.1;margin-left:4px"><span id="mobile-greeting-hello" style="font-size:9px;color:rgba(255,255,255,.5);font-family:var(--fm);letter-spacing:.06em;text-transform:uppercase">Bonjour</span><span id="mobile-greeting-name" style="font-size:12px;font-weight:700;color:#F0F4F8;letter-spacing:-.2px">—</span></div>
       </div>
-      <!-- Mode normal -->
+      <!-- Mode normal : profil + déconnexion -->
       <button class="buser" id="btn-profil" onclick="openPM()"><span>👤</span><span id="uname">—</span></button>
       <button class="bout" id="btn-logout-normal" onclick="logout()">⏻ Déconnexion</button>
     </div>
@@ -521,26 +705,17 @@
       <div class="ni nurse-only" data-v="tur"><span class="nic">🗺️</span> Tournée IA</div>
       <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
-      <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique <span class="ni-alert-badge orange" id="nav-his-badge" style="display:none"></span></div>
+      <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique</div>
       <div class="ni nurse-only" data-v="outils-ordos"><span class="nic">💊</span> Ordonnances <span id="ordo-nav-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
       <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
-      <div class="ni" data-v="pilulier"><span class="nic">💊</span> Semainier / Pilulier</div>
-      <div class="ni" data-v="constantes"><span class="nic">📊</span> Constantes patients</div>
-      <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Outils pratiques</div>
       <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
-      <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques <span class="ni-alert-badge red" id="nav-dash-badge" style="display:none"></span></div>
-      <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
+      <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques</div>
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
-      <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
-      <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
-      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
-      <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
-      <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
       <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
       <div class="ni nurse-only" data-v="outils-simulation"><span class="nic">⚡</span> Simulateur majoration</div>
@@ -582,18 +757,10 @@
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-ordos" onclick="navTo('outils-ordos',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Ordonnances</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-km" onclick="navTo('outils-km',this);toggleMobileMenu()"><span class="bn-ic">🚗</span>Km</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sig" onclick="navTo('sig',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Signatures</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pilulier" onclick="navTo('pilulier',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Pilulier</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="constantes" onclick="navTo('constantes',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Constantes</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="compte-rendu" onclick="navTo('compte-rendu',this);toggleMobileMenu()"><span class="bn-ic">📋</span>CR Pass.</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="tresor" onclick="navTo('tresor',this);toggleMobileMenu()"><span class="bn-ic">💸</span>Tréso</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="rapport" onclick="navTo('rapport',this);toggleMobileMenu()"><span class="bn-ic">📄</span>Rapport</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="dash" onclick="navTo('dash',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="copilote" onclick="navTo('copilote',this);toggleMobileMenu()"><span class="bn-ic">🤖</span>Copilote</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="transmissions" onclick="navTo('transmissions',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Transm.</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="bsi" onclick="navTo('bsi',this);toggleMobileMenu()"><span class="bn-ic">🩺</span>BSI</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="consentements" onclick="navTo('consentements',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Consent.</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="alertes-med" onclick="navTo('alertes-med',this);toggleMobileMenu()"><span class="bn-ic">⚠️</span>Interact.</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="audit-cpam" onclick="navTo('audit-cpam',this);toggleMobileMenu()"><span class="bn-ic">🔍</span>Audit</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-charges" onclick="navTo('outils-charges',this);toggleMobileMenu()"><span class="bn-ic">💰</span>Charges</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-modeles" onclick="navTo('outils-modeles',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Modèles</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-simulation" onclick="navTo('outils-simulation',this);toggleMobileMenu()"><span class="bn-ic">⚡</span>Simulation</button>
@@ -611,42 +778,23 @@
 
     <!-- COTATION -->
     <section class="view on" id="view-cot">
-      <!-- En-tête page -->
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
         <h1 class="pt" style="margin-bottom:0">Cotation <em>intelligente</em></h1>
         <button onclick="resetOnboarding()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
       </div>
       <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
-
-      <div class="card cot-form-premium">
-
-        <!-- Notice admin -->
-        <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — test fonctionnel</strong> · Vous saisissez vos propres données de test · Les données des infirmières sont inaccessibles.</div>
-
-        <!-- Bannière RGPD -->
+      <div class="card">
+        <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — test fonctionnel</strong> · Vous saisissez vos propres données de test · Les données des infirmières sont inaccessibles (stockage local chiffré, isolé par compte)</div>
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
-
-        <!-- ══ SECTION 1 : PRESCRIPTEUR ══ -->
-        <div class="cot-section-header">
-          <div class="cot-section-icon">👨‍⚕️</div>
-          <div class="cot-section-title">Prescripteur (médecin)</div>
-        </div>
-        <div class="fg cot-fg" style="margin-bottom:24px">
+        <div class="lbl">Prescripteur (médecin)</div>
+        <div class="fg" style="margin-bottom:20px">
           <div class="f"><label for="f-pr">Médecin prescripteur</label><input type="text" id="f-pr" name="prescripteur" placeholder="Dr. Martin Pierre"></div>
           <div class="f"><label for="f-pr-rp">RPPS Prescripteur</label><input type="text" id="f-pr-rp" name="prescripteur_rpps" placeholder="10009876543"></div>
           <div class="f"><label for="f-pr-dt">Date de prescription</label><input type="date" id="f-pr-dt" name="date_prescription"></div>
         </div>
-
-        <!-- ══ SECTION 2 : PATIENT ══ -->
         <div id="patient-fields">
-          <div class="cot-section-divider"></div>
-          <div class="cot-section-header">
-            <div class="cot-section-icon">👤</div>
-            <div class="cot-section-title">Patient <span style="font-size:10px;color:var(--m);font-weight:400">— données locales uniquement</span></div>
-          </div>
-          <!-- Sélecteur patient du carnet (injecté par patient-form.js) -->
-          <div id="cot-patient-search-wrap" style="margin-bottom:14px"></div>
-          <div class="fg cot-fg" style="margin-bottom:24px">
+          <div class="lbl">Patient — données locales uniquement</div>
+          <div class="fg" style="margin-bottom:20px">
             <div class="f"><label for="f-pt">Nom patient <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="f-pt" name="patient_nom" placeholder="NOM Prénom" autocomplete="off"></div>
             <div class="f"><label for="f-ddn">Date de naissance</label><input type="date" id="f-ddn" name="date_naissance"></div>
             <div class="f"><label for="f-sec">N° Sécu <span style="font-size:9px;opacity:.5">(non transmis)</span></label><input type="text" id="f-sec" name="secu" placeholder="1 85 06 ..." autocomplete="off"></div>
@@ -654,88 +802,23 @@
             <div class="f"><label for="f-amc">Mutuelle AMC</label><input type="text" id="f-amc" name="amc" placeholder="MGEN, Harmonie..."></div>
           </div>
         </div>
-
-        <!-- ══ SECTION 3 : FACTURATION ══ -->
-        <div class="cot-section-divider"></div>
-        <div class="cot-section-header">
-          <div class="cot-section-icon">💶</div>
-          <div class="cot-section-title">Facturation</div>
-        </div>
-        <div class="fg cot-fg" style="margin-bottom:24px">
-          <div class="f"><label for="f-exo">Exonération</label>
-            <select id="f-exo" name="exoneration">
-              <option value="">Aucune (ticket modérateur)</option>
-              <option value="ALD">ALD — 100% SS</option>
-              <option value="maternite">Maternité — 100%</option>
-              <option value="accident">Accident travail — 100%</option>
-              <option value="cmu">CSS/C2S — 100%</option>
-            </select>
-          </div>
-          <div class="f"><label for="f-regl">Mode règlement</label>
-            <select id="f-regl" name="reglement">
-              <option value="patient">Patient</option>
-              <option value="tiers">Tiers payant AMO</option>
-              <option value="tiers_amc">Tiers payant AMO+AMC</option>
-            </select>
-          </div>
+        <div class="lbl">Facturation</div>
+        <div class="fg" style="margin-bottom:20px">
+          <div class="f"><label for="f-exo">Exonération</label><select id="f-exo" name="exoneration"><option value="">Aucune (ticket modérateur)</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité — 100%</option><option value="accident">Accident travail — 100%</option><option value="cmu">CSS/C2S — 100%</option></select></div>
+          <div class="f"><label for="f-regl">Mode règlement</label><select id="f-regl" name="reglement"><option value="patient">Patient</option><option value="tiers">Tiers payant AMO</option><option value="tiers_amc">Tiers payant AMO+AMC</option></select></div>
           <div class="f"><label for="f-ds">Date du soin</label><input type="date" id="f-ds" name="date_soin"></div>
           <div class="f"><label for="f-hs">Heure du soin</label><input type="time" id="f-hs" name="heure_soin" onchange="this._userEdited=!!this.value"></div>
         </div>
-
-        <!-- ══ SECTION 4 : DESCRIPTION ══ -->
-        <div class="cot-section-divider"></div>
-        <div class="cot-section-header">
-          <div class="cot-section-icon">📝</div>
-          <div class="cot-section-title">Description des soins <span style="color:var(--d)">*</span></div>
-          <span style="font-size:10px;color:var(--m);font-family:var(--fm);margin-left:auto">Langage naturel — l'IA comprend tout</span>
-        </div>
-        <div class="f cot-txt-wrap" style="margin-bottom:4px">
-          <textarea id="f-txt"
-            placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..."
-            oninput="if(typeof renderLiveReco==='function')renderLiveReco(this.value)"
-            style="min-height:110px;border-radius:12px;border-color:rgba(0,212,170,.2);background:rgba(0,212,170,.02);font-size:14px;line-height:1.7;resize:vertical"></textarea>
-        </div>
+        <div class="lbl">Description des soins <span style="color:var(--d)">*</span></div>
+        <div class="f" style="margin-bottom:4px"><textarea id="f-txt" placeholder="Ex : Injection insuline SC + prise de sang à domicile 22h dimanche, patient grabataire, 8km..." oninput="if(typeof renderLiveReco==='function')renderLiveReco(this.value)"></textarea></div>
         <!-- Recommandations NGAP temps réel -->
         <div id="live-reco" style="display:none;margin-bottom:12px"></div>
-
-        <!-- ══ MODE CABINET ══ -->
-        <div id="cot-cabinet-toggle-wrap" style="display:none;margin-bottom:14px">
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1px solid rgba(0,212,170,.25);border-radius:8px;background:rgba(0,212,170,.04)">
-            <input type="checkbox" id="cot-cabinet-mode" onchange="cotationToggleCabinetMode(this.checked)"
-              style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0">
-            <div>
-              <div style="font-weight:600;font-size:13px">🏥 Mode cabinet — cotation multi-IDE</div>
-              <div style="font-size:11px;color:var(--m);margin-top:2px">Assignez chaque acte à une infirmière — chacune bénéficie de son acte principal au tarif plein (suppression des décotes NGAP)</div>
-            </div>
-          </label>
-        </div>
-
-        <!-- ══ PANNEAU MULTI-IDE ══ -->
-        <div id="cot-cabinet-panel" style="display:none;margin-bottom:14px;border:1px solid rgba(0,212,170,.2);border-radius:10px;overflow:hidden">
-          <div style="background:rgba(0,212,170,.06);padding:10px 14px;border-bottom:1px solid rgba(0,212,170,.15);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div>
-              <div style="font-size:13px;font-weight:700">👥 Qui réalise chaque acte ?</div>
-              <div style="font-size:11px;color:var(--m);margin-top:2px">Basé sur la description saisie ci-dessus — mis à jour en temps réel</div>
-            </div>
-            <button class="btn bs bsm" onclick="cotationOptimizeDistribution()"><span>⚡</span> Optimiser la répartition</button>
-          </div>
-          <div id="cot-cabinet-actes-list" style="padding:12px 14px;display:flex;flex-direction:column;gap:6px">
-            <div class="ai in" style="font-size:12px">Saisissez la description des soins ci-dessus pour assigner les actes aux IDEs.</div>
-          </div>
-          <div id="cot-cabinet-suggestion" style="display:none;padding:6px 14px 10px;font-size:12px;color:var(--a)"></div>
-        </div>
-
-        <!-- ══ ACTIONS ══ -->
-        <div class="cot-actions-bar">
-          <button class="btn bp cot-btn-primary" id="btn-cot" onclick="cotation()">
-            <span style="font-size:16px">⚡</span> Coter avec l'IA
-          </button>
+        <div class="ar-row">
+          <button class="btn bp" id="btn-cot" onclick="cotation()"><span>⚡</span> Coter avec l'IA</button>
           <button class="btn bv" id="btn-verify" onclick="openVerify()"><span>🔍</span> Vérifier & corriger</button>
           <button class="btn bs" onclick="clrCot()">↺ Réinitialiser</button>
         </div>
-
-      </div><!-- /card cot-form-premium -->
-
+      </div>
       <div id="res-cot" class="res"><div id="cerr" class="errb" style="display:none">⚠️ <span id="cerr-m"></span></div><div id="cbody"></div></div>
     </section>
 
@@ -806,20 +889,7 @@
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
-          <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
-        </div>
-
-        <!-- ══ PANEL CABINET MULTI-IDE ══ -->
-        <div id="tur-cabinet-panel" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(0,212,170,.25);border-radius:10px;background:rgba(0,212,170,.04)">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
-            <div style="font-weight:600;font-size:14px">🏥 Tournée cabinet — <span id="tur-cabinet-nom">—</span></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn bp bsm" onclick="optimiserTourneeCabinet()"><span>⚡</span> Répartir entre IDEs</button>
-              <button class="btn bs bsm" onclick="optimiserTourneeCabinetCA()"><span>🎯</span> Optimiser revenus</button>
-            </div>
-          </div>
-          <div id="tur-cabinet-result"></div>
         </div>
       </div>
       <!-- Panneau téléchargement cartes offline -->
@@ -919,7 +989,7 @@
         <!-- ── Boutons principaux journée ── -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <button class="btn bp" id="btn-live-start" onclick="startJourneeUnifiee()"><span>▶️</span> Démarrer la journée</button>
-          <button class="btn bs" id="btn-live-stop" onclick="terminerTourneeAvecBilan()" style="display:none"><span>🏁</span> Clôturer la journée</button>
+          <button class="btn bs" id="btn-live-stop" onclick="terminerTourneeAvecBilan()" style="display:none"><span>🏁</span> Terminer la tournée</button>
           <button class="btn bs bsm" onclick="ouvrirEtatTournee()"><span>📊</span> État de la tournée</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()"><span>🗑️</span> Réinitialiser</button>
         </div>
@@ -1004,72 +1074,233 @@
         startDay();
       }
 
-      /* ── Terminer la tournée : clôture de journée uniquement ── */
+      /* ── Terminer la tournée + importer cotations dans le carnet ── */
       /* ════════════════════════════════════════════════════════════════
-         TERMINER LA TOURNÉE — Clôture simple
+         TERMINER LA TOURNÉE — Bilan complet
          ─────────────────────────────────────────────────────────────
-         Les cotations, imports IDB et km ont déjà été traités
-         patient par patient via markUberDone() (bouton ✅ Terminé).
-         Cette fonction se contente de :
-         1. Enregistrer les km restants éventuels (retour cabinet)
-         2. Arrêter le timer et clôturer la journée
-         3. Afficher le bilan final
+         1. Génère automatiquement toutes les cotations manquantes
+            (API en parallèle par batch, fallback local immédiat)
+            → sans bloquer, sans confirmation préalable par patient
+         2. Importe toutes les cotations dans le carnet patient (IDB)
+         3. Exporte les km de la journée dans le Journal kilométrique
+         4. Affiche le bilan avec option de correction par patient
          ════════════════════════════════════════════════════════════════ */
       async function terminerTourneeAvecBilan() {
         if (!confirm(
-          'Clôturer la journée ?\n\n' +
-          '• Le chronomètre sera arrêté\n' +
-          '• Le bilan de la tournée sera affiché\n' +
-          '• Assurez-vous d\'avoir validé chaque patient avec ✅ Terminé'
+          'Terminer la tournée du jour ?\n\n' +
+          '• Les cotations seront générées automatiquement pour tous les patients visités\n' +
+          '• Vous pourrez corriger chaque cotation depuis le bilan\n' +
+          '• Les km du jour seront enregistrés dans le Journal kilométrique'
         )) return;
 
         const patients  = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
         const snapshot  = patients.map(p => ({ ...p }));
-        const todayStr  = new Date().toISOString().split('T')[0];
+        const today     = new Date().toISOString();
+        const todayStr  = today.split('T')[0];
+        const u         = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
-        /* ── Traiter les patients visités mais pas encore cotés
-           (cas où ✅ Terminé a été cliqué mais la cotation async était en cours) ── */
-        const encore = snapshot.filter(p => (p.done || p._done) && !p._cotation?.validated);
-        if (encore.length > 0) {
-          if (typeof showToast === 'function') showToast(`⚙️ Finalisation de ${encore.length} cotation(s)…`);
-          const BATCH = 4;
-          for (let i = 0; i < encore.length; i += BATCH) {
-            await Promise.allSettled(encore.slice(i, i + BATCH).map(p =>
-              typeof _autoCoterEtImporterPatient === 'function'
-                ? _autoCoterEtImporterPatient(p)
-                : Promise.resolve()
-            ));
-          }
+        /* ── Enrichir APP.importedData avec les noms/dates des uberPatients
+           pour que le Planning hebdomadaire affiche les vraies infos ── */
+        if (APP.importedData) {
+          const key = APP.importedData.patients ? 'patients' : 'entries';
+          const arr = APP.importedData[key] || [];
+          const uberIndex = {};
+          (APP.get('uberPatients') || []).forEach(p => {
+            const k = p.patient_id || p.id;
+            if (k) uberIndex[k] = p;
+          });
+          APP.importedData[key] = arr.map(p => {
+            const uber = uberIndex[p.patient_id || p.id] || {};
+            return {
+              ...p,
+              nom:      uber.nom    || p.nom    || '',
+              prenom:   uber.prenom || p.prenom || '',
+              date:     p.date || p.date_soin || todayStr,
+              _cotation: p._cotation || uber._cotation,
+              done:     p.done  || p._done  || uber.done  || false,
+              absent:   p.absent || p._absent || uber.absent || false,
+            };
+          });
         }
 
-        /* ── Enregistrer le km de retour cabinet ── */
+        /* ── Afficher un toast de progression ── */
+        if (typeof showToast === 'function') showToast('⚙️ Génération des cotations en cours…');
+
+        /* ═══════════════════════════════════════════════════════
+           1. AUTO-COTER tous les patients visités sans cotation
+              — Parallèle par batch de 4, fallback local immédiat
+           ═══════════════════════════════════════════════════════ */
+        const toCoter = snapshot.filter(p =>
+          !p._cotation?.validated && (p.done || p._done)
+        );
+
+        const _autoCoterOne = async (p) => {
+          /* ── Chercher les actes_recurrents dans la fiche patient IDB ── */
+          let actesRecurrents = '';
+          try {
+            if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+              const rows = await _idbGetAll(PATIENTS_STORE);
+              const row  = rows.find(r => r.id === p.patient_id || r.id === p.id);
+              if (row) {
+                const pat = { ...((typeof _dec === 'function' ? _dec(row._data) : null) || {}) };
+                if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
+              }
+            }
+          } catch (_) {}
+
+          /* ── Construire le texte de cotation :
+             Priorité 1 : actes_recurrents (fiche patient)
+             Priorité 2 : description/texte importé (calendrier/texte libre)
+             Priorité 3 : pathologies converties en actes médicaux réels (NGAP) ── */
+          const texteImport = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
+          const _pathoConverti = p.pathologies
+            ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(p.pathologies) : p.pathologies)
+            : '';
+          const texte = actesRecurrents
+            ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
+            : (texteImport || _pathoConverti);
+          if (!texte) return;
+          /* Fallback local immédiat — appliqué d'abord pour ne pas bloquer */
+          let cot = (typeof autoCotationLocale === 'function')
+            ? autoCotationLocale(texte)
+            : { actes: [], total: 0 };
+          /* Tenter l'API en arrière-plan (meilleur résultat si réseau dispo) */
+          try {
+            const d = await (typeof apiCall === 'function' ? apiCall('/webhook/ami-calcul', {
+              mode: 'ngap', texte,
+              infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
+              adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
+              date_soin: todayStr,
+              heure_soin: p.heure_soin || p.heure_preferee || '',
+              _live_auto: true,
+            }) : Promise.reject('no apiCall'));
+            if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
+          } catch { /* silencieux — le fallback local est déjà prêt */ }
+          p._cotation = { actes: cot.actes || [], total: parseFloat(cot.total || 0), auto: true, validated: true };
+        };
+
+        /* Lancer par batch de 4 simultanées */
+        const BATCH = 4;
+        for (let i = 0; i < toCoter.length; i += BATCH) {
+          await Promise.allSettled(toCoter.slice(i, i + BATCH).map(_autoCoterOne));
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           2. IMPORTER TOUTES LES COTATIONS DANS LE CARNET (IDB)
+           ═══════════════════════════════════════════════════════ */
+        let importCount = 0;
+        for (const p of snapshot) {
+          if (!p._cotation?.validated) continue;
+          try {
+            const rows = await _idbGetAll(PATIENTS_STORE);
+            let row    = rows.find(r => r.id === p.patient_id || r.id === p.id);
+            let pat;
+
+            if (row) {
+              pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+            } else {
+              const newId  = p.patient_id || p.id || ('pat_' + Date.now() + '_' + Math.random().toString(36).slice(2,6));
+              const parts  = (p.nom ? [p.prenom||'', p.nom] : (p.description || p.texte || 'Patient').split(' '));
+              pat = {
+                id: newId,
+                nom:    p.nom    || parts.slice(-1)[0]       || 'Patient',
+                prenom: p.prenom || parts.slice(0,-1).join(' ') || '',
+                adresse: p.adresse || p.addressFull || '',
+                lat: p.lat || null, lng: p.lng || null,
+                created_at: today, updated_at: today, cotations: [],
+              };
+            }
+
+            if (!pat.cotations) pat.cotations = [];
+            pat.cotations.push({
+              date:   today,
+              actes:  p._cotation.actes || [],
+              total:  parseFloat(p._cotation.total || 0),
+              soin:   (p.description || p.texte || '').slice(0, 120),
+              source: p._cotation.auto ? 'tournee_auto' : 'tournee',
+            });
+            pat.updated_at = today;
+
+            await _idbPut(PATIENTS_STORE, {
+              id: pat.id, nom: pat.nom, prenom: pat.prenom,
+              _data: _enc(pat), updated_at: today,
+            });
+            importCount++;
+          } catch (e) { console.warn('[AMI] Import cotation IDB KO:', e.message); }
+        }
+
+        /* ── Synchroniser les cotations locales vers Supabase (arrière-plan) ── */
+        if (typeof _syncCotationsToSupabase === 'function') {
+          _syncCotationsToSupabase(snapshot).catch(() => {});
+        }
+
+        /* ═══════════════════════════════════════════════════════
+           3. EXPORTER LES KM DU JOUR → Journal kilométrique
+           ═══════════════════════════════════════════════════════ */
         try {
-          const lastPos  = APP.get('_lastVisitedPos');
-          const startPt  = APP.get('startPoint');
-          let kmRetour   = 0;
-          if (lastPos?.lat && startPt?.lat) {
-            const _hav = (la1, lo1, la2, lo2) => {
-              const R = 6371, dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
-              const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
-              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            };
-            kmRetour = _hav(parseFloat(lastPos.lat), parseFloat(lastPos.lng), parseFloat(startPt.lat), parseFloat(startPt.lng));
-            const curKm = parseFloat(APP.get('tourneeKmJour') || 0);
-            APP.set('tourneeKmJour', curKm + kmRetour);
-            try { localStorage.setItem('ami_tournee_km', String(curKm + kmRetour)); } catch {}
+          const _hav = (la1, lo1, la2, lo2) => {
+            const R = 6371, dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          };
+
+          let kmTotal = 0;
+          let kmSource = '';
+
+          /* Source 1 : km OSRM stockés lors de l'optimisation (APP state + localStorage persisté) */
+          const osrmKm = parseFloat(APP.get('tourneeKmJour') || 0)
+            || parseFloat(localStorage.getItem('ami_tournee_km') || 0);
+          if (osrmKm > 0) { kmTotal = osrmKm; kmSource = 'OSRM'; }
+
+          /* Source 2 : badge HTML "🚗 X km" dans la vue tournée */
+          if (!kmTotal) {
+            const badge = document.querySelector('#tbody .dreb');
+            if (badge) {
+              const m = badge.textContent.match(/([\d.,]+)\s*km/i);
+              if (m) { kmTotal = parseFloat(m[1].replace(',','.')); kmSource = 'badge'; }
+            }
           }
 
-          /* ── Écrire le journal kilométrique ── */
-          const kmTotal = parseFloat(APP.get('tourneeKmJour') || 0)
-            || parseFloat(localStorage.getItem('ami_tournee_km') || 0);
+          /* Source 3 : haversine sur TOUS les patients GPS (visités + non visités) */
+          if (!kmTotal) {
+            const start = APP.get('startPoint');
+            // Utiliser snapshot d'abord, puis uberPatients comme fallback (meilleurs coords GPS)
+            const gpsSource = snapshot.some(p => p.lat && p.lng)
+              ? snapshot
+              : (APP.get('uberPatients') || []);
+            const withGPS = gpsSource.filter(p => p.lat && p.lng && parseFloat(p.lat) && parseFloat(p.lng));
+            if (withGPS.length >= 1) {
+              let pts = [];
+              if (start?.lat && start?.lng) pts.push(start);
+              pts = [...pts, ...withGPS];
+              let dist = 0;
+              for (let i = 0; i < pts.length - 1; i++) {
+                dist += _hav(parseFloat(pts[i].lat), parseFloat(pts[i].lng), parseFloat(pts[i+1].lat), parseFloat(pts[i+1].lng));
+              }
+              if (start?.lat && pts.length > 1) {
+                const last = pts[pts.length-1];
+                dist += _hav(parseFloat(last.lat), parseFloat(last.lng), parseFloat(start.lat), parseFloat(start.lng));
+              }
+              if (dist > 0.5) { kmTotal = dist; kmSource = 'GPS patients'; }
+            }
+          }
 
+          /* Source 4 : estimation ~ 3 km/patient si aucune GPS */
+          if (!kmTotal) {
+            const nbP = snapshot.filter(p => p.done || p._done).length;
+            if (nbP > 0) { kmTotal = nbP * 3; kmSource = 'estimation (3 km/patient)'; }
+          }
+
+          console.info('[AMI] Km tournée — source:', kmSource, '— total:', kmTotal.toFixed(1));
+
+          const nbVisites = snapshot.filter(p => p.done || p._done).length;
           if (kmTotal > 0) {
-            let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
-            if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
-            const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+            // Clé isolée par userId — sync navigateur ↔ mobile
+            let _kmUidT = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+            if (!_kmUidT) { try { _kmUidT = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+            const KM_KEY = 'ami_km_journal_' + String(_kmUidT || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
             let journal = [];
             try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
-            const nbVisites = snapshot.filter(p => p.done || p._done).length;
             journal.push({
               id:      Date.now(),
               date:    todayStr,
@@ -1080,18 +1311,18 @@
               _source: 'tournee_auto',
             });
             localStorage.setItem(KM_KEY, JSON.stringify(journal));
+            // Sync silencieux vers le serveur (navigateur ↔ mobile)
             if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
             APP.set('tourneeKmJour', 0);
-            APP.set('_lastVisitedPos', null);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
           }
-        } catch (e) { console.warn('[AMI] Km retour cabinet KO:', e.message); }
+        } catch (e) { console.warn('[AMI] Import km KO:', e.message); }
 
         /* ── Capturer le CA AVANT de stopper le timer ── */
         const caJournee = (typeof _LIVE_CA_TOTAL !== 'undefined' ? _LIVE_CA_TOTAL : 0)
           || snapshot.reduce((s, p) => s + parseFloat(p._cotation?.total || 0), 0);
 
-        /* ── Arrêter le timer live ── */
+        /* ── Arrêter le timer live (sans confirm, sans reset immédiat) ── */
         if (typeof _stopDayInternal === 'function') _stopDayInternal(caJournee);
         else if (typeof stopDay === 'function') stopDay();
 
@@ -1099,11 +1330,10 @@
         if (typeof showToast === 'function') {
           const cotAuto = snapshot.filter(p => p._cotation?.auto).length;
           const cotManu = snapshot.filter(p => p._cotation?.validated && !p._cotation?.auto).length;
-          const importCount = snapshot.filter(p => p._cotation?.validated).length;
           showToast(
-            `🏁 Journée clôturée · CA : ${caJournee.toFixed(2)} € · ${importCount} cotation(s)` +
-            (cotAuto ? ` (${cotAuto} auto)` : '') +
-            (cotManu ? ` (${cotManu} manuelle${cotManu>1?'s':''})` : '')
+            `🏁 Tournée terminée · CA : ${caJournee.toFixed(2)} € · ${importCount} cotation(s) importée(s)` +
+            (cotAuto  ? ` (${cotAuto} auto)` : '') +
+            (cotManu  ? ` (${cotManu} manuelle${cotManu>1?'s':''})` : '')
           );
         }
 
@@ -1232,41 +1462,21 @@
     <section class="view" id="view-pla">
       <h1 class="pt">Planning <em>hebdomadaire</em></h1>
       <p class="ps">8–15 patients/jour · Connecté à l'import · Organisation optimale</p>
-
-      <!-- Barre d'actions -->
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
         <button class="btn bs bsm" onclick="refreshPlanning()">↻ Actualiser</button>
-        <!-- Toggle vue cabinet — affiché uniquement si cabinet actif -->
-        <div id="pla-cabinet-toggle-wrap" style="display:none">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 12px;border:1px solid rgba(0,212,170,.25);border-radius:20px;background:rgba(0,212,170,.04);font-size:12px">
-            <input type="checkbox" id="pla-cabinet-mode" onchange="planningToggleCabinetView(this.checked)"
-              style="width:15px;height:15px;accent-color:var(--a);flex-shrink:0">
-            <span>🏥 Vue cabinet multi-IDE</span>
-          </label>
-        </div>
-        <!-- Sélecteur semaine -->
-        <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
-          <button class="btn bs bsm" id="pla-week-prev" onclick="planningWeekNav(-1)">← Sem. préc.</button>
-          <span id="pla-week-label" style="font-size:12px;color:var(--m);font-family:var(--fm);white-space:nowrap;min-width:120px;text-align:center">Cette semaine</span>
-          <button class="btn bs bsm" id="pla-week-next" onclick="planningWeekNav(+1)">Sem. suiv. →</button>
-        </div>
       </div>
-
       <div id="pla-import-banner" class="card" style="display:none;margin-bottom:16px">
         <div class="ct">📂 Données importées disponibles</div>
         <div class="ai in" id="pla-import-info">—</div>
-        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <div style="margin-top:12px;display:flex;gap:10px">
           <button class="btn bp bsm" onclick="generatePlanningFromImport()"><span>📅</span> Générer depuis l'import</button>
-          <button class="btn bs bsm" onclick="planningGenerateCabinet()" id="btn-pla-cabinet" style="display:none"><span>🏥</span> Répartir entre IDEs</button>
           <button class="btn bs bsm" onclick="document.getElementById('pla-manual').style.display='block'">✏️ Saisie manuelle</button>
         </div>
       </div>
-
       <div id="pla-manual" class="card">
         <div class="f" style="margin-bottom:16px"><textarea id="pl-txt" placeholder="Patient A : Injection 2x/jour&#10;Patient B : Toilette lundi/mercredi/vendredi&#10;Patient C : Pansement quotidien..." style="min-height:140px"></textarea></div>
         <button class="btn bp" id="btn-pla" onclick="modeAI('planning')"><span>📅</span> Générer</button>
       </div>
-
       <div id="res-pla" class="res"><div id="perr" class="errb" style="display:none">⚠️ <span id="perr-m"></span></div><div id="pbody"></div></div>
     </section>
 
@@ -1275,59 +1485,26 @@
       <h1 class="pt">Historique <em>des soins</em></h1>
       <p class="ps">Cotations · Historique · Recherche</p>
       <div class="card">
-        <!-- Notices -->
+        <!-- Notice admin (masquée pour les infirmières, activée par auth.js) -->
         <div id="his-admin-notice" style="display:none;margin-bottom:14px" class="ai in">
-          🛡️ <strong>Mode admin — vos données de test uniquement</strong> · Vous ne voyez que les cotations enregistrées depuis votre compte admin.
+          🛡️ <strong>Mode admin — vos données de test uniquement</strong> · Vous ne voyez que les cotations enregistrées depuis votre compte admin. Les données des infirmières sont physiquement inaccessibles.
         </div>
         <div class="priv" id="his-nurse-notice"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p>Seule l'infirmière connectée voit ses propres données. Isolation stricte par compte.</p></div>
-
-        <!-- Barre de recherche + période -->
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-          <input type="text" id="hq" placeholder="🔍 Rechercher patient, acte…" style="max-width:220px" oninput="hist()">
-          <div class="dash-period-pill">
-            <button class="dpp-btn active" onclick="setHistPeriod(this,'month')">Mois</button>
-            <button class="dpp-btn" onclick="setHistPeriod(this,'lastmonth')">M-1</button>
-            <button class="dpp-btn" onclick="setHistPeriod(this,'3month')">3 mois</button>
-            <button class="dpp-btn" onclick="setHistPeriod(this,'year')">Année</button>
-          </div>
-          <select id="hp" style="display:none" onchange="hist()">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <input type="text" id="hq" placeholder="🔍 Rechercher..." style="width:200px" oninput="hist()">
+          <select id="hp" onchange="hist()" style="width:160px">
             <option value="month">Ce mois</option>
             <option value="lastmonth">Mois précédent</option>
             <option value="3month">3 derniers mois</option>
             <option value="year">Cette année</option>
           </select>
-          <button class="btn bs bsm" onclick="hist()">↻</button>
-          <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Réinitialiser</button>
+          <button class="btn bs bsm" onclick="hist()">↻ Actualiser</button>
+          <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
         </div>
-
-        <!-- Filtres rapides pills -->
-        <div class="hist-filter-bar">
-          <button class="hist-filter-pill active" onclick="histSetFilter(this,'all')">Tous</button>
-          <button class="hist-filter-pill" onclick="histSetFilter(this,'ok')">✅ Conformes</button>
-          <button class="hist-filter-pill wa" onclick="histSetFilter(this,'dre')">📋 DRE requis</button>
-          <button class="hist-filter-pill er" onclick="histSetFilter(this,'alerts')">⚠ Alertes</button>
-          <button class="hist-sort-btn" id="hist-sort-btn" onclick="histToggleSort()">
-            <span id="hist-sort-icon">↕</span> <span id="hist-sort-label">Date</span>
-          </button>
-        </div>
-
-        <!-- KPIs mini -->
-        <div class="hist-kpi-row" id="hstats"></div>
-
-        <!-- Table -->
+        <div id="hstats" class="sg"></div>
         <div class="ht"><table>
-          <thead><tr>
-            <th>Patient</th>
-            <th>Date &amp; Heure</th>
-            <th>N° Facture</th>
-            <th>Actes</th>
-            <th>Total</th>
-            <th>Statut</th>
-            <th>Alertes</th>
-            <th></th>
-            <th></th>
-          </tr></thead>
-          <tbody id="htb"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
+          <thead><tr><th>ID</th><th>Date</th><th>Actes</th><th>Total</th><th>DRE</th><th>Alertes</th><th></th></tr></thead>
+          <tbody id="htb"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -1335,150 +1512,61 @@
     <!-- DASHBOARD -->
     <section class="view" id="view-dash">
       <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
-      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Analyse horaire</p>
-
-      <!-- Barre de contrôle header -->
+      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Comparatif mois/mois · Analyse horaire</p>
       <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-        <!-- Période pill -->
-        <div class="dash-period-pill">
-          <button class="dpp-btn active" onclick="setDashPeriod(this,'month')">Mois</button>
-          <button class="dpp-btn" onclick="setDashPeriod(this,'lastmonth')">M-1</button>
-          <button class="dpp-btn" onclick="setDashPeriod(this,'3month')">3 mois</button>
-          <button class="dpp-btn" onclick="setDashPeriod(this,'year')">Année</button>
-        </div>
-        <!-- select hidden pour compatibilité JS -->
-        <select id="dash-period" style="display:none" onchange="loadDash()">
+        <select id="dash-period" onchange="loadDash()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
           <option value="month">Ce mois</option>
           <option value="lastmonth">Mois précédent</option>
           <option value="3month">3 derniers mois</option>
           <option value="year">Cette année</option>
         </select>
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
-        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel</button>
-        <button class="btn bs bsm nurse-only" onclick="if(typeof navTo==='function')navTo('tur',null);setTimeout(()=>typeof toggleHeatmap==='function'&&toggleHeatmap(),500)">🔥 Zones</button>
+        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel quotidien</button>
       </div>
-
-      <!-- Notice admin -->
-      <div id="dash-admin-notice" style="display:none;margin-bottom:12px" class="ai in">
-        🛡️ <strong>Mode admin — données isolées</strong> · Statistiques issues de vos données de test uniquement. Les données infirmières sont physiquement inaccessibles.
+      <!-- Notice admin (masquée pour les infirmières) -->
+      <div id="dash-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
+        🛡️ <strong>Mode admin — données isolées</strong> · Les statistiques et l'analyse horaire affichées sont issues de vos propres données de test. Les données des infirmières (stockage local chiffré par compte) sont physiquement inaccessibles depuis votre session.
       </div>
       <!-- Badge cache / hors-ligne -->
-      <div id="dash-cache-info" style="display:none;font-size:11px;margin-bottom:10px;padding:5px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
-
-      <!-- Loading -->
+      <div id="dash-cache-info" style="display:none;font-size:12px;margin-bottom:10px;padding:6px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
       <div id="dash-loading" style="text-align:center;padding:60px 20px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="color:var(--m);font-size:13px">Chargement des statistiques...</p></div>
-
       <div id="dash-body" style="display:none">
-
-        <!-- ── ALERT STRIP — pertes détectées ── -->
-        <div id="dash-alert-strip-loss" class="dash-alert-strip" style="display:none;margin-bottom:0">
-          <div class="dash-alert-dot"></div>
-          <div class="dash-alert-text" id="dash-alert-strip-text">Revenus manqués détectés</div>
-          <div class="dash-alert-action" onclick="document.getElementById('dash-loss-card').scrollIntoView({behavior:'smooth'})">Voir détails →</div>
+        <!-- KPIs -->
+        <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:28px"></div>
+        <!-- Bandeau kilométrique — rempli par renderDashboard si des trajets existent -->
+        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:20px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
+        <!-- Graphique 30j -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">📈 Revenus — 30 derniers jours</div>
+          <div id="dash-chart" style="height:160px;display:flex;align-items:flex-end;gap:4px;padding:8px 0"></div>
+          <div id="dash-chart-labels" style="display:flex;gap:4px;margin-top:6px;overflow:hidden"></div>
         </div>
-
-        <!-- ── KPIs ── -->
-        <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin:20px 0 24px"></div>
-
-        <!-- ── Bandeau kilométrique ── -->
-        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:8px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
-
-        <!-- Sélecteur barème km (affiché uniquement si bandeau km visible) -->
-        <div class="km-prefs-bar" id="dash-km-prefs" style="display:none;margin-bottom:16px">
-          <span class="km-prefs-lbl">🚗 Barème km</span>
-          <select class="km-cv-select" id="dash-km-cv" onchange="saveKmPrefsDash()" title="Puissance fiscale">
-            <option value="3">3 CV — 0.529 €/km</option>
-            <option value="4">4 CV — 0.606 €/km</option>
-            <option value="5" selected>5 CV — 0.636 €/km</option>
-            <option value="6">6 CV — 0.665 €/km</option>
-            <option value="7">7 CV et + — 0.697 €/km</option>
-          </select>
-          <label class="km-elec-label">
-            <input type="checkbox" id="dash-km-elec" onchange="saveKmPrefsDash()"> ⚡ Électrique <span style="font-size:10px;color:var(--a2)">(+20%)</span>
-          </label>
-          <span class="km-prefs-info" id="dash-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
+        <!-- Top actes -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">🏆 Actes les plus fréquents</div>
+          <div id="dash-top-actes" class="al"></div>
         </div>
-
-        <!-- ── LAYOUT 2 COLONNES ── -->
-        <div class="dash-2col">
-
-          <!-- COLONNE PRINCIPALE -->
-          <div class="dash-2col-main">
-
-            <!-- Graphique 30j -->
-            <div class="dash-2col-section">
-              <div class="dash-section-title">
-                Revenus — 30 derniers jours
-                <span class="dash-section-badge" id="dash-chart-trend-badge">↑ tendance</span>
-              </div>
-              <div id="dash-chart" style="height:130px;display:flex;align-items:flex-end;gap:3px;padding:4px 0"></div>
-              <div id="dash-chart-labels" style="display:flex;gap:3px;margin-top:6px;overflow:hidden"></div>
-              <div class="dash-chart-stats" id="dash-chart-stats">
-                <div class="dash-chart-stat">Moy. <strong id="cs-avg">—</strong></div>
-                <div class="dash-chart-stat">Pic <strong id="cs-peak">—</strong></div>
-                <div class="dash-chart-stat">Moy./passage <strong id="cs-mpp">—</strong></div>
-                <div class="dash-chart-stat">Passages <strong id="cs-count">—</strong></div>
-              </div>
-            </div>
-
-            <!-- Top actes -->
-            <div class="dash-2col-section">
-              <div class="dash-section-title">Actes les plus fréquents</div>
-              <div id="dash-top-actes"></div>
-            </div>
-
-            <!-- Alertes revenus manqués -->
-            <div class="dash-2col-section" id="dash-loss-card">
-              <div class="dash-section-title">
-                Alertes revenus manqués
-                <span class="dash-section-badge r" id="dash-loss-badge" style="display:none">● perte</span>
-              </div>
-              <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
-            </div>
-
-            <!-- Anomalies -->
-            <div class="dash-2col-section">
-              <div class="dash-section-title">Détection d'anomalies</div>
-              <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
-            </div>
-
-            <!-- Analyse IA 3 colonnes -->
-            <div class="dash-2col-section" style="border-bottom:none">
-              <div class="dash-section-title">
-                Analyse IA & Optimisations NGAP
-                <span class="dash-section-badge b">IA</span>
-              </div>
-              <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
-            </div>
-
-          </div><!-- /dash-2col-main -->
-
-          <!-- COLONNE SIDEBAR -->
-          <div class="dash-2col-side">
-
-            <!-- Prévision anneau -->
-            <div class="dash-side-section">
-              <div class="dash-section-title" style="margin-bottom:12px">Prévision du mois</div>
-              <div id="dash-prevision">
-                <div style="text-align:center;padding:20px 0;color:var(--m);font-size:13px">Calcul en cours...</div>
-              </div>
-            </div>
-
-            <!-- Heatmap horaire -->
-            <div class="dash-side-section">
-              <div class="dash-section-title" style="margin-bottom:8px">Activité horaire</div>
-              <div class="dash-heatmap" id="dash-heatmap"></div>
-              <div class="dash-heatmap-labels">
-                <span>6h</span><span>10h</span><span>14h</span><span>18h</span>
-              </div>
-              <div style="font-size:10px;color:var(--m);margin-top:6px;font-family:var(--fm)">Intensité par tranche d'1h</div>
-            </div>
-
-          </div><!-- /dash-2col-side -->
-
-        </div><!-- /dash-2col -->
-
-        <!-- ══ STATISTIQUES AVANCÉES ══ -->
+        <!-- Prévision -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">🔮 Prévision & Tendance</div>
+          <div id="dash-prevision" class="ai in" style="font-size:14px">—</div>
+        </div>
+        <!-- Alerte perte -->
+        <div class="card" style="margin-bottom:20px" id="dash-loss-card">
+          <div class="ct">🔔 Alertes revenus manqués</div>
+          <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- Anomalies -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">💸 Détection d'anomalies</div>
+          <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- IA analyse -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="ct">🧠 Analyse IA & Optimisations NGAP</div>
+          <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+        <!-- ══ STATISTIQUES AVANCÉES (ex view-stats) ══ -->
         <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
         <div class="lbl" style="margin-bottom:16px">📊 Statistiques avancées</div>
         <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
@@ -1491,55 +1579,7 @@
           <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
         </div>
         <div id="stats-avancees-body"></div>
-
-        <!-- ══ DASHBOARD CABINET ══ -->
-        <div id="dash-cabinet-section" style="display:none">
-
-          <!-- ── Séparateur + titre cabinet ── -->
-          <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
-            <div class="dash-section-title" style="margin-bottom:0">
-              Statistiques cabinet
-              <span class="dash-section-badge b" style="margin-left:8px">🏥 Multi-IDE</span>
-            </div>
-            <button class="btn bs bsm" onclick="loadDashCabinet()">↻ Actualiser</button>
-          </div>
-
-          <!-- KPIs cabinet — même grille .sc que le haut -->
-          <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin-bottom:24px"></div>
-
-          <!-- Revenus par IDE -->
-          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
-          <div class="dash-section-title" style="margin-bottom:14px">Revenus par infirmière</div>
-          <div id="dash-cabinet-ide-revenues" style="margin-bottom:24px"></div>
-
-          <!-- Simulateur revenus cabinet -->
-          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
-          <div class="dash-section-title" style="margin-bottom:14px">
-            Simulateur revenus cabinet
-            <span class="dash-section-badge">IA</span>
-          </div>
-          <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant les paramètres.</p>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:16px">
-            <div class="af"><label>Patients/jour/IDE</label><input type="number" id="sim-patients-jour" value="12" min="1" max="30" oninput="runCabinetSimulator()"></div>
-            <div class="af"><label>Nb IDEs</label><input type="number" id="sim-nb-ide" value="2" min="1" max="10" oninput="runCabinetSimulator()"></div>
-            <div class="af"><label>Montant moyen/acte (€)</label><input type="number" id="sim-montant-moyen" value="8.50" step="0.5" oninput="runCabinetSimulator()"></div>
-            <div class="af"><label>Jours travaillés/mois</label><input type="number" id="sim-jours" value="22" min="1" max="31" oninput="runCabinetSimulator()"></div>
-          </div>
-          <div id="dash-cabinet-simulator-result" style="margin-bottom:24px"></div>
-
-          <!-- Objectif CA mensuel -->
-          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
-          <div class="dash-section-title" style="margin-bottom:14px">Objectif CA mensuel 🎯</div>
-          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-            <input type="number" id="cab-ca-target" placeholder="Ex: 8000" style="width:150px" oninput="runCabinetCATarget()">
-            <span style="font-size:13px;color:var(--m)">€/mois</span>
-            <button class="btn bp bsm" onclick="runCabinetCATarget()"><span>🎯</span> Simuler</button>
-          </div>
-          <div id="dash-cabinet-ca-target-result"></div>
-        </div>
-      </div><!-- /dash-body -->
-
+      </div>
       <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
         <div style="font-size:40px;margin-bottom:12px">📊</div>
         <p>Aucune donnée. Générez des cotations pour voir vos statistiques.</p>
@@ -1692,22 +1732,6 @@
       <h1 class="pt">Trésorerie <em>& Comptabilité</em></h1>
       <p class="ps">Suivi remboursements AMO/AMC · Export CSV · Checklist CPAM</p>
 
-      <!-- Sélecteur barème kilométrique -->
-      <div class="km-prefs-bar" id="tresor-km-prefs">
-        <span class="km-prefs-lbl">🚗 Barème km</span>
-        <select class="km-cv-select" id="tresor-km-cv" onchange="saveKmPrefsTresor()" title="Puissance fiscale de votre véhicule">
-          <option value="3">3 CV — 0.529 €/km</option>
-          <option value="4">4 CV — 0.606 €/km</option>
-          <option value="5" selected>5 CV — 0.636 €/km</option>
-          <option value="6">6 CV — 0.665 €/km</option>
-          <option value="7">7 CV et + — 0.697 €/km</option>
-        </select>
-        <label class="km-elec-label">
-          <input type="checkbox" id="tresor-km-elec" onchange="saveKmPrefsTresor()"> ⚡ Électrique <span style="font-size:10px;color:var(--a2)">(+20%)</span>
-        </label>
-        <span class="km-prefs-info" id="tresor-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
-      </div>
-
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
         <select id="tresor-period" onchange="loadTresorerie()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
           <option value="month">Ce mois</option>
@@ -1735,66 +1759,23 @@
     <section class="view" id="view-rapport">
       <h1 class="pt">Rapport <em>d'activité</em></h1>
       <p class="ps">Rapport mensuel complet · Export PDF · Pour votre comptable et l'URSSAF</p>
-
-      <!-- Sélecteur période pill -->
-      <div class="dash-period-pill" style="margin-bottom:14px;display:inline-flex">
-        <button class="dpp-btn active" onclick="setRapportPeriod(this,'month')">Ce mois</button>
-        <button class="dpp-btn" onclick="setRapportPeriod(this,'lastmonth')">Mois préc.</button>
-        <button class="dpp-btn" onclick="setRapportPeriod(this,'3month')">3 mois</button>
-        <button class="dpp-btn" onclick="setRapportPeriod(this,'year')">Année</button>
-      </div>
-      <select id="rapport-period" style="display:none">
-        <option value="month">Ce mois-ci</option>
-        <option value="lastmonth">Mois précédent</option>
-        <option value="3month">3 derniers mois</option>
-        <option value="year">Cette année</option>
-      </select>
-
-      <!-- Sélecteur barème kilométrique -->
-      <div class="km-prefs-bar" style="margin-bottom:16px">
-        <span class="km-prefs-lbl">🚗 Barème km</span>
-        <select class="km-cv-select" id="rapport-km-cv" onchange="saveKmPrefsRapport()" title="Puissance fiscale de votre véhicule">
-          <option value="3">3 CV — 0.529 €/km</option>
-          <option value="4">4 CV — 0.606 €/km</option>
-          <option value="5" selected>5 CV — 0.636 €/km</option>
-          <option value="6">6 CV — 0.665 €/km</option>
-          <option value="7">7 CV et + — 0.697 €/km</option>
-        </select>
-        <label class="km-elec-label">
-          <input type="checkbox" id="rapport-km-elec" onchange="saveKmPrefsRapport()"> ⚡ Électrique <span style="font-size:10px;color:var(--a2)">(+20%)</span>
-        </label>
-        <span class="km-prefs-info" id="rapport-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
-      </div>
-
-      <!-- Carte hero rapport -->
-      <div class="rapport-hero" style="margin-bottom:18px">
-        <div class="rapport-hero-icon">📄</div>
-        <div class="rapport-hero-body">
-          <div class="rapport-hero-title">Rapport mensuel</div>
-          <div class="rapport-hero-sub" id="rapport-period-label">Ce mois · NGAP 2026.1 · Prêt à exporter</div>
-          <div class="rapport-includes">
-            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>KPIs revenus</strong> · décomposition AMO/AMC/Patient</div>
-            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>Détail chronologique</strong> de chaque cotation</div>
-            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>Top actes</strong> · graphique journalier · analyse horaire</div>
-            <div class="rapport-include-item"><div class="rapport-include-dot"></div><strong>N° ADELI · RPPS</strong> · numéros de factures séquentiels</div>
-            <div class="rapport-include-item"><div class="rapport-include-dot"></div>Conforme <strong>URSSAF</strong> · prêt pour votre comptable</div>
-          </div>
-          <div class="rapport-actions">
-            <button class="btn bp" id="btn-rapport" onclick="generateRapportMensuel()"><span>📄</span> Télécharger le rapport</button>
-            <button class="btn bv bsm" onclick="previewRapport()">👁️ Aperçu</button>
-            <button class="btn bs bsm" onclick="exportComptable ? exportComptable() : null">📊 Export CSV</button>
-          </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">📄 Générer le rapport</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+          <select id="rapport-period" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+            <option value="month">Ce mois-ci</option>
+            <option value="lastmonth">Mois précédent</option>
+            <option value="3month">3 derniers mois</option>
+            <option value="year">Cette année</option>
+          </select>
+          <button class="btn bp" id="btn-rapport" onclick="generateRapportMensuel()"><span>📄</span> Télécharger le rapport</button>
+          <button class="btn bv bsm" onclick="previewRapport()">👁️ Aperçu</button>
         </div>
-      </div>
-
-      <!-- KPIs résumé avant export -->
-      <div id="rapport-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-bottom:4px"></div>
-      <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:8px" id="rapport-kpis-note"></div>
-
-      <!-- Info format -->
-      <div class="aic" style="margin-top:8px">
-        <div class="ai in" style="font-size:12px">💡 Format HTML — ouvrez dans Chrome → Fichier → Imprimer → Enregistrer en PDF pour un PDF propre</div>
-        <div class="ai su" style="font-size:12px">✅ Conforme URSSAF · N° ADELI, RPPS, N° factures séquentiels, version NGAP</div>
+        <div class="aic">
+          <div class="ai in">📊 Le rapport inclut : KPIs revenus, détail de chaque cotation, top actes, graphique journalier, répartition AMO/AMC/patient</div>
+          <div class="ai in">💡 Format HTML — ouvrez-le dans Chrome et faites Fichier → Imprimer → Enregistrer en PDF pour un PDF propre</div>
+          <div class="ai su">✅ Conforme URSSAF · Inclut N° ADELI, RPPS, N° factures séquentiels, version NGAP</div>
+        </div>
       </div>
     </section>
 
@@ -2238,92 +2219,6 @@
       </div>
     </section>
 
-    <!-- ════════════════════════════════════════════
-         CABINET MULTI-IDE
-         Visible uniquement aux infirmières (nurse-only)
-         Géré entièrement par cabinet.js
-    ═════════════════════════════════════════════ -->
-    <section class="view nurse-only" id="view-cabinet">
-      <h1 class="pt">Cabinet <em>& synchronisation</em></h1>
-      <p class="ps">Multi-IDE · Partage sélectif · Tournée coordonnée</p>
-
-      <!-- Notice RGPD permanente -->
-      <div class="priv" style="margin-bottom:16px">
-        <span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span>
-        <p><strong>Données sous votre contrôle :</strong> La synchronisation est toujours à votre initiative.
-        Vous choisissez <em>quoi</em> partager et <em>avec qui</em>. Aucune donnée patient identifiable ne quitte votre appareil sans votre accord explicite.</p>
-      </div>
-
-      <!-- Contenu dynamique rendu par cabinet.js -->
-      <div id="cabinet-root">
-        <!-- Rempli par renderCabinetSection() à la navigation -->
-      </div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         TRANSMISSIONS INFIRMIÈRES
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-transmissions">
-      <div id="admin-transmissions-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Transmissions avec vos propres données. Les transmissions des infirmières sont isolées sur leurs appareils.</div>
-      <div id="transmissions-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         CONSTANTES PATIENTS
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-constantes">
-      <div id="admin-constantes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Constantes avec vos propres données de démonstration.</div>
-      <div id="constantes-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         COMPTE-RENDU DE PASSAGE
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-compte-rendu">
-      <div id="admin-cr-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Compte-rendu avec vos propres données.</div>
-      <div id="compte-rendu-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         SEMAINIER / PILULIER
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-pilulier">
-      <div id="admin-pilulier-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Pilulier avec vos propres données de démonstration.</div>
-      <div id="pilulier-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         BSI — BILAN DE SOINS INFIRMIERS
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-bsi">
-      <div id="admin-bsi-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module BSI. Toutes les fonctionnalités sont opérationnelles.</div>
-      <div id="bsi-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         CONSENTEMENTS ÉCLAIRÉS
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-consentements">
-      <div id="admin-consent-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Consentements. La signature et l'archivage sont pleinement fonctionnels.</div>
-      <div id="consentements-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         ALERTES MÉDICAMENTEUSES
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-alertes-med">
-      <div id="admin-alertes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez la détection d'interactions médicamenteuses. Base ANSM 2026.</div>
-      <div id="alertes-med-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         SIMULATEUR AUDIT CPAM
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-audit-cpam">
-      <div id="admin-audit-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Le simulateur analyse les cotations de votre compte admin. En production, chaque infirmière voit uniquement ses propres données.</div>
-      <div id="audit-cpam-root"></div>
-    </section>
-
   </main>
 </div>
 
@@ -2337,7 +2232,6 @@
 
 <!-- Modules fonctionnels -->
 <script src="js/auth.js"></script>
-<script src="js/cabinet.js"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
 <script src="js/security.js"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js"></script>
 <script src="js/profil.js"></script>
@@ -2380,47 +2274,6 @@
 <script src="js/copilote.js"></script>
 <script src="js/rapport.js"></script>
 
-<!-- Modules cliniques AMI v2 -->
-<script src="js/transmissions.js"></script>
-<script src="js/constantes.js"></script>
-<script src="js/pilulier.js"></script>
-<script src="js/bsi.js"></script>
-<script src="js/consentements.js"></script>
-<script src="js/alertes-medicaments.js"></script>
-<script src="js/audit-cpam.js"></script>
-
-<script>
-/* ══ Bannières admin — modules cliniques v2 ══
-   Affiche la notice admin sur chaque nouveau module
-   quand un compte admin navigue dessus.
-   Les modules restent 100% fonctionnels pour la démo.
-══════════════════════════════════════════════ */
-(function() {
-  const ADMIN_NOTICES = {
-    'transmissions': 'admin-transmissions-notice',
-    'constantes':    'admin-constantes-notice',
-    'compte-rendu':  'admin-cr-notice',
-    'pilulier':      'admin-pilulier-notice',
-    'bsi':           'admin-bsi-notice',
-    'consentements': 'admin-consent-notice',
-    'alertes-med':   'admin-alertes-notice',
-    'audit-cpam':    'admin-audit-notice',
-  };
-
-  document.addEventListener('ui:navigate', function(e) {
-    const view = e.detail?.view;
-    const noticeId = ADMIN_NOTICES[view];
-    if (!noticeId) return;
-    const el = document.getElementById(noticeId);
-    if (!el) return;
-    // Afficher uniquement si rôle admin
-    const isAdmin = (typeof S !== 'undefined' && S?.role === 'admin') ||
-                    (typeof APP !== 'undefined' && APP?.user?.role === 'admin');
-    el.style.display = isAdmin ? 'block' : 'none';
-  });
-})();
-</script>
-
 <!-- Helper inline pour le référentiel NGAP -->
 <script>
 function _checkCumul() {
@@ -2462,7 +2315,7 @@ async function hist() {
   const stats = document.getElementById('hstats');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
 
   const q       = (document.getElementById('hq')?.value || '').toLowerCase().trim();
   const period  = document.getElementById('hp')?.value || '';
@@ -2485,15 +2338,13 @@ async function hist() {
     if (q) {
       rows = rows.filter(r => {
         const date = (r.date_soin || '').toLowerCase();
-        const nom  = (r.patient_nom || r.nom || '').toLowerCase();
-        const inv  = String(r.invoice_number || '').toLowerCase();
         const actes = (() => { try { return JSON.parse(r.actes||'[]').map(a=>a.code||'').join(' ').toLowerCase(); } catch { return ''; } })();
-        return date.includes(q) || actes.includes(q) || String(r.id).includes(q) || nom.includes(q) || inv.includes(q);
+        return date.includes(q) || actes.includes(q) || String(r.id).includes(q);
       });
     }
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
       if (stats) stats.innerHTML = '';
       return;
     }
@@ -2506,100 +2357,35 @@ async function hist() {
       <div class="sc b"><div class="si">🏥</div><div class="sv">${totalAMO.toFixed(0)}€</div><div class="sn">AMO</div></div>
       <div class="sc o"><div class="si">📋</div><div class="sv">${rows.length}</div><div class="sn">Actes</div></div>`;
 
-    /* Palette couleurs avatars en rotation */
-    const _avatarCols = ['col-a','col-b','col-c','col-d','col-e'];
-    const _avatarMap = {};
-    let _avatarIdx = 0;
-
-    /* Tableau premium */
+    /* Tableau */
     tbody.innerHTML = rows.map(r => {
-      // ── Date + heure ─────────────────────────────────────────────────────
-      const dateObj  = r.date_soin ? new Date(r.date_soin) : null;
-      const dateStr  = dateObj ? dateObj.toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}) : '—';
-      const heureRaw = (r.heure_soin || '').trim().slice(0,5);
-      const heureStr = heureRaw && /^\d{1,2}:\d{2}/.test(heureRaw) ? heureRaw : null;
-      const dateHtml = `<div style="font-size:12px;font-weight:500;color:var(--t)">${dateStr}</div>
-        ${heureStr
-          ? `<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;background:rgba(79,168,255,.1);border:1px solid rgba(79,168,255,.18);border-radius:6px;padding:1px 7px">
-               <span style="font-size:10px;color:var(--a2)">🕐</span>
-               <span style="font-family:var(--fm);font-size:11px;color:var(--a2);font-weight:600">${heureStr}</span>
-             </div>`
-          : `<div style="font-size:10px;color:var(--m);margin-top:2px;font-family:var(--fm)">— heure non renseignée</div>`}`;
-
-      // ── N° Facture ────────────────────────────────────────────────────────
-      const invNum  = (r.invoice_number || '').toString().trim();
-      const invHtml = invNum
-        ? `<div style="display:inline-flex;align-items:center;gap:5px">
-             <span style="font-family:var(--fm);font-size:10px;letter-spacing:.5px;color:var(--m)">N°</span>
-             <span style="font-family:var(--fm);font-size:12px;font-weight:600;color:var(--a);background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.18);border-radius:6px;padding:2px 8px">${invNum}</span>
-           </div>`
-        : `<span style="font-size:11px;color:var(--m);font-family:var(--fm)">—</span>`;
-
-      // ── Actes ─────────────────────────────────────────────────────────────
+      const date   = r.date_soin ? new Date(r.date_soin).toLocaleDateString('fr-FR') : '—';
       let actesTxt = '—';
-      let actesArr = [];
       try {
-        actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
+        // r.actes peut être un Array déjà parsé (JSONB) ou une chaîne JSON (TEXT)
+        const actesArr = Array.isArray(r.actes) ? r.actes : JSON.parse(r.actes || '[]');
         actesTxt = actesArr.map(a => a.code || '').filter(Boolean).join(', ') || '—';
       } catch {}
-      const actesHtml = actesArr.length
-        ? actesArr.map(a => a.code ? `<span style="display:inline-block;background:rgba(79,168,255,.08);border:1px solid rgba(79,168,255,.15);border-radius:5px;padding:1px 6px;font-family:var(--fm);font-size:10px;color:var(--a2);margin:1px 2px 1px 0">${a.code}</span>` : '').filter(Boolean).join('')
-        : '<span style="color:var(--m);font-size:11px">—</span>';
-
-      // ── Alertes ───────────────────────────────────────────────────────────
-      const alertCount = (() => { try { return JSON.parse(r.alerts||'[]').length; } catch { return 0; } })();
-      const alertsHtml = alertCount ? `<span style="background:rgba(255,95,109,.12);color:var(--d);font-family:var(--fm);font-size:10px;padding:2px 7px;border-radius:10px;border:1px solid rgba(255,95,109,.2)">⚠ ${alertCount}</span>` : `<span style="color:var(--ok);font-size:11px">✓</span>`;
-
-      // ── Avatar patient ────────────────────────────────────────────────────
-      const patNom = (r.patient_nom || r.nom || '').trim();
-      const initials = patNom ? patNom.split(/\s+/).map(w=>w.charAt(0)).slice(0,2).join('').toUpperCase() : '?';
-      if (patNom && !_avatarMap[patNom]) { _avatarMap[patNom] = _avatarCols[_avatarIdx++ % 5]; }
-      const avatarCol = _avatarMap[patNom] || 'col-a';
-
-      // ── Statut DRE ────────────────────────────────────────────────────────
-      const statutHtml = r.dre_requise
-        ? `<span class="pt-status pause"><span class="pt-status-dot pause"></span><span style="font-size:11px">DRE req.</span></span>`
-        : `<span class="pt-status active"><span class="pt-status-dot active"></span><span style="font-size:11px">Conforme</span></span>`;
-
-      const _rowId = `hist-row-${r.id}`;
-      return `<tr id="${_rowId}">
-        <td>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div class="pt-avatar ${avatarCol}" style="width:34px;height:34px;font-size:12px;flex-shrink:0">${initials}</div>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:var(--t)">${patNom || '—'}</div>
-              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:1px">ID&nbsp;#${r.id}</div>
-            </div>
-          </div>
-        </td>
-        <td>${dateHtml}</td>
-        <td>${invHtml}</td>
-        <td style="max-width:160px">${actesHtml}</td>
-        <td class="pt-ca" style="white-space:nowrap">${parseFloat(r.total||0).toFixed(2)}&nbsp;€</td>
-        <td>${statutHtml}</td>
-        <td>${alertsHtml}</td>
-        <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
-          data-hist-id="${r.id}"
-          data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
-          data-hist-date="${(r.date_soin||'').replace(/"/g,'&quot;')}"
-          data-hist-heure="${(r.heure_soin||'').replace(/"/g,'&quot;')}"
-          data-hist-patid="${(r.patient_id||'').replace(/"/g,'&quot;')}"
-          data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
-          title="Modifier cette cotation">✏️</button></td>
-        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
+      const alertes = (() => { try { const a = JSON.parse(r.alerts||'[]'); return a.length ? `<span style="color:var(--d);font-size:11px">⚠️ ${a.length}</span>` : ''; } catch { return ''; } })();
+      // Admin ET infirmière peuvent supprimer leurs propres cotations
+      // Isolation garantie côté worker : infirmiere_id = user.id
+      return `<tr>
+        <td style="font-family:var(--fm);font-size:11px;color:var(--m)">#${r.id}</td>
+        <td>${date}</td>
+        <td style="font-family:var(--fm);font-size:11px">${actesTxt}</td>
+        <td style="font-weight:600;color:var(--a)">${parseFloat(r.total||0).toFixed(2)} €</td>
+        <td>${r.dre_requise ? '<span style="color:var(--a2);font-size:11px">DRE</span>' : ''}</td>
+        <td>${alertes}</td>
+        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, ${JSON.stringify(r.invoice_number||'')})" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
 
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
   }
 }
 
-async function delHist(id, btnOrInvoice) {
-  // Accepte soit un element bouton (data-inv) soit une string directe (retrocompat)
-  const invoiceNumber = (btnOrInvoice instanceof Element)
-    ? (btnOrInvoice.dataset.inv || '')
-    : (btnOrInvoice || '');
+async function delHist(id, invoiceNumber) {
   if (!confirm(`Supprimer la cotation #${id} ?`)) return;
   try {
     await (typeof wpost === 'function'
@@ -2628,7 +2414,7 @@ async function delHist(id, btnOrInvoice) {
     }
 
     hist();
-    if (typeof showToast === 'function') showToast('success', 'Cotation supprimée', `#${id} retirée de l'historique`);
+    if (typeof showToast === 'function') showToast('✅ Cotation supprimée.');
   } catch(e) {
     if (typeof showToast === 'function') showToast('❌ ' + e.message);
   }
@@ -2641,7 +2427,7 @@ async function resetAllHist() {
   if (!confirm(`Confirmer la suppression définitive de toutes les cotations de ${periodLabel} ?`)) return;
 
   const tbody = document.getElementById('htb');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
 
   try {
     // ── Suppression en masse — un seul appel Supabase, plus fiable que N appels séquentiels ──
@@ -2671,142 +2457,6 @@ async function resetAllHist() {
 
 /* Charger l'historique automatiquement à la navigation — géré par ui.js */
 
-/* ═══════════════════════════════════════════════════════════
-   editFromHist(data) — Modifier une cotation depuis l'historique
-   Pose _editingCotation (sans _autoDetected) avant navigation
-   → bypass de la modale doublon, mode upsert garanti.
-   ═══════════════════════════════════════════════════════════ */
-async function editFromHist(data) {
-  if (!data) return;
-
-  const invNum   = data.invoice_number || null;
-  const dateSoin = data.date_soin ? data.date_soin.slice(0, 10) : null;
-
-  // ── Résoudre patientId + cotationIdx + données patient depuis l'IDB ────
-  let patientId   = data.patient_id || null;
-  let cotationIdx = -1;
-  let patData     = {};
-
-  try {
-    if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-      const allRows = await _idbGetAll(PATIENTS_STORE);
-
-      // Chercher d'abord par patient_id direct, sinon par invoice_number ou date
-      let foundRow = null;
-      if (patientId) {
-        foundRow = allRows.find(r => r.id === patientId);
-      }
-      if (!foundRow) {
-        for (const row of allRows) {
-          if (typeof _dec !== 'function') continue;
-          const p = { ...(_dec(row._data) || {}), id: row.id };
-          if (!Array.isArray(p.cotations)) continue;
-          let idx = -1;
-          if (invNum)   idx = p.cotations.findIndex(c => c.invoice_number === invNum);
-          if (idx < 0 && dateSoin) idx = p.cotations.findIndex(c => (c.date || '').slice(0, 10) === dateSoin);
-          if (idx >= 0) { foundRow = row; cotationIdx = idx; break; }
-        }
-      }
-
-      if (foundRow) {
-        patientId = foundRow.id;
-        const p   = typeof _dec === 'function' ? { ...(_dec(foundRow._data) || {}), id: foundRow.id, nom: foundRow.nom, prenom: foundRow.prenom } : {};
-        patData   = p;
-        // Résoudre cotationIdx si pas encore trouvé
-        if (cotationIdx < 0 && Array.isArray(p.cotations)) {
-          if (invNum)   cotationIdx = p.cotations.findIndex(c => c.invoice_number === invNum);
-          if (cotationIdx < 0 && dateSoin) cotationIdx = p.cotations.findIndex(c => (c.date || '').slice(0, 10) === dateSoin);
-        }
-      }
-    }
-  } catch (_e) { console.warn('[editFromHist] IDB lookup:', _e?.message); }
-
-  // ── Poser _editingCotation explicitement (sans _autoDetected) ──────────
-  // → _cotationCheckDoublon() bypassera la modale, mode upsert garanti
-  window._editingCotation = {
-    patientId:      patientId,
-    cotationIdx:    cotationIdx >= 0 ? cotationIdx : null,
-    invoice_number: invNum,
-    _fromHist:      true,
-    // PAS de _autoDetected → bypass modale doublon
-  };
-
-  // ── Naviguer vers la page cotation ─────────────────────────────────────
-  if (typeof navTo === 'function') navTo('cot', null);
-
-  setTimeout(() => {
-    // Construire le texte des actes pour le champ description
-    const actes    = Array.isArray(data.actes) ? data.actes : [];
-    const actesTxt = actes.map(a => {
-      const code = a.code || '';
-      const desc = a.description || a.label || a.nom || '';
-      return desc ? `${code} ${desc}` : code;
-    }).filter(Boolean).join(' + ') || '';
-
-    const setV = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-
-    // Champ texte principal (actes)
-    const fTxt = document.getElementById('f-txt');
-    if (fTxt) {
-      fTxt.value = actesTxt;
-      if (typeof renderLiveReco === 'function') renderLiveReco(actesTxt);
-      fTxt.focus();
-    }
-
-    // Date et heure du soin d'origine
-    const fDs = document.getElementById('f-ds');
-    const fHs = document.getElementById('f-hs');
-    if (data.date_soin) {
-      const _d = new Date(data.date_soin);
-      if (fDs) fDs.value = _d.toISOString().slice(0, 10);
-    }
-    if (fHs) {
-      // Toujours conserver l'heure d'origine — ne jamais laisser cotation.js
-      // l'écraser avec l'heure actuelle lors d'une modification.
-      fHs.value = (data.heure_soin || '').trim().slice(0, 5); // vide si non renseignée
-      fHs._userEdited = true; // bloque l'écrasement par cotation.js dans tous les cas
-    }
-
-    // Données patient depuis l'IDB (si trouvées)
-    const nomComplet = ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim();
-    setV('f-pt',  nomComplet  || '');
-    setV('f-ddn', patData.ddn     || '');
-    setV('f-amo', patData.amo     || '');
-    setV('f-amc', patData.amc     || '');
-    setV('f-exo', patData.exo     || '');
-    setV('f-pr',  patData.medecin || '');
-
-    // Badge patient
-    if (nomComplet) {
-      const badge     = document.getElementById('cot-patient-badge');
-      const badgeText = document.getElementById('cot-patient-badge-text');
-      if (badge && badgeText) {
-        const ddnStr = patData.ddn ? ' — ' + new Date(patData.ddn).toLocaleDateString('fr-FR') : '';
-        badgeText.textContent = '👤 ' + nomComplet + ddnStr;
-        badge.style.display = 'flex';
-      }
-    }
-
-    if (typeof showToast === 'function')
-      showToast(`✏️ Cotation #${data.id} chargée — modifiez et recotez pour mettre à jour.`);
-  }, 250);
-}
-
-/* Délégué d'événement pour les boutons ✏️ de l'historique */
-document.addEventListener('click', function(e) {
-  const btn = e.target.closest('.hist-edit-btn');
-  if (!btn) return;
-  const data = {
-    id:             btn.dataset.histId    || '',
-    invoice_number: btn.dataset.histInv   || '',
-    date_soin:      btn.dataset.histDate  || '',
-    heure_soin:     btn.dataset.histHeure || '',
-    patient_id:     btn.dataset.histPatid || '',
-    actes:          (() => { try { return JSON.parse(decodeURIComponent(btn.dataset.histActes || '%5B%5D')); } catch { return []; } })(),
-  };
-  editFromHist(data);
-});
-
 </script>
 
 <script>
@@ -2817,43 +2467,6 @@ document.addEventListener('click', function(e) {
     var wrap = document.getElementById('mobile-header-fabs');
     var vbtn = document.getElementById('voicebtn');
     if(wrap && vbtn) wrap.appendChild(vbtn);
-
-    // Hook showApp pour initialiser les extras topbar + toast de bienvenue
-    var _origShowApp = window.showApp;
-    window.showApp = function() {
-      if (typeof _origShowApp === 'function') _origShowApp.apply(this, arguments);
-      if (typeof window._initTopbarExtras === 'function') window._initTopbarExtras();
-      if (typeof _initKmPrefsSelectors === 'function') _initKmPrefsSelectors();
-      setTimeout(function() {
-        if (typeof showToast === 'function' && typeof S !== 'undefined' && S?.user) {
-          const prenom = S.user.prenom || S.user.user_metadata?.prenom || '';
-          showToast('success', prenom ? `Bonjour ${prenom} 👋` : 'Connexion réussie', 'Bienvenue sur AMI · NGAP 2026', 3500);
-        }
-      }, 600);
-    };
-
-    // Chargement auto KPIs rapport + filtre hist à la navigation
-    document.addEventListener('ui:navigate', function(e) {
-      const view = e.detail?.view;
-      if (view === 'rapport') {
-        const period = document.getElementById('rapport-period')?.value || 'month';
-        if (typeof _loadRapportKpis === 'function') setTimeout(() => _loadRapportKpis(period), 150);
-        if (typeof _initKmPrefsSelectors === 'function') _initKmPrefsSelectors();
-      }
-      if (view === 'tresor') {
-        if (typeof _initKmPrefsSelectors === 'function') _initKmPrefsSelectors();
-      }
-      if (view === 'his') {
-        // Réinitialiser les filtres pills à l'ouverture
-        _histFilter = 'all';
-        _histSort = 'date-desc';
-        document.querySelectorAll('.hist-filter-pill').forEach(b => b.classList.remove('active'));
-        const allPill = document.querySelector('.hist-filter-pill[onclick*="all"]');
-        if (allPill) allPill.classList.add('active');
-        const sortLbl = document.getElementById('hist-sort-label');
-        if (sortLbl) sortLbl.textContent = 'Date';
-      }
-    });
   });
   // Afficher le bouton install mobile dans menu Plus (sans preventDefault ici)
   // Le preventDefault est géré UNIQUEMENT dans pwa.js
@@ -2865,218 +2478,6 @@ document.addEventListener('click', function(e) {
 </script>
 
 <script src="js/infirmiere-tools.js"></script>
-
-<!-- ══ TOAST CONTAINER ══ -->
-<div id="toast-container"></div>
-
-<!-- ══ GLOBAL SEARCH OVERLAY ══ -->
-<div id="global-search-overlay" style="display:none;position:fixed;inset:0;z-index:1200;background:rgba(11,15,20,.85);backdrop-filter:blur(10px);padding:80px 20px 20px;align-items:flex-start;justify-content:center">
-  <div style="width:100%;max-width:580px;margin:0 auto">
-    <div style="display:flex;align-items:center;gap:12px;background:var(--c);border:1px solid var(--bl);border-radius:16px;padding:14px 18px;box-shadow:0 8px 40px rgba(0,0,0,.5)">
-      <span style="font-size:18px;color:var(--m)">🔍</span>
-      <input type="text" id="global-search-input" placeholder="Rechercher un patient, une cotation, un acte…" autocomplete="off"
-        style="flex:1;background:none;border:none;font-size:16px;color:var(--t);font-family:var(--ff);outline:none"
-        oninput="runGlobalSearch(this.value)" onkeydown="handleSearchKey(event)">
-      <kbd onclick="closeGlobalSearch()" style="font-size:11px;background:var(--s);color:var(--m);padding:2px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--b)">Esc</kbd>
-    </div>
-    <div id="global-search-results" style="margin-top:8px;background:var(--c);border:1px solid var(--b);border-radius:12px;overflow:hidden;display:none;max-height:380px;overflow-y:auto"></div>
-    <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--m);font-family:var(--fm);padding:0 4px">
-      <span>↑↓ Naviguer</span><span>↵ Ouvrir</span><span>Esc Fermer</span>
-    </div>
-  </div>
-</div>
-
-<!-- ══ NOTIF PANEL ══ -->
-<div id="notif-panel" style="display:none;position:fixed;top:64px;right:20px;z-index:900;width:320px;background:var(--c);border:1px solid var(--b);border-radius:var(--rl);box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--b)">
-    <div style="font-family:var(--fm);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m)">Notifications</div>
-    <button onclick="clearAllNotifs()" style="background:none;border:none;color:var(--m);font-size:11px;font-family:var(--fm);cursor:pointer;transition:color .15s" onmouseenter="this.style.color='var(--t)'" onmouseleave="this.style.color='var(--m)'">Tout effacer</button>
-  </div>
-  <div id="notif-list" style="max-height:360px;overflow-y:auto"></div>
-</div>
-
-<script>
-/* ══════════════════════════════════════
-   TOAST ENGINE — AMI v2
-══════════════════════════════════════ */
-window.showToast = function(type, title, msg, duration=4000) {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  // ── Compatibilité ancienne signature showToast(msg, type) ──────────────
-  // Détecte si appelé avec l'ancienne API : 1er arg = message texte long, 2ème = 'ok'/'warn'/'err'
-  const _newTypes = ['success','warning','error','info'];
-  if (!_newTypes.includes(type)) {
-    const _oldTypeMap = { ok:'success', warn:'warning', err:'error', info:'info' };
-    const _oldMsg  = String(type || '');
-    const _oldType = _oldTypeMap[String(title || 'ok')] || 'info';
-    type     = _oldType;
-    title    = _oldMsg || '';
-    msg      = '';
-    duration = 3500;
-  }
-  const icons = { success:'✓', warning:'⚠', error:'✕', info:'💡' };
-  const id = 'toast-' + Date.now();
-  const el = document.createElement('div');
-  el.className = 'toast-item ' + type;
-  el.id = id;
-  el.innerHTML = `
-    <div class="toast-icon">${icons[type]||'ℹ'}</div>
-    <div class="toast-body">
-      <div class="toast-title">${title != null ? title : ''}</div>
-      ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
-    </div>
-    <button class="toast-close" onclick="dismissToast('${id}')">✕</button>
-    <div class="toast-progress" style="animation-duration:${duration}ms"></div>`;
-  container.appendChild(el);
-  // Ajouter dans le panneau notif
-  _addNotifItem(type, title, msg);
-  // Auto-dismiss
-  const t = setTimeout(() => dismissToast(id), duration);
-  el._timer = t;
-};
-
-window.dismissToast = function(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  clearTimeout(el._timer);
-  el.classList.add('removing');
-  setTimeout(() => el.remove(), 200);
-};
-
-// Surcharge showMsg natif si existant pour injecter les toasts
-const _origShowMsg = window.showMsg;
-window.showMsg = function(type, msg, duration) {
-  if (typeof _origShowMsg === 'function') _origShowMsg(type, msg, duration);
-};
-
-/* ══ Notif panel ══ */
-const _notifs = [];
-function _addNotifItem(type, title, msg) {
-  const colors = { success: 'var(--ok)', warning: 'var(--w)', error: 'var(--d)', info: 'var(--a2)' };
-  _notifs.unshift({ type, title, msg, time: new Date() });
-  _renderNotifPanel();
-  // Dot visible
-  const dot = document.getElementById('top-notif-dot');
-  if (dot) dot.classList.add('show');
-}
-function _renderNotifPanel() {
-  const list = document.getElementById('notif-list');
-  if (!list) return;
-  if (!_notifs.length) {
-    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--m);font-size:13px">Aucune notification</div>';
-    return;
-  }
-  const colors = { success: 'var(--ok)', warning: 'var(--w)', error: 'var(--d)', info: 'var(--a2)' };
-  list.innerHTML = _notifs.slice(0, 20).map((n, i) => `
-    <div style="display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(30,45,61,.5);${i===0?'background:rgba(0,212,170,.02)':''}">
-      <div style="width:3px;border-radius:3px;background:${colors[n.type]||'var(--m)'};flex-shrink:0;align-self:stretch"></div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:600;color:${colors[n.type]||'var(--t)'};margin-bottom:2px">${n.title}</div>
-        ${n.msg ? `<div style="font-size:11px;color:var(--m);line-height:1.4">${n.msg}</div>` : ''}
-        <div style="font-size:10px;color:var(--m);margin-top:4px;font-family:var(--fm)">${n.time.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
-      </div>
-    </div>`).join('');
-}
-window.toggleNotifPanel = function() {
-  const panel = document.getElementById('notif-panel');
-  if (!panel) return;
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  if (!open) {
-    _renderNotifPanel();
-    const dot = document.getElementById('top-notif-dot');
-    if (dot) dot.classList.remove('show');
-  }
-};
-window.clearAllNotifs = function() {
-  _notifs.length = 0;
-  _renderNotifPanel();
-};
-// Fermer panel si clic dehors
-document.addEventListener('click', e => {
-  const panel = document.getElementById('notif-panel');
-  const btn = document.getElementById('top-notif-btn');
-  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
-    panel.style.display = 'none';
-  }
-});
-
-/* ══ Global search ══ */
-window.openGlobalSearch = function() {
-  const ov = document.getElementById('global-search-overlay');
-  if (!ov) return;
-  ov.style.display = 'flex';
-  setTimeout(() => document.getElementById('global-search-input')?.focus(), 50);
-};
-window.closeGlobalSearch = function() {
-  const ov = document.getElementById('global-search-overlay');
-  if (ov) { ov.style.display = 'none'; }
-  const input = document.getElementById('global-search-input');
-  if (input) input.value = '';
-  const res = document.getElementById('global-search-results');
-  if (res) res.style.display = 'none';
-};
-window.handleSearchKey = function(e) {
-  if (e.key === 'Escape') closeGlobalSearch();
-};
-window.runGlobalSearch = function(q) {
-  const res = document.getElementById('global-search-results');
-  if (!res) return;
-  if (!q || q.length < 2) { res.style.display = 'none'; return; }
-  // Recherche dans les sections de navigation
-  const navItems = document.querySelectorAll('.ni[data-v]');
-  const matches = [];
-  navItems.forEach(ni => {
-    const text = ni.textContent.trim();
-    if (text.toLowerCase().includes(q.toLowerCase())) {
-      matches.push({ label: text, view: ni.dataset.v });
-    }
-  });
-  if (!matches.length) {
-    res.innerHTML = '<div style="padding:16px;text-align:center;color:var(--m);font-size:13px">Aucun résultat pour « ' + q + ' »</div>';
-    res.style.display = 'block';
-    return;
-  }
-  res.innerHTML = matches.slice(0,8).map(m => `
-    <div onclick="closeGlobalSearch();if(typeof navTo==='function')navTo('${m.view}',null)"
-      style="display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;border-bottom:1px solid rgba(30,45,61,.4);transition:background .1s"
-      onmouseenter="this.style.background='var(--s)'" onmouseleave="this.style.background=''">
-      <span style="font-size:13px;color:var(--m)">→</span>
-      <span style="font-size:13px">${m.label.replace(/[^\w\s🏠👤🗺️📊📋💸📄🏥🤖💰📝⚡📚📖💬🛡️▶️📅📂✍️🚗💊]/gu,'').trim()}</span>
-    </div>`).join('');
-  res.style.display = 'block';
-};
-// Raccourci ⌘K / Ctrl+K
-document.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openGlobalSearch(); }
-  if (e.key === 'Escape') closeGlobalSearch();
-});
-// Fermer search si clic en dehors
-document.getElementById('global-search-overlay')?.addEventListener('click', e => {
-  if (e.target.id === 'global-search-overlay') closeGlobalSearch();
-});
-
-/* ══ Topbar status sync ══ */
-window._updateTopStatus = function(state, text) {
-  const dot  = document.getElementById('top-status-dot');
-  const txt  = document.getElementById('top-status-text');
-  if (!dot || !txt) return;
-  dot.className = 'top-status-dot' + (state === 'offline' ? ' offline' : state === 'syncing' ? ' syncing' : '');
-  txt.textContent = text || (state === 'offline' ? 'Hors ligne' : state === 'syncing' ? 'Synchronisation…' : 'En ligne');
-};
-
-/* ══ Init topbar éléments post-login ══ */
-window._initTopbarExtras = function() {
-  const statusWrap = document.getElementById('top-sync-status');
-  const sep  = document.getElementById('top-sep-status');
-  const srch = document.getElementById('top-search-btn');
-  const notif= document.getElementById('top-notif-btn');
-  if (statusWrap) statusWrap.style.display = 'flex';
-  if (sep) sep.style.display = 'block';
-  if (srch) srch.style.display = 'flex';
-  if (notif) notif.style.display = 'flex';
-};
-</script>
 <script>
 (function(){
   var LP='ami_landing_seen';
