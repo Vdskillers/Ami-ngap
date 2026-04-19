@@ -284,19 +284,28 @@ function _renderCabinetDashboard(root, d) {
       <div id="cab-sync-with-list">
         ${members.filter(m => m.id !== APP.user?.id).length === 0
           ? `<div class="ai in" style="font-size:12px">Aucun autre membre pour l'instant.</div>`
-          : members.filter(m => m.id !== APP.user?.id).map(m => {
-              const syncWith = prefs.with[m.id] !== false;
-              return `
-                <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--b);border-radius:8px;cursor:pointer;margin-bottom:8px;background:var(--s)">
-                  <input type="checkbox" id="syncwith-${m.id}" ${syncWith ? 'checked' : ''}
-                    onchange="cabinetToggleSyncWith('${m.id}', this.checked)"
-                    style="width:18px;height:18px;accent-color:var(--a)">
-                  <div>
-                    <div style="font-weight:600;font-size:13px">${m.prenom} ${m.nom}</div>
-                    <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre'}</div>
-                  </div>
-                </label>`;
-            }).join('')
+          : (() => {
+              // Pré-populer prefs.with pour les membres jamais vus (défaut = true)
+              // Évite le bug : checkbox affichée cochée mais withIds vide
+              let prefsChanged = false;
+              members.filter(m => m.id !== APP.user?.id).forEach(m => {
+                if (!(m.id in prefs.with)) { prefs.with[m.id] = true; prefsChanged = true; }
+              });
+              if (prefsChanged) { _saveSyncPrefs(prefs); }
+              return members.filter(m => m.id !== APP.user?.id).map(m => {
+                const syncWith = prefs.with[m.id] !== false;
+                return `
+                  <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--b);border-radius:8px;cursor:pointer;margin-bottom:8px;background:var(--s)">
+                    <input type="checkbox" id="syncwith-${m.id}" ${syncWith ? 'checked' : ''}
+                      onchange="cabinetToggleSyncWith('${m.id}', this.checked)"
+                      style="width:18px;height:18px;accent-color:var(--a)">
+                    <div>
+                      <div style="font-weight:600;font-size:13px">${m.prenom} ${m.nom}</div>
+                      <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre'}</div>
+                    </div>
+                  </label>`;
+              }).join('');
+            })()
         }
       </div>
     </div>
@@ -645,12 +654,27 @@ async function cabinetPushSync() {
       } catch {}
     }
 
-    // Cotations : seulement les totaux agrégés (pas les actes détaillés)
-    if (prefs.what.cotations) {
+    // Cotations : résumés anonymisés (invoice_number, date, total, actes_codes)
+    // Pas de nom patient, pas de notes médicales — juste ce qu'il faut pour la réconciliation
+    if (prefs.what.cotations && typeof getAllPatients === 'function') {
       try {
-        // On partage uniquement : date_soin, total, actes_codes (pas les notes, pas le patient)
-        payload.data.cotations_summary = { shared: true, message: 'Résumés envoyés via Supabase' };
-      } catch {}
+        const pts = await getAllPatients();
+        const cotResumes = [];
+        for (const p of pts) {
+          for (const c of (p.cotations || [])) {
+            if (!c.invoice_number || parseFloat(c.total || 0) <= 0) continue;
+            cotResumes.push({
+              invoice_number: c.invoice_number,
+              date:           (c.date || '').slice(0, 10),
+              total:          parseFloat(c.total || 0),
+              actes_codes:    (c.actes || []).map(a => a.code).filter(Boolean),
+              source:         c.source || 'carnet',
+              patient_id:     p.id, // ID local — permet la fusion côté destinataire
+            });
+          }
+        }
+        if (cotResumes.length) payload.data.cotations_summary = cotResumes;
+      } catch (e) { console.warn('[cabinet push cotations]', e.message); }
     }
 
     // Piluliers — données de santé : chiffrées AES avant envoi
@@ -754,6 +778,51 @@ async function cabinetPullSync() {
             const sharedKey = `ami_cabinet_km_${item.sender_id}`;
             localStorage.setItem(sharedKey, JSON.stringify(item.data.km));
             applied++;
+          } catch {}
+        }
+      }
+
+      // Cotations — résumés : enregistrement dans planning_patients via ami-save-cotation
+      if (item.what.includes('cotations') && Array.isArray(item.data?.cotations_summary)) {
+        if (confirm(`🩺 ${sender} partage ${item.data.cotations_summary.length} cotation(s) — voulez-vous les importer ?`)) {
+          try {
+            const toSave = item.data.cotations_summary.map(c => ({
+              invoice_number: c.invoice_number,
+              date_soin:      c.date,
+              total:          c.total,
+              actes:          (c.actes_codes || []).map(code => ({ code })),
+              source:         'cabinet_sync',
+              patient_id:     c.patient_id || null,
+            }));
+            if (toSave.length) {
+              await apiCall('/webhook/ami-save-cotation', { cotations: toSave });
+              applied++;
+              showToast('success', `${toSave.length} cotation(s) importée(s)`, `De ${sender}`);
+            }
+          } catch (e) { console.warn('[cabinet pull cotations]', e.message); }
+        }
+      }
+
+      // Patients meta — adresses GPS anonymisées pour la tournée
+      if (item.what.includes('patients') && Array.isArray(item.data?.patients_meta)) {
+        if (confirm(`👤 ${sender} partage ${item.data.patients_meta.length} adresse(s) patient — voulez-vous les importer pour la tournée ?`)) {
+          try {
+            const sharedKey = `ami_cabinet_patients_${item.sender_id}`;
+            localStorage.setItem(sharedKey, JSON.stringify(item.data.patients_meta));
+            applied++;
+            showToast('success', `${item.data.patients_meta.length} adresse(s) importée(s)`, `De ${sender}`);
+          } catch {}
+        }
+      }
+
+      // Ordonnances — liste anonymisée
+      if (item.what.includes('ordonnances') && Array.isArray(item.data?.ordonnances)) {
+        if (confirm(`💊 ${sender} partage ${item.data.ordonnances.length} ordonnance(s) — voulez-vous les importer ?`)) {
+          try {
+            const sharedKey = `ami_cabinet_ordonnances_${item.sender_id}`;
+            localStorage.setItem(sharedKey, JSON.stringify(item.data.ordonnances));
+            applied++;
+            showToast('success', `${item.data.ordonnances.length} ordonnance(s) importée(s)`, `De ${sender}`);
           } catch {}
         }
       }
