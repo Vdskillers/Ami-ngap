@@ -897,14 +897,40 @@ async function cabinetSyncStatus() {
 
     const members = d.members || [];
     result.innerHTML = `
-      <div class="ct" style="font-size:12px;margin-bottom:10px">Dernier envoi par membre</div>
-      <div style="font-size:11px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">📌 Indique quand chaque IDE a cliqué "Envoyer mes données"</div>
-      ${members.map(m => `
-        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--b)">
-          <div style="width:8px;height:8px;border-radius:50%;background:${m.last_sync ? '#00d4aa' : '#888'};flex-shrink:0"></div>
-          <div style="flex:1;font-size:12px"><strong>${m.prenom} ${m.nom}</strong>${m.id === APP.user?.id ? ' <span style="font-size:10px;color:var(--a)">(moi)</span>' : ''}</div>
-          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${m.last_sync ? new Date(m.last_sync).toLocaleString('fr-FR') : 'N'a pas encore envoyé'}</div>
-        </div>`).join('')}`;
+      <div class="ct" style="font-size:12px;margin-bottom:10px">État de synchronisation du cabinet</div>
+      ${members.map(m => {
+        const isSelf      = m.id === APP.user?.id;
+        const pushColor   = m.last_push ? '#00d4aa' : '#555';
+        const pullColor   = m.last_pull_ok ? '#00d4aa' : m.last_pull ? '#f59e0b' : '#555';
+        const pushLabel   = m.last_push ? new Date(m.last_push).toLocaleString('fr-FR') : 'Jamais envoyé';
+        const pushWhat    = m.last_push_what && m.last_push_what.length ? m.last_push_what.join(', ') : '';
+        const pullLabel   = m.last_pull ? new Date(m.last_pull).toLocaleString('fr-FR') : 'Jamais reçu';
+        const pullBadge   = m.last_pull
+          ? (m.last_pull_ok
+            ? '<span style="color:#00d4aa;font-size:10px">✅ ' + m.last_pull_items + ' élément(s) reçu(s)</span>'
+            : '<span style="color:#f59e0b;font-size:10px">⚠️ 0 élément reçu</span>')
+          : '<span style="color:#888;font-size:10px">En attente</span>';
+        return '<div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px">'
+          + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+          + '<div style="font-weight:600;font-size:13px">' + m.prenom + ' ' + m.nom + '</div>'
+          + (isSelf ? '<span style="font-size:10px;color:var(--a);font-family:var(--fm)">(moi)</span>' : '')
+          + '<span style="font-size:10px;color:var(--m);font-family:var(--fm);margin-left:auto">'
+          + (m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre') + '</span>'
+          + '</div>'
+          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;font-family:var(--fm)">'
+          + '<div style="padding:8px;background:var(--dd);border-radius:6px;border-left:3px solid ' + pushColor + '">'
+          + '<div style="color:var(--m);margin-bottom:3px">⬆️ Dernier envoi</div>'
+          + '<div style="color:var(--t);font-weight:600">' + pushLabel + '</div>'
+          + (pushWhat ? '<div style="color:var(--m);margin-top:2px;font-size:10px">' + pushWhat + '</div>' : '')
+          + '</div>'
+          + '<div style="padding:8px;background:var(--dd);border-radius:6px;border-left:3px solid ' + pullColor + '">'
+          + '<div style="color:var(--m);margin-bottom:3px">⬇️ Dernière réception</div>'
+          + '<div style="color:var(--t);font-weight:600">' + pullLabel + '</div>'
+          + '<div style="margin-top:3px">' + pullBadge + '</div>'
+          + '</div>'
+          + '</div>'
+          + '</div>';
+      }).join('')}`;
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
   }
