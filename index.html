@@ -1241,8 +1241,48 @@
           }
 
           /* ── Écrire le journal kilométrique ── */
-          const kmTotal = parseFloat(APP.get('tourneeKmJour') || 0)
+          // Priorité 1 : km GPS incrémental (marqué via markUberDone)
+          let kmTotal = parseFloat(APP.get('tourneeKmJour') || 0)
             || parseFloat(localStorage.getItem('ami_tournee_km') || 0);
+
+          // Priorité 2 : km OSRM de l'itinéraire optimisé (si GPS non dispo)
+          if (!kmTotal) {
+            try {
+              const _osrmKm = parseFloat(localStorage.getItem('ami_tournee_km') || 0);
+              if (_osrmKm > 0) kmTotal = _osrmKm;
+            } catch {}
+          }
+
+          // Priorité 3 : calcul haversine sur les patients importés (vol d'oiseau × 1.25)
+          // Déclenché si l'infirmière clique "Clôturer" sans avoir cliqué "Terminé" sur chaque patient
+          if (!kmTotal) {
+            try {
+              const _ptsGeo = snapshot.filter(p => p.lat && p.lng);
+              const _startPt = APP.get('startPoint');
+              if (_ptsGeo.length > 0) {
+                const _hav2 = (la1, lo1, la2, lo2) => {
+                  const R = 6371, dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
+                  const a = Math.sin(dLat/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
+                  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                };
+                // Construire la séquence : cabinet → patients → cabinet
+                const _seq = [
+                  _startPt?.lat ? _startPt : null,
+                  ..._ptsGeo,
+                  _startPt?.lat ? _startPt : null,
+                ].filter(Boolean);
+                let _kmHav = 0;
+                for (let _i = 0; _i < _seq.length - 1; _i++) {
+                  _kmHav += _hav2(
+                    parseFloat(_seq[_i].lat), parseFloat(_seq[_i].lng),
+                    parseFloat(_seq[_i+1].lat), parseFloat(_seq[_i+1].lng)
+                  );
+                }
+                // ×1.25 pour approximer la distance routière réelle (vol d'oiseau → route)
+                if (_kmHav > 0) kmTotal = Math.round(_kmHav * 1.25 * 10) / 10;
+              }
+            } catch (_eHav) { console.warn('[AMI] Haversine KO:', _eHav.message); }
+          }
 
           if (kmTotal > 0) {
             let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
@@ -1250,18 +1290,25 @@
             const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
             let journal = [];
             try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
-            const nbVisites = snapshot.filter(p => p.done || p._done).length;
-            journal.push({
-              id:      Date.now(),
-              date:    todayStr,
-              depart:  'Cabinet',
-              arrivee: 'Tournée patients',
-              km:      Math.round(kmTotal * 10) / 10,
-              motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} visite(s)`,
-              _source: 'tournee_auto',
-            });
-            localStorage.setItem(KM_KEY, JSON.stringify(journal));
-            if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
+
+            // Éviter un doublon si une entrée auto existe déjà pour aujourd'hui
+            const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
+            if (!_alreadyToday) {
+              const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
+                || snapshot.length;
+              const _isEstimate = !APP.get('tourneeKmJour') && !parseFloat(localStorage.getItem('ami_tournee_km') || 0);
+              journal.push({
+                id:      Date.now(),
+                date:    todayStr,
+                depart:  'Cabinet',
+                arrivee: 'Tournée patients',
+                km:      kmTotal,
+                motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_isEstimate ? ' (estimé)' : ''}`,
+                _source: 'tournee_auto',
+              });
+              localStorage.setItem(KM_KEY, JSON.stringify(journal));
+              if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
+            }
             APP.set('tourneeKmJour', 0);
             APP.set('_lastVisitedPos', null);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
