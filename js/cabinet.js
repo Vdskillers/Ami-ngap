@@ -48,7 +48,7 @@ function _saveSyncPrefs(prefs) {
 
 function _defaultSyncPrefs() {
   return {
-    what: { planning: false, patients: false, cotations: false, ordonnances: false, km: false },
+    what: { planning: false, patients: false, cotations: false, ordonnances: false, km: false, piluliers: false, constantes: false },
     with: {}
   };
 }
@@ -217,6 +217,8 @@ function _renderCabinetDashboard(root, d) {
     { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP', desc: 'Synchronisez les cotations multi-IDE pour la facturation cabinet' },
     { key: 'ordonnances', icon: '💊', label: 'Ordonnances', desc: 'Partagez les ordonnances actives pour éviter les doublons' },
     { key: 'km',          icon: '🚗', label: 'Journal kilométrique', desc: 'Synchronisez les km pour les statistiques cabinet' },
+    { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier', desc: 'Partagez les semainiers patients avec vos collègues — chiffré AES' },
+    { key: 'constantes',  icon: '📊', label: 'Constantes patients', desc: 'Partagez les mesures TA, glycémie, SpO2… entre IDEs — chiffré AES' },
   ];
 
   const whatHTML = whatItems.map(item => `
@@ -431,6 +433,8 @@ function _renderCabinetDemoDashboard(root, cab) {
     { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP',         desc: 'Synchronisez les cotations multi-IDE' },
     { key: 'ordonnances', icon: '💊', label: 'Ordonnances',             desc: 'Partagez les ordonnances actives' },
     { key: 'km',          icon: '🚗', label: 'Journal kilométrique',    desc: 'Synchronisez les km cabinet' },
+    { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier',    desc: 'Partagez les semainiers patients — chiffré AES' },
+    { key: 'constantes',  icon: '📊', label: 'Constantes patients',     desc: 'Partagez les constantes TA, glycémie… — chiffré AES' },
   ];
 
   root.innerHTML = `
@@ -649,6 +653,51 @@ async function cabinetPushSync() {
       } catch {}
     }
 
+    // Piluliers — données de santé : chiffrées AES avant envoi
+    if (prefs.what.piluliers && typeof getAllPatients === 'function') {
+      try {
+        const pts = await getAllPatients();
+        // Collecter tous les piluliers de tous les patients
+        const allPiluliers = pts
+          .filter(p => Array.isArray(p.piluliers) && p.piluliers.length)
+          .map(p => ({
+            patient_id:  p.id,
+            // ⚠️ Nom anonymisé — jamais le vrai nom
+            patient_ref: btoa(p.id).slice(0, 8),
+            piluliers:   p.piluliers,
+          }));
+        if (allPiluliers.length) {
+          // Chiffrement AES via security.js si disponible
+          if (typeof encryptData === 'function') {
+            payload.data.piluliers_enc = await encryptData(allPiluliers);
+          } else {
+            payload.data.piluliers_enc = btoa(JSON.stringify(allPiluliers));
+          }
+        }
+      } catch (e) { console.warn('[cabinet push piluliers]', e.message); }
+    }
+
+    // Constantes — données de santé : chiffrées AES avant envoi
+    if (prefs.what.constantes && typeof getAllPatients === 'function') {
+      try {
+        const pts = await getAllPatients();
+        const allConstantes = pts
+          .filter(p => Array.isArray(p.constantes) && p.constantes.length)
+          .map(p => ({
+            patient_id:  p.id,
+            patient_ref: btoa(p.id).slice(0, 8),
+            constantes:  p.constantes,
+          }));
+        if (allConstantes.length) {
+          if (typeof encryptData === 'function') {
+            payload.data.constantes_enc = await encryptData(allConstantes);
+          } else {
+            payload.data.constantes_enc = btoa(JSON.stringify(allConstantes));
+          }
+        }
+      } catch (e) { console.warn('[cabinet push constantes]', e.message); }
+    }
+
     const d = await apiCall('/webhook/cabinet-sync-push', payload);
     if (!d.ok) throw new Error(d.error || 'Erreur synchronisation');
 
@@ -706,6 +755,54 @@ async function cabinetPullSync() {
             localStorage.setItem(sharedKey, JSON.stringify(item.data.km));
             applied++;
           } catch {}
+        }
+      }
+
+      // Piluliers — déchiffrement AES + fusion dans les fiches patients
+      if (item.what.includes('piluliers') && item.data?.piluliers_enc) {
+        if (confirm(`💊 ${sender} partage ses semainiers patients — voulez-vous les importer ?`)) {
+          try {
+            let allPiluliers;
+            if (typeof decryptData === 'function') {
+              allPiluliers = await decryptData(item.data.piluliers_enc);
+            } else {
+              allPiluliers = JSON.parse(atob(item.data.piluliers_enc));
+            }
+            if (Array.isArray(allPiluliers) && typeof patientAddPilulier === 'function') {
+              for (const entry of allPiluliers) {
+                for (const pil of (entry.piluliers || [])) {
+                  // Fusion : n'importe que les piluliers absents localement
+                  await patientAddPilulier(entry.patient_id, pil);
+                }
+              }
+              applied++;
+              showToast('success', 'Semainiers importés', `De ${sender}`);
+            }
+          } catch (e) { console.warn('[cabinet pull piluliers]', e.message); }
+        }
+      }
+
+      // Constantes — déchiffrement AES + fusion dans les fiches patients
+      if (item.what.includes('constantes') && item.data?.constantes_enc) {
+        if (confirm(`📊 ${sender} partage ses constantes patients — voulez-vous les importer ?`)) {
+          try {
+            let allConstantes;
+            if (typeof decryptData === 'function') {
+              allConstantes = await decryptData(item.data.constantes_enc);
+            } else {
+              allConstantes = JSON.parse(atob(item.data.constantes_enc));
+            }
+            if (Array.isArray(allConstantes) && typeof patientAddConstante === 'function') {
+              for (const entry of allConstantes) {
+                for (const mesure of (entry.constantes || [])) {
+                  // Fusion : n'importe que les constantes absentes localement
+                  await patientAddConstante(entry.patient_id, mesure);
+                }
+              }
+              applied++;
+              showToast('success', 'Constantes importées', `De ${sender}`);
+            }
+          } catch (e) { console.warn('[cabinet pull constantes]', e.message); }
         }
       }
     }
