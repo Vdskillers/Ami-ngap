@@ -725,7 +725,7 @@ async function cabinetPullSync() {
 
     const items = d.items || [];
     if (!items.length) {
-      _syncOk('Aucune donnée disponible à recevoir pour l\'instant.');
+      _syncOk('ℹ️ Aucune donnée disponible à recevoir — votre collègue n\'a pas encore effectué de push, ou les données ont expiré (> 7 jours).');
       return;
     }
 
