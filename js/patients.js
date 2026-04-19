@@ -260,6 +260,31 @@ async function patientAddPilulier(patientId, pilulier) {
   } catch (e) { console.warn('[patientAddPilulier]', e.message); }
 }
 
+/* Ouvre le module Constantes en mode édition pour une mesure existante */
+async function _editConstanteFromPatient(patientId, idx) {
+  const rows = await _idbGetAll(PATIENTS_STORE);
+  const row  = rows.find(r => r.id === patientId);
+  if (!row) return;
+  const p = { ...(_dec(row._data)||{}), id: row.id };
+  const c = (p.constantes || [])[idx];
+  if (!c) return;
+
+  // Stocker la mesure à éditer dans un flag global accessible par constantes.js
+  window._constEditPending = { patientId, idx, mesure: c };
+
+  // Naviguer vers le module constantes et pré-remplir
+  if (typeof navTo === 'function') navTo('constantes', null);
+  setTimeout(() => {
+    // Sélectionner le patient
+    const sel = document.getElementById('const-patient-sel');
+    if (sel) { sel.value = patientId; if (typeof constSelectPatient === 'function') constSelectPatient(patientId); }
+    // Pré-remplir le formulaire après que constSelectPatient ait affiché le formulaire
+    setTimeout(() => {
+      if (typeof constLoadForEdit === 'function') constLoadForEdit(c, patientId, idx);
+    }, 300);
+  }, 300);
+}
+
 async function _deleteConstante(patientId, idx) {
   if (!confirm('Supprimer cette mesure ?')) return;
   try {
@@ -945,8 +970,9 @@ function _patTabRender(tab, id, p, notes) {
                     <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${_cell('eva',c.eva)}</td>
                     <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">${c.poids!=null?c.poids+'kg':'—'}</td>
                     <td style="padding:6px 8px;border:1px solid var(--b);font-size:11px;color:var(--m)">${c.note||''}</td>
-                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center">
-                      <button onclick="_deleteConstante('${id}',${realIdx})" style="background:none;border:none;color:var(--d);cursor:pointer;font-size:12px">🗑</button>
+                    <td style="padding:6px 8px;border:1px solid var(--b);text-align:center;white-space:nowrap">
+                      <button onclick="_editConstanteFromPatient('${id}',${realIdx})" style="background:none;border:none;color:var(--a);cursor:pointer;font-size:13px;margin-right:4px" title="Modifier">✏️</button>
+                      <button onclick="_deleteConstante('${id}',${realIdx})" style="background:none;border:none;color:var(--d);cursor:pointer;font-size:13px" title="Supprimer">🗑</button>
                     </td>
                   </tr>`;
                 }).join('')}

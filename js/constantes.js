@@ -68,6 +68,25 @@ document.addEventListener('ami:logout', () => {
   _constDB = null; _constDBUserId = null; _constDBOpening = null;
 });
 
+/* ── Chiffrement stable pour sync cross-appareils ─────────────────────
+   Clé dérivée de l'userId (stable entre appareils et sessions),
+   PAS du token JWT qui change à chaque connexion et casserait la sync.
+   Identique au pattern de patients.js (_enc/_dec).
+─────────────────────────────────────────────────────────────────────── */
+function _constSyncKey() {
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
+  return 'sk_const_' + String(Math.abs(h));
+}
+function _constEnc(obj) {
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _constSyncKey()))); } catch { return null; }
+}
+function _constDec(str) {
+  try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; }
+}
+
+
 async function _constSave(obj) {
   const db = await _constDb();
   return new Promise((resolve, reject) => {
@@ -192,6 +211,12 @@ async function renderConstantes() {
 }
 
 async function constSelectPatient(pid) {
+  // Annuler le mode édition si on change de patient
+  if (window._constEditMode) {
+    window._constEditMode = null;
+    const saveBtn = document.querySelector('[onclick="constSave()"]');
+    if (saveBtn) saveBtn.innerHTML = '<span>💾</span> Enregistrer';
+  }
   _constCurrentPatient = pid || null;
   const formSec  = document.getElementById('const-form-section');
   const graphWrap = document.getElementById('const-graphs-wrap');
@@ -387,12 +412,45 @@ async function constSave() {
   }
 
   try {
-    await _constSave(obj);
-    // ── Écriture dans la fiche patient du carnet ──────────────────────
-    if (typeof patientAddConstante === 'function') {
-      await patientAddConstante(_constCurrentPatient, obj);
+    const editMode = window._constEditMode;
+    if (editMode) {
+      // ── Mode édition : mettre à jour la mesure existante dans la fiche patient ──
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      const row  = rows?.find?.(r => r.id === editMode.patientId);
+      if (row && typeof _dec === 'function' && typeof _enc === 'function') {
+        const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+        if (Array.isArray(p.constantes) && p.constantes[editMode.idx] != null) {
+          p.constantes[editMode.idx] = { ...obj, id: p.constantes[editMode.idx].id };
+          p.updated_at = new Date().toISOString();
+          const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+          if (typeof _idbPut === 'function') await _idbPut(PATIENTS_STORE, toStore);
+          if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+        }
+      }
+      // Mettre à jour aussi dans l'IDB constantes (retrouver par date+patient_id)
+      const existing = await _constGetAll(editMode.patientId, 365 * 5);
+      const old = existing.find(c => c.date === editMode.mesure.date && c.patient_id === editMode.patientId);
+      if (old?.id) {
+        const db = await _constDb();
+        await new Promise((res, rej) => {
+          const tx = db.transaction(CONST_STORE, 'readwrite');
+          tx.objectStore(CONST_STORE).put({ ...obj, id: old.id });
+          tx.oncomplete = () => res(); tx.onerror = e => rej(e.target.error);
+        });
+      }
+      window._constEditMode = null;
+      // Réinitialiser le libellé du bouton
+      const saveBtn = document.querySelector('[onclick="constSave()"]');
+      if (saveBtn) saveBtn.innerHTML = '<span>💾</span> Enregistrer';
+      showToast('success', 'Mesure modifiée', alerts.length ? '⚠️ Alertes détectées' : undefined);
+    } else {
+      // ── Mode création normal ──
+      await _constSave(obj);
+      if (typeof patientAddConstante === 'function') {
+        await patientAddConstante(_constCurrentPatient, obj);
+      }
+      showToast('success', 'Constantes enregistrées', alerts.length ? '⚠️ Alertes détectées' : undefined);
     }
-    showToast('success', 'Constantes enregistrées', alerts.length ? '⚠️ Alertes détectées' : undefined);
     constResetForm();
     await constRefresh();
     // Sync cross-appareils en arrière-plan (silencieux)
@@ -413,6 +471,35 @@ function constResetForm() {
   if (dt) dt.value = new Date().toISOString().slice(0,16);
   const banner = document.getElementById('const-alert-banner');
   if (banner) banner.style.display = 'none';
+}
+
+/* Charger une mesure existante dans le formulaire pour modification */
+function constLoadForEdit(mesure, patientId, idx) {
+  // Marquer le mode édition
+  window._constEditMode = { patientId, idx, mesure };
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set('const-ta-sys',  mesure.ta_sys);
+  set('const-ta-dia',  mesure.ta_dia);
+  set('const-gly',     mesure.glycemie);
+  set('const-spo2',    mesure.spo2);
+  set('const-poids',   mesure.poids);
+  set('const-temp',    mesure.temperature);
+  set('const-fc',      mesure.fc);
+  set('const-note',    mesure.note || '');
+  // Date
+  const dtEl = document.getElementById('const-date');
+  if (dtEl && mesure.date) dtEl.value = new Date(mesure.date).toISOString().slice(0,16);
+  // EVA
+  const eva = document.getElementById('const-eva');
+  const evaVal = document.getElementById('const-eva-val');
+  if (eva && mesure.eva != null) { eva.value = mesure.eva; if (evaVal) evaVal.textContent = mesure.eva; }
+
+  // Changer le libellé du bouton pour indiquer le mode édition
+  const saveBtn = document.querySelector('[onclick="constSave()"]');
+  if (saveBtn) saveBtn.innerHTML = '<span>💾</span> Modifier la mesure';
+
+  showToast('info', 'Mode édition', 'Modifiez les valeurs puis cliquez "Modifier la mesure"');
 }
 
 async function constDeleteMeasure(id) {
@@ -464,13 +551,12 @@ async function constSyncPush() {
 
     if (!all.length) return;
 
-    // Chiffrement AES côté client
-    const encrypted = typeof encryptData === 'function'
-      ? await encryptData(all)
-      : { data: btoa(JSON.stringify(all)), iv: '', _plain: true };
+    // Chiffrement stable (clé dérivée userId, pas du token JWT)
+    const encrypted_data = _constEnc(all);
+    if (!encrypted_data) return;
 
     await wpost('/webhook/constantes-push', {
-      encrypted_data: JSON.stringify(encrypted),
+      encrypted_data,
       updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -487,11 +573,8 @@ async function constSyncPull() {
     const { data } = resp;
     if (!data?.encrypted_data) return;
 
-    // Déchiffrement
-    const parsed = JSON.parse(data.encrypted_data);
-    const remote = typeof decryptData === 'function'
-      ? await decryptData(parsed)
-      : JSON.parse(atob(parsed.data));
+    // Déchiffrement stable (clé dérivée userId)
+    const remote = _constDec(data.encrypted_data);
 
     if (!Array.isArray(remote) || !remote.length) return;
 

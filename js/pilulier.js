@@ -67,6 +67,25 @@ document.addEventListener('ami:logout', () => {
   _pilulierDB = null; _pilulierDBUserId = null; _pilulierDBOpening = null;
 });
 
+/* ── Chiffrement stable pour sync cross-appareils ─────────────────────
+   Clé dérivée de l'userId (stable entre appareils et sessions),
+   PAS du token JWT qui change à chaque connexion et casserait la sync.
+   Identique au pattern de patients.js (_enc/_dec).
+─────────────────────────────────────────────────────────────────────── */
+function _pilSyncKey() {
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
+  return 'sk_pil_' + String(Math.abs(h));
+}
+function _pilEnc(obj) {
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _pilSyncKey()))); } catch { return null; }
+}
+function _pilDec(str) {
+  try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; }
+}
+
+
 async function _pilulierSave(obj) {
   const db = await _pilulierDb();
   return new Promise((resolve, reject) => {
@@ -499,13 +518,12 @@ async function pilSyncPush() {
 
     if (!all.length) return;
 
-    // Chiffrement AES côté client
-    const encrypted = typeof encryptData === 'function'
-      ? await encryptData(all)
-      : { data: btoa(JSON.stringify(all)), iv: '', _plain: true };
+    // Chiffrement stable (clé dérivée userId, pas du token JWT)
+    const encrypted_data = _pilEnc(all);
+    if (!encrypted_data) return;
 
     await wpost('/webhook/piluliers-push', {
-      encrypted_data: JSON.stringify(encrypted),
+      encrypted_data,
       updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -522,11 +540,8 @@ async function pilSyncPull() {
     const { data } = resp;
     if (!data?.encrypted_data) return;
 
-    // Déchiffrement
-    const parsed = JSON.parse(data.encrypted_data);
-    const remote = typeof decryptData === 'function'
-      ? await decryptData(parsed)
-      : JSON.parse(atob(parsed.data));
+    // Déchiffrement stable (clé dérivée userId)
+    const remote = _pilDec(data.encrypted_data);
 
     if (!Array.isArray(remote) || !remote.length) return;
 
