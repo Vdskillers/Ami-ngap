@@ -985,7 +985,7 @@
         </div>
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));APP.set('startPoint',sp);try{localStorage.setItem('ami_start_point',JSON.stringify(sp));}catch(_){}if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
           <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
@@ -1166,9 +1166,20 @@
       <script>
       /* ── Démarrage unifié : préserve startPoint de Tournée IA ── */
       function startJourneeUnifiee() {
-        /* 1. Récupérer le startPoint déjà défini dans Tournée IA (t-lat / t-lng / APP) */
-        const savedLat = parseFloat(document.getElementById('t-lat')?.value) || APP.get('startPoint')?.lat;
-        const savedLng = parseFloat(document.getElementById('t-lng')?.value) || APP.get('startPoint')?.lng;
+        /* 1. Récupérer le startPoint défini dans Tournée IA
+              Priorité : t-lat/t-lng (DOM) > APP.startPoint > localStorage ami_start_point */
+        const _tLat = document.getElementById('t-lat');
+        const _tLng = document.getElementById('t-lng');
+        let savedLat = parseFloat(_tLat?.value) || APP.get('startPoint')?.lat || null;
+        let savedLng = parseFloat(_tLng?.value) || APP.get('startPoint')?.lng || null;
+
+        // Persistance localStorage : récupérer si le DOM a été réinitialisé
+        if (!savedLat || !savedLng) {
+          try {
+            const _saved = JSON.parse(localStorage.getItem('ami_start_point') || 'null');
+            if (_saved?.lat && _saved?.lng) { savedLat = _saved.lat; savedLng = _saved.lng; }
+          } catch (_) {}
+        }
 
         /* 2. Démarrer le GPS Uber sans écraser startPoint si déjà défini */
         startLiveTracking();
@@ -1177,8 +1188,9 @@
         /* 3. Restaurer startPoint après startLiveTracking (qui peut l'écraser si GPS actif) */
         if (savedLat && savedLng) {
           APP.set('startPoint', { lat: savedLat, lng: savedLng });
-          if (document.getElementById('t-lat')) document.getElementById('t-lat').value = savedLat;
-          if (document.getElementById('t-lng')) document.getElementById('t-lng').value = savedLng;
+          try { localStorage.setItem('ami_start_point', JSON.stringify({ lat: savedLat, lng: savedLng })); } catch (_) {}
+          if (_tLat) _tLat.value = savedLat;
+          if (_tLng) _tLng.value = savedLng;
         }
 
         /* 4. Démarrer le pilotage journée */
@@ -1226,7 +1238,15 @@
         /* ── Enregistrer le km de retour cabinet ── */
         try {
           const lastPos  = APP.get('_lastVisitedPos');
-          const startPt  = APP.get('startPoint');
+          // startPoint défini lors de l'optimisation Tournée IA (APP + localStorage).
+          // Fallback localStorage si APP a été réinitialisé (ex: navigation entre pages).
+          let startPt = APP.get('startPoint');
+          if (!startPt) {
+            try {
+              const _sp = JSON.parse(localStorage.getItem('ami_start_point') || 'null');
+              if (_sp?.lat && _sp?.lng) { startPt = _sp; APP.set('startPoint', _sp); }
+            } catch (_) {}
+          }
           let kmRetour   = 0;
           if (lastPos?.lat && startPt?.lat) {
             const _hav = (la1, lo1, la2, lo2) => {
@@ -1284,7 +1304,10 @@
             } catch (_eHav) { console.warn('[AMI] Haversine KO:', _eHav.message); }
           }
 
-          if (kmTotal > 0) {
+          // Écrire le journal kilométrique même si kmTotal = 0 :
+          // l'infirmière a toujours fait des km même sans données GPS.
+          // Une entrée avec km=0 permet la correction manuelle dans le journal.
+          {
             let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
             if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
             const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1296,15 +1319,25 @@
             if (!_alreadyToday) {
               const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
                 || snapshot.length;
-              const _isEstimate = !APP.get('tourneeKmJour') && !parseFloat(localStorage.getItem('ami_tournee_km') || 0);
+              // _isEstimate : vrai si km calculé par haversine ou absent (pas de GPS)
+              const _hasGpsKm  = parseFloat(APP.get('tourneeKmJour') || 0) > 0
+                               || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
+              const _isEstimate = !_hasGpsKm;
+              // Si aucune donnée GPS ni haversine → km=0 avec flag _requiresManualUpdate
+              // pour que l'infirmière complète manuellement dans le journal.
+              const _needsManual = kmTotal === 0;
+              const motifSuffix = _needsManual
+                ? ' (km à compléter)'
+                : (_isEstimate ? ' (estimé)' : '');
               journal.push({
                 id:      Date.now(),
                 date:    todayStr,
                 depart:  'Cabinet',
                 arrivee: 'Tournée patients',
                 km:      kmTotal,
-                motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_isEstimate ? ' (estimé)' : ''}`,
+                motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${motifSuffix}`,
                 _source: 'tournee_auto',
+                _requiresManualUpdate: _needsManual,
               });
               localStorage.setItem(KM_KEY, JSON.stringify(journal));
               if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
