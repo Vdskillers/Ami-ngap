@@ -300,6 +300,14 @@ async function _autoCoterEtImporterPatient(p) {
   /* ── 3. KM INCRÉMENTAL ── */
   try {
     if (p.lat && p.lng) {
+      // Si startPoint est null (APP réinitialisé), tenter de le récupérer depuis localStorage.
+      // Il est posé lors de l'optimisation Tournée IA et persisté par startJourneeUnifiee.
+      if (!APP.get('startPoint') && !APP.get('_lastVisitedPos')) {
+        try {
+          const _sp = JSON.parse(localStorage.getItem('ami_start_point') || 'null');
+          if (_sp?.lat && _sp?.lng) APP.set('startPoint', _sp);
+        } catch (_) {}
+      }
       const prev = APP.get('_lastVisitedPos') || APP.get('startPoint');
       if (prev?.lat && prev?.lng) {
         const R = 6371;
