@@ -80,7 +80,11 @@ function _cotDetectActes(texte) {
       seenCodes.add(pat.code);
     }
   }
-  if (!found.length) found.push({ code:'AMI1', label:'Acte infirmier (à préciser)', group:'acte' });
+  /* ── Fix A3 : aucun acte détecté → fallback AMI1 avec flag _estimation
+     Ce flag est lu par renderCot pour afficher un bandeau d'avertissement
+     explicite, évitant toute confusion entre un résultat IA confirmé et
+     une estimation automatique par défaut. ── */
+  if (!found.length) found.push({ code: 'AMI1', label: 'Acte infirmier (à préciser)', group: 'acte', _estimation: true });
   return found;
 }
 
@@ -1127,6 +1131,30 @@ function renderCot(d) {
     </div>`;
   })() : '';
 
+  // ── Bandeau estimation automatique (A3) ────────────────────────────────────
+  // Affiché quand : (1) mode fallback worker, OU (2) actes viennent du NLP local
+  // sans détection réelle (flag _estimation sur le seul acte AMI1 retourné).
+  const _isEstimation = !!d.fallback ||
+    (a.length === 1 && a[0].code === 'AMI1' && !!a[0]._estimation);
+  const estimationBannerBloc = _isEstimation
+    ? `<div style="margin-bottom:14px;padding:10px 14px;border-radius:8px;
+          background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.35);
+          display:flex;align-items:flex-start;gap:10px">
+        <span style="font-size:18px;flex-shrink:0;line-height:1.3">⚠️</span>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:2px">
+            Estimation automatique — vérification recommandée
+          </div>
+          <div style="font-size:11px;color:var(--m);line-height:1.5">
+            Aucun acte NGAP n'a été détecté avec certitude dans votre description.
+            Le code <strong>AMI1</strong> a été appliqué par défaut.
+            Précisez le type de soin (injection, pansement, perfusion…) pour
+            obtenir une cotation exacte.
+          </div>
+        </div>
+      </div>`
+    : '';
+
   // ── Alertes NGAP ────────────────────────────────────────────────────────────
   const alertsBloc = al.length
     ? `<div class="aic" style="margin-top:12px">${al.map(x => {
@@ -1210,6 +1238,7 @@ function renderCot(d) {
   </div>
 
   <!-- ══ ALERTES + OPTIMISATIONS + SUGGESTIONS + CPAM + SCORING ══ -->
+  ${estimationBannerBloc}
   ${alertsBloc}
   ${opBloc}
   ${suggBloc}

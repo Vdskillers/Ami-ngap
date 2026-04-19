@@ -71,10 +71,19 @@ async function initSessionKey(token) {
   if (!token) return;
   /* Salt stocké dans sessionStorage (non sensible seul) */
   let saltHex = sessionStorage.getItem('ami_enc_salt');
-  const result = await generateEncKey(token.slice(0, 32), saltHex || '');
+  /* ── Fix A4 : utiliser le token ENTIER comme matériau de clé.
+     Avant : token.slice(0,32) → seulement 128 bits d'un SHA-256 hex de 512 bits
+     Après : token complet → entropie pleine (512 bits en entrée PBKDF2).
+     La dérivation PBKDF2-SHA256 / 100 000 itérations produit toujours
+     une clé AES-256 de 256 bits, quelle que soit la longueur du mot de passe.
+     Compatibilité : le salt en sessionStorage reste valide — seul le mot de
+     passe PBKDF2 change. Les données déjà chiffrées avec l'ancienne clé
+     seront déchiffrables jusqu'à la fin de la session courante car _sessionKey
+     est en mémoire ; à la reconnexion la nouvelle clé s'applique. ── */
+  const result = await generateEncKey(token, saltHex || '');
   _sessionKey = result.key;
   if (!saltHex) sessionStorage.setItem('ami_enc_salt', result.salt);
-  log('Clé AES-GCM initialisée ✅');
+  log('Clé AES-GCM initialisée ✅ (entropie complète)');
 }
 
 /* Chiffrer un objet JS → { data: base64, iv: base64 } */
