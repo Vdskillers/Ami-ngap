@@ -2344,48 +2344,100 @@ async function syncPatientsFromServer() {
       const remoteId = rp.patient_id || rp.id;
       if (!remoteId || !rp.encrypted_data) continue;
 
-      const local = localMap.get(remoteId);
+      const local    = localMap.get(remoteId);
       const remoteDate = new Date(rp.updated_at || 0).getTime();
       const localDate  = local ? new Date(local.updated_at || 0).getTime() : 0;
 
-      // Toujours prendre la version serveur si elle est plus récente OU si l'IDB est vide
-      // carnet_patients est la source de vérité pour les fiches patients et leurs cotations
-      if (!local || remoteDate >= localDate) {
-        let nom = '', prenom = '';
-        let decoded = null;
-        try {
-          decoded = _dec(rp.encrypted_data);
-          if (decoded) { nom = decoded.nom || ''; prenom = decoded.prenom || ''; }
-        } catch(_) {}
+      // Déchiffrer la version serveur dans tous les cas (nécessaire pour merger les cotations)
+      let remoteDecoded = null;
+      try { remoteDecoded = _dec(rp.encrypted_data); } catch(_) {}
+      if (!remoteDecoded) continue;
 
+      if (!local) {
+        // ── Pas de version locale : écrire la version serveur telle quelle ──
         await _idbPut(PATIENTS_STORE, {
           id:         remoteId,
-          nom,
-          prenom,
+          nom:        remoteDecoded.nom  || '',
+          prenom:     remoteDecoded.prenom || '',
           _data:      rp.encrypted_data,
           updated_at: rp.updated_at,
         });
+        merged++;
 
-        // Restaurer les notes_soins dans le NOTES_STORE si présentes dans _data
-        if (decoded?.notes_soins?.length) {
-          // Lire les notes locales existantes pour ce patient
-          const localNotes = await _idbGetByIndex(NOTES_STORE, 'patient_id', remoteId);
-          const localNoteDates = new Set(localNotes.map(n => n.date));
-          // N'insérer que les notes absentes localement (pas d'écrasement)
-          for (const n of decoded.notes_soins) {
-            if (!localNoteDates.has(n.date)) {
-              await _idbPut(NOTES_STORE, {
-                patient_id: remoteId,
-                texte:      n.texte,
-                date:       n.date,
-                heure:      n.heure || '',
-                date_edit:  n.date_edit || null,
-              });
-            }
+      } else if (remoteDate >= localDate) {
+        // ── Version serveur plus récente : remplacer ET merger les cotations locales ──
+        const localDecoded = _dec(local._data) || {};
+        const localCots    = Array.isArray(localDecoded.cotations) ? localDecoded.cotations : [];
+        const remoteCots   = Array.isArray(remoteDecoded.cotations) ? remoteDecoded.cotations : [];
+
+        // Ajouter les cotations locales absentes du serveur (évite de perdre des saisies locales récentes)
+        const remoteInvoices = new Set(remoteCots.map(c => c.invoice_number).filter(Boolean));
+        for (const lc of localCots) {
+          if (lc.invoice_number && !remoteInvoices.has(lc.invoice_number)) {
+            remoteDecoded.cotations.push(lc);
           }
         }
 
+        const toStore = {
+          id:         remoteId,
+          nom:        remoteDecoded.nom  || '',
+          prenom:     remoteDecoded.prenom || '',
+          _data:      _enc(remoteDecoded),
+          updated_at: rp.updated_at,
+        };
+        await _idbPut(PATIENTS_STORE, toStore);
         merged++;
+
+      } else {
+        // ── Version locale plus récente : garder le local ET merger les cotations distantes ──
+        // C'est le cas principal du bug : navigateur plus récent, cotations mobiles absentes
+        const localDecoded = _dec(local._data) || {};
+        const localCots    = Array.isArray(localDecoded.cotations) ? localDecoded.cotations : [];
+        const remoteCots   = Array.isArray(remoteDecoded.cotations) ? remoteDecoded.cotations : [];
+
+        const localInvoices = new Set(localCots.map(c => c.invoice_number).filter(Boolean));
+        let added = 0;
+        for (const rc of remoteCots) {
+          // Injecter les cotations distantes absentes localement
+          if (rc.invoice_number && !localInvoices.has(rc.invoice_number)) {
+            localDecoded.cotations.push({ ...rc, _synced: true });
+            localInvoices.add(rc.invoice_number);
+            added++;
+          }
+        }
+
+        if (added > 0) {
+          // Mettre à jour l'IDB uniquement si on a effectivement injecté des cotations
+          localDecoded.updated_at = new Date().toISOString();
+          const toStore = {
+            id:         remoteId,
+            nom:        local.nom,
+            prenom:     local.prenom,
+            _data:      _enc(localDecoded),
+            updated_at: localDecoded.updated_at,
+          };
+          await _idbPut(PATIENTS_STORE, toStore);
+          // Re-push immédiat vers le serveur pour que la version fusionnée soit la référence
+          if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+          merged++;
+        }
+      }
+
+      // Restaurer les notes_soins dans NOTES_STORE si présentes dans la version distante
+      if (remoteDecoded?.notes_soins?.length) {
+        const localNotes = await _idbGetByIndex(NOTES_STORE, 'patient_id', remoteId);
+        const localNoteDates = new Set(localNotes.map(n => n.date));
+        for (const n of remoteDecoded.notes_soins) {
+          if (!localNoteDates.has(n.date)) {
+            await _idbPut(NOTES_STORE, {
+              patient_id: remoteId,
+              texte:      n.texte,
+              date:       n.date,
+              heure:      n.heure || '',
+              date_edit:  n.date_edit || null,
+            });
+          }
+        }
       }
     }
 
@@ -2451,17 +2503,25 @@ async function syncCotationsFromServer() {
       remote.filter(r => r.invoice_number).map(r => [r.invoice_number, r])
     );
 
-    // Grouper par patient_id
-    const serverCotsByPid = new Map();
+    // Double index : par patient_id ET par invoice_number
+    // Nécessaire car patient_id n'est pas toujours renseigné dans planning_patients
+    // (cotations créées hors tournée, formulaire principal, etc.)
+    const serverCotsByPid     = new Map(); // patient_id → [rows]
+    const serverCotsByInvoice = new Map(); // invoice_number → row
     for (const row of remote) {
-      const pid = row.patient_id || null;
-      if (!pid) continue;
-      if (!serverCotsByPid.has(pid)) serverCotsByPid.set(pid, []);
-      serverCotsByPid.get(pid).push(row);
+      if (row.patient_id) {
+        if (!serverCotsByPid.has(row.patient_id)) serverCotsByPid.set(row.patient_id, []);
+        serverCotsByPid.get(row.patient_id).push(row);
+      }
+      if (row.invoice_number) {
+        serverCotsByInvoice.set(row.invoice_number, row);
+      }
     }
 
     const localRows = await _idbGetAll(PATIENTS_STORE);
     let changed = 0;
+
+    const _CODES_MAJ_NS = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
 
     for (const row of localRows) {
       const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
@@ -2470,16 +2530,46 @@ async function syncCotationsFromServer() {
       // invoice_numbers déjà dans l'IDB — on ne touche pas à ces cotations
       const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
 
-      // Cotations planning_patients à injecter pour ce patient
-      // (uniquement celles absentes de l'IDB)
-      const serverCots = serverCotsByPid.get(row.id) || [];
+      // ── Candidats serveur pour ce patient ───────────────────────────────────
+      // Critère 1 : patient_id direct (cotations tournée)
+      const byPid = serverCotsByPid.get(row.id) || [];
+      // Critère 2 : invoice_number local connu sur le serveur (cotations formulaire principal)
+      // → retrouve les cotations sans patient_id mais dont l'invoice existe localement
+      const byInvoice = [];
+      for (const localCot of p.cotations) {
+        if (!localCot.invoice_number) continue;
+        const sc = serverCotsByInvoice.get(localCot.invoice_number);
+        if (sc && !sc.patient_id) byInvoice.push(sc); // déjà couvert par byPid si patient_id présent
+      }
+      // Fusionner sans doublons
+      const candidateInvoices = new Set();
+      const serverCots = [];
+      for (const sc of [...byPid, ...byInvoice]) {
+        if (!sc.invoice_number || candidateInvoices.has(sc.invoice_number)) continue;
+        candidateInvoices.add(sc.invoice_number);
+        serverCots.push(sc);
+      }
+      // Critère 3 : cotations serveur sans patient_id dont l'invoice_number est absent localement
+      // → nouvelles cotations créées sur un autre appareil sans patient_id encore associé
+      // On les associe à ce patient si le patient_nom correspond
+      const patNom = (p.nom + ' ' + p.prenom).trim().toLowerCase();
+      for (const sc of remote) {
+        if (!sc.invoice_number || candidateInvoices.has(sc.invoice_number)) continue;
+        if (localInvoices.has(sc.invoice_number)) continue;
+        if (!sc.patient_nom) continue;
+        const scNom = sc.patient_nom.trim().toLowerCase();
+        if (scNom === patNom || scNom === (p.prenom + ' ' + p.nom).trim().toLowerCase()) {
+          candidateInvoices.add(sc.invoice_number);
+          serverCots.push(sc);
+        }
+      }
+
       let added = 0;
-      const _CODES_MAJ_NS = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
       for (const sc of serverCots) {
         if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
         let actes = [];
         try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
-        // Guard : ignorer cotations sans acte technique
+        // Guard : ignorer cotations sans acte technique (majorations seules)
         const _hasTechNS = actes.some(a => !_CODES_MAJ_NS.has((a.code||'').toUpperCase()));
         if (!_hasTechNS && actes.length > 0) continue;
         p.cotations.push({
@@ -2496,10 +2586,13 @@ async function syncCotationsFromServer() {
 
       if (added > 0) {
         p.updated_at = new Date().toISOString();
-        await _idbPut(PATIENTS_STORE, {
+        const toStore = {
           id: row.id, nom: p.nom || row.nom, prenom: p.prenom || row.prenom,
           _data: _enc(p), updated_at: p.updated_at,
-        });
+        };
+        await _idbPut(PATIENTS_STORE, toStore);
+        // Re-push vers le serveur pour écrire patient_id si absent (évite re-scan futur)
+        if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
         changed++;
       }
     }
