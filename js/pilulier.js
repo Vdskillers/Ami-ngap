@@ -205,10 +205,13 @@ function pilRenderMedsList() {
 function _pilMedSet(idx, key, val) {
   if (!_pilMeds[idx]) return;
   _pilMeds[idx][key] = val;
-  // Si on coche/décoche une prise globale, mettre à jour tous les jours
+  // Si on active/désactive une prise globale, initialiser jours à false si pas encore défini
+  // (l'utilisateur cochera manuellement les jours qu'il veut)
   if (['matin','midi','soir','nuit'].includes(key)) {
     if (!_pilMeds[idx].jours) _pilMeds[idx].jours = {};
-    _pilMeds[idx].jours[key] = Array(7).fill(!!val);
+    if (!Array.isArray(_pilMeds[idx].jours[key])) {
+      _pilMeds[idx].jours[key] = Array(7).fill(false);
+    }
   }
   pilRenderSemainier();
 }
@@ -217,8 +220,8 @@ function _pilMedSet(idx, key, val) {
 function _pilSetJour(medIdx, priseKey, jourIdx, checked) {
   if (!_pilMeds[medIdx]) return;
   if (!_pilMeds[medIdx].jours) _pilMeds[medIdx].jours = {};
-  if (!_pilMeds[medIdx].jours[priseKey]) {
-    _pilMeds[medIdx].jours[priseKey] = Array(7).fill(!!_pilMeds[medIdx][priseKey]);
+  if (!Array.isArray(_pilMeds[medIdx].jours[priseKey])) {
+    _pilMeds[medIdx].jours[priseKey] = Array(7).fill(false);
   }
   _pilMeds[medIdx].jours[priseKey][jourIdx] = checked;
 }
@@ -249,13 +252,14 @@ function pilRenderSemainier() {
 
   const prises = PRISES.filter(pr => meds.some(m => m[pr.key]));
 
-  // Initialiser jours par défaut si absent : prise active = tous les jours cochés
+  // Initialiser jours uniquement si vraiment absent (nouveau médicament)
+  // → toujours à false : l'utilisateur coche manuellement case par case
+  // Ne PAS pré-cocher selon la prise globale (c'est le bug)
   meds.forEach(m => {
     if (!m.jours) m.jours = {};
     PRISES.forEach(pr => {
-      if (!m.jours[pr.key]) {
-        // Si la prise est active et pas encore de données par jour → cocher tous les jours
-        m.jours[pr.key] = Array(7).fill(!!m[pr.key]);
+      if (!Array.isArray(m.jours[pr.key])) {
+        m.jours[pr.key] = Array(7).fill(false);
       }
     });
   });
@@ -304,11 +308,12 @@ async function pilSave() {
     showToast('warning', 'Données incomplètes', 'Sélectionnez un patient et ajoutez des médicaments.'); return;
   }
 
-  // S'assurer que jours est à jour avant sauvegarde
+  // S'assurer que jours est initialisé avant sauvegarde
+  // Les cases non encore touchées restent à false (pas pré-cochées)
   _pilMeds.forEach(m => {
     if (!m.jours) m.jours = {};
     ['matin','midi','soir','nuit'].forEach(pr => {
-      if (!m.jours[pr]) m.jours[pr] = Array(7).fill(!!m[pr]);
+      if (!Array.isArray(m.jours[pr])) m.jours[pr] = Array(7).fill(false);
     });
   });
 
