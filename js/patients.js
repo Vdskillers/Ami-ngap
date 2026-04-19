@@ -289,6 +289,61 @@ async function _deletePilulierPatient(patientId, idx) {
   } catch (e) { if (typeof showToast === 'function') showToast('error', 'Erreur', e.message); }
 }
 
+/**
+ * Charge un pilulier depuis les données de la fiche patient
+ * directement dans le module Semainier/Pilulier — sans passer par l'IDB ami_piluliers.
+ * Corrige le bug "Charger charge un semainier vide".
+ * @param {string} pilEncoded — JSON encodé URI du pilulier
+ */
+function _pilChargerDepuisCarnet(pilEncoded) {
+  try {
+    const pil = JSON.parse(decodeURIComponent(pilEncoded));
+    // Naviguer vers le module pilulier
+    if (typeof navTo === 'function') navTo('pilulier', null);
+    setTimeout(() => {
+      // 1. Sélectionner le patient
+      const patSel = document.getElementById('pil-patient-sel');
+      const patId  = pil.patient_id;
+      if (patSel && patId) {
+        patSel.value = patId;
+        if (typeof pilSelectPatient === 'function') {
+          pilSelectPatient(patId).then(() => {
+            // 2. Injecter les données du pilulier dans le module
+            _pilInjectData(pil);
+          });
+        }
+      } else {
+        // Patient déjà sélectionné ou pas d'ID — injecter directement
+        _pilInjectData(pil);
+      }
+    }, 350);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur chargement', e.message);
+  }
+}
+
+/**
+ * Injecte les données d'un pilulier dans le module Semainier/Pilulier.
+ * Utilisé par _pilChargerDepuisCarnet.
+ */
+function _pilInjectData(pil) {
+  // Injecter les médicaments dans _pilMeds (variable globale de pilulier.js)
+  if (typeof _pilMeds !== 'undefined') {
+    _pilMeds = JSON.parse(JSON.stringify(pil.meds || []));
+  }
+  // Semaine de début
+  const sd = document.getElementById('pil-semaine-debut');
+  if (sd && pil.semaine_debut) sd.value = pil.semaine_debut;
+  // Préparateur
+  const prep = document.getElementById('pil-preparateur');
+  if (prep && pil.preparateur) prep.value = pil.preparateur;
+  // Re-rendre
+  if (typeof pilRenderMedsList === 'function') pilRenderMedsList();
+  if (typeof pilRenderSemainier === 'function') pilRenderSemainier();
+  if (typeof showToast === 'function')
+    showToast('info', 'Pilulier chargé', `Semaine du ${pil.semaine_debut||'—'}`);
+}
+
 let _editingPatientId = null;
 
 /* Ouvre le formulaire d'ajout */
@@ -559,9 +614,9 @@ async function openPatientDetail(id) {
         <button id="tab-infos"   style="${tabStyle(true)}"  onclick="_patTab('infos','${id}')">📋 Infos</button>
         <button id="tab-cotations" style="${tabStyle(false)}" onclick="_patTab('cotations','${id}')">🧾 Cotations ${p.cotations?.length ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.cotations.length+'</span>' : ''}</button>
         <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
-        <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
-        <button id="tab-constantes" style="${tabStyle(false)}" onclick="_patTab('constantes','${id}')">📊 Constantes <span style='background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.constantes||[]).length||''}</span></button>
         <button id="tab-pilulier"   style="${tabStyle(false)}" onclick="_patTab('pilulier','${id}')">💊 Semainier <span style='background:rgba(79,168,255,.12);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.piluliers||[]).length||''}</span></button>
+        <button id="tab-constantes" style="${tabStyle(false)}" onclick="_patTab('constantes','${id}')">📊 Constantes <span style='background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.constantes||[]).length||''}</span></button>
+        <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
       </div>
     </div>
 
@@ -866,6 +921,60 @@ function _patTabRender(tab, id, p, notes) {
   /* ── Onglet Semainier / Pilulier ── */
   if (tab === 'pilulier') {
     const piluliers = (p.piluliers || []).slice().reverse();
+    const JOURS_SEMAINE = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+    const PRISES = ['matin','midi','soir','nuit'];
+    const PRISE_LABELS = { matin:'🌅 M', midi:'☀️ Mi', soir:'🌆 S', nuit:'🌙 N' };
+
+    /* Génère le tableau semainier avec les 7 jours */
+    function _renderPilTableau(pil) {
+      const meds        = (pil.meds||[]).filter(m => m.nom);
+      const debutISO    = pil.semaine_debut || '';
+      const debut       = debutISO ? new Date(debutISO) : null;
+
+      /* En-têtes jours avec dates si disponibles */
+      const joursHeaders = JOURS_SEMAINE.map((j, ji) => {
+        if (!debut) return `<th style="padding:5px 6px;border:1px solid var(--b);color:var(--m);text-align:center;font-size:10px;min-width:52px">${j[0]+j[1]}</th>`;
+        const d = new Date(debut);
+        d.setDate(debut.getDate() + ji);
+        const dateStr = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+        return `<th style="padding:5px 6px;border:1px solid var(--b);color:var(--m);text-align:center;font-size:10px;min-width:52px">${j.slice(0,3)}<br><span style="font-weight:400;font-size:9px">${dateStr}</span></th>`;
+      }).join('');
+
+      if (!meds.length) return '<div style="font-size:12px;color:var(--m)">Aucun médicament renseigné.</div>';
+
+      /* Lignes : une par médicament × prise active */
+      const rows = meds.flatMap(m => {
+        const prisesActives = PRISES.filter(pr => m[pr]);
+        if (!prisesActives.length) return [];
+        return prisesActives.map((pr, pi) => `
+          <tr style="${pi===0?'border-top:1px solid var(--b)':''}">
+            <td style="padding:5px 8px;border:1px solid var(--b);font-weight:${pi===0?'600':'400'};font-size:11px;color:${pi===0?'var(--t)':'var(--m)'}">
+              ${pi===0 ? m.nom : ''}
+              <span style="font-size:10px;color:var(--m);display:${pi===0&&m.nom?'block':'inline'}">${PRISE_LABELS[pr]||pr}</span>
+            </td>
+            ${JOURS_SEMAINE.map(() => `
+              <td style="padding:4px 6px;border:1px solid var(--b);text-align:center;font-size:13px">✅</td>
+            `).join('')}
+          </tr>`);
+      });
+
+      if (!rows.length) return '<div style="font-size:12px;color:var(--m)">Aucune prise renseignée.</div>';
+
+      return `
+        <div style="overflow-x:auto;margin-top:8px">
+          <table style="border-collapse:collapse;font-size:11px;font-family:var(--fm);width:100%;min-width:540px">
+            <thead><tr style="background:var(--s)">
+              <th style="padding:5px 8px;border:1px solid var(--b);text-align:left;color:var(--m);min-width:120px">Médicament / Prise</th>
+              ${joursHeaders}
+            </tr></thead>
+            <tbody>${rows.join('')}</tbody>
+          </table>
+        </div>
+        ${meds.some(m=>m.remarque) ? `<div style="margin-top:8px;font-size:11px;color:var(--m)">
+          ${meds.filter(m=>m.remarque).map(m=>`💬 <strong>${m.nom}</strong> : ${m.remarque}`).join(' · ')}
+        </div>` : ''}`;
+    }
+
     el.innerHTML = `
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
@@ -878,9 +987,10 @@ function _patTabRender(tab, id, p, notes) {
           ? `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun pilulier enregistré. Utilisez le module <strong>Semainier / Pilulier</strong> pour en créer un.</div>`
           : piluliers.slice(0,10).map((pil, ri) => {
               const realIdx = piluliers.length - 1 - ri;
-              const d = new Date(pil.date_creation).toLocaleDateString('fr-FR');
+              const d = pil.date_creation ? new Date(pil.date_creation).toLocaleDateString('fr-FR') : '—';
               const meds = (pil.meds||[]).filter(m => m.nom);
-              const prises = ['matin','midi','soir','nuit'];
+              /* Encoder les données du pilulier pour le Charger inline */
+              const pilEncoded = encodeURIComponent(JSON.stringify(pil));
               return `
                 <div style="border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px">
                   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
@@ -891,25 +1001,13 @@ function _patTabRender(tab, id, p, notes) {
                       </div>
                     </div>
                     <div style="display:flex;gap:6px">
-                      <button class="btn bs bsm" style="font-size:10px" onclick="navTo('pilulier',null);setTimeout(()=>{const s=document.getElementById('pil-patient-sel');if(s){s.value='${id}';pilSelectPatient('${id}').then(()=>pilLoadFromHistory(${pil._idb_id||0}));}},400)">📂 Charger</button>
-                      <button onclick="_deletePilulierPatient('${id}',${realIdx})" style="background:none;border:none;color:var(--d);cursor:pointer;font-size:14px;padding:2px 8px">🗑</button>
+                      <button class="btn bs bsm" style="font-size:10px"
+                        onclick="_pilChargerDepuisCarnet('${pilEncoded}')">📂 Charger</button>
+                      <button onclick="_deletePilulierPatient('${id}',${realIdx})"
+                        style="background:none;border:none;color:var(--d);cursor:pointer;font-size:14px;padding:2px 8px">🗑</button>
                     </div>
                   </div>
-                  ${meds.length ? `
-                  <table style="border-collapse:collapse;font-size:11px;font-family:var(--fm);width:100%">
-                    <thead><tr style="background:var(--s)">
-                      <th style="padding:5px 8px;border:1px solid var(--b);text-align:left;color:var(--m)">Médicament</th>
-                      ${prises.map(pr=>`<th style="padding:5px 8px;border:1px solid var(--b);color:var(--m);text-align:center">${pr[0].toUpperCase()+pr.slice(1)}</th>`).join('')}
-                      <th style="padding:5px 8px;border:1px solid var(--b);color:var(--m)">Remarque</th>
-                    </tr></thead>
-                    <tbody>
-                    ${meds.map(m=>`<tr>
-                      <td style="padding:5px 8px;border:1px solid var(--b);font-weight:600">${m.nom}</td>
-                      ${prises.map(pr=>`<td style="padding:5px 8px;border:1px solid var(--b);text-align:center">${m[pr]?'✅':'—'}</td>`).join('')}
-                      <td style="padding:5px 8px;border:1px solid var(--b);color:var(--m)">${m.remarque||''}</td>
-                    </tr>`).join('')}
-                    </tbody>
-                  </table>` : '<div style="font-size:12px;color:var(--m)">Aucun médicament renseigné.</div>'}
+                  ${_renderPilTableau(pil)}
                 </div>`;
             }).join('')}
       </div>`;
