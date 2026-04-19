@@ -898,6 +898,16 @@ async function _cotationPipeline() {
 
         const _invNum = d.invoice_number || _editRef?.invoice_number || null;
         const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
+
+        // Guard : ne pas sauvegarder si aucun acte technique (juste des majorations DIM/NUIT/IFD)
+        const _CODES_MAJ_CHK = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+        const _actesTechCheck = (d.actes || []).filter(a => !_CODES_MAJ_CHK.has((a.code||'').toUpperCase()));
+        if (!_actesTechCheck.length && !_editRef) {
+          // Affichage OK mais on ne pollue pas le carnet avec une cotation incomplète
+          console.warn('[cotation] IDB save ignoré — pas d\'acte technique:', (d.actes||[]).map(a=>a.code));
+          throw new Error('__SKIP_IDB__'); // intercepté par le catch local ci-dessous
+        }
+
         const _newCot = {
           date:           _cotDate,
           heure:          gv('f-hs') || '',
@@ -978,7 +988,7 @@ async function _cotationPipeline() {
             showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
         }
       }
-    } catch(_idbErr) { console.warn('[cotation] IDB save KO:', _idbErr.message); }
+    } catch(_idbErr) { if (_idbErr.message !== '__SKIP_IDB__') console.warn('[cotation] IDB save KO:', _idbErr.message); }
 
     // ── Déclencher la signature après cotation ──────────────────────────────
     // Dispatch ami:cotation_done pour signature.js + injection directe du bouton

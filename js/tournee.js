@@ -1302,17 +1302,20 @@ async function _syncCotationsToSupabase(patients) {
     const allToSync = [...fromMemory, ...fromIDB];
     if (!allToSync.length) return;
 
-    const cotations = allToSync.map(p => ({
-      actes:          p._cotation.actes || [],
-      total:          parseFloat(p._cotation.total || 0),
-      date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
-      heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
-      soin:           (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
-      source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
-      dre_requise:    !!p._cotation.dre_requise,
-      // invoice_number existant -> PATCH (correction), sinon POST (nouvelle ligne)
-      invoice_number: p._cotation.invoice_number || null,
-    }));
+    const cotations = allToSync
+      // Ne jamais envoyer sans actes valides (évite les entrées DIM-seul parasites)
+      .filter(p => (p._cotation.actes || []).length > 0 && parseFloat(p._cotation.total || 0) > 0)
+      .map(p => ({
+        actes:          p._cotation.actes || [],
+        total:          parseFloat(p._cotation.total || 0),
+        date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
+        heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
+        soin:           (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
+        source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
+        dre_requise:    !!p._cotation.dre_requise,
+        // invoice_number existant -> PATCH (correction), sinon POST (nouvelle ligne)
+        invoice_number: p._cotation.invoice_number || null,
+      }));
 
     const result = await apiCall('/webhook/ami-save-cotation', { cotations });
     if (result?.ok) {
@@ -1418,9 +1421,10 @@ async function autoFacturation(patient){
       return rawDesc || 'soin infirmier à domicile';
     })();
 
-    // actes_recurrents prime sur tout le reste
+    // actes_recurrents prime ; on ne concatène _texteBase que s'il apporte une info nouvelle
+    // (évite "insuline SC — Diabète — Injection insuline SC" → double AMI1)
     const texteForCot = actesRec
-      ? (actesRec + (_texteBase && _texteBase !== 'soin infirmier à domicile' ? ' — ' + _texteBase : ''))
+      ? actesRec  // actes_recurrents suffisent, pas besoin d'ajouter la pathologie brute
       : _texteBase;
 
     const d = await apiCall('/webhook/ami-calcul', {
@@ -2844,6 +2848,13 @@ function _validateCotationLive() {
           (c.source === 'tournee' || c.source === 'tournee_auto' || c.source === 'tournee_live') &&
           (c.date || '').slice(0, 10) === today
         );
+      }
+      // Garder la cotation uniquement si elle contient au moins un acte technique (pas juste une majoration)
+      const _CODES_MAJ = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+      const _hasActeTech = actes.some(a => !_CODES_MAJ.has((a.code||'').toUpperCase()));
+      if (!_hasActeTech) {
+        console.warn('[AMI] Cotation ignorée (majoration seule sans acte technique):', actes.map(a=>a.code));
+        return;
       }
       const cotEntry = {
         date:           existingIdx >= 0 ? p.cotations[existingIdx].date : new Date().toISOString(),
