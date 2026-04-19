@@ -120,6 +120,32 @@ document.addEventListener('ui:navigate', e => {
     }, 80);
   }
 
+  /* Nouveaux modules cliniques v2 — rendu dynamique */
+  if (v === 'transmissions' && typeof renderTransmissions === 'function') {
+    setTimeout(renderTransmissions, 80);
+  }
+  if (v === 'constantes' && typeof renderConstantes === 'function') {
+    setTimeout(renderConstantes, 80);
+  }
+  if (v === 'compte-rendu' && typeof renderCompteRendu === 'function') {
+    setTimeout(renderCompteRendu, 80);
+  }
+  if (v === 'pilulier' && typeof renderPilulier === 'function') {
+    setTimeout(renderPilulier, 80);
+  }
+  if (v === 'bsi' && typeof renderBSI === 'function') {
+    setTimeout(renderBSI, 80);
+  }
+  if (v === 'consentements' && typeof renderConsentements === 'function') {
+    setTimeout(renderConsentements, 80);
+  }
+  if (v === 'alertes-med' && typeof renderAlertesView === 'function') {
+    setTimeout(renderAlertesView, 80);
+  }
+  if (v === 'audit-cpam' && typeof renderAuditCPAM === 'function') {
+    setTimeout(renderAuditCPAM, 80);
+  }
+
   log('navTo →', v);
 });
 

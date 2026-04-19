@@ -126,7 +126,8 @@ function showApp(){
     });
 
     // ── Rebrancher onclick pour copilote et stats (nurse-only mais accessibles admin) ──
-    ['dash','copilote','ngap-ref','rapport','sig','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','cabinet'].forEach(v => {
+    ['dash','copilote','ngap-ref','rapport','sig','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','cabinet',
+     'transmissions','constantes','compte-rendu','pilulier','bsi','consentements','alertes-med','audit-cpam'].forEach(v => {
       const ni = document.querySelector(`.ni[data-v="${v}"]`);
       if (ni) {
         ni.classList.remove('nurse-only');
@@ -209,7 +210,8 @@ function showApp(){
 
         // Rendre nurse-only visibles pour l'admin (copilote, rapport, contact, sig, tournée…)
         // 'cabinet' inclus pour permettre aux admins de tester le mode cabinet
-        ['copilote','rapport','contact','sec','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','dash','cabinet'].forEach(v => {
+        ['copilote','rapport','contact','sec','tur','live','imp','pla','his','patients','tresor','outils-ordos','outils-km','dash','cabinet',
+         'transmissions','constantes','compte-rendu','pilulier','bsi','consentements','alertes-med','audit-cpam'].forEach(v => {
           const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
           if(btn) btn.classList.remove('nurse-only');
         });

@@ -363,4 +363,3 @@ document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'transmissions') {
     renderTransmissions();
   }
-});

@@ -122,10 +122,26 @@ async function renderCabinetSection() {
 
 /* ── Pas de cabinet — formulaire créer/rejoindre ── */
 function _renderNoCabinet(root) {
+  const isAdmin = (typeof S !== 'undefined' && S?.role === 'admin') ||
+                  (typeof APP !== 'undefined' && APP?.role === 'admin');
+
   root.innerHTML = `
     <div class="card" style="margin-bottom:16px">
       <div class="ct">🏥 Rejoindre ou créer un cabinet</div>
-      ${APP.role === 'admin' ? `<div class="ai in" style="margin-bottom:14px;font-size:12px">🛡️ <strong>Mode admin — test fonctionnel</strong> · Vous pouvez créer un cabinet de test et tester toutes les fonctionnalités multi-IDE. Les données des infirmières restent inaccessibles.</div>` : ''}
+      ${isAdmin ? `
+        <div class="ai in" style="margin-bottom:14px;font-size:12px">
+          🛡️ <strong>Mode admin — test fonctionnel</strong> · Créez un cabinet de test pour tester toutes les fonctionnalités multi-IDE.
+          Vos données de test restent isolées. Les données des infirmières sont inaccessibles.
+        </div>
+        <!-- Mode démo solo : simule un cabinet avec l'admin comme seul IDE -->
+        <div style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:16px;margin-bottom:20px">
+          <div style="font-size:13px;font-weight:700;color:var(--a);margin-bottom:6px">⚡ Mode démo solo — sans cabinet réel</div>
+          <div style="font-size:12px;color:var(--m);margin-bottom:12px;line-height:1.5">
+            Testez immédiatement toutes les fonctions cabinet (cotation multi-IDE, tournée, sync) en mode solo.
+            Vous jouez le rôle des deux IDEs. Aucun enregistrement en base de données.
+          </div>
+          <button class="btn bp bsm" onclick="cabinetDemoSolo()"><span>🚀</span> Activer le mode démo solo</button>
+        </div>` : ''}
       <p style="font-size:13px;color:var(--m);margin-bottom:20px;line-height:1.6">
         Le mode cabinet vous permet de partager votre tournée et certaines données avec vos collègues,
         <strong style="color:var(--t)">uniquement ce que vous choisissez de partager</strong>.
@@ -365,6 +381,158 @@ function cabinetCopyId(id) {
   navigator.clipboard?.writeText(id).then(() => {
     if (typeof showToast === 'function') showToast('✅ ID copié dans le presse-papier !', 'ok');
   }).catch(() => prompt('Copiez cet ID :', id));
+}
+
+/* ════════════════════════════════════════════════
+   MODE DÉMO SOLO — Admin sans cabinet réel
+   Simule un cabinet à 2 IDEs avec l'admin
+   pour tester toutes les fonctions multi-IDE
+   sans créer d'entrée en base de données.
+════════════════════════════════════════════════ */
+function cabinetDemoSolo() {
+  const u   = APP.user || S?.user || {};
+  const nom = ((u.prenom || '') + ' ' + (u.nom || '')).trim() || 'Admin';
+
+  // Créer un cabinet synthétique en mémoire uniquement
+  const fakeCabinet = {
+    id:      'demo-solo-' + (u.id || 'admin'),
+    nom:     'Cabinet Démo — ' + nom,
+    my_role: 'titulaire',
+    members: [
+      { id: u.id || 'ide_0', nom: u.nom || '', prenom: u.prenom || nom, role: 'titulaire' },
+      { id: 'ide_demo_2',    nom: 'Dupont', prenom: 'IDE 2 (démo)',      role: 'membre'    },
+    ],
+    sync_prefs: _loadSyncPrefs(),
+    _demo: true, // flag : pas de persistance backend
+  };
+
+  APP.set('cabinet', fakeCabinet);
+  _updateCabinetBadge(2);
+
+  // Activer le toggle cabinet dans la cotation
+  if (typeof initCotationCabinetToggle === 'function') initCotationCabinetToggle();
+  _updateTourneeCabinetPanel();
+
+  const root = document.getElementById('cabinet-root');
+  if (root) _renderCabinetDemoDashboard(root, fakeCabinet);
+
+  if (typeof showToast === 'function')
+    showToast('success', 'Mode démo solo activé', '2 IDEs simulés — aucune donnée en base');
+}
+
+/* ── Dashboard démo solo ─────────────────────── */
+function _renderCabinetDemoDashboard(root, cab) {
+  const members  = cab.members || [];
+  const prefs    = _loadSyncPrefs();
+
+  const whatItems = [
+    { key: 'planning',    icon: '📅', label: 'Planning & tournée',    desc: 'Partagez votre planning du jour' },
+    { key: 'patients',    icon: '👤', label: 'Patients communs',       desc: 'Partagez la liste de vos patients' },
+    { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP',         desc: 'Synchronisez les cotations multi-IDE' },
+    { key: 'ordonnances', icon: '💊', label: 'Ordonnances',             desc: 'Partagez les ordonnances actives' },
+    { key: 'km',          icon: '🚗', label: 'Journal kilométrique',    desc: 'Synchronisez les km cabinet' },
+  ];
+
+  root.innerHTML = `
+    <!-- Bannière démo -->
+    <div class="ai in" style="margin-bottom:16px;font-size:12px">
+      🛡️ <strong>Mode démo solo actif</strong> · Cabinet simulé en mémoire — toutes les fonctions multi-IDE sont testables.
+      Les données ne sont pas persistées en base. <button onclick="_cabinetExitDemo()" style="background:none;border:none;color:var(--a);cursor:pointer;font-size:12px;text-decoration:underline;padding:0;margin-left:8px">Quitter la démo</button>
+    </div>
+
+    <!-- En-tête cabinet -->
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+        <div>
+          <div style="font-size:20px;font-family:var(--fs);font-weight:700">🏥 ${cab.nom}</div>
+          <div style="font-size:12px;color:var(--m);font-family:var(--fm);margin-top:2px">
+            👑 Titulaire · ${members.length} IDE(s) simulé(s)
+          </div>
+        </div>
+        <button class="btn bp bsm" onclick="cabinetCreate()"><span>🏥</span> Créer un vrai cabinet</button>
+      </div>
+    </div>
+
+    <!-- Membres simulés -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="ct" style="margin-bottom:14px">👥 IDEs simulés</div>
+      ${members.map(m => `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--b)">
+          <div style="width:36px;height:36px;border-radius:50%;background:rgba(0,212,170,.15);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+            ${m.role === 'titulaire' ? '👑' : '👤'}
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:14px">${m.prenom} ${m.nom} ${m.id===APP.user?.id?'<span style="font-size:10px;color:var(--a);font-family:var(--fm)">(moi)</span>':''}</div>
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre simulé'}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Ce que je synchronise -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="ct">🔄 Ce que je synchronise</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:12px;margin-bottom:16px">
+        ${whatItems.map(item => `
+          <label style="display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--b);border-radius:10px;cursor:pointer;background:var(--s)">
+            <input type="checkbox" id="sync-what-${item.key}" ${prefs.what[item.key] ? 'checked' : ''}
+              onchange="cabinetToggleSyncWhat('${item.key}', this.checked)"
+              style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0;margin-top:1px">
+            <div>
+              <div style="font-weight:600;font-size:13px">${item.icon} ${item.label}</div>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">${item.desc}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+    </div>
+
+    <!-- Actions démo -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="ct">⚡ Tester les fonctions multi-IDE</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:8px">
+        <button class="btn bp" onclick="navTo('cot',null);setTimeout(()=>document.getElementById('cot-cabinet-mode')?.click?.(),400)">
+          <span>🩺</span> Tester cotation multi-IDE
+        </button>
+        <button class="btn bs" onclick="navTo('tur',null);setTimeout(()=>typeof optimiserTourneeCabinet==='function'&&optimiserTourneeCabinet(),600)">
+          <span>🗺️</span> Tester tournée cabinet
+        </button>
+        <button class="btn bs" onclick="_cabinetDemoSync()">
+          <span>🔄</span> Simuler une synchronisation
+        </button>
+      </div>
+    </div>
+
+    <!-- RGPD -->
+    <div class="card">
+      <div class="ct">🔒 Confidentialité — rappel</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:12px">
+        <div class="ai su">✅ Données démo isolées dans votre IDB admin</div>
+        <div class="ai su">✅ Aucune donnée infirmière accessible</div>
+        <div class="ai in">⚠️ Ce cabinet n'existe pas en base — mode test uniquement</div>
+      </div>
+    </div>`;
+}
+
+function _cabinetExitDemo() {
+  APP.set('cabinet', null);
+  _updateCabinetBadge(0);
+  const root = document.getElementById('cabinet-root');
+  if (root) _renderNoCabinet(root);
+  if (typeof showToast === 'function') showToast('info', 'Mode démo quitté');
+}
+
+function _cabinetDemoSync() {
+  if (typeof showToast === 'function') {
+    showToast('info', 'Synchronisation simulée', 'En mode démo, les données restent locales.');
+  }
+  const statusEl = document.getElementById('sync-status-result');
+  if (statusEl) {
+    statusEl.innerHTML = `
+      <div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:12px;font-size:12px">
+        <div style="font-weight:700;color:var(--a);margin-bottom:6px">📊 État de synchronisation (démo)</div>
+        <div style="color:var(--m)">IDE 2 (démo) — Dernière sync : maintenant · Statut : ✅ Simulé</div>
+        <div style="color:var(--m);margin-top:4px">Mode démo : aucune donnée réelle échangée</div>
+      </div>`;
+  }
 }
 
 /* ════════════════════════════════════════════════
