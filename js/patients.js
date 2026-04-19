@@ -236,7 +236,9 @@ async function patientAddConstante(patientId, mesure) {
     const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
     if (!Array.isArray(p.constantes)) p.constantes = [];
     p.constantes.push({ ...mesure, _saved_at: new Date().toISOString() });
-    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    await _idbPut(PATIENTS_STORE, toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
   } catch (e) { console.warn('[patientAddConstante]', e.message); }
 }
 
@@ -252,7 +254,9 @@ async function patientAddPilulier(patientId, pilulier) {
     const entry = { ...pilulier, _saved_at: new Date().toISOString() };
     if (existIdx >= 0) p.piluliers[existIdx] = entry;
     else p.piluliers.push(entry);
-    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    await _idbPut(PATIENTS_STORE, toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
   } catch (e) { console.warn('[patientAddPilulier]', e.message); }
 }
 
@@ -287,6 +291,33 @@ async function _deletePilulierPatient(patientId, idx) {
     if (typeof showToast === 'function') showToast('info', 'Pilulier supprimé');
     _patTab('pilulier', patientId);
   } catch (e) { if (typeof showToast === 'function') showToast('error', 'Erreur', e.message); }
+}
+
+/**
+ * Embarque les notes de soins (NOTES_STORE) dans le _data chiffré
+ * de la fiche patient, puis déclenche la synchronisation serveur.
+ * Permet la sync des notes entre appareils via carnet_patients.
+ * @param {string} patientId
+ */
+async function _syncNotesIntoPatient(patientId) {
+  if (!S?.token) return;
+  try {
+    await initPatientsDB();
+    // Lire les notes depuis l'IDB notes
+    const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', patientId);
+    // Lire la fiche patient
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    // Embed les notes triées par date décroissante (sans l'id auto-increment IDB)
+    p.notes_soins = notes
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .map(n => ({ texte: n.texte, date: n.date, heure: n.heure, date_edit: n.date_edit }));
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    await _idbPut(PATIENTS_STORE, toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+  } catch (e) { console.warn('[_syncNotesIntoPatient]', e.message); }
 }
 
 /**
@@ -1165,13 +1196,15 @@ async function deletePatient(id, name) {
 async function addSoinNote(patientId) {
   const txt = ($('new-note-txt')?.value || '').trim();
   if (!txt) { alert('Saisissez une note.'); return; }
-  const now = new Date();
+  const now   = new Date();
   const heure = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const note = { patient_id: patientId, texte: txt, date: now.toISOString(), heure };
+  const note  = { patient_id: patientId, texte: txt, date: now.toISOString(), heure };
   await _idbPut(NOTES_STORE, note);
   $('new-note-txt').value = '';
   await openPatientDetail(patientId);
   showToastSafe('📝 Note enregistrée.');
+  // Sync : embarquer les notes dans la fiche patient _data
+  _syncNotesIntoPatient(patientId).catch(() => {});
 }
 
 /* ── Éditer une note inline ── */
@@ -1202,6 +1235,7 @@ async function saveSoinNote(noteId, patientId) {
   await _idbPut(NOTES_STORE, { ...existing, texte: txt, date_edit: new Date().toISOString() });
   await openPatientDetail(patientId);
   showToastSafe('✅ Note modifiée.');
+  _syncNotesIntoPatient(patientId).catch(() => {});
 }
 
 async function deleteSoinNote(noteId, patientId) {
@@ -1209,6 +1243,7 @@ async function deleteSoinNote(noteId, patientId) {
   await _idbDelete(NOTES_STORE, noteId);
   await openPatientDetail(patientId);
   showToastSafe('🗑️ Note supprimée.');
+  _syncNotesIntoPatient(patientId).catch(() => {});
 }
 
 /* Supprimer toutes les notes de soins d'un patient */
@@ -1218,6 +1253,7 @@ async function deleteAllSoinNotes(patientId) {
   for (const n of notes) await _idbDelete(NOTES_STORE, n.id);
   await openPatientDetail(patientId);
   showToastSafe('🗑️ Historique des soins supprimé.');
+  _syncNotesIntoPatient(patientId).catch(() => {});
 }
 
 /* ── Éditer une cotation dans la fiche patient ── */
@@ -2254,8 +2290,9 @@ async function syncPatientsFromServer() {
       // carnet_patients est la source de vérité pour les fiches patients et leurs cotations
       if (!local || remoteDate >= localDate) {
         let nom = '', prenom = '';
+        let decoded = null;
         try {
-          const decoded = _dec(rp.encrypted_data);
+          decoded = _dec(rp.encrypted_data);
           if (decoded) { nom = decoded.nom || ''; prenom = decoded.prenom || ''; }
         } catch(_) {}
 
@@ -2266,6 +2303,26 @@ async function syncPatientsFromServer() {
           _data:      rp.encrypted_data,
           updated_at: rp.updated_at,
         });
+
+        // Restaurer les notes_soins dans le NOTES_STORE si présentes dans _data
+        if (decoded?.notes_soins?.length) {
+          // Lire les notes locales existantes pour ce patient
+          const localNotes = await _idbGetByIndex(NOTES_STORE, 'patient_id', remoteId);
+          const localNoteDates = new Set(localNotes.map(n => n.date));
+          // N'insérer que les notes absentes localement (pas d'écrasement)
+          for (const n of decoded.notes_soins) {
+            if (!localNoteDates.has(n.date)) {
+              await _idbPut(NOTES_STORE, {
+                patient_id: remoteId,
+                texte:      n.texte,
+                date:       n.date,
+                heure:      n.heure || '',
+                date_edit:  n.date_edit || null,
+              });
+            }
+          }
+        }
+
         merged++;
       }
     }
