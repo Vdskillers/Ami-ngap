@@ -1054,20 +1054,20 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 | `consentements.js` | Consentements éclairés + signature canvas + archivage | **v1.0** |
 | `alertes-medicaments.js` | Détection interactions ANSM 14 règles + hook cotation | **v1.0** |
 | `audit-cpam.js` | Compte-rendu de passage + simulateur audit CPAM 8 règles | **v1.0** |
-| `signature.js` | Signatures canvas + sync | — |
-| `rapport.js` | Rapport PDF + référentiel NGAP | — |
+| `signature.js` | Signatures canvas + sync | v1.0 |
+| `rapport.js` | Rapport PDF + référentiel NGAP | v1.0 |
 | `admin.js` | Panneau admin + Smart Engine stats | v4.1 |
-| `infirmiere-tools.js` | Charges, km, modèles, majorations | — |
-| `copilote.js` | Chat Copilote NGAP | — |
+| `infirmiere-tools.js` | Charges, km, modèles, majorations | v1.0 |
+| `copilote.js` | Chat Copilote NGAP | v1.0 |
 | `ui.js` | Navigation + handlers spéciaux | v5.1 |
-| `utils.js` | Store APP, helpers, apiCall | — |
+| `utils.js` | Store APP, helpers, apiCall | v1.0 |
 | `ai-assistant.js` | Assistant vocal NLP + TTS | v1.1 |
-| `voice.js` | Dictée médicale | — |
-| `onboarding.js` | Introductions guidées (4 modules) | — |
-| `geocode.js` | Photon → Nominatim → cache IDB | — |
-| `extras.js` | OSRM, scoring fraude front | — |
-| `uber.js` | Mode Uber Médical | — |
-| `contact.js` | Messagerie infirmière → admin | — |
+| `voice.js` | Dictée médicale | v1.0 |
+| `onboarding.js` | Introductions guidées (4 modules) | v1.0 |
+| `geocode.js` | Photon → Nominatim → cache IDB | v1.0 |
+| `extras.js` | OSRM, scoring fraude front | v1.0 |
+| `uber.js` | Mode Uber Médical | v1.0 |
+| `contact.js` | Messagerie infirmière → admin | v1.0 |
 | `AI_Agent_AMI_v10.json` | Workflow N8N — 51 nœuds | v10 |
 | `README.md` | Documentation technique (ce fichier) | **v9.0** |
-| `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ (chargé dynamiquement) | — |
+| `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ (chargé dynamiquement) | v1.0 |
