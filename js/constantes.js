@@ -237,7 +237,44 @@ async function _constChangePeriod(val) {
 
 async function constRefresh() {
   if (!_constCurrentPatient) return;
-  const data = await _constGetAll(_constCurrentPatient, _constPeriod);
+  let data = await _constGetAll(_constCurrentPatient, _constPeriod);
+
+  // Fallback : si IDB vide, lire depuis la fiche patient (source de vérité)
+  if (!data.length && typeof getPatientById === 'function') {
+    try {
+      const p = await getPatientById(_constCurrentPatient);
+      if (Array.isArray(p?.constantes) && p.constantes.length) {
+        // Hydrater l'IDB depuis la fiche (évite de refaire le fallback)
+        const db = await _constDb();
+        const existing = await new Promise((res, rej) => {
+          const tx = db.transaction(CONST_STORE, 'readonly');
+          const req = tx.objectStore(CONST_STORE).getAll();
+          req.onsuccess = e => res(e.target.result || []);
+          req.onerror   = e => rej(e.target.error);
+        });
+        const existKeys = new Set(existing.map(c => `${c.patient_id}|${c.date}`));
+        const toImport  = p.constantes.filter(c => !existKeys.has(`${_constCurrentPatient}|${c.date}`));
+        if (toImport.length) {
+          const txW = db.transaction(CONST_STORE, 'readwrite');
+          const store = txW.objectStore(CONST_STORE);
+          for (const m of toImport) {
+            const { id: _x, ...clean } = m;
+            store.add({ ...clean, patient_id: _constCurrentPatient, user_id: APP?.user?.id || '' });
+          }
+          await new Promise((res, rej) => { txW.oncomplete = () => res(); txW.onerror = e => rej(e.target.error); });
+          data = await _constGetAll(_constCurrentPatient, _constPeriod);
+        }
+        if (!data.length) {
+          // Mesures hors période — afficher quand même depuis la fiche
+          const since = new Date(Date.now() - _constPeriod * 86400000).toISOString();
+          data = p.constantes
+            .filter(c => (c.date || '') >= since)
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+        }
+      }
+    } catch (e) { console.warn('[constRefresh fallback]', e.message); }
+  }
+
   constRenderGraphs(data);
   constRenderTable(data);
 }
@@ -502,6 +539,28 @@ function constLoadForEdit(mesure, patientId, idx) {
   showToast('info', 'Mode édition', 'Modifiez les valeurs puis cliquez "Modifier la mesure"');
 }
 
+/* Pré-remplir le formulaire pour modifier une mesure existante */
+function constLoadForEdit(mesure, patientId, idx) {
+  window._constEditMode = { patientId, idx, mesure };
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set('const-ta-sys',  mesure.ta_sys);
+  set('const-ta-dia',  mesure.ta_dia);
+  set('const-gly',     mesure.glycemie);
+  set('const-spo2',    mesure.spo2);
+  set('const-poids',   mesure.poids);
+  set('const-temp',    mesure.temperature);
+  set('const-fc',      mesure.fc);
+  set('const-note',    mesure.note || '');
+  const dtEl = document.getElementById('const-date');
+  if (dtEl && mesure.date) dtEl.value = new Date(mesure.date).toISOString().slice(0, 16);
+  const eva = document.getElementById('const-eva');
+  const evaVal = document.getElementById('const-eva-val');
+  if (eva && mesure.eva != null) { eva.value = mesure.eva; if (evaVal) evaVal.textContent = mesure.eva; }
+  const btn = document.querySelector('[onclick="constSave()"]');
+  if (btn) btn.innerHTML = '<span>💾</span> Modifier la mesure';
+  showToast('info', 'Mode édition', 'Modifiez les valeurs puis cliquez "Modifier la mesure"');
+}
+
 async function constDeleteMeasure(id) {
   if (!confirm('Supprimer cette mesure ?')) return;
   await _constDelete(id);
@@ -540,18 +599,30 @@ async function constSyncPush() {
   if (!uid) return;
 
   try {
-    // Base isolée par userId — getAll() retourne uniquement les données de cet user
+    // Lire depuis l'IDB constantes
     const db  = await _constDb();
-    const all = await new Promise((res, rej) => {
+    let all = await new Promise((res, rej) => {
       const tx  = db.transaction(CONST_STORE, 'readonly');
       const req = tx.objectStore(CONST_STORE).getAll();
       req.onsuccess = e => res(e.target.result || []);
       req.onerror   = e => rej(e.target.error);
     });
 
+    // Fallback : si IDB vide, piocher dans les fiches patients
+    if (!all.length && typeof getAllPatients === 'function') {
+      try {
+        const pts = await getAllPatients();
+        for (const p of pts) {
+          for (const m of (p.constantes || [])) {
+            all.push({ ...m, patient_id: p.id, user_id: APP?.user?.id || '' });
+          }
+        }
+      } catch {}
+    }
+
     if (!all.length) return;
 
-    // Chiffrement stable (clé dérivée userId, pas du token JWT)
+    // Chiffrement stable (clé dérivée userId — identique sur tous les appareils)
     const encrypted_data = _constEnc(all);
     if (!encrypted_data) return;
 
@@ -570,46 +641,74 @@ async function constSyncPull() {
 
   try {
     const resp = await wpost('/webhook/constantes-pull', {});
-    const { data } = resp;
-    if (!data?.encrypted_data) return;
+    if (!resp?.data?.encrypted_data) return;
 
-    // Déchiffrement stable (clé dérivée userId)
-    const remote = _constDec(data.encrypted_data);
+    const rawEnc = resp.data.encrypted_data;
 
-    if (!Array.isArray(remote) || !remote.length) return;
+    // Détecter l'ancien format AES-GCM ({"data":"...","iv":"..."}) incompatible
+    // Ce format a été produit par l'ancien code avec encryptData() (clé de session).
+    // Il ne peut pas être déchiffré avec _constDec (clé userId stable).
+    // → Ignorer et forcer un push pour écraser avec le bon format.
+    try {
+      const parsed = JSON.parse(rawEnc);
+      if (parsed?.iv !== undefined) {
+        console.warn('[constSyncPull] Format AES-GCM détecté en base — incompatible avec le déchiffrement stable. Un push va écraser cette entrée.');
+        constSyncPush().catch(() => {});
+        return;
+      }
+    } catch (_) { /* pas du JSON = format btoa correct, continuer */ }
 
-    // Merge : insérer uniquement les mesures absentes localement
-    const db       = await _constDb();
-    const existing = await new Promise((res2, rej) => {
-      // Base isolée par userId — getAll() retourne uniquement les données de cet user
-      const tx  = db.transaction(CONST_STORE, 'readonly');
+    // Déchiffrement stable (même clé que le push — dérivée de userId)
+    const remote = _constDec(rawEnc);
+    if (!Array.isArray(remote) || !remote.length) {
+      // Données corrompues ou vides — forcer un push pour réécrire
+      console.warn('[constSyncPull] Déchiffrement échoué — push forcé pour corriger la ligne en base.');
+      constSyncPush().catch(() => {});
+      return;
+    }
+
+    // Lire l'IDB locale
+    const db = await _constDb();
+    const existing = await new Promise((res, rej) => {
+      const tx = db.transaction(CONST_STORE, 'readonly');
       const req = tx.objectStore(CONST_STORE).getAll();
-      req.onsuccess = e => res2(e.target.result || []);
+      req.onsuccess = e => res(e.target.result || []);
       req.onerror   = e => rej(e.target.error);
     });
 
-    // Clé de déduplication : patient_id + date (ms) + user_id
-    const existSet = new Set(existing.map(c => `${c.patient_id}|${c.date}|${c.user_id}`));
+    // Dédup par patient_id + date uniquement (user_id peut être '' ou absent)
+    const existKeys = new Set(existing.map(c => `${c.patient_id}|${c.date}`));
 
     let imported = 0;
     const txW = db.transaction(CONST_STORE, 'readwrite');
     const store = txW.objectStore(CONST_STORE);
+    const toFirePatient = []; // pour mise à jour fiches patients après commit IDB
+
     for (const m of remote) {
-      const key = `${m.patient_id}|${m.date}|${m.user_id}`;
-      if (!existSet.has(key)) {
-        // Supprimer l'id pour laisser autoIncrement assigner un nouvel id local
-        const { id: _drop, ...mWithoutId } = m;
-        store.add({ ...mWithoutId, _synced: true });
-        imported++;
-      }
+      const key = `${m.patient_id}|${m.date}`;
+      if (existKeys.has(key)) continue;
+      const { id: _x, ...clean } = m;
+      store.add({ ...clean, user_id: APP?.user?.id || '', _synced: true });
+      existKeys.add(key);
+      toFirePatient.push(m);
+      imported++;
     }
-    await new Promise((res3, rej) => {
-      txW.oncomplete = () => res3();
+
+    await new Promise((res, rej) => {
+      txW.oncomplete = () => res();
       txW.onerror    = e  => rej(e.target.error);
     });
 
     if (imported > 0) {
-      log(`[constSyncPull] ${imported} mesure(s) importée(s) depuis le serveur`);
+      console.info(`[constSyncPull] ${imported} mesure(s) importée(s)`);
+      // Mettre à jour les fiches patients (source de vérité)
+      if (typeof patientAddConstante === 'function') {
+        for (const m of toFirePatient) {
+          await patientAddConstante(m.patient_id, m).catch(() => {});
+        }
+      }
+      // Rafraîchir si module ouvert
+      if (_constCurrentPatient) constRefresh().catch(() => {});
     }
   } catch (e) {
     console.warn('[constSyncPull]', e.message);
@@ -620,8 +719,10 @@ document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'constantes') renderConstantes();
 });
 
-/* Sync pull au login — attend que la session soit disponible */
+/* Au login : push d'abord (écrase les lignes corrompues), puis pull */
 document.addEventListener('ami:login', () => {
-  constSyncPull().catch(() => {});
+  constSyncPush().catch(() => {}).finally(() => {
+    constSyncPull().catch(() => {});
+  });
 });
 
