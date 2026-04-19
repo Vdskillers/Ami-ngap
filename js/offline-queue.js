@@ -50,7 +50,46 @@ async function syncOfflineQueue() {
   for (const item of q) {
     try {
       const { _queued_at, _id, ...payload } = item;
-      await apiCall('/webhook/ami-calcul', payload);
+      const result = await apiCall('/webhook/ami-calcul', payload);
+      // Si l'API retourne une cotation valide avec actes, sauvegarder en IDB
+      if (result?.actes?.length && result?.total > 0) {
+        const _CODES_MAJ_OQ = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+        const _hasTech = (result.actes || []).some(a => !_CODES_MAJ_OQ.has((a.code||'').toUpperCase()));
+        if (_hasTech && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          try {
+            const _patNom = (payload.patient_nom || '').trim();
+            if (_patNom) {
+              const _rows = await _idbGetAll(PATIENTS_STORE);
+              const _nomLow = _patNom.toLowerCase();
+              const _row = _rows.find(r =>
+                ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+                ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+              );
+              if (_row && typeof _dec === 'function' && typeof _enc === 'function') {
+                const _p = { ...(_dec(_row._data)||{}), id: _row.id, nom: _row.nom, prenom: _row.prenom };
+                if (!Array.isArray(_p.cotations)) _p.cotations = [];
+                const _todayOQ = (payload.date_soin || new Date().toISOString().slice(0,10));
+                const _existOQ = _p.cotations.findIndex(c =>
+                  (c.invoice_number && c.invoice_number === result.invoice_number) ||
+                  (c.source === 'offline_queue' && (c.date||'').slice(0,10) === _todayOQ)
+                );
+                const _cotOQ = {
+                  date: payload.date_soin || new Date().toISOString(),
+                  heure: payload.heure_soin || '',
+                  actes: result.actes, total: parseFloat(result.total),
+                  soin: (payload.texte||'').slice(0,120),
+                  source: 'offline_queue', invoice_number: result.invoice_number || null,
+                  _synced: true, updated_at: new Date().toISOString(),
+                };
+                if (_existOQ >= 0) { _p.cotations[_existOQ] = _cotOQ; }
+                else { _p.cotations.push(_cotOQ); }
+                _p.updated_at = new Date().toISOString();
+                await _idbPut(PATIENTS_STORE, { id: _p.id, nom: _p.nom, prenom: _p.prenom, _data: _enc(_p), updated_at: _p.updated_at });
+              }
+            }
+          } catch (_eOQ) { console.warn('[offline-queue] IDB save KO:', _eOQ.message); }
+        }
+      }
       synced++;
     } catch {
       failed.push(item);

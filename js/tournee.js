@@ -3143,21 +3143,18 @@ async function openCotationPatient(patientIndex) {
      Cela garantit que l'IA reçoit "Diabète — Injection insuline SC, surveillance glycémie..."
      plutôt que simplement "Diabète" qui ne génère aucun acte technique. */
   const texteImport = (patient.texte || patient.description || '').trim();
-  const _pathoConverti = patient.pathologies
-    ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(patient.pathologies) : patient.pathologies)
-    : '';
+  // pathologiesToActes sur champ pathologies OU sur texteImport lui-même si c'est une patho brute
+  const _pathoSrcOCP   = patient.pathologies || texteImport;
+  const _hasActeKwOCP  = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol|insuline|glycémie/i;
+  const _pathoConverti = _pathoSrcOCP && typeof pathologiesToActes === 'function'
+    ? pathologiesToActes(_pathoSrcOCP) : '';
 
-  // Fusionner : texteImport + _pathoConverti (si différents pour éviter doublon)
   const _texteBase = (() => {
-    if (!texteImport && !_pathoConverti) return 'soin infirmier à domicile';
-    if (!texteImport) return _pathoConverti;
-    if (!_pathoConverti) return texteImport;
-    // Si le texteImport est une pathologie brute (court, pas d'acte NGAP dedans),
-    // enrichir avec la conversion — sinon garder le texteImport seul (déjà détaillé)
-    const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol/i.test(texteImport);
-    return _hasActeKeyword
-      ? texteImport  // texte déjà bien décrit → on garde tel quel
-      : (texteImport + ' — ' + _pathoConverti);  // pathologie brute → enrichir
+    if (_hasActeKwOCP.test(texteImport)) return texteImport; // déjà des actes explicites
+    if (_pathoConverti && _pathoConverti !== texteImport) {
+      return texteImport ? (texteImport + ' — ' + _pathoConverti) : _pathoConverti;
+    }
+    return texteImport || 'soin infirmier à domicile';
   })();
 
   const texteForCot = actesRecurrents

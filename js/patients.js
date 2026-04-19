@@ -1427,7 +1427,14 @@ async function syncCotationsPatient(patientId) {
     // ── 1. Push TOUTES les cotations avec montant → Supabase ─────────────
     // Inclut les cotations déjà sync — le worker fait PATCH et écrit patient_id
     // C'est le seul moyen de garantir que patient_id est en base pour la sync mobile
-    const aPush = p.cotations.filter(c => parseFloat(c.total||0) > 0);
+    // Push uniquement cotations avec acte technique (pas les maj seules DIM/NUIT/IFD)
+    const _CODES_MAJ_PUSH = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+    const aPush = p.cotations.filter(c => {
+      if (parseFloat(c.total||0) <= 0) return false;
+      const actes = c.actes || [];
+      if (!actes.length) return true; // cotation sans actes listés → laisser passer (formulaire manuel)
+      return actes.some(a => !_CODES_MAJ_PUSH.has((a.code||'').toUpperCase()));
+    });
     if (aPush.length) {
       const payload = aPush.map(c => ({
         actes:          c.actes || [],
@@ -1457,10 +1464,17 @@ async function syncCotationsPatient(patientId) {
     );
 
     // Ajouter les cotations serveur absentes de l'IDB
+    const _CODES_MAJ_SYNC = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
     for (const sc of serverCots) {
       if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
       let actes = [];
       try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
+      // Guard : ignorer les cotations sans acte technique (majoration seule)
+      const _hasTechSync = actes.some(a => !_CODES_MAJ_SYNC.has((a.code||'').toUpperCase()));
+      if (!_hasTechSync && actes.length > 0) {
+        console.warn('[syncCotations] cotation ignorée (maj seule):', actes.map(a=>a.code), sc.invoice_number);
+        continue;
+      }
       p.cotations.push({
         date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
         total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
@@ -2460,10 +2474,14 @@ async function syncCotationsFromServer() {
       // (uniquement celles absentes de l'IDB)
       const serverCots = serverCotsByPid.get(row.id) || [];
       let added = 0;
+      const _CODES_MAJ_NS = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
       for (const sc of serverCots) {
         if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
         let actes = [];
         try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
+        // Guard : ignorer cotations sans acte technique
+        const _hasTechNS = actes.some(a => !_CODES_MAJ_NS.has((a.code||'').toUpperCase()));
+        if (!_hasTechNS && actes.length > 0) continue;
         p.cotations.push({
           date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
           total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),

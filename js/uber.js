@@ -183,12 +183,20 @@ async function _autoCoterEtImporterPatient(p) {
       } catch (_e) {}
 
       const texteImport  = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
-      const _pathoConv   = p.pathologies
-        ? (typeof pathologiesToActes === 'function' ? pathologiesToActes(p.pathologies) : p.pathologies)
-        : '';
-      const texte = actesRecurrents
-        ? (actesRecurrents + (texteImport ? ' — ' + texteImport : ''))
-        : (texteImport || _pathoConv);
+      // Convertir pathologies OU description brute via pathologiesToActes()
+      // (couvre le cas description="Diabète" sans champ pathologies rempli)
+      const _pathoSrc  = p.pathologies || texteImport;
+      const _hasActe   = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|insuline|glycémie/i;
+      const _pathoConv = _pathoSrc && typeof pathologiesToActes === 'function'
+        ? pathologiesToActes(_pathoSrc) : '';
+      // Base : texteImport enrichi si c'est une pathologie brute
+      const _texteBase = _hasActe.test(texteImport)
+        ? texteImport
+        : (_pathoConv && _pathoConv !== texteImport
+            ? (texteImport ? texteImport + ' — ' + _pathoConv : _pathoConv)
+            : (texteImport || 'soin infirmier à domicile'));
+      // actes_recurrents prime
+      const texte = actesRecurrents || _texteBase;
 
       if (texte) {
         let cot = (typeof autoCotationLocale === 'function')
@@ -241,13 +249,36 @@ async function _autoCoterEtImporterPatient(p) {
       }
 
       if (!pat.cotations) pat.cotations = [];
-      pat.cotations.push({
+
+      // Guard : ne sauvegarder que si au moins un acte technique (pas juste DIM/IFD...)
+      const _CODES_MAJ_U = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+      const _actesTechU = (p._cotation.actes || []).filter(a => !_CODES_MAJ_U.has((a.code||'').toUpperCase()));
+      if (!_actesTechU.length) {
+        console.warn('[uber] Cotation ignorée — pas d\'acte technique:', (p._cotation.actes||[]).map(a=>a.code));
+        return;
+      }
+
+      // Upsert : chercher une cotation existante pour ce patient aujourd'hui
+      const _todayStr = todayStr; // YYYY-MM-DD
+      const _existUberIdx = pat.cotations.findIndex(c =>
+        (c.source === 'tournee_live' || c.source === 'tournee' || c.source === 'tournee_auto') &&
+        (c.date || '').slice(0, 10) === _todayStr
+      );
+      const _cotEntryUber = {
         date:   today,
         actes:  p._cotation.actes || [],
         total:  parseFloat(p._cotation.total || 0),
         soin:   (p.description || p.texte || '').slice(0, 120),
         source: 'tournee_live',
-      });
+        invoice_number: p._cotation.invoice_number || null,
+        _synced: false,
+        updated_at: today,
+      };
+      if (_existUberIdx >= 0) {
+        pat.cotations[_existUberIdx] = _cotEntryUber; // mise à jour
+      } else {
+        pat.cotations.push(_cotEntryUber); // première cotation du jour
+      }
       pat.updated_at = today;
 
       await _idbPut(PATIENTS_STORE, {
