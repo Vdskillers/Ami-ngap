@@ -1377,33 +1377,58 @@ function detectDelay(currentPatient){
 async function autoFacturation(patient){
   // Génère la cotation automatique — ne met plus à jour le CA directement
   // (c'est la modale de vérification qui l'incrémente après validation)
-  if(!patient?.description && !patient?.texte && !patient?.actes_recurrents && !patient?.pathologies)return;
+  if(!patient) return;
   try{
-    const u=S?.user||{};
-    /* Enrichissement : si la description est une pathologie brute (ex: "Diabète")
-       sans actes NGAP explicites, on la convertit via pathologiesToActes()
-       pour que l'IA reçoive "Diabète — Injection insuline SC, surveillance glycémie..."
-       et génère les bons actes techniques (AMI1, glycémie...) en plus des majorations. */
-    const _rawDesc = (patient.actes_recurrents || patient.description || patient.texte || '').trim();
-    const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol|insuline|glycémie/i.test(_rawDesc);
-    const _pathoConverti = patient.pathologies && typeof pathologiesToActes === 'function'
-      ? pathologiesToActes(patient.pathologies)
-      : '';
-    const _texteEnrichi = (_rawDesc && !_hasActeKeyword && _pathoConverti)
-      ? (_rawDesc + ' — ' + _pathoConverti)
-      : (_rawDesc || _pathoConverti || 'soin infirmier à domicile');
+    const u = S?.user || {};
 
-    const d=await apiCall('/webhook/ami-calcul',{
-      mode:'ngap',texte:_texteEnrichi,
-      infirmiere:((u.prenom||'')+' '+(u.nom||'')).trim(),
-      adeli:u.adeli||'',rpps:u.rpps||'',structure:u.structure||'',
-      date_soin:new Date().toISOString().split('T')[0],
-      heure_soin:patient.heure_soin||patient.heure_preferee||new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
-      _live_auto:true,
-      preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
+    /* ── 1. Récupérer la fiche IDB complète (actes_recurrents + pathologies) ──
+       Les patients importés dans le Pilotage n'ont souvent que description="Diabète"
+       sans pathologies ni actes_recurrents. On les récupère depuis l'IDB. */
+    let ficheIDB = {};
+    try {
+      if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+        const rows = await _idbGetAll(PATIENTS_STORE);
+        const pid  = patient.patient_id || patient.id;
+        const row  = rows.find(r => r.id === pid);
+        if (row && typeof _dec === 'function') ficheIDB = _dec(row._data) || {};
+      }
+    } catch(_) {}
+
+    /* ── 2. Construire le texte enrichi ── */
+    const actesRec    = (ficheIDB.actes_recurrents || patient.actes_recurrents || '').trim();
+    const rawDesc     = (patient.description || patient.texte || '').trim();
+    const pathologies = ficheIDB.pathologies || patient.pathologies || '';
+
+    const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol|insuline|glycémie/i;
+
+    const _pathoConverti = pathologies && typeof pathologiesToActes === 'function'
+      ? pathologiesToActes(pathologies)
+      : '';
+
+    // Base = rawDesc enrichie des actes NGAP si c'est une pathologie brute
+    const _texteBase = (() => {
+      if (!rawDesc && !_pathoConverti) return 'soin infirmier à domicile';
+      if (!rawDesc) return _pathoConverti;
+      if (!_pathoConverti) return rawDesc;
+      return _hasActeKeyword.test(rawDesc) ? rawDesc : (rawDesc + ' — ' + _pathoConverti);
+    })();
+
+    // actes_recurrents prime sur tout le reste
+    const texteForCot = actesRec
+      ? (actesRec + (_texteBase && _texteBase !== 'soin infirmier à domicile' ? ' — ' + _texteBase : ''))
+      : _texteBase;
+
+    const d = await apiCall('/webhook/ami-calcul', {
+      mode: 'ngap', texte: texteForCot,
+      infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
+      adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
+      date_soin: new Date().toISOString().split('T')[0],
+      heure_soin: patient.heure_soin || patient.heure_preferee || new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+      _live_auto: true,
+      preuve_soin: { type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     return d;
-  }catch(e){console.warn('Auto-facturation: ',e.message);}
+  } catch(e){ console.warn('Auto-facturation: ', e.message); }
 }
 
 function updateLiveCaCard(patient, cot) {
@@ -2042,7 +2067,15 @@ window.liveAction=async function(action){
       // Auto-facturation CA
       const cot = await autoFacturation(activeP);
       // Cotation locale en fallback si API indisponible
-      const cotLocal = autoCotationLocale(activeP.description||activeP.texte||'');
+      // Enrichir le texte du fallback local avec pathologiesToActes() si pathologie brute
+      const _cotLocalDesc = (() => {
+        const raw  = (activeP.description || activeP.texte || '').trim();
+        const patho = activeP.pathologies || '';
+        const conv  = patho && typeof pathologiesToActes === 'function' ? pathologiesToActes(patho) : '';
+        const hasActe = /injection|pansement|perfusion|nursing|insuline|prélèvement/i.test(raw);
+        return (raw && !hasActe && conv) ? (raw + ' — ' + conv) : (raw || conv || 'soin infirmier à domicile');
+      })();
+      const cotLocal = autoCotationLocale(_cotLocalDesc);
       const cotAffichee = (cot && cot.actes?.length) ? cot : cotLocal;
       // Afficher la modale de cotation
       showCotationModal(activeP, cotAffichee);
