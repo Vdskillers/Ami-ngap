@@ -1,0 +1,36 @@
+name: Bump SW Cache Version
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bump cache version avec timestamp
+        run: |
+          # Génère une version unique basée sur la date + heure UTC
+          VERSION="ami-v$(date -u +'%Y%m%d-%H%M')"
+          echo "Nouvelle version : $VERSION"
+
+          # Remplace la ligne CACHE_VERSION dans sw.js
+          sed -i "s/const CACHE_VERSION = '.*';/const CACHE_VERSION = '${VERSION}';/" sw.js
+
+          # Vérification
+          grep "CACHE_VERSION" sw.js
+
+      - name: Commit sw.js mis à jour
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sw.js
+          # Commit seulement si sw.js a changé
+          git diff --staged --quiet || git commit -m "chore: bump SW cache version [skip ci]"
+          git push
