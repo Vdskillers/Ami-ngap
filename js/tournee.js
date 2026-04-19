@@ -1397,20 +1397,25 @@ async function autoFacturation(patient){
     /* ── 2. Construire le texte enrichi ── */
     const actesRec    = (ficheIDB.actes_recurrents || patient.actes_recurrents || '').trim();
     const rawDesc     = (patient.description || patient.texte || '').trim();
-    const pathologies = ficheIDB.pathologies || patient.pathologies || '';
+    // pathologies = champ IDB > champ patient > rawDesc lui-même (si c'est une pathologie brute)
+    const pathologies = ficheIDB.pathologies || patient.pathologies || rawDesc;
 
     const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol|insuline|glycémie/i;
 
+    // Convertir les pathologies en actes NGAP lisibles
+    // Fonctionne même si rawDesc = "Diabète" et patient.pathologies est vide
     const _pathoConverti = pathologies && typeof pathologiesToActes === 'function'
       ? pathologiesToActes(pathologies)
       : '';
 
-    // Base = rawDesc enrichie des actes NGAP si c'est une pathologie brute
+    // Base : si rawDesc contient déjà des actes → garder tel quel
+    //        sinon enrichir avec la conversion pathologies→actes
     const _texteBase = (() => {
-      if (!rawDesc && !_pathoConverti) return 'soin infirmier à domicile';
-      if (!rawDesc) return _pathoConverti;
-      if (!_pathoConverti) return rawDesc;
-      return _hasActeKeyword.test(rawDesc) ? rawDesc : (rawDesc + ' — ' + _pathoConverti);
+      if (_hasActeKeyword.test(rawDesc)) return rawDesc; // déjà des actes explicites
+      if (_pathoConverti && _pathoConverti !== rawDesc) {
+        return rawDesc ? (rawDesc + ' — ' + _pathoConverti) : _pathoConverti;
+      }
+      return rawDesc || 'soin infirmier à domicile';
     })();
 
     // actes_recurrents prime sur tout le reste
@@ -1870,8 +1875,14 @@ function renderLiveReco(texte) {
    ============================================================ */
 function autoCotationLocale(texte) {
   // Fallback local — déclenché si l'API N8N est indisponible.
-  // Aligné avec les textes produits par pathologiesToActes() v2.
-  const t = texte.toLowerCase();
+  // Enrichit d'abord le texte si c'est une pathologie brute sans actes NGAP.
+  const _hasActeKeyword = /injection|pansement|prélèvement|perfusion|nursing|toilette|bilan|sonde|aérosol|insuline|glycémie/i;
+  let texteEnrichi = texte;
+  if (texte && !_hasActeKeyword.test(texte) && typeof pathologiesToActes === 'function') {
+    const conv = pathologiesToActes(texte);
+    if (conv && conv !== texte) texteEnrichi = texte + ' — ' + conv;
+  }
+  const t = texteEnrichi.toLowerCase();
   const actes = []; let total = 0;
 
   // ── Actes techniques ──
@@ -2067,13 +2078,15 @@ window.liveAction=async function(action){
       // Auto-facturation CA
       const cot = await autoFacturation(activeP);
       // Cotation locale en fallback si API indisponible
-      // Enrichir le texte du fallback local avec pathologiesToActes() si pathologie brute
+      // Enrichir le texte du fallback local avec pathologiesToActes()
+      // Fonctionne même si description = "Diabète" et pathologies est vide
       const _cotLocalDesc = (() => {
-        const raw  = (activeP.description || activeP.texte || '').trim();
-        const patho = activeP.pathologies || '';
+        const raw   = (activeP.description || activeP.texte || '').trim();
+        const patho = activeP.pathologies || raw; // utiliser rawDesc si pathologies vide
         const conv  = patho && typeof pathologiesToActes === 'function' ? pathologiesToActes(patho) : '';
-        const hasActe = /injection|pansement|perfusion|nursing|insuline|prélèvement/i.test(raw);
-        return (raw && !hasActe && conv) ? (raw + ' — ' + conv) : (raw || conv || 'soin infirmier à domicile');
+        const hasActe = /injection|pansement|perfusion|nursing|insuline|prélèvement|glycémie/i.test(raw);
+        if (hasActe) return raw;
+        return (conv && conv !== raw) ? (raw ? raw + ' — ' + conv : conv) : (raw || 'soin infirmier à domicile');
       })();
       const cotLocal = autoCotationLocale(_cotLocalDesc);
       const cotAffichee = (cot && cot.actes?.length) ? cot : cotLocal;
