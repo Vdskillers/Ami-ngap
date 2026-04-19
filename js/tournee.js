@@ -3305,6 +3305,20 @@ async function openCotationPatient(patientIndex) {
     if (typeof autoCotationLocale === 'function') cotation = autoCotationLocale(texteForCot);
   }
 
+  // Propager invoice_number vers patient._cotation pour que _openCotationComplete
+  // et _cotationCheckDoublon puissent identifier la cotation Supabase existante.
+  // Sans cela, toute re-cotation fait un INSERT au lieu d'un PATCH → doublon.
+  if (cotation?.invoice_number) {
+    patient._cotation = {
+      ...(patient._cotation || {}),
+      invoice_number: cotation.invoice_number,
+      actes:          cotation.actes || [],
+      total:          parseFloat(cotation.total || 0),
+      validated:      true,
+      auto:           true,
+    };
+  }
+
   showCotationModal(patient, cotation || { actes: [], total: 0 }, null);
 }
 

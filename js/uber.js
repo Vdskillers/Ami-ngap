@@ -212,7 +212,16 @@ async function _autoCoterEtImporterPatient(p) {
           }) : Promise.reject('no apiCall'));
           if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
         } catch (_e) { /* silencieux — fallback local déjà prêt */ }
-        p._cotation = { actes: cot.actes || [], total: parseFloat(cot.total || 0), auto: true, validated: true };
+        // Conserver invoice_number retourné par le worker — indispensable pour
+        // que toute re-cotation manuelle ultérieure fasse un PATCH Supabase
+        // et non un INSERT (évite le doublon dans l'historique des soins).
+        p._cotation = {
+          actes:          cot.actes || [],
+          total:          parseFloat(cot.total || 0),
+          auto:           true,
+          validated:      true,
+          invoice_number: cot.invoice_number || null,
+        };
       }
     }
   } catch (_e) { console.warn('[AMI] Cotation auto KO:', _e?.message); }
