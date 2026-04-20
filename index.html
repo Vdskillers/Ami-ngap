@@ -1230,10 +1230,7 @@
         )) return;
 
         const patients  = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
-        // ⚠️ NE PAS copier avec map({...p}) — les cotations async de markUberDone()
-        // mettent à jour p._cotation.validated sur l'objet ORIGINAL dans uberPatients.
-        // Une copie shallow raterait ces mises à jour → doublon de cotation à la clôture.
-        const snapshot  = patients; // référence directe aux objets live
+        const snapshot  = patients.map(p => ({ ...p }));
         const todayStr  = new Date().toISOString().split('T')[0];
 
         /* ── Traiter les patients visités mais pas encore cotés
@@ -2854,14 +2851,7 @@ async function hist() {
         <td class="pt-ca" style="white-space:nowrap">${parseFloat(r.total||0).toFixed(2)}&nbsp;€</td>
         <td>${statutHtml}</td>
         <td>${alertsHtml}</td>
-        <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
-          data-hist-id="${r.id}"
-          data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
-          data-hist-date="${(r.date_soin||'').replace(/"/g,'&quot;')}"
-          data-hist-heure="${(r.heure_soin||'').replace(/"/g,'&quot;')}"
-          data-hist-patid="${(r.patient_id||'').replace(/"/g,'&quot;')}"
-          data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
-          title="Modifier cette cotation">✏️</button></td>
+
         <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
@@ -3068,20 +3058,7 @@ async function editFromHist(data) {
   }, 250);
 }
 
-/* Délégué d'événement pour les boutons ✏️ de l'historique */
-document.addEventListener('click', function(e) {
-  const btn = e.target.closest('.hist-edit-btn');
-  if (!btn) return;
-  const data = {
-    id:             btn.dataset.histId    || '',
-    invoice_number: btn.dataset.histInv   || '',
-    date_soin:      btn.dataset.histDate  || '',
-    heure_soin:     btn.dataset.histHeure || '',
-    patient_id:     btn.dataset.histPatid || '',
-    actes:          (() => { try { return JSON.parse(decodeURIComponent(btn.dataset.histActes || '%5B%5D')); } catch { return []; } })(),
-  };
-  editFromHist(data);
-});
+/* Bouton modifier cotation supprimé — édition désactivée dans l'historique */
 
 </script>
 
