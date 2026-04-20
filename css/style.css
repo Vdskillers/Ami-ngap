@@ -1119,6 +1119,53 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
 .km-stat{text-align:center;min-width:80px}
 .km-stat-val{font-size:20px;font-weight:700;font-family:var(--fm);line-height:1;margin-bottom:2px}
 .km-stat-lbl{font-size:10px;color:var(--m)}
+
+/* ── Répartition par IDE ────────────────────────────────────── */
+.km-ide-section{margin:-8px 0 16px}
+.km-ide-section-title{display:flex;align-items:center;gap:8px;font-size:11px;font-family:var(--fm);letter-spacing:1.2px;text-transform:uppercase;color:var(--m);margin-bottom:8px;padding:0 2px}
+.km-ide-hint{cursor:help;opacity:.6;font-size:11px;margin-left:auto}
+.km-ide-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.km-ide-card{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s,transform .15s}
+.km-ide-card:hover{border-color:rgba(79,168,255,.35);transform:translateY(-1px)}
+.km-ide-card.me{border-color:rgba(0,212,170,.3);background:linear-gradient(135deg,rgba(0,212,170,.04),var(--s))}
+.km-ide-head{display:flex;align-items:center;gap:10px;min-width:0}
+.km-ide-avatar{width:32px;height:32px;border-radius:50%;background:rgba(79,168,255,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.km-ide-card.me .km-ide-avatar{background:rgba(0,212,170,.15)}
+.km-ide-name{font-size:13px;font-weight:600;color:var(--t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.km-ide-me-tag{font-family:var(--fm);font-size:9px;color:var(--a);background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:1px 6px;font-weight:500}
+.km-ide-count{font-size:10px;color:var(--m);font-family:var(--fm);margin-top:1px}
+.km-ide-stats{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-top:8px;border-top:1px solid var(--b)}
+.km-ide-km{color:var(--a2)}
+.km-ide-val{font-size:18px;font-weight:700;font-family:var(--fm);line-height:1}
+.km-ide-unit{font-size:10px;color:var(--m);font-family:var(--fm)}
+.km-ide-ded{font-size:12px;font-weight:700;font-family:var(--fm);color:var(--ok)}
+
+/* ── Détail des trajets (pliable) ───────────────────────────── */
+.km-trips-details{background:var(--c);border:1px solid var(--b);border-radius:12px;margin-bottom:16px;overflow:hidden;transition:border-color .15s}
+.km-trips-details[open]{border-color:rgba(79,168,255,.25)}
+.km-trips-summary{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none;user-select:none;font-size:12px;font-weight:600;color:var(--t);transition:background .12s}
+.km-trips-summary::-webkit-details-marker{display:none}
+.km-trips-summary:hover{background:var(--s)}
+.km-trips-sum-left{display:flex;align-items:center;gap:8px}
+.km-trips-badge{font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.12);color:var(--a2);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:2px 8px;font-weight:500}
+.km-trips-arrow{transition:transform .2s;font-size:11px;color:var(--m)}
+.km-trips-details[open] .km-trips-arrow{transform:rotate(180deg)}
+.km-trips-list{padding:4px 10px 10px;display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto}
+.km-trip{display:flex;gap:12px;padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:10px;align-items:flex-start;transition:border-color .12s}
+.km-trip:hover{border-color:rgba(79,168,255,.25)}
+.km-trip-date{flex-shrink:0;width:46px;text-align:center;padding-top:2px}
+.km-trip-day{font-size:18px;font-weight:700;color:var(--t);line-height:1;font-family:var(--fm)}
+.km-trip-mon{font-size:9px;color:var(--m);font-family:var(--fm);letter-spacing:1px;text-transform:uppercase;margin-top:2px}
+.km-trip-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.km-trip-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.km-trip-km{font-size:13px;font-weight:700;color:var(--a2);font-family:var(--fm)}
+.km-trip-cab{font-family:var(--fm);font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:1px 7px;border-radius:8px;letter-spacing:.5px}
+.km-trip-pat{font-size:12px;font-weight:600;color:var(--t)}
+.km-trip-route{font-size:11px;color:var(--m);font-family:var(--fm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.km-trip-motif{font-size:11px;color:var(--m);font-style:italic}
+.km-trip-ides{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.km-trip-ide{font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.08);color:var(--a2);border:1px solid rgba(79,168,255,.18);padding:1px 8px;border-radius:10px}
+.km-trip-amt{flex-shrink:0;font-size:12px;font-weight:700;font-family:var(--fm);color:var(--ok);padding-top:4px;min-width:58px;text-align:right}
 /* Table trésorerie améliorée */
 .tresor-table-wrap{border:1px solid var(--b);border-radius:var(--rl);overflow:hidden;overflow-x:auto}
 .tresor-table{width:100%;border-collapse:collapse;font-size:13px;min-width:580px}
@@ -1181,6 +1228,22 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .rapport-hero{padding:16px}
   .rapport-hero-icon{width:44px;height:44px;font-size:18px}
   .rapport-hero-title{font-size:18px}
+  /* Répartition par IDE */
+  .km-ide-row{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .km-ide-card{padding:10px 12px}
+  .km-ide-val{font-size:16px}
+  .km-ide-avatar{width:28px;height:28px;font-size:13px}
+  .km-ide-name{font-size:12px}
+  /* Détail trajets */
+  .km-trips-summary{padding:10px 12px;font-size:11px}
+  .km-trips-list{padding:4px 6px 8px;max-height:360px}
+  .km-trip{padding:8px 10px;gap:10px}
+  .km-trip-date{width:38px}
+  .km-trip-day{font-size:16px}
+  .km-trip-km{font-size:12px}
+  .km-trip-amt{font-size:11px;min-width:50px}
+  .km-trip-pat{font-size:11px}
+  .km-trip-route{font-size:10px}
 }
 
 /* ══════════════════════════════════════════════
