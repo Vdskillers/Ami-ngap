@@ -1335,7 +1335,12 @@ async function optimiserTournee(){
       time:    p.start_min ? p.start_min * 60000 : null,
       // amount : cotation réelle > montant enrichi (étape 2b) > estimation
       amount:  parseFloat(p.total || p.montant || 0) || parseFloat(p.amount || 0) || estimateRevenue([p]),
+      // _legKm : distance OSRM du leg individuel — utilisé pour le calcul CA/km par IDE
+      _legKm:  parseFloat(osrm?.legs?.[i]?.km || 0),
     })));
+
+    /* ── 7b. Rafraîchir le panel cabinet avec les nouvelles données ── */
+    _renderCabinetAssignmentPanel();
 
     /* ── 8. Démarrer optimisation live ───────────────── */
     startLiveOptimization();
@@ -1393,9 +1398,8 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
       const sd  = encodeURIComponent(p.acte || p.texte || p.description || '');
       const spn = encodeURIComponent(((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.patient || '');
       const nomAff = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient ' + (i+1);
-      const pId  = encodeURIComponent(p.id || p.patient_id || String(i));
-      const pKey = String(p.id || p.patient_id || i);
-      const leg  = osrm?.legs?.[i];
+      const pId = encodeURIComponent(p.id || p.patient_id || String(i));
+      const leg = osrm?.legs?.[i];
       const hasTime = p.start_str && p.start_str !== '—';
       const heureAff = p.heure_preferee || p.heure_soin || '';
       const contrainteBadge = p.respecter_horaire
@@ -1403,56 +1407,26 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
         : heureAff
         ? `<span style="font-size:10px;background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;font-family:var(--fm)">⏰ ${heureAff}</span>`
         : '';
-
-      // ── Sélecteur multi-IDE par patient/leg ──────────────────────────────
-      const _cab      = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
-      const _me       = (typeof APP !== 'undefined') ? APP.user : null;
-      const _members  = _cab?.members ? [..._cab.members] : [];
-      if (_me && !_members.find(m => m.id === _me.id)) {
-        _members.unshift({ id: _me.id, nom: _me.nom || '', prenom: _me.prenom || '' });
-      }
-      const _assigned = (APP._ideAssignments || {})[pKey] || [];
-      const _safeKey  = pKey.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-      const _ideSelectorHTML = _members.length ? `
-        <div style="padding:6px 12px 9px;border-top:1px dashed rgba(255,255,255,.06);background:rgba(0,0,0,.05)">
-          <div style="font-size:10px;font-family:var(--fm);color:var(--m);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">🎯 IDE(s) pour ce patient</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${_members.map(m => {
-              const mid       = (m.id || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-              const mlabel    = (`${m.prenom||''} ${m.nom||''}`).trim() || m.id || 'IDE';
-              const mlabelSafe= mlabel.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-              const isChk     = _assigned.some(a => a.id === m.id);
-              return `<label style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:${isChk?'rgba(0,212,170,.12)':'var(--s)'};border:1px solid ${isChk?'rgba(0,212,170,.35)':'var(--b)'};border-radius:16px;font-size:11px;color:var(--t);cursor:pointer;user-select:none;transition:background .15s,border-color .15s">
-                <input type="checkbox" ${isChk?'checked':''} onchange="_toggleIdeAssignment('${mid}','${mlabelSafe}','${_safeKey}',this.checked)" style="accent-color:var(--a);width:12px;height:12px;flex-shrink:0">
-                <span>${mlabel}</span>
-              </label>`;
-            }).join('')}
+      return `<div class="route-item ${p.urgent?'route-urgent':''}">
+        <div class="route-num">${i+1}</div>
+        <div class="route-info">
+          <strong style="font-size:13px">${nomAff}</strong>
+          <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
+            ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
+            ${contrainteBadge}
           </div>
-        </div>` : '';
-
-      return `<div class="route-item ${p.urgent?'route-urgent':''}" style="flex-direction:column;align-items:stretch;padding:0;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
-          <div class="route-num">${i+1}</div>
-          <div class="route-info">
-            <strong style="font-size:13px">${nomAff}</strong>
-            <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
-              ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
-              ${contrainteBadge}
-            </div>
-          </div>
-          ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km" title="Inclut correction trafic">~${p.travel_min}min</div>`:'')}
-          ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
-          <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
         </div>
-        ${_ideSelectorHTML}
+        ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km" title="Inclut correction trafic">~${p.travel_min}min</div>`:'')}
+        ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
+        <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
       </div>`;
     }).join('')}
   </div>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   ASSIGNATION IDE PAR LEG — Tournée optimisée par IA
+   ASSIGNATION IDE PAR LEG — Panel Tournée cabinet
    APP._ideAssignments = { patientKey: [{id, label}] }
    Persisté en mémoire (réinitialisé avec la tournée)
 ═════════════════════════════════════════════════════════════════════= */
@@ -1466,17 +1440,139 @@ function _toggleIdeAssignment(nurseId, nurseName, patientKey, checked) {
   } else {
     APP._ideAssignments[patientKey] = APP._ideAssignments[patientKey].filter(a => a.id !== nurseId);
   }
-  // Mise à jour visuelle du label sans re-render
-  try {
-    const cb  = document.activeElement;
-    const lbl = cb?.closest ? cb.closest('label') : null;
-    if (lbl) {
-      lbl.style.background   = checked ? 'rgba(0,212,170,.12)' : 'var(--s)';
-      lbl.style.borderColor  = checked ? 'rgba(0,212,170,.35)' : 'var(--b)';
-    }
-  } catch (_) {}
+  // Rafraîchir les stats CA/km sans re-render complet du panel
+  _refreshCabinetStats();
 }
 window._toggleIdeAssignment = _toggleIdeAssignment;
+
+/* ────────────────────────────────────────────────────────────────────
+   _renderCabinetAssignmentPanel()
+   Affiche dans #tur-cabinet-result chaque IDE avec ses patients
+   sous forme de cases à cocher + CA/km calculés en temps réel.
+   Appelé automatiquement après chaque optimisation de tournée.
+──────────────────────────────────────────────────────────────────── */
+function _renderCabinetAssignmentPanel() {
+  const result = document.getElementById('tur-cabinet-result');
+  if (!result) return;
+
+  const cab     = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+  const me      = (typeof APP !== 'undefined') ? APP.user : null;
+  const members = cab?.members ? [...cab.members] : [];
+  if (me && !members.find(m => m.id === me.id)) {
+    members.unshift({ id: me.id, nom: me.nom || '', prenom: me.prenom || '' });
+  }
+  if (!members.length) return; // solo — panel non affiché
+
+  const patients = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || []) : [];
+  if (!patients.length) {
+    result.innerHTML = '<div class="ai wa" style="font-size:12px">Aucun patient dans la tournée — optimisez d\'abord.</div>';
+    return;
+  }
+
+  const COLORS = ['var(--a)', '#4fa8ff', 'var(--w)', '#ff6b6b', '#b0a8ff'];
+
+  result.innerHTML = members.map((m, idx) => {
+    const c       = COLORS[idx % COLORS.length];
+    const mid     = m.id || `ide_${idx}`;
+    const mLabel  = (`${m.prenom||''} ${m.nom||''}`).trim() || mid;
+    const isMe    = me && m.id === me.id;
+    const safeMid = mid.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    const safeLbl = mLabel.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    const elemId  = `ide-stats-${mid.replace(/[^a-zA-Z0-9]/g,'_')}`;
+
+    // Stats initiales pour cet IDE
+    let ca = 0, km = 0, nb = 0;
+    patients.forEach(p => {
+      const pk = String(p.patient_id || p.id || '');
+      if ((APP._ideAssignments?.[pk] || []).some(a => a.id === mid)) {
+        ca += parseFloat(p.amount || 0);
+        km += parseFloat(p._legKm || 0);
+        nb++;
+      }
+    });
+
+    const patientsHTML = patients.map(p => {
+      const pk     = String(p.patient_id || p.id || '');
+      const pNom   = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient';
+      const isChk  = (APP._ideAssignments?.[pk] || []).some(a => a.id === mid);
+      const safePk = pk.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const pCa    = parseFloat(p.amount || 0);
+      const pKm    = parseFloat(p._legKm || 0);
+      return `<label data-ide="${mid.replace(/"/g,'&quot;')}" data-pk="${pk.replace(/"/g,'&quot;')}"
+        style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+          cursor:pointer;user-select:none;
+          background:${isChk?'rgba(0,212,170,.07)':'transparent'};
+          border:1px solid ${isChk?'rgba(0,212,170,.2)':'transparent'};
+          transition:background .12s,border-color .12s;margin-bottom:2px"
+        onmouseenter="if(!this.querySelector('input').checked)this.style.background='rgba(255,255,255,.03)'"
+        onmouseleave="if(!this.querySelector('input').checked)this.style.background='transparent'">
+        <input type="checkbox" ${isChk?'checked':''}
+          onchange="_toggleIdeAssignment('${safeMid}','${safeLbl}','${safePk}',this.checked)"
+          style="accent-color:${c};width:14px;height:14px;flex-shrink:0">
+        <span style="font-size:12px;flex:1;color:var(--t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pNom}</span>
+        ${pKm > 0 ? `<span style="font-size:10px;font-family:var(--fm);color:var(--m);flex-shrink:0">🚗 ${pKm.toFixed(1)}km</span>` : ''}
+        <span style="font-size:10px;font-family:var(--fm);color:var(--a);flex-shrink:0">💶 ${pCa.toFixed(2)}€</span>
+      </label>`;
+    }).join('');
+
+    return `<div style="border:1px solid var(--b);border-radius:10px;margin-bottom:10px;overflow:hidden;border-left:4px solid ${c}">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s)">
+        <div style="width:10px;height:10px;border-radius:50%;background:${c};flex-shrink:0"></div>
+        <strong style="font-size:13px;flex:1;color:var(--t)">${mLabel}${isMe?' <em style="font-size:10px;font-weight:400;color:var(--a)">(moi)</em>':''}</strong>
+        <span id="${elemId}" data-ide-id="${mid.replace(/"/g,'&quot;')}"
+          style="font-size:12px;font-family:var(--fm);color:var(--m);white-space:nowrap;display:flex;align-items:center;gap:6px">
+          <span style="background:var(--ad);color:var(--a);border-radius:20px;padding:1px 7px;font-size:11px">
+            <span class="ide-nb-val">${nb}</span> pt
+          </span>
+          💶 <span class="ide-ca-val">${ca.toFixed(2)}</span> €
+          🚗 <span class="ide-km-val">${km.toFixed(1)}</span> km
+        </span>
+      </div>
+      <div style="padding:6px 8px">${patientsHTML}</div>
+    </div>`;
+  }).join('');
+}
+window._renderCabinetAssignmentPanel = _renderCabinetAssignmentPanel;
+
+/* Mise à jour CA/km/nb par IDE sans re-render complet du panel */
+function _refreshCabinetStats() {
+  const patients    = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || []) : [];
+  const assignments = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+
+  // Stats par IDE
+  document.querySelectorAll('#tur-cabinet-result [data-ide-id]').forEach(statsEl => {
+    const ideId = statsEl.dataset.ideId;
+    if (!ideId) return;
+    let ca = 0, km = 0, nb = 0;
+    patients.forEach(p => {
+      const pk = String(p.patient_id || p.id || '');
+      if ((assignments[pk] || []).some(a => a.id === ideId)) {
+        ca += parseFloat(p.amount || 0);
+        km += parseFloat(p._legKm || 0);
+        nb++;
+      }
+    });
+    const caEl = statsEl.querySelector('.ide-ca-val');
+    const kmEl = statsEl.querySelector('.ide-km-val');
+    const nbEl = statsEl.querySelector('.ide-nb-val');
+    if (caEl) caEl.textContent = ca.toFixed(2);
+    if (kmEl) kmEl.textContent = km.toFixed(1);
+    if (nbEl) nbEl.textContent = nb;
+  });
+
+  // Couleur de fond des labels
+  document.querySelectorAll('#tur-cabinet-result label[data-ide]').forEach(lbl => {
+    const chk = lbl.querySelector('input[type=checkbox]');
+    if (!chk) return;
+    lbl.style.background  = chk.checked ? 'rgba(0,212,170,.07)' : 'transparent';
+    lbl.style.borderColor = chk.checked ? 'rgba(0,212,170,.2)'  : 'transparent';
+  });
+}
+window._refreshCabinetStats = _refreshCabinetStats;
+
+// Auto-refresh panel quand la tournée est recalculée
+document.addEventListener('tournee:updated', () => setTimeout(_renderCabinetAssignmentPanel, 200));
+
 
 /* Retirer un patient de la tournée optimisée */
 function removeFromTournee(encodedId, fallbackIndex) {
@@ -2519,11 +2615,29 @@ function renderLivePatientList() {
 
   const orderedPatients = [...restants, ...termines];
 
+  // ── Filtre IDE : chaque infirmière ne voit que ses patients assignés ──
+  // Actif uniquement si des assignations existent (cabinet multi-IDE).
+  // Les admins voient toujours tout.
+  const _ideAssnLive = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+  const _hasAssnLive = Object.values(_ideAssnLive).some(arr => arr?.length > 0);
+  let displayPatients = orderedPatients;
+  if (_hasAssnLive) {
+    const _myIdLive    = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    const _isAdminLive = (typeof S !== 'undefined') && S?.role === 'admin';
+    if (_myIdLive && !_isAdminLive) {
+      const _myFiltered = orderedPatients.filter(p => {
+        const pk = String(p.patient_id || p.id || '');
+        return (_ideAssnLive[pk] || []).some(a => a.id === _myIdLive);
+      });
+      if (_myFiltered.length > 0) displayPatients = _myFiltered;
+    }
+  }
+
   // Écrire uniquement dans uber-next-patient (visible) — live-next reste caché (compat fantôme)
   const el = $('uber-next-patient');
   if (!el) return;
 
-  if (!orderedPatients.length) {
+  if (!displayPatients.length) {
     el.innerHTML = `<div class="card">
       <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong> ou <strong>Tournée IA</strong> pour importer des patients.</div>
       <button class="btn bp bsm" style="margin-top:10px" onclick="navTo('imp',null)"><span>📂</span> Importer des patients</button>
@@ -2531,11 +2645,11 @@ function renderLivePatientList() {
     return;
   }
 
-  const done   = orderedPatients.filter(p => p._done).length;
-  const absent = orderedPatients.filter(p => p._absent).length;
-  const reste  = orderedPatients.length - done - absent;
+  const done   = displayPatients.filter(p => p._done).length;
+  const absent = displayPatients.filter(p => p._absent).length;
+  const reste  = displayPatients.length - done - absent;
 
-  const caRealise = orderedPatients.filter(p => p._done).reduce((s, p) => {
+  const caRealise = displayPatients.filter(p => p._done).reduce((s, p) => {
     if (p._cotation?.validated) return s + parseFloat(p._cotation.total || 0);
     if (p.amount > 0) return s + parseFloat(p.amount);
     return s;
@@ -2543,7 +2657,7 @@ function renderLivePatientList() {
 
   const html = `<div class="card">
     <div class="ct" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <span>📋 Patients de la journée (${orderedPatients.length})</span>
+      <span>📋 Patients de la journée (${displayPatients.length})</span>
       <button class="btn bs bsm" onclick="removeAllImportedPatients()" style="font-size:11px;padding:4px 10px">🗑️ Tout supprimer</button>
     </div>
     <div style="display:flex;gap:8px;margin:10px 0 14px;flex-wrap:wrap">
@@ -2552,7 +2666,7 @@ function renderLivePatientList() {
       <span class="dreb">⏳ ${reste} restant(s)</span>
       ${caRealise > 0 ? `<span class="dreb" style="background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.25);color:var(--a)">💶 ${caRealise.toFixed(2)} € réalisés</span>` : ''}
     </div>
-    ${orderedPatients.map((p, i) => {
+    ${displayPatients.map((p, i) => {
       const k = String(p.patient_id || p.id || '');
       const isNext = !p._done && !p._absent && k === nextKey;
       // Index original dans importedData pour les callbacks (évite décalage après réordonnancement)
@@ -2578,7 +2692,6 @@ function renderLivePatientList() {
           ${((APP._ideAssignments||{})[k]||[]).length ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a2);margin-top:2px">🎯 ${(APP._ideAssignments[k]).map(a=>a.label).join(' · ')}</div>` : ''}
         </div>
         ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat,lng:p.lng,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Naviguer vers ce patient">🗺️</button>` : ''}
-
         <button class="btn bs bsm" onclick="removeImportedPatient(${safeIdx})" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--d);border-color:rgba(255,95,109,.2);background:rgba(255,95,109,.05)" title="Supprimer ce patient">✕</button>
       </div>`;
     }).join('')}
@@ -3947,12 +4060,12 @@ async function optimiserTourneeCabinet() {
     role:   m.role   || 'membre',
   }));
 
-  // Source patients : _planningData (enrichi IDB) > importedData > uberPatients
+  // Source patients : uberPatients (avec _legKm) > _planningData > importedData
   const rawPatientsSrc = (
+    APP.get('uberPatients') ||
     window.APP._planningData?.patients ||
     APP.importedData?.patients ||
     APP.importedData?.entries ||
-    APP.get('uberPatients') ||
     []
   );
   const patients = rawPatientsSrc.map(p => ({
@@ -3966,11 +4079,11 @@ async function optimiserTourneeCabinet() {
   }));
 
   if (!patients.length) {
-    result.innerHTML = '<div class="ai wa">Aucun patient disponible. Ajoutez des patients via le Carnet patients.</div>';
+    result.innerHTML = '<div class="ai wa">Aucun patient disponible. Optimisez d\'abord la tournée.</div>';
     return;
   }
 
-  result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Calcul de la répartition…</p></div>';
+  result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Répartition IA en cours…</p></div>';
 
   try {
     // Appel backend
@@ -3994,14 +4107,25 @@ async function optimiserTourneeCabinet() {
       return;
     }
 
-    // Calcul du score
-    const scoreData = typeof cabinetScoreDistribution === 'function'
-      ? cabinetScoreDistribution(assignments)
-      : null;
+    // ── Pré-remplir APP._ideAssignments depuis la répartition IA ──────────
+    // Chaque assignment { ide_id, prenom, nom, patients: [{id,...}] }
+    if (!APP._ideAssignments) APP._ideAssignments = {};
+    assignments.forEach(a => {
+      const mid    = a.ide_id || a.id || '';
+      const mLabel = (`${a.prenom||''} ${a.nom||''}`).trim() || mid;
+      (a.patients || []).forEach(p => {
+        const pk = String(p.id || p.patient_id || '');
+        if (!pk) return;
+        if (!APP._ideAssignments[pk]) APP._ideAssignments[pk] = [];
+        if (!APP._ideAssignments[pk].some(x => x.id === mid)) {
+          APP._ideAssignments[pk].push({ id: mid, label: mLabel });
+        }
+      });
+    });
 
-    result.innerHTML = _renderTourneeCabinetHTML(assignments, scoreData);
-
-    if (typeof showToast === 'function') showToast('✅ Répartition calculée !', 'ok');
+    // Afficher le panel d'assignation avec les pré-cochages IA
+    _renderCabinetAssignmentPanel();
+    if (typeof showToast === 'function') showToast('✅ Répartition IA appliquée — ajustez les cases si besoin', 'ok');
 
   } catch(e) {
     result.innerHTML = `<div class="ai er">Erreur : ${e.message}</div>`;

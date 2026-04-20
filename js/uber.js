@@ -501,6 +501,28 @@ function loadUberPatients() {
       lng:     parseFloat(p.lng || p.longitude || p.lon) || null,
     };
   }));
+
+  // ── Filtre IDE : ne charger que les patients assignés à l'IDE connectée ──
+  // Si aucune assignation (mode solo ou tournée non cabinet), charger tout.
+  const _allLoaded  = APP.get('uberPatients') || [];
+  const _ideAssign  = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+  const _hasAssign  = Object.values(_ideAssign).some(arr => arr?.length > 0);
+  if (_hasAssign) {
+    const _myId    = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
+    const _isAdmin = (typeof S !== 'undefined') && S?.role === 'admin';
+    if (_myId && !_isAdmin) {
+      const _myPats = _allLoaded.filter(p => {
+        const pk = String(p.patient_id || p.id || '');
+        return (_ideAssign[pk] || []).some(a => a.id === _myId);
+      });
+      if (_myPats.length > 0) {
+        APP.set('uberPatients', _myPats);
+        if (typeof showToast === 'function')
+          showToast(`🎯 ${_myPats.length} patient(s) assigné(s) chargés`, 'ok');
+      }
+    }
+  }
+
   _updateUberProgress();
   // Peupler les selects contraintes si disponibles
   if (typeof populateConstraintSelects === 'function') populateConstraintSelects();
