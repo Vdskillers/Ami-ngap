@@ -474,6 +474,21 @@ async function generatePlanningFromImport(){
   ld('btn-pla',false);
 }
 
+/* ════════════════════════════════════════════════
+   GUARD CABINET — état de chargement centralisé
+   Retourne exists / hasMembers / ready
+════════════════════════════════════════════════ */
+function _getCabinetReadyState() {
+  const cab = APP.get ? APP.get('cabinet') : null;
+  return {
+    exists:     !!(cab?.id),
+    hasMembers: !!(cab?.members && cab.members.length),
+    ready:      !!(cab?.id && cab?.members && cab.members.length),
+    members:    cab?.members || [],
+    cab,
+  };
+}
+
 async function renderPlanning(d){
   // ── Initialiser UI cabinet ──────────────────────────────────────────────
   _planningInitCabinetUI();
@@ -627,38 +642,66 @@ async function renderPlanning(d){
     byDay[jourKey].patients.push(p);
   });
 
-  // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
-  const cab = APP.get ? APP.get('cabinet') : null;
-
-  // ⚡ Source de vérité UNIQUEMENT localStorage + variable JS
-  // Ne jamais lire la checkbox (peut être dans un conteneur display:none → introuvable)
+  // ── Cabinet : état et distribution multi-IDE ────────────────────────────
+  // ⚡ Source de vérité : localStorage (jamais la checkbox DOM)
   if (!_planningCabinetMode) {
     try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
   }
-  // Mettre à jour la checkbox si visible (sens unique : mémoire → DOM)
+  // Mettre à jour la checkbox (sens unique : mémoire → DOM)
   try {
     const _cbEl = document.getElementById('pla-cabinet-mode');
     if (_cbEl && _cbEl.checked !== _planningCabinetMode) _cbEl.checked = _planningCabinetMode;
   } catch {}
 
+  const cabState = _getCabinetReadyState();
   const cabinetActive = !!_planningCabinetMode;
-  if (cabinetActive && !cab?.id) {
-    // Cabinet pas encore chargé → retry silencieux
-    setTimeout(() => {
-      const cabRetry = APP.get ? APP.get('cabinet') : null;
-      if (cabRetry?.id) renderPlanning({}).catch(() => {});
-    }, 800);
+
+  // Debug log pour diagnostiquer
+  console.info('[AMI Cabinet]', {
+    cabinetMode: _planningCabinetMode,
+    cabExists: cabState.exists,
+    hasMembers: cabState.hasMembers,
+    ready: cabState.ready,
+    nbMembers: cabState.members.length,
+  });
+
+  // ⚠️ MODE CABINET DEMANDÉ MAIS PAS PRÊT → BLOQUER + RETRY
+  if (cabinetActive && !cabState.ready) {
+    if (!window._cabinetRetryCount) window._cabinetRetryCount = 0;
+    window._cabinetRetryCount++;
+    if (window._cabinetRetryCount < 10) {
+      setTimeout(() => renderPlanning({}).catch(() => {}), 500);
+    }
+    const pbody = document.getElementById('pbody');
+    if (pbody) pbody.innerHTML = `
+      <div style="text-align:center;padding:40px 20px">
+        <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
+        <div style="font-size:14px;font-weight:600;color:var(--t)">Chargement du cabinet…</div>
+        <div style="font-size:12px;color:var(--m);margin-top:6px">
+          Synchronisation des infirmières (${window._cabinetRetryCount}/10)
+        </div>
+        ${window._cabinetRetryCount >= 10 ? `
+          <div style="margin-top:16px;font-size:12px;color:var(--d)">
+            ⚠️ Cabinet non accessible. Vérifiez votre connexion puis
+            <button onclick="window._cabinetRetryCount=0;refreshPlanning()"
+              style="background:none;border:none;color:var(--a);cursor:pointer;text-decoration:underline">
+              réessayez
+            </button>.
+          </div>` : ''}
+      </div>`;
+    const resPla = document.getElementById('res-pla');
+    if (resPla) resPla.classList.add('show');
+    return;
   }
+
+  // Reset compteur quand prêt
+  window._cabinetRetryCount = 0;
+
   let cabinetAssignments = {};
 
-  if (cabinetActive) {
-    // Membres réels, ou synthétique si cab pas encore chargé / admin seul
-    const effectiveMembers = (cab?.members?.length)
-      ? cab.members
-      : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || APP.user?.email?.split('@')[0] || '', prenom: APP.user?.prenom || 'Moi', role: 'titulaire' }];
-
-    // ⚡ En mode cabinet, on distribue TOUS les patients (pas seulement patientsToShow)
-    // La grille filtre déjà par jour dans chaque colonne → pas de risque de doublon
+  if (cabinetActive && cabState.ready) {
+    // ✅ Membres réels uniquement — jamais de fallback fake
+    const effectiveMembers = cabState.members;
     const patientsForCabinet = patients.length ? patients : patientsToShow;
 
     // Initialiser les assignments pour chaque membre
@@ -667,23 +710,19 @@ async function renderPlanning(d){
       const ideId = m.id || m.infirmiere_id || `ide_${i}`;
       cabinetAssignments[ideId] = {
         nom:      m.nom    || '',
-        prenom:   m.prenom || '',
+        prenom:   m.prenom || `IDE ${i+1}`,
         role:     m.role   || 'membre',
         patients: [],
         color:    COLORS[i % 5],
       };
     });
 
-    // ⚡ Distribuer les patients : respecter _assignedIde (choix manuel) en priorité
-    const patsWithManual    = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
+    // Distribuer : _assignedIde (manuel) en priorité, puis clustering
+    const patsWithManual      = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
     const patsNeedsClustering = patientsForCabinet.filter(p => !p._assignedIde || !cabinetAssignments[p._assignedIde]);
 
-    // Patients avec assignation manuelle → direct
-    patsWithManual.forEach(p => {
-      cabinetAssignments[p._assignedIde].patients.push(p);
-    });
+    patsWithManual.forEach(p => cabinetAssignments[p._assignedIde].patients.push(p));
 
-    // Patients sans assignation → clustering géographique
     if (patsNeedsClustering.length && typeof cabinetGeoCluster === 'function') {
       const clusters = cabinetGeoCluster(patsNeedsClustering, effectiveMembers.length);
       effectiveMembers.forEach((m, i) => {
@@ -691,7 +730,6 @@ async function renderPlanning(d){
         (clusters[i] || []).forEach(p => cabinetAssignments[ideId].patients.push(p));
       });
     } else if (patsNeedsClustering.length) {
-      // Fallback : répartition circulaire
       patsNeedsClustering.forEach((p, i) => {
         const ideId = Object.keys(cabinetAssignments)[i % effectiveMembers.length];
         if (cabinetAssignments[ideId]) cabinetAssignments[ideId].patients.push(p);
@@ -746,16 +784,16 @@ async function renderPlanning(d){
   function renderCabinetView() {
     const ideList = Object.entries(cabinetAssignments);
 
-    // ⚡ Pas de membres → cabinet en cours de chargement (initCabinet async)
+    // ⚡ Guard : pas d'assignments → état incohérent (ne devrait plus arriver avec le guard central)
     if (!ideList.length) {
-      setTimeout(() => {
-        const cabNow = APP.get ? APP.get('cabinet') : null;
-        if (cabNow?.members?.length) renderPlanning({}).catch(() => {});
-      }, 900);
       return `<div style="text-align:center;padding:32px 16px">
-        <div class="spin spinw" style="width:24px;height:24px;margin:0 auto 10px"></div>
-        <div style="font-size:13px;color:var(--m)">Chargement des membres du cabinet…</div>
-        <div style="font-size:11px;color:var(--m);margin-top:6px">Si le problème persiste, cliquez sur ↻ Actualiser</div>
+        <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
+        <div style="font-size:14px;font-weight:600;color:var(--t)">Initialisation du planning cabinet…</div>
+        <div style="font-size:12px;color:var(--m);margin-top:6px">
+          <code style="font-size:10px;background:var(--s);padding:2px 6px;border-radius:4px">
+            cabinet.members: ${JSON.stringify(_getCabinetReadyState().members.map(m=>m.prenom))}
+          </code>
+        </div>
       </div>`;
     }
 
