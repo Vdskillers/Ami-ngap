@@ -2844,6 +2844,7 @@ async function hist() {
           data-hist-date="${(r.date_soin||'').replace(/"/g,'&quot;')}"
           data-hist-heure="${(r.heure_soin||'').replace(/"/g,'&quot;')}"
           data-hist-patid="${(r.patient_id||'').replace(/"/g,'&quot;')}"
+          data-hist-patnom="${(r.patient_nom||r.nom||'').replace(/"/g,'&quot;')}"
           data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
           title="Modifier cette cotation">✏️</button></td>
         <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
@@ -3028,7 +3029,17 @@ async function editFromHist(data) {
     }
 
     // Données patient depuis l'IDB (si trouvées)
-    const nomComplet = ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim();
+    // Fallback : si l'IDB ne retourne aucun nom (admin ou cotation sans fiche IDB),
+    // utiliser patient_nom transmis depuis l'historique via data-hist-patnom.
+    // Fonctionne pour admin ET nurse.
+    if (!patData.nom && !patData.prenom && data.patient_nom) {
+      const _parts = data.patient_nom.trim().split(/\s+/);
+      // Convention : "Prénom NOM" → dernier mot = nom, reste = prénom
+      patData.prenom = _parts.slice(0, -1).join(' ') || _parts[0] || '';
+      patData.nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
+    }
+    const nomComplet = ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim()
+                    || data.patient_nom || '';
     setV('f-pt',  nomComplet  || '');
     setV('f-ddn', patData.ddn     || '');
     setV('f-amo', patData.amo     || '');
@@ -3062,6 +3073,7 @@ document.addEventListener('click', function(e) {
     date_soin:      btn.dataset.histDate  || '',
     heure_soin:     btn.dataset.histHeure || '',
     patient_id:     btn.dataset.histPatid || '',
+    patient_nom:    btn.dataset.histPatnom || '',
     actes:          (() => { try { return JSON.parse(decodeURIComponent(btn.dataset.histActes || '%5B%5D')); } catch { return []; } })(),
   };
   editFromHist(data);
