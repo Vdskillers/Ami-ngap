@@ -364,10 +364,21 @@ function refreshPlanning() {
    PLANNING HEBDOMADAIRE CABINET — variables d'état
 ════════════════════════════════════════════════ */
 let _planningWeekOffset = 0; // 0 = semaine courante, -1 = précédente, +1 = suivante
-// ⚡ Restaurer l'état cabinet mode depuis localStorage (survive aux rechargements)
-let _planningCabinetMode = (() => {
+
+// ⚡ Cabinet mode : TOUJOURS lire/écrire localStorage directement
+// Élimine tout risque de variable JS stale entre renders async
+function _getCabinetMode() {
   try { return localStorage.getItem('ami_planning_cabinet_mode') === '1'; } catch { return false; }
-})();
+}
+function _setCabinetMode(v) {
+  try { localStorage.setItem('ami_planning_cabinet_mode', v ? '1' : '0'); } catch {}
+}
+// Compatibilité rétro — alias vers les fonctions (lecture seule désormais)
+Object.defineProperty(window, '_planningCabinetMode', {
+  get() { return _getCabinetMode(); },
+  set(v) { _setCabinetMode(v); },
+  configurable: true,
+});
 
 /** Naviguer d'une semaine en avant/arrière */
 function planningWeekNav(delta) {
@@ -377,13 +388,8 @@ function planningWeekNav(delta) {
 
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
-  _planningCabinetMode = !!active;
-  // ⚡ Persister IMMÉDIATEMENT dans localStorage — source de vérité absolue
-  // renderPlanning lit localStorage, pas la checkbox DOM
-  try {
-    localStorage.setItem('ami_planning_cabinet_mode', active ? '1' : '0');
-    console.info('[AMI] Cabinet mode:', active, '→ localStorage écrit');
-  } catch {}
+  _setCabinetMode(!!active);
+  console.info('[AMI] Cabinet mode:', !!active, '→ localStorage écrit. Lecture immédiate:', _getCabinetMode());
   refreshPlanning();
 }
 
@@ -394,25 +400,17 @@ function _planningInitCabinetUI() {
   const cab    = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
   const hasCab = !!(cab?.id);
 
-  // ⚡ Source de vérité : localStorage (jamais la checkbox DOM)
-  if (!_planningCabinetMode) {
-    try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
-  }
-
+  const _cabMode = _getCabinetMode();
   if (wrap) {
-    if (hasCab || _planningCabinetMode) wrap.style.display = 'block';
+    if (hasCab || _cabMode) wrap.style.display = 'block';
     else wrap.style.display = 'none';
     const label = wrap.querySelector('label');
     if (label) { label.style.opacity = '1'; label.title = ''; }
     const cb = wrap.querySelector('input[type=checkbox]');
-    if (cb) {
-      cb.disabled = false;
-      // ⚡ NE PAS modifier cb.checked par code — certains navigateurs
-      // déclenchent onchange() → planningToggleCabinetView(false) → boucle
-      // La checkbox reflète uniquement ce que l'utilisateur a cliqué
-    }
+    if (cb) cb.disabled = false;
+    // NE PAS toucher cb.checked par code
   }
-  if (btnCab) btnCab.style.display = (hasCab || _planningCabinetMode) ? 'inline-flex' : 'none';
+  if (btnCab) btnCab.style.display = (hasCab || _cabMode) ? 'inline-flex' : 'none';
 
   if (!hasCab && !window._planningCabinetInitDone) {
     setTimeout(() => {
@@ -420,7 +418,7 @@ function _planningInitCabinetUI() {
       if (cabRetry?.id) {
         _planningCabinetInitDone = true;
         _planningInitCabinetUI();
-        if (_planningCabinetMode) renderPlanning({}).catch(() => {});
+        if (_getCabinetMode()) renderPlanning({}).catch(() => {});
       }
     }, 1000);
   }
@@ -448,7 +446,7 @@ async function planningGenerateCabinet() {
     return;
   }
   // Activer automatiquement le mode cabinet et re-rendre
-  _planningCabinetMode = true;
+  _setCabinetMode(true);
   const cb = document.getElementById('pla-cabinet-mode');
   if (cb) cb.checked = true;
   renderPlanning({}).catch(() => {});
@@ -646,15 +644,9 @@ async function renderPlanning(d){
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
 
-  // ⚡ Source de vérité UNIQUEMENT localStorage + variable JS
-  // Ne jamais lire la checkbox (peut être dans un conteneur display:none → introuvable)
-  if (!_planningCabinetMode) {
-    try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
-  }
-  // ⚡ NE PAS modifier _cbEl.checked par code — déclenche onchange sur Edge/Chrome
-  // Source de vérité = localStorage uniquement
-
-  const cabinetActive = !!_planningCabinetMode;
+  // ⚡ Lecture DIRECTE localStorage — source de vérité absolue, zéro variable stale
+  const cabinetActive = _getCabinetMode();
+  console.info('[AMI Planning] cabinetActive =', cabinetActive, '| raw localStorage =', localStorage.getItem('ami_planning_cabinet_mode'));
   if (cabinetActive && !cab?.id) {
     // Cabinet pas encore chargé → retry silencieux
     setTimeout(() => {

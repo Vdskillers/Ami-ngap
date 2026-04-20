@@ -669,38 +669,76 @@ function _cabinetEstimateRevenue(actes = []) {
  * @returns {Array[]}      — tableau de k tableaux de patients
  */
 function cabinetGeoCluster(patients, k) {
-  if (!k || k <= 1) return [patients];
-  const withGeo = patients.filter(p => p.lat && p.lng);
-  const noGeo   = patients.filter(p => !p.lat || !p.lng);
-  if (!withGeo.length) {
-    const clusters = Array.from({ length: k }, () => []);
-    patients.forEach((p, i) => clusters[i % k].push(p));
+  if (!k || k < 1 || !patients.length) return [patients];
+
+  // Normaliser lat/lng (accepte latitude/lon/longitude)
+  const norm = patients.map(p => ({
+    ...p,
+    lat: parseFloat(p.lat ?? p.latitude ?? '') || null,
+    lng: parseFloat(p.lng ?? p.lon ?? p.longitude ?? '') || null,
+  }));
+
+  // k >= nb patients → 1 patient par cluster
+  if (k >= norm.length) {
+    const clusters = norm.map(p => [p]);
+    while (clusters.length < k) clusters.push([]);
     return clusters;
   }
-  let centers = withGeo.slice(0, k).map(p => ({ lat: p.lat, lng: p.lng }));
-  let clusters = [];
-  for (let iter = 0; iter < 8; iter++) {
+  if (k === 1) return [norm];
+
+  const withGeo = norm.filter(p => p.lat !== null && p.lng !== null);
+  const noGeo   = norm.filter(p => p.lat === null || p.lng === null);
+
+  if (!withGeo.length) {
+    const clusters = Array.from({ length: k }, () => []);
+    norm.forEach((p, i) => clusters[i % k].push(p));
+    return clusters;
+  }
+
+  // Centroïdes initiaux — si withGeo.length < k, décaler légèrement pour éviter les doublons
+  let centers = [];
+  for (let i = 0; i < k; i++) {
+    const src = withGeo[i % withGeo.length];
+    const jitter = i >= withGeo.length ? i * 0.0001 : 0;
+    centers.push({ lat: src.lat + jitter, lng: src.lng + jitter });
+  }
+
+  let clusters = Array.from({ length: k }, () => []);
+  for (let iter = 0; iter < 10; iter++) {
     clusters = Array.from({ length: k }, () => []);
     for (const p of withGeo) {
       let best = 0, bestDist = Infinity;
       centers.forEach((c, i) => {
+        if (!c) return; // guard null-safety
         const d = Math.hypot(p.lat - c.lat, p.lng - c.lng);
         if (d < bestDist) { bestDist = d; best = i; }
       });
       clusters[best].push(p);
     }
+    // Recalcul centroïdes — conserver l'ancien si cluster vide
     centers = clusters.map((cl, i) => {
-      if (!cl.length) return centers[i];
+      if (!cl.length) return centers[i] || centers[0];
       return {
         lat: cl.reduce((s, p) => s + p.lat, 0) / cl.length,
         lng: cl.reduce((s, p) => s + p.lng, 0) / cl.length,
       };
     });
   }
+
+  // Rééquilibrer les clusters vides
+  for (let i = 0; i < clusters.length; i++) {
+    if (!clusters[i].length) {
+      const biggest = clusters.reduce((max, cl, ci) => cl.length > clusters[max].length ? ci : max, 0);
+      if (clusters[biggest].length > 1) clusters[i].push(clusters[biggest].pop());
+    }
+  }
+
+  // Ajouter les patients sans coords au cluster le plus petit
   noGeo.forEach(p => {
     const smallest = clusters.reduce((min, cl, i) => cl.length < clusters[min].length ? i : min, 0);
     clusters[smallest].push(p);
   });
+
   return clusters;
 }
 
