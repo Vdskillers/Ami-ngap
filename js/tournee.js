@@ -1595,6 +1595,8 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
               if (parseFloat(cot.total || 0) <= 0) continue;
               fromIDB.push({
                 _idb_patient_id: row.id,
+                _idb_nom:        row.nom    || '',
+                _idb_prenom:     row.prenom || '',
                 _idb_cot: cot,
                 _cotation: { actes: cot.actes || [], total: parseFloat(cot.total), validated: true, auto: cot.source === 'tournee_auto' },
                 heure_soin: cot.heure || null,
@@ -1612,17 +1614,31 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
     const cotations = allToSync
       // Ne jamais envoyer sans actes valides (évite les entrées DIM-seul parasites)
       .filter(p => (p._cotation.actes || []).length > 0 && parseFloat(p._cotation.total || 0) > 0)
-      .map(p => ({
-        actes:          p._cotation.actes || [],
-        total:          parseFloat(p._cotation.total || 0),
-        date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
-        heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
-        soin:           (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
-        source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
-        dre_requise:    !!p._cotation.dre_requise,
-        // invoice_number existant -> PATCH (correction), sinon POST (nouvelle ligne)
-        invoice_number: p._cotation.invoice_number || null,
-      }));
+      .map(p => {
+        // ── Nom patient : mémoire > IDB row > soin field ──────────────────
+        const _nom    = (p.nom    || p._idb_nom    || '').trim();
+        const _prenom = (p.prenom || p._idb_prenom || '').trim();
+        const _patNom = [_prenom, _nom].filter(Boolean).join(' ')
+          || (p.description || p._idb_cot?.soin || '').slice(0, 80)
+          || null;
+        const _patId  = p.patient_id || p.id || p._idb_patient_id || null;
+
+        return {
+          actes:          p._cotation.actes || [],
+          total:          parseFloat(p._cotation.total || 0),
+          date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
+          heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
+          soin:           (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
+          source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
+          dre_requise:    !!p._cotation.dre_requise,
+          // patient_nom → affiché dans Historique des soins (identique à cotation.js)
+          ...(_patNom ? { patient_nom: _patNom } : {}),
+          // patient_id → rattachement IDB / Supabase
+          ...(_patId  ? { patient_id:  _patId  } : {}),
+          // invoice_number existant -> PATCH (correction), sinon POST (nouvelle ligne)
+          invoice_number: p._cotation.invoice_number || null,
+        };
+      });
 
     const result = await apiCall('/webhook/ami-save-cotation', { cotations });
     if (result?.ok) {
