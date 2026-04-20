@@ -44,11 +44,23 @@ async function _computeScore(p) {
   const pos = APP.get('userPos') || APP.get('startPoint');
   if (!pos) return 999;
   const eta = await getETA(pos, p);
-  let score = eta * 2;
-  if (p.urgence)               score -= 50;
-  if (p.late)                  score -= 30;
-  if (p.time && Date.now() > p.time) score -= 20;
-  if (p.amount)                score -= parseFloat(p.amount) * 0.5;
+
+  // Distance = critère DOMINANT en mode automatique
+  let score = eta * 3;
+
+  // Priorité médicale : hiérarchie clinique stricte (pas proxy financier)
+  const acte = (p.actes_recurrents || p.description || p.texte || '').toLowerCase();
+  if (/insuline|inject|glycémie|à jeun|glycem/i.test(acte))           score -= 25; // timing critique
+  if (/perfusion|perf\b|chimio|intraveineux/i.test(acte))             score -= 22; // technique lourd
+  if (/pansement.*(complexe|escarre|ulc[eè]re|nécrose)|escarre/i.test(acte)) score -= 12; // risque infectieux
+  if (/pansement/i.test(acte))                                        score -= 6;  // pansement simple
+  if (/nursing|toilette|bsc\b|bsb\b/i.test(acte))                    score -= 4;  // confort, moins urgent
+
+  // Contraintes temporelles (restent absolument prioritaires)
+  if (p.urgence)                       score -= 50;
+  if (p.late)                          score -= 30;
+  if (p.time && Date.now() > p.time)   score -= 20;
+
   return score;
 }
 
