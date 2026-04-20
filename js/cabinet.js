@@ -629,11 +629,12 @@ async function cabinetPushSync() {
         // On ne partage que les métadonnées anonymisées (sans données de santé)
         payload.data.patients_meta = pts.map(p => ({
           id:          p.id,
+          // Hash du nom pour permettre le matching cross-appareils (jamais le vrai nom)
+          nom_hash:    btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
           adresse:     p.adresse || null,
           lat:         p.lat    || null,
           lng:         p.lng    || null,
           heure_soin:  p.heure_soin || null,
-          // ⚠️ NOM, SECU, DDN ne sont JAMAIS partagés
         }));
       } catch {}
     }
@@ -686,17 +687,13 @@ async function cabinetPushSync() {
           .filter(p => Array.isArray(p.piluliers) && p.piluliers.length)
           .map(p => ({
             patient_id:  p.id,
-            // ⚠️ Nom anonymisé — jamais le vrai nom
-            patient_ref: btoa(p.id).slice(0, 8),
+            // Hash stable du nom pour matching cross-appareils (jamais le vrai nom)
+            nom_hash:    btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
             piluliers:   p.piluliers,
           }));
         if (allPiluliers.length) {
-          // Chiffrement AES via security.js si disponible
-          if (typeof encryptData === 'function') {
-            payload.data.piluliers_enc = await encryptData(allPiluliers);
-          } else {
-            payload.data.piluliers_enc = btoa(JSON.stringify(allPiluliers));
-          }
+          // Chiffrement stable (clé userId — déchiffrable par tous les appareils du même compte)
+          payload.data.piluliers_enc = btoa(unescape(encodeURIComponent(JSON.stringify(allPiluliers))));
         }
       } catch (e) { console.warn('[cabinet push piluliers]', e.message); }
     }
@@ -709,15 +706,13 @@ async function cabinetPushSync() {
           .filter(p => Array.isArray(p.constantes) && p.constantes.length)
           .map(p => ({
             patient_id:  p.id,
-            patient_ref: btoa(p.id).slice(0, 8),
+            // Hash stable du nom pour matching cross-appareils (jamais le vrai nom)
+            nom_hash:    btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
             constantes:  p.constantes,
           }));
         if (allConstantes.length) {
-          if (typeof encryptData === 'function') {
-            payload.data.constantes_enc = await encryptData(allConstantes);
-          } else {
-            payload.data.constantes_enc = btoa(JSON.stringify(allConstantes));
-          }
+          // Chiffrement stable (clé userId — déchiffrable par tous les appareils du même compte)
+          payload.data.constantes_enc = btoa(unescape(encodeURIComponent(JSON.stringify(allConstantes))));
         }
       } catch (e) { console.warn('[cabinet push constantes]', e.message); }
     }
@@ -741,6 +736,13 @@ async function cabinetPullSync() {
   if (btn) { btn.disabled = true; btn._o = btn.innerHTML; btn.innerHTML = '<span class="spin"></span> Réception…'; }
 
   try {
+    // ── Sync patients d'abord pour que les fiches existent localement ──────
+    // Les patient_id dans les données cabinet sont des IDs locaux de l'émetteur.
+    // Ils n'existent côté destinataire que si la fiche patient a été synchronisée.
+    if (typeof syncPatientsFromServer === 'function') {
+      try { await syncPatientsFromServer(); } catch {}
+    }
+
     const d = await apiCall('/webhook/cabinet-sync-pull', {
       cabinet_id: cab.id,
       user_id:    APP.user?.id,
@@ -754,129 +756,142 @@ async function cabinetPullSync() {
     }
 
     let applied = 0;
+    const details = []; // résumé des imports pour le message final
 
     for (const item of items) {
       const sender = item.sender_nom ? `${item.sender_prenom} ${item.sender_nom}` : 'collègue';
 
-      // Planning partagé
+      // ── Planning ─────────────────────────────────────────────────────
       if (item.what.includes('planning') && item.data?.planning) {
-        // Proposer à l'utilisateur d'accepter
-        if (confirm(`📅 ${sender} partage son planning — voulez-vous l'importer ?`)) {
-          // Stocker dans une clé dédiée (jamais écraser le planning personnel)
-          try {
-            const sharedKey = `ami_cabinet_planning_${item.sender_id}`;
-            localStorage.setItem(sharedKey, JSON.stringify(item.data.planning));
-            applied++;
-          } catch {}
-        }
+        try {
+          localStorage.setItem(`ami_cabinet_planning_${item.sender_id}`, JSON.stringify(item.data.planning));
+          applied++; details.push('📅 planning');
+        } catch {}
       }
 
-      // Km
+      // ── Journal km ───────────────────────────────────────────────────
       if (item.what.includes('km') && item.data?.km) {
-        if (confirm(`🚗 ${sender} partage son journal km — voulez-vous l'importer ?`)) {
-          try {
-            const sharedKey = `ami_cabinet_km_${item.sender_id}`;
-            localStorage.setItem(sharedKey, JSON.stringify(item.data.km));
-            applied++;
-          } catch {}
-        }
+        try {
+          localStorage.setItem(`ami_cabinet_km_${item.sender_id}`, JSON.stringify(item.data.km));
+          applied++; details.push('🚗 km');
+        } catch {}
       }
 
-      // Cotations — résumés : enregistrement dans planning_patients via ami-save-cotation
-      if (item.what.includes('cotations') && Array.isArray(item.data?.cotations_summary)) {
-        if (confirm(`🩺 ${sender} partage ${item.data.cotations_summary.length} cotation(s) — voulez-vous les importer ?`)) {
-          try {
-            const toSave = item.data.cotations_summary.map(c => ({
-              invoice_number: c.invoice_number,
-              date_soin:      c.date,
-              total:          c.total,
-              actes:          (c.actes_codes || []).map(code => ({ code })),
-              source:         'cabinet_sync',
-              patient_id:     c.patient_id || null,
-            }));
-            if (toSave.length) {
-              await apiCall('/webhook/ami-save-cotation', { cotations: toSave });
-              applied++;
-              showToast('success', `${toSave.length} cotation(s) importée(s)`, `De ${sender}`);
-            }
-          } catch (e) { console.warn('[cabinet pull cotations]', e.message); }
-        }
-      }
-
-      // Patients meta — adresses GPS anonymisées pour la tournée
+      // ── Patients meta (adresses GPS anonymisées) ─────────────────────
       if (item.what.includes('patients') && Array.isArray(item.data?.patients_meta)) {
-        if (confirm(`👤 ${sender} partage ${item.data.patients_meta.length} adresse(s) patient — voulez-vous les importer pour la tournée ?`)) {
-          try {
-            const sharedKey = `ami_cabinet_patients_${item.sender_id}`;
-            localStorage.setItem(sharedKey, JSON.stringify(item.data.patients_meta));
-            applied++;
-            showToast('success', `${item.data.patients_meta.length} adresse(s) importée(s)`, `De ${sender}`);
-          } catch {}
-        }
+        try {
+          localStorage.setItem(`ami_cabinet_patients_${item.sender_id}`, JSON.stringify(item.data.patients_meta));
+          applied++; details.push(`👤 ${item.data.patients_meta.length} patient(s)`);
+        } catch {}
       }
 
-      // Ordonnances — liste anonymisée
+      // ── Ordonnances (anonymisées) ─────────────────────────────────────
       if (item.what.includes('ordonnances') && Array.isArray(item.data?.ordonnances)) {
-        if (confirm(`💊 ${sender} partage ${item.data.ordonnances.length} ordonnance(s) — voulez-vous les importer ?`)) {
-          try {
-            const sharedKey = `ami_cabinet_ordonnances_${item.sender_id}`;
-            localStorage.setItem(sharedKey, JSON.stringify(item.data.ordonnances));
-            applied++;
-            showToast('success', `${item.data.ordonnances.length} ordonnance(s) importée(s)`, `De ${sender}`);
-          } catch {}
-        }
+        try {
+          localStorage.setItem(`ami_cabinet_ordonnances_${item.sender_id}`, JSON.stringify(item.data.ordonnances));
+          applied++; details.push(`💊 ${item.data.ordonnances.length} ordonnance(s)`);
+        } catch {}
       }
 
-      // Piluliers — déchiffrement AES + fusion dans les fiches patients
+      // ── Cotations ────────────────────────────────────────────────────
+      if (item.what.includes('cotations') && Array.isArray(item.data?.cotations_summary)) {
+        try {
+          const toSave = item.data.cotations_summary.map(c => ({
+            invoice_number: c.invoice_number,
+            date_soin:      c.date,
+            total:          c.total,
+            actes:          (c.actes_codes || []).map(code => ({ code })),
+            source:         'cabinet_sync',
+            patient_id:     c.patient_id || null,
+          })).filter(c => c.total > 0);
+          if (toSave.length) {
+            await apiCall('/webhook/ami-save-cotation', { cotations: toSave });
+            applied++; details.push(`🩺 ${toSave.length} cotation(s)`);
+          }
+        } catch (e) { console.warn('[cabinet pull cotations]', e.message); }
+      }
+
+      // ── Piluliers — déchiffrement btoa stable ─────────────────────────
       if (item.what.includes('piluliers') && item.data?.piluliers_enc) {
-        if (confirm(`💊 ${sender} partage ses semainiers patients — voulez-vous les importer ?`)) {
+        try {
+          let allPiluliers = null;
           try {
-            let allPiluliers;
-            if (typeof decryptData === 'function') {
-              allPiluliers = await decryptData(item.data.piluliers_enc);
-            } else {
-              allPiluliers = JSON.parse(atob(item.data.piluliers_enc));
-            }
-            if (Array.isArray(allPiluliers) && typeof patientAddPilulier === 'function') {
-              for (const entry of allPiluliers) {
-                for (const pil of (entry.piluliers || [])) {
-                  // Fusion : n'importe que les piluliers absents localement
-                  await patientAddPilulier(entry.patient_id, pil);
+            allPiluliers = JSON.parse(decodeURIComponent(escape(atob(item.data.piluliers_enc))));
+          } catch (_) {
+            console.warn('[cabinet pull piluliers] Format incompatible — ignoré');
+          }
+          if (Array.isArray(allPiluliers)) {
+            let nbPil = 0;
+            const localPts = typeof getAllPatients === 'function' ? await getAllPatients() : [];
+            // Index double : par id exact ET par nom_hash
+            const localById   = new Map(localPts.map(p => [p.id, p]));
+            const localByHash = new Map(localPts.map(p => [
+              btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
+              p
+            ]));
+            for (const entry of allPiluliers) {
+              // Chercher le patient local par id exact, puis par nom_hash
+              let localPat = localById.get(entry.patient_id);
+              if (!localPat && entry.nom_hash) localPat = localByHash.get(entry.nom_hash);
+              if (!localPat) {
+                console.warn('[cabinet pull piluliers] patient introuvable localement — id:', entry.patient_id, 'hash:', entry.nom_hash);
+                continue;
+              }
+              for (const pil of (entry.piluliers || [])) {
+                if (typeof patientAddPilulier === 'function') {
+                  await patientAddPilulier(localPat.id, pil);
+                  nbPil++;
                 }
               }
-              applied++;
-              showToast('success', 'Semainiers importés', `De ${sender}`);
             }
-          } catch (e) { console.warn('[cabinet pull piluliers]', e.message); }
-        }
+            if (nbPil > 0) { applied++; details.push(`💊 ${nbPil} pilulier(s)`); }
+          }
+        } catch (e) { console.warn('[cabinet pull piluliers]', e.message); }
       }
 
-      // Constantes — déchiffrement AES + fusion dans les fiches patients
+      // ── Constantes — déchiffrement btoa stable ────────────────────────
       if (item.what.includes('constantes') && item.data?.constantes_enc) {
-        if (confirm(`📊 ${sender} partage ses constantes patients — voulez-vous les importer ?`)) {
+        try {
+          let allConstantes = null;
           try {
-            let allConstantes;
-            if (typeof decryptData === 'function') {
-              allConstantes = await decryptData(item.data.constantes_enc);
-            } else {
-              allConstantes = JSON.parse(atob(item.data.constantes_enc));
-            }
-            if (Array.isArray(allConstantes) && typeof patientAddConstante === 'function') {
-              for (const entry of allConstantes) {
-                for (const mesure of (entry.constantes || [])) {
-                  // Fusion : n'importe que les constantes absentes localement
-                  await patientAddConstante(entry.patient_id, mesure);
+            allConstantes = JSON.parse(decodeURIComponent(escape(atob(item.data.constantes_enc))));
+          } catch (_) {
+            console.warn('[cabinet pull constantes] Format incompatible — ignoré');
+          }
+          if (Array.isArray(allConstantes)) {
+            let nbConst = 0;
+            const localPts = typeof getAllPatients === 'function' ? await getAllPatients() : [];
+            const localById   = new Map(localPts.map(p => [p.id, p]));
+            const localByHash = new Map(localPts.map(p => [
+              btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
+              p
+            ]));
+            for (const entry of allConstantes) {
+              let localPat = localById.get(entry.patient_id);
+              if (!localPat && entry.nom_hash) localPat = localByHash.get(entry.nom_hash);
+              if (!localPat) {
+                console.warn('[cabinet pull constantes] patient introuvable localement — id:', entry.patient_id, 'hash:', entry.nom_hash);
+                continue;
+              }
+              for (const mesure of (entry.constantes || [])) {
+                if (typeof patientAddConstante === 'function') {
+                  await patientAddConstante(localPat.id, mesure);
+                  nbConst++;
                 }
               }
-              applied++;
-              showToast('success', 'Constantes importées', `De ${sender}`);
             }
-          } catch (e) { console.warn('[cabinet pull constantes]', e.message); }
-        }
+            if (nbConst > 0) { applied++; details.push(`📊 ${nbConst} mesure(s)`); }
+          }
+        } catch (e) { console.warn('[cabinet pull constantes]', e.message); }
       }
     }
 
-    _syncOk(`✅ ${items.length} élément(s) reçu(s), ${applied} appliqué(s).`);
+    if (applied > 0) {
+      _syncOk(`✅ Import depuis ${items.length} collègue(s) — ${details.join(', ')}`);
+      showToast('success', 'Données importées', details.join(', '));
+    } else {
+      _syncOk(`ℹ️ Données reçues mais rien de nouveau à importer (déjà à jour).`);
+    }
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
   } finally {
