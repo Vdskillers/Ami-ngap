@@ -151,48 +151,10 @@ function _cabDec(str, cabinetId) {
 let _cabinetWS = null;
 
 function initCabinetRealtime() {
-  const cab = APP.get('cabinet');
-  if (!cab?.id || _cabinetWS) return;
-
-  try {
-    // Construction URL WebSocket depuis l'URL Worker
-    const workerUrl = typeof W !== 'undefined' ? W : '';
-    const wsUrl = workerUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-    if (!wsUrl) return;
-
-    _cabinetWS = new WebSocket(`${wsUrl}/ws?cabinet_id=${cab.id}`);
-
-    _cabinetWS.onopen = () => {
-      console.info('[cabinet WS] 🟢 Connecté — sync temps réel active');
-    };
-
-    _cabinetWS.onmessage = async (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'CABINET_SYNC' && msg.cabinet_id === cab.id) {
-          console.info('[cabinet WS] ⚡ Sync reçue en live depuis', msg.sender || 'collègue');
-          // Réutilise le pull existant — robuste et déjà testé
-          if (typeof cabinetPullSync === 'function') {
-            await cabinetPullSync();
-          }
-        }
-      } catch {}
-    };
-
-    _cabinetWS.onerror = () => {
-      console.warn('[cabinet WS] Erreur — fallback sur pull manuel');
-      _cabinetWS = null;
-    };
-
-    _cabinetWS.onclose = () => {
-      console.info('[cabinet WS] 🔴 Déconnecté — reconnexion dans 5s');
-      _cabinetWS = null;
-      setTimeout(initCabinetRealtime, 5000); // reconnexion auto
-    };
-  } catch (e) {
-    console.warn('[cabinet WS] WS non disponible — mode pull manuel uniquement');
-    _cabinetWS = null;
-  }
+  // ⚠️ WebSocket désactivé — Cloudflare Workers standard ne supporte pas WS
+  // (nécessite Durable Objects). Mode pull manuel uniquement.
+  // Pour activer : migrer vers Cloudflare Durable Objects ou un serveur dédié.
+  console.info('[cabinet] Sync temps réel non disponible — mode pull manuel.');
 }
 
 async function initCabinet() {
