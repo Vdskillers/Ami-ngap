@@ -538,6 +538,19 @@
       </div>
       <div id="adm-system-health-body" style="margin-bottom:28px"><div class="empty" style="padding:20px"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:8px;color:var(--m);font-size:13px">Chargement...</p></div></div>
 
+      <!-- Maintenance données -->
+      <div style="margin-bottom:24px;padding:16px;background:rgba(255,181,71,.06);border:1px solid rgba(255,181,71,.2);border-radius:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--w)">🔧 Maintenance des données</div>
+        <div style="font-size:12px;color:var(--m);margin-bottom:14px">Outils de correction pour les données de test admin. N'affecte que vos propres cotations.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="bs bsm" onclick="adminFixPatientNom()" id="btn-fix-patient-nom"
+            style="padding:8px 16px;font-size:12px;background:rgba(255,181,71,.12);border-color:rgba(255,181,71,.3);color:var(--w)">
+            👤 Corriger les noms manquants
+          </button>
+          <span id="fix-patient-nom-result" style="font-size:12px;color:var(--m)"></span>
+        </div>
+      </div>
+
       <!-- Logs système récents -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="lbl">📄 Logs système récents <span style="font-size:11px;color:var(--m);font-weight:400">(N8N · IA · Frontend)</span></div>
@@ -1072,63 +1085,6 @@
         </div>
       </div>
 
-      <!-- ══════════════════════════════════════════════════════
-           🔒 CONTRAINTES DE PASSAGE — Premier & Suivant obligatoire
-           ══════════════════════════════════════════════════════ -->
-      <div class="card" style="margin-bottom:16px;border:1px solid rgba(255,181,71,.3);background:rgba(255,181,71,.03)">
-        <div class="ct" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
-          🔒 Contraintes de passage
-          <span style="font-family:var(--fm);font-size:10px;background:rgba(255,181,71,.12);color:var(--w);border:1px solid rgba(255,181,71,.3);padding:2px 8px;border-radius:20px;letter-spacing:1px">OPTIONNEL</span>
-        </div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:14px;font-family:var(--fm)">Forcez l'ordre pour un ou deux patients — l'IA organise les autres autour de ces contraintes.</p>
-
-        <div style="display:flex;flex-direction:column;gap:12px">
-
-          <!-- Cadre 1 : Premier patient obligatoire -->
-          <div style="padding:14px;border-radius:10px;border:2px solid rgba(255,95,109,.35);background:rgba(255,95,109,.04)">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-              <span style="font-size:18px">🥇</span>
-              <div>
-                <div style="font-weight:700;font-size:13px;color:var(--t)">Démarrer obligatoirement par ce patient</div>
-                <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-top:1px">Ce patient sera toujours placé en 1ère position, quelle que soit l'optimisation.</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <select id="constraint-first-patient"
-                style="flex:1;min-width:180px;padding:9px 12px;border-radius:8px;border:1px solid rgba(255,95,109,.4);background:var(--bg);color:var(--t);font-size:13px;cursor:pointer"
-                onchange="updateConstraintBadge('first')">
-                <option value="">— Aucune contrainte —</option>
-              </select>
-              <button class="btn bsm" onclick="clearConstraint('first')"
-                style="color:var(--m);border-color:var(--b);background:none;font-size:11px;padding:6px 12px;white-space:nowrap">✕ Effacer</button>
-            </div>
-            <div id="constraint-first-badge" style="display:none;margin-top:8px;padding:6px 10px;background:rgba(255,95,109,.08);border:1px solid rgba(255,95,109,.25);border-radius:8px;font-size:12px;color:#ff5f6d;font-family:var(--fm)"></div>
-          </div>
-
-          <!-- Cadre 2 : Patient suivant obligatoire -->
-          <div style="padding:14px;border-radius:10px;border:2px solid rgba(255,181,71,.35);background:rgba(255,181,71,.04)">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-              <span style="font-size:18px">🥈</span>
-              <div>
-                <div style="font-weight:700;font-size:13px;color:var(--t)">Patient suivant obligatoire (2ème position)</div>
-                <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-top:1px">Ce patient sera placé en 2ème position, après le premier obligatoire ou le premier IA.</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <select id="constraint-second-patient"
-                style="flex:1;min-width:180px;padding:9px 12px;border-radius:8px;border:1px solid rgba(255,181,71,.4);background:var(--bg);color:var(--t);font-size:13px;cursor:pointer"
-                onchange="updateConstraintBadge('second')">
-                <option value="">— Aucune contrainte —</option>
-              </select>
-              <button class="btn bsm" onclick="clearConstraint('second')"
-                style="color:var(--m);border-color:var(--b);background:none;font-size:11px;padding:6px 12px;white-space:nowrap">✕ Effacer</button>
-            </div>
-            <div id="constraint-second-badge" style="display:none;margin-top:8px;padding:6px 10px;background:rgba(255,181,71,.1);border:1px solid rgba(255,181,71,.3);border-radius:8px;font-size:12px;color:var(--w);font-family:var(--fm)"></div>
-          </div>
-
-        </div>
-      </div>
-
       <!-- 🚗 MODE UBER MÉDICAL — Pilotage de journée unifié -->
       <div class="card" style="margin-top:4px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
@@ -1274,7 +1230,10 @@
         )) return;
 
         const patients  = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
-        const snapshot  = patients.map(p => ({ ...p }));
+        // ⚠️ NE PAS copier avec map({...p}) — les cotations async de markUberDone()
+        // mettent à jour p._cotation.validated sur l'objet ORIGINAL dans uberPatients.
+        // Une copie shallow raterait ces mises à jour → doublon de cotation à la clôture.
+        const snapshot  = patients; // référence directe aux objets live
         const todayStr  = new Date().toISOString().split('T')[0];
 
         /* ── Traiter les patients visités mais pas encore cotés
