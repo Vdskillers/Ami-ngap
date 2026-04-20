@@ -119,6 +119,44 @@ function _getKmForPeriod(period) {
     const taux     = _calcKmRate(cv, kmAnnuel, electrique);
     const deduction = totalKm * taux;
 
+    // ── Répartition par IDE ─────────────────────────────────────────────────
+    // Pour chaque trajet, chaque IDE listée se voit attribuer les km du trajet
+    // (attribution complète, pas de division). Le total global reste compté
+    // une seule fois — c'est uniquement une vue interne "qui a fait quoi".
+    // Trajet sans champ infirmieres[] → attribué à l'utilisateur courant.
+    const currentUser = (typeof S !== 'undefined' && S?.user) ? S.user : {};
+    if (!currentUser.id) {
+      try {
+        const sess = JSON.parse(sessionStorage.getItem('ami') || 'null');
+        if (sess?.user) Object.assign(currentUser, sess.user);
+      } catch {}
+    }
+    const meKey = currentUser.id || 'me';
+    const ideMap = {};
+    filtered.forEach(e => {
+      const idesOnTrip = (Array.isArray(e.infirmieres) && e.infirmieres.length)
+        ? e.infirmieres
+        : [{ id: meKey, nom: currentUser.nom || '', prenom: currentUser.prenom || 'Moi', _isMe: true }];
+      idesOnTrip.forEach(ide => {
+        const key = ide.id || (String(ide.prenom||'') + '_' + String(ide.nom||''));
+        if (!ideMap[key]) {
+          ideMap[key] = {
+            id:     ide.id || key,
+            nom:    ide.nom    || '',
+            prenom: ide.prenom || '',
+            isMe:   !!ide._isMe || (ide.id && ide.id === currentUser.id),
+            count:  0,
+            totalKm: 0,
+          };
+        }
+        ideMap[key].count += 1;
+        ideMap[key].totalKm += parseFloat(e.km || 0);
+      });
+    });
+    const byIde = Object.values(ideMap)
+      .map(i => ({ ...i, totalKm: Math.round(i.totalKm * 10) / 10, deduction: Math.round(i.totalKm * taux * 100) / 100 }))
+      .sort((a, b) => b.totalKm - a.totalKm);
+
     const labels = { month:'Ce mois', lastmonth:'Mois précédent', '3month':'3 derniers mois', year:'Cette année', today:"Aujourd'hui", week:'Cette semaine' };
     return {
       totalKm:    Math.round(totalKm * 10) / 10,
@@ -129,8 +167,11 @@ function _getKmForPeriod(period) {
       cv,
       electrique,
       baremeLabel: _kmBaremeLabel(cv, electrique),
+      // ⚡ Détail des trajets + répartition par IDE
+      entries:    [...filtered].sort((a, b) => new Date(b.date) - new Date(a.date)),
+      byIde,
     };
-  } catch { return { totalKm: 0, deduction: 0, count: 0, label: '', taux: 0.636, cv: 5, electrique: false, baremeLabel: '5 CV' }; }
+  } catch { return { totalKm: 0, deduction: 0, count: 0, label: '', taux: 0.636, cv: 5, electrique: false, baremeLabel: '5 CV', entries: [], byIde: [] }; }
 }
 
 /* ════════════════════════════════════════════════
@@ -162,7 +203,7 @@ function renderTresorerie(arr, km) {
   const paid = _loadPaidMap();
 
   // ── Bloc kilométrique premium ─────────────────────────────────────────────
-  const kmBlock = km && km.totalKm > 0 ? `
+  const kmTopBlock = km && km.totalKm > 0 ? `
     <div class="km-block-premium">
       <div style="font-size:24px;flex-shrink:0">🚗</div>
       <div style="flex:1;min-width:0">
@@ -184,6 +225,84 @@ function renderTresorerie(arr, km) {
       <span style="font-size:18px">🚗</span>
       <span style="font-size:12px;color:var(--m)">Aucun trajet sur cette période. <a href="#" onclick="if(typeof navTo==='function')navTo('outils-km',null)" style="color:var(--a);text-decoration:none">→ Ajouter des trajets</a></span>
     </div>` : '');
+
+  // ── Répartition par IDE (affichée uniquement s'il y a ≥ 2 IDE distinctes) ─
+  const showByIde = km && Array.isArray(km.byIde) && km.byIde.length >= 2;
+  const byIdeBlock = showByIde ? `
+    <div class="km-ide-section">
+      <div class="km-ide-section-title">
+        <span style="color:var(--a2)">👥</span>
+        <span>Répartition par infirmière</span>
+        <span class="km-ide-hint" title="Un trajet partagé entre plusieurs IDE est comptabilisé une seule fois dans le total global. Cette vue interne affiche les km pour chaque IDE impliquée.">ⓘ</span>
+      </div>
+      <div class="km-ide-row">
+        ${km.byIde.map(ide => {
+          const label = ((ide.prenom||'') + ' ' + (ide.nom||'')).trim() || 'IDE';
+          return `
+            <div class="km-ide-card${ide.isMe?' me':''}">
+              <div class="km-ide-head">
+                <span class="km-ide-avatar">${ide.isMe?'👤':'🧑‍⚕️'}</span>
+                <div style="flex:1;min-width:0">
+                  <div class="km-ide-name">${label}${ide.isMe?' <span class="km-ide-me-tag">moi</span>':''}</div>
+                  <div class="km-ide-count">${ide.count} trajet${ide.count>1?'s':''}</div>
+                </div>
+              </div>
+              <div class="km-ide-stats">
+                <div class="km-ide-km"><span class="km-ide-val">${ide.totalKm.toFixed(1)}</span><span class="km-ide-unit"> km</span></div>
+                <div class="km-ide-ded">${ide.deduction.toFixed(2)} €</div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
+  // ── Détail des trajets (pliable) ──────────────────────────────────────────
+  const tripsBlock = (km && Array.isArray(km.entries) && km.entries.length > 0) ? `
+    <details class="km-trips-details">
+      <summary class="km-trips-summary">
+        <span class="km-trips-sum-left">
+          <span style="color:var(--a2)">📋</span>
+          <span>Détail des trajets</span>
+          <span class="km-trips-badge">${km.entries.length}</span>
+        </span>
+        <span class="km-trips-arrow">▾</span>
+      </summary>
+      <div class="km-trips-list">
+        ${km.entries.map(e => {
+          const kmVal  = parseFloat(e.km || 0);
+          const amount = kmVal * (km.taux || 0);
+          const dt     = e.date ? new Date(e.date) : null;
+          const dDay   = dt ? dt.toLocaleDateString('fr-FR',{day:'2-digit'}) : '—';
+          const dMon   = dt ? dt.toLocaleDateString('fr-FR',{month:'short'}).replace('.','') : '';
+          const idesHtml = Array.isArray(e.infirmieres) && e.infirmieres.length
+            ? `<div class="km-trip-ides">${e.infirmieres.map(i => {
+                const lbl = ((i.prenom||'')+' '+(i.nom||'')).trim() || 'IDE';
+                return `<span class="km-trip-ide">👤 ${lbl}</span>`;
+              }).join('')}</div>`
+            : '';
+          return `
+            <div class="km-trip">
+              <div class="km-trip-date">
+                <div class="km-trip-day">${dDay}</div>
+                <div class="km-trip-mon">${dMon}</div>
+              </div>
+              <div class="km-trip-body">
+                <div class="km-trip-head">
+                  <span class="km-trip-km">🚗 ${kmVal.toFixed(1)} km</span>
+                  ${e.cabinet ? '<span class="km-trip-cab">Cabinet</span>' : ''}
+                </div>
+                ${e.patient_nom ? `<div class="km-trip-pat">👥 ${e.patient_nom}</div>` : ''}
+                ${(e.depart || e.arrivee) ? `<div class="km-trip-route">${e.depart||'?'} → ${e.arrivee||'?'}</div>` : ''}
+                ${e.motif && !String(e.motif).startsWith('Trajet cabinet') ? `<div class="km-trip-motif">${e.motif}</div>` : ''}
+                ${idesHtml}
+              </div>
+              <div class="km-trip-amt">${amount.toFixed(2)} €</div>
+            </div>`;
+        }).join('')}
+      </div>
+    </details>` : '';
+
+  const kmBlock = kmTopBlock + byIdeBlock + tripsBlock;
 
   if (!arr.length) {
     el.innerHTML = kmBlock + '<div class="empty"><div class="ei">💸</div><p style="margin-top:8px;color:var(--m)">Aucune cotation sur cette période.</p></div>';
@@ -349,6 +468,57 @@ async function exportComptable() {
         `${km.totalKm.toFixed(1)} km parcourus`,
         `Déduction ${km.deduction.toFixed(2)} € (${km.taux ? km.taux.toFixed(3) : '0.636'} €/km · ${km.baremeLabel || '5 CV'})`,
       ].join(';'));
+
+      // ── Répartition par IDE (si ≥ 2 IDE) ────────────────────────────────
+      if (Array.isArray(km.byIde) && km.byIde.length >= 2) {
+        lines.push('');
+        lines.push(['RÉPARTITION PAR IDE','','','','','','','','','','',''].join(';'));
+        km.byIde.forEach(ide => {
+          const label = ((ide.prenom||'') + ' ' + (ide.nom||'')).trim() || 'IDE';
+          lines.push([
+            'IDE',
+            label + (ide.isMe ? ' (moi)' : ''),
+            `${ide.count} trajet(s)`,
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            `${ide.totalKm.toFixed(1)} km`,
+            `Déduction ${ide.deduction.toFixed(2)} €`,
+          ].join(';'));
+        });
+      }
+
+      // ── Détail des trajets ──────────────────────────────────────────────
+      if (Array.isArray(km.entries) && km.entries.length > 0) {
+        lines.push('');
+        lines.push(['DÉTAIL TRAJETS','Date','Départ','Arrivée','Distance (km)','Patient(s)','IDE(s)','Cabinet','Motif','Taux (€/km)','Déduction (€)',''].join(';'));
+        const _sanCsv = v => String(v==null?'':v).replace(/[\r\n;]+/g, ' ').trim();
+        km.entries.forEach(e => {
+          const kmVal  = parseFloat(e.km || 0);
+          const amount = kmVal * (km.taux || 0);
+          const idesCol = Array.isArray(e.infirmieres) && e.infirmieres.length
+            ? e.infirmieres.map(i => ((i.prenom||'') + ' ' + (i.nom||'')).trim()).join(' + ')
+            : '';
+          lines.push([
+            'TRAJET',
+            _sanCsv(e.date),
+            _sanCsv(e.depart),
+            _sanCsv(e.arrivee),
+            kmVal.toFixed(1),
+            _sanCsv(e.patient_nom),
+            _sanCsv(idesCol),
+            e.cabinet ? 'OUI' : 'NON',
+            _sanCsv(e.motif),
+            (km.taux || 0).toFixed(3),
+            amount.toFixed(2),
+            '',
+          ].join(';'));
+        });
+      }
     }
 
     const csv  = [header.join(';'), ...lines].join('\n');
