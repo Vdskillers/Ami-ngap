@@ -645,25 +645,41 @@ async function renderPlanning(d){
     // La grille filtre déjà par jour dans chaque colonne → pas de risque de doublon
     const patientsForCabinet = patients.length ? patients : patientsToShow;
 
-    if (typeof cabinetGeoCluster === 'function') {
-      const clusters = cabinetGeoCluster(patientsForCabinet, effectiveMembers.length);
+    // Initialiser les assignments pour chaque membre
+    const COLORS = ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'];
+    effectiveMembers.forEach((m, i) => {
+      const ideId = m.id || m.infirmiere_id || `ide_${i}`;
+      cabinetAssignments[ideId] = {
+        nom:      m.nom    || '',
+        prenom:   m.prenom || '',
+        role:     m.role   || 'membre',
+        patients: [],
+        color:    COLORS[i % 5],
+      };
+    });
+
+    // ⚡ Distribuer les patients : respecter _assignedIde (choix manuel) en priorité
+    const patsWithManual    = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
+    const patsNeedsClustering = patientsForCabinet.filter(p => !p._assignedIde || !cabinetAssignments[p._assignedIde]);
+
+    // Patients avec assignation manuelle → direct
+    patsWithManual.forEach(p => {
+      cabinetAssignments[p._assignedIde].patients.push(p);
+    });
+
+    // Patients sans assignation → clustering géographique
+    if (patsNeedsClustering.length && typeof cabinetGeoCluster === 'function') {
+      const clusters = cabinetGeoCluster(patsNeedsClustering, effectiveMembers.length);
       effectiveMembers.forEach((m, i) => {
         const ideId = m.id || m.infirmiere_id || `ide_${i}`;
-        cabinetAssignments[ideId] = {
-          nom:      m.nom    || '',
-          prenom:   m.prenom || '',
-          role:     m.role   || 'membre',
-          patients: (clusters[i] || []),
-          color:    ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'][i % 5],
-        };
+        (clusters[i] || []).forEach(p => cabinetAssignments[ideId].patients.push(p));
       });
-    } else {
-      // Fallback sans cabinetGeoCluster : mettre tous les patients dans un seul IDE
-      const solo = (cab.members?.[0]) || { id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' };
-      cabinetAssignments[solo.id || 'ide_0'] = {
-        nom: solo.nom || '', prenom: solo.prenom || 'Moi', role: 'titulaire',
-        patients: patientsForCabinet, color: '#00d4aa',
-      };
+    } else if (patsNeedsClustering.length) {
+      // Fallback : répartition circulaire
+      patsNeedsClustering.forEach((p, i) => {
+        const ideId = Object.keys(cabinetAssignments)[i % effectiveMembers.length];
+        if (cabinetAssignments[ideId]) cabinetAssignments[ideId].patients.push(p);
+      });
     }
   }
 
@@ -710,101 +726,169 @@ async function renderPlanning(d){
     </div>`;
   }
 
-  // ── Rendu vue CABINET (colonnes par IDE) ──────────────────────────────────
+  // ── Rendu vue CABINET (colonnes par IDE + CA estimé + sélecteur IDE) ────────
   function renderCabinetView() {
     const ideList = Object.entries(cabinetAssignments);
-    if (!ideList.length) return '<div class="ai in">Aucun membre dans ce cabinet.</div>';
 
-    // En-tête avec noms IDE + stats
-    const headerCols = ideList.map(([, a]) => {
-      const rev = a.patients.reduce((s, p) => {
-        const t = p._cotation?.validated ? (p._cotation.total||0) : 0;
-        return s + t;
-      }, 0);
-      return `<div style="padding:8px 10px;background:${a.color}18;border-top:3px solid ${a.color};border-radius:8px 8px 0 0;text-align:center">
-        <div style="font-weight:700;font-size:13px">${a.prenom} ${a.nom}</div>
-        <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${a.role === 'titulaire' ? '👑' : '👤'} ${a.patients.length} patient(s)${rev > 0 ? ` · ${rev.toFixed(2)} €` : ''}</div>
+    // ⚡ Pas de membres → cabinet en cours de chargement (initCabinet async)
+    if (!ideList.length) {
+      setTimeout(() => {
+        const cabNow = APP.get ? APP.get('cabinet') : null;
+        if (cabNow?.members?.length) renderPlanning({}).catch(() => {});
+      }, 900);
+      return `<div style="text-align:center;padding:32px 16px">
+        <div class="spin spinw" style="width:24px;height:24px;margin:0 auto 10px"></div>
+        <div style="font-size:13px;color:var(--m)">Chargement des membres du cabinet…</div>
+        <div style="font-size:11px;color:var(--m);margin-top:6px">Si le problème persiste, cliquez sur ↻ Actualiser</div>
       </div>`;
-    }).join('');
+    }
 
-    // Grille des jours pour chaque IDE
+    // ── CA validé + CA estimé par IDE ─────────────────────────────────────
+    const caValByIde = {}, caEstByIde = {};
+    ideList.forEach(([ideId, a]) => {
+      caValByIde[ideId] = a.patients.reduce((s, p) =>
+        s + (p._cotation?.validated ? parseFloat(p._cotation.total||0) : 0), 0);
+      caEstByIde[ideId] = typeof estimateRevenue === 'function'
+        ? estimateRevenue(a.patients) : a.patients.length * 6.30;
+    });
+    const caValTotal = Object.values(caValByIde).reduce((s, v) => s + v, 0);
+    const caEstTotal = Object.values(caEstByIde).reduce((s, v) => s + v, 0);
+
+    // ── Sélecteur IDE pour réassigner un patient manuellement ─────────────
+    function ideSelectHtml(p, currentIdeId) {
+      const safeIdx = p._planIdx ?? -1;
+      return `<select
+        onchange="window._planningReassignIDE(this.value, ${safeIdx})"
+        style="font-size:10px;font-family:var(--fm);padding:2px 5px;border-radius:6px;
+               border:1px solid var(--b);background:var(--s);color:var(--t);cursor:pointer;
+               max-width:120px;margin-top:4px">
+        ${ideList.map(([id, a]) =>
+          `<option value="${id}" ${id === currentIdeId ? 'selected' : ''}>${a.prenom} ${a.nom}</option>`
+        ).join('')}
+      </select>`;
+    }
+
+    // ── Carte patient compacte pour la grille cabinet ─────────────────────
+    function patCardCab(p, ideId, color) {
+      const nom   = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
+      const soin  = (p.actes_recurrents || p.description || p.texte || '').slice(0, 55);
+      const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+      const cot   = p._cotation?.validated;
+      const caEst = typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30;
+      return `<div style="background:var(--c);border:1px solid var(--b);border-left:3px solid ${color};
+                          border-radius:8px;padding:8px 10px;margin-bottom:6px">
+        <div style="font-size:12px;font-weight:600;color:var(--t);margin-bottom:2px">${nom}</div>
+        ${heure ? `<div style="font-size:10px;color:var(--w);font-family:var(--fm)">⏰ ${heure}</div>` : ''}
+        ${soin  ? `<div style="font-size:10px;color:var(--m);margin:2px 0;line-height:1.3">${soin}</div>` : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-top:4px">
+          <span style="font-size:10px;font-family:var(--fm);font-weight:600;color:${cot ? 'var(--a)' : color}">
+            💶 ${cot ? parseFloat(p._cotation.total).toFixed(2) : '~' + caEst.toFixed(2)} €
+          </span>
+          ${ideSelectHtml(p, ideId)}
+        </div>
+      </div>`;
+    }
+
+    // ── Résoudre le jour d'un patient ─────────────────────────────────────
+    function resolveJour(p) {
+      if (p.date) {
+        try {
+          const pd = new Date(p.date);
+          if (!isNaN(pd)) {
+            const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
+            return JOURS.find(jj => nj.startsWith(jj)) || null;
+          }
+        } catch {}
+      }
+      const desc = (p.description || p.texte || '').toLowerCase();
+      const fromDesc = JOURS.find(jj => desc.includes(jj));
+      if (fromDesc) return fromDesc;
+      const stableKey = String(p.patient_id || p.id || p.nom || p._nomAff || '');
+      if (stableKey) {
+        let hash = 0;
+        for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
+        return JOURS[hash % JOURS.length];
+      }
+      return null;
+    }
+
+    // ── Grille jours × IDEs ───────────────────────────────────────────────
     const dayRows = JOURS.map((j, ji) => {
-      const dateJ    = weekDates[ji];
-      // ⚡ Comparaison en heure locale (pas UTC) — évite le décalage timezone
-      const _djY = dateJ.getFullYear(), _djM = String(dateJ.getMonth()+1).padStart(2,'0'), _djD = String(dateJ.getDate()).padStart(2,'0');
-      const isToday  = `${_djY}-${_djM}-${_djD}` === todayISO;
-      const dateStr  = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
-      const jourCap  = j.charAt(0).toUpperCase() + j.slice(1);
+      const dateJ  = weekDates[ji];
+      const _y = dateJ.getFullYear(), _m = String(dateJ.getMonth()+1).padStart(2,'0'), _d = String(dateJ.getDate()).padStart(2,'0');
+      const isToday = `${_y}-${_m}-${_d}` === todayISO;
+      const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
 
-      const cols = ideList.map(([, a]) => {
-        const dayPats = a.patients.filter(p => {
-          // 1. Date ISO fixée → résolution par jour de la semaine
-          if (p.date) {
-            try {
-              const pd = new Date(p.date);
-              if (!isNaN(pd)) {
-                const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
-                return !!(JOURS.find(jj => nj.startsWith(jj)) === j);
-              }
-            } catch {}
-          }
-          // 2. Mention du jour dans la description ("lundi", "mardi"…)
-          const desc = (p.description || p.texte || '').toLowerCase();
-          const jourDesc = JOURS.find(jj => desc.includes(jj));
-          if (jourDesc) return jourDesc === j;
-          // 3. Fallback stable : hash sur patient_id/nom → même case chaque render
-          const stableKey = String(p.patient_id || p.id || p.nom || p._nomAff || '');
-          if (stableKey) {
-            let hash = 0;
-            for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
-            return JOURS[hash % JOURS.length] === j;
-          }
-          return false;
-        });
-        return `<div style="padding:6px 8px;min-height:40px;border-right:1px solid var(--b)">
+      // Nb patients ce jour (tous IDEs confondus)
+      const nbJour = ideList.reduce((s, [, a]) => s + a.patients.filter(p => resolveJour(p) === j).length, 0);
+
+      const cols = ideList.map(([ideId, a]) => {
+        const dayPats = a.patients.filter(p => resolveJour(p) === j);
+        return `<div style="padding:6px 8px;min-height:44px;border-left:1px solid var(--b)">
           ${dayPats.length
-            ? dayPats.map(p => renderPatientCard(p, a.color)).join('')
-            : `<div style="font-size:11px;color:var(--b);text-align:center;padding:8px 0">—</div>`}
+            ? dayPats.map(p => patCardCab(p, ideId, a.color)).join('')
+            : `<div style="font-size:11px;color:var(--b);text-align:center;padding:12px 0">—</div>`}
         </div>`;
       }).join('');
 
-      return `<div style="display:grid;grid-template-columns:80px repeat(${ideList.length},1fr);border-bottom:1px solid var(--b)${isToday ? ';background:rgba(0,212,170,.03)' : ''}">
-        <div style="padding:8px;border-right:1px solid var(--b);display:flex;flex-direction:column;justify-content:center">
-          <div style="font-size:12px;font-weight:${isToday ? '700' : '600'};color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
+      return `<div style="display:grid;grid-template-columns:68px repeat(${ideList.length},1fr);border-bottom:1px solid var(--b)${isToday ? ';background:rgba(0,212,170,.03)' : ''}">
+        <div style="padding:8px 6px;border-right:1px solid var(--b);display:flex;flex-direction:column;justify-content:center;gap:2px">
+          <div style="font-size:11px;font-weight:${isToday ? '700' : '600'};color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
           <div style="font-size:10px;color:var(--m);font-family:var(--fm)">${dateStr}</div>
-          ${isToday ? '<div style="font-size:9px;color:var(--a);font-family:var(--fm)">Aujourd\'hui</div>' : ''}
+          ${isToday ? '<div style="font-size:9px;color:var(--a);font-family:var(--fm)">Auj.</div>' : ''}
+          ${nbJour ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 5px;border-radius:10px;text-align:center;margin-top:2px">${nbJour}</div>` : ''}
         </div>
         ${cols}
       </div>`;
     }).join('');
 
-    // Calcul CA cabinet total
-    const cabinetTotal = ideList.reduce((s, [, a]) => {
-      return s + a.patients.reduce((ss, p) => ss + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
-    }, 0);
-
     return `
-      <!-- Bandeau IDE -->
-      <div style="display:grid;grid-template-columns:80px repeat(${ideList.length},1fr);margin-bottom:0;border-radius:8px 8px 0 0;overflow:hidden">
-        <div style="padding:8px;background:var(--s);border:1px solid var(--b);border-radius:8px 0 0 0;display:flex;align-items:center;justify-content:center">
-          <span style="font-size:11px;color:var(--m);font-family:var(--fm);text-align:center">Jour</span>
+      <!-- En-tête IDEs avec CA estimé par IDE -->
+      <div style="display:grid;grid-template-columns:68px repeat(${ideList.length},1fr);border-radius:10px 10px 0 0;overflow:hidden;border:1px solid var(--b)">
+        <div style="padding:8px 6px;background:var(--s);display:flex;align-items:center;justify-content:center">
+          <span style="font-size:10px;color:var(--m);font-family:var(--fm);text-align:center">Jour</span>
         </div>
-        ${ideList.map(([, a]) => `
-          <div style="padding:8px 10px;background:${a.color}18;border-top:3px solid ${a.color};border:1px solid var(--b);text-align:center">
-            <div style="font-weight:700;font-size:13px">${a.prenom} ${a.nom}</div>
-            <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${a.patients.length} patient(s)</div>
-          </div>`).join('')}
+        ${ideList.map(([ideId, a]) => {
+          const caV = caValByIde[ideId] || 0;
+          const caE = caEstByIde[ideId] || 0;
+          const shown = caV > 0 ? caV : caE;
+          const isVal = caV > 0;
+          return `<div style="padding:10px 12px;background:${a.color}12;border-left:1px solid var(--b);border-top:3px solid ${a.color}">
+            <div style="font-weight:700;font-size:13px;color:var(--t)">${a.prenom} ${a.nom}</div>
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${a.role === 'titulaire' ? '👑' : '👤'} · ${a.patients.length} patient(s)</div>
+            <div style="font-size:12px;font-weight:700;color:${a.color};font-family:var(--fm);margin-top:5px">
+              💶 ${shown.toFixed(2)} €
+              <span style="font-size:9px;font-weight:400;opacity:.7">${isVal ? 'validé' : 'estimé'}</span>
+            </div>
+          </div>`;
+        }).join('')}
       </div>
       <!-- Grille jours × IDEs -->
-      <div style="border:1px solid var(--b);border-top:none;border-radius:0 0 8px 8px;overflow:hidden">
+      <div style="border:1px solid var(--b);border-top:none;border-radius:0 0 10px 10px;overflow:hidden">
         ${dayRows}
       </div>
-      <!-- Total cabinet -->
-      ${cabinetTotal > 0 ? `
-      <div style="margin-top:12px;padding:10px 14px;background:rgba(0,212,170,.08);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <span style="font-size:13px;font-weight:600">💶 Total cotations cabinet cette semaine</span>
-        <strong style="font-size:16px;color:var(--a)">${cabinetTotal.toFixed(2)} €</strong>
-      </div>` : ''}
+      <!-- Barre récap CA cabinet semaine -->
+      <div style="margin-top:12px;padding:14px 16px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.2);border-radius:10px">
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+          <div style="flex:1;min-width:150px">
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">CA ESTIMÉ SEMAINE · CABINET</div>
+            <div style="font-size:20px;font-weight:700;color:var(--a)">${(caValTotal > 0 ? caValTotal : caEstTotal).toFixed(2)} €</div>
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${caValTotal > 0 ? 'cotations validées' : 'estimation NGAP'} · ${patientsForCabinet.length} patient(s)</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${ideList.map(([ideId, a]) => {
+              const shown = (caValByIde[ideId]||0) > 0 ? caValByIde[ideId] : caEstByIde[ideId]||0;
+              return `<div style="padding:8px 12px;background:${a.color}12;border:1px solid ${a.color}30;border-radius:8px;text-align:center;min-width:80px">
+                <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-bottom:2px">${a.prenom}</div>
+                <div style="font-size:14px;font-weight:700;color:${a.color}">${shown.toFixed(2)} €</div>
+                <div style="font-size:9px;color:var(--m);font-family:var(--fm)">${a.patients.length} pat.</div>
+              </div>`;
+            }).join('')}
+          </div>
+          <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="font-size:11px;white-space:nowrap">⚡ Optimiser</button>
+        </div>
+      </div>
     `;
   }
 
@@ -989,6 +1073,24 @@ function _planningRemovePatient(idx) {
   renderPlanning({}).catch(() => {});
   if (typeof showToast === 'function') showToast('✅ Patient retiré du planning.');
 }
+
+/* Réassigner un patient à un autre IDE dans la vue cabinet */
+window._planningReassignIDE = function(newIdeId, patientIdx) {
+  const planData = window.APP._planningData;
+  const arr = planData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries
+    || [];
+  if (patientIdx < 0 || patientIdx >= arr.length) return;
+
+  // Stocker l'assignation IDE dans le patient (clé _assignedIde)
+  arr[patientIdx] = { ...arr[patientIdx], _assignedIde: newIdeId };
+
+  // Persister + re-render
+  _savePlanning(arr);
+  _syncPlanningToServer(arr).catch(() => {});
+  renderPlanning({}).catch(() => {});
+};
 
 /* Effacer tout le planning hebdomadaire */
 function _planningResetAll() {
