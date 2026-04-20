@@ -1247,7 +1247,13 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  const rawPatients = APP.get('importedData')?.patients || APP.get('importedData')?.entries || [];
+  // Lire importedData depuis toutes les sources possibles
+  // APP.importedData est posé par storeImportedData() (accès direct)
+  // APP.get('importedData') lit depuis le store réactif (peut différer)
+  const _impData = APP.importedData
+    || APP.get('importedData')
+    || (typeof loadTourneeData === 'function' ? loadTourneeData() : null);
+  const rawPatients = _impData?.patients || _impData?.entries || [];
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
