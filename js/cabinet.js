@@ -707,8 +707,9 @@ async function cabinetPushSync() {
   if (!cab?.id) { _syncMsg('Vous n\'êtes pas dans un cabinet.', 'e'); return; }
   const prefs = _loadSyncPrefs();
 
-  const whatKeys  = Object.entries(prefs.what).filter(([,v]) => v).map(([k]) => k);
-  const withIds   = Object.entries(prefs.with).filter(([,v]) => v).map(([k]) => k);
+  // ⚠️ FIX : let (pas const) — whatKeys peut être réassigné si patients doit être forcé
+  let whatKeys  = Object.entries(prefs.what).filter(([,v]) => v).map(([k]) => k);
+  const withIds = Object.entries(prefs.with).filter(([,v]) => v).map(([k]) => k);
 
   if (!whatKeys.length) { _syncMsg('Aucune donnée à synchroniser — cochez ce que vous souhaitez partager.', 'e'); return; }
   if (!withIds.length)  { _syncMsg('Aucune collègue sélectionnée — cochez avec qui partager.', 'e'); return; }
