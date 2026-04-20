@@ -221,10 +221,17 @@ function _renderCabinetDashboard(root, d) {
     { key: 'constantes',  icon: '📊', label: 'Constantes patients', desc: 'Partagez les mesures TA, glycémie, SpO2… entre IDEs — chiffré AES' },
   ];
 
+  // Pré-population : si une clé what n'a jamais été définie → true par défaut
+  let whatPrefsChanged = false;
+  whatItems.forEach(item => {
+    if (!(item.key in prefs.what)) { prefs.what[item.key] = true; whatPrefsChanged = true; }
+  });
+  if (whatPrefsChanged) { _saveSyncPrefs(prefs); }
+
   const whatHTML = whatItems.map(item => `
     <label style="display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--b);border-radius:10px;cursor:pointer;background:var(--s);transition:border-color .15s"
       onmouseenter="this.style.borderColor='rgba(0,212,170,.3)'" onmouseleave="this.style.borderColor='var(--b)'">
-      <input type="checkbox" id="sync-what-${item.key}" ${prefs.what[item.key] ? 'checked' : ''}
+      <input type="checkbox" id="sync-what-${item.key}" ${prefs.what[item.key] !== false ? 'checked' : ''}
         onchange="cabinetToggleSyncWhat('${item.key}', this.checked)"
         style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0;margin-top:1px">
       <div>
@@ -487,7 +494,7 @@ function _renderCabinetDemoDashboard(root, cab) {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:12px;margin-bottom:16px">
         ${whatItems.map(item => `
           <label style="display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--b);border-radius:10px;cursor:pointer;background:var(--s)">
-            <input type="checkbox" id="sync-what-${item.key}" ${prefs.what[item.key] ? 'checked' : ''}
+            <input type="checkbox" id="sync-what-${item.key}" ${prefs.what[item.key] !== false ? 'checked' : ''}
               onchange="cabinetToggleSyncWhat('${item.key}', this.checked)"
               style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0;margin-top:1px">
             <div>
@@ -886,11 +893,16 @@ async function cabinetPullSync() {
       }
     }
 
+    console.info('[cabinetPullSync] items reçus:', items.length, '| applied:', applied, '| details:', details);
     if (applied > 0) {
       _syncOk(`✅ Import depuis ${items.length} collègue(s) — ${details.join(', ')}`);
       showToast('success', 'Données importées', details.join(', '));
+      // Rafraîchir le carnet patients si ouvert
+      if (typeof loadPatients === 'function') loadPatients().catch(() => {});
     } else {
-      _syncOk(`ℹ️ Données reçues mais rien de nouveau à importer (déjà à jour).`);
+      // Afficher le détail pour aider au diagnostic
+      const whatReceived = items.map(i => i.what?.join(', ') || '(vide)').join(' | ');
+      _syncOk(`ℹ️ Reçu ${items.length} paquet(s) [${whatReceived}] mais rien à importer — données déjà présentes ou types non cochés.`);
     }
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
