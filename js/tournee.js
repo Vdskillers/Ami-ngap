@@ -1348,6 +1348,8 @@ async function optimiserTournee(){
 
   $('res-tur').classList.add('show');
   ld('btn-tur',false);
+  // Notifier la carte Trajet Cabinet pour se rafraîchir
+  document.dispatchEvent(new CustomEvent('tournee:updated'));
 }
 
 /* Indicateur de progression optimisation */
@@ -4062,29 +4064,31 @@ function _renderTourneeCabinetHTML(assignments, scoreData) {
   window._bindCabinetCheckbox = _bindCabinetCheckbox;
 })();
 
+
+
 /* ════════════════════════════════════════════════════════════════════
-   TRAJET CABINET — UI Pilotage de journée
+   TRAJET CABINET — UI Pilotage de journée v2
    ────────────────────────────────────────────────────────────────────
-   _initLiveCabinetTrajetUI()  — appelé à chaque navigation vers "live"
-     • Affiche/masque la carte selon le cabinet
-     • Peuple le select patients depuis l'IDB
-     • Peuple les checkboxes IDEs depuis cabinet.members
-   _cabTogglePatientInput()    — bascule select ↔ saisie libre
-   _cabResetForm()             — réinitialise le formulaire
+   Lit directement les données de la Tournée optimisée par IA :
+     APP.get('uberPatients')  → liste des patients avec distances leg
+     APP.get('tourneeKmJour') → distance totale OSRM en km
+     APP.get('startPoint')    → point de départ {lat,lng}
+   Aucun champ dupliqué — seule la sélection IDE est demandée.
 ═════════════════════════════════════════════════════════════════════= */
 
 async function _initLiveCabinetTrajetUI() {
-  const card   = document.getElementById('live-cabinet-km-card');
-  const noCab  = document.getElementById('live-cab-no-cabinet');
-  const form   = document.getElementById('live-cab-form');
+  const card    = document.getElementById('live-cabinet-km-card');
+  const noCab   = document.getElementById('live-cab-no-cabinet');
+  const form    = document.getElementById('live-cab-form');
+  const recap   = document.getElementById('km-cab-tournee-recap');
+  const noTour  = document.getElementById('km-cab-no-tournee');
   if (!card) return;
 
-  // Toujours afficher la carte
   card.style.display = 'block';
 
   const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
 
-  // Pas de cabinet
+  // ── Pas de cabinet ──────────────────────────────────────────────
   if (!cab?.id) {
     if (noCab) noCab.style.display = 'block';
     if (form)  form.style.display  = 'none';
@@ -4093,10 +4097,87 @@ async function _initLiveCabinetTrajetUI() {
   if (noCab) noCab.style.display = 'none';
   if (form)  form.style.display  = 'block';
 
-  // ── Date du jour par défaut ──────────────────────────────────────
-  const dateEl = document.getElementById('km-cab-date');
-  if (dateEl && !dateEl.value) {
-    dateEl.value = new Date().toISOString().slice(0, 10);
+  // ── Lire les données de la tournée ─────────────────────────────
+  const uberPats = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || []) : [];
+  const totalKm  = (typeof APP !== 'undefined' && APP.get)
+    ? (APP.get('tourneeKmJour') || parseFloat(localStorage.getItem('ami_tournee_km') || '0') || 0)
+    : 0;
+  const startPt  = (typeof APP !== 'undefined' && APP.get) ? APP.get('startPoint') : null;
+  const today    = new Date().toISOString().slice(0, 10);
+
+  // Patients filtrés : ceux qui ont un nom
+  const patients = uberPats
+    .map((p, i) => ({
+      nom:    ((p.nom || '') + ' ' + (p.prenom || '')).trim() || p.label || p.description || `Patient ${i + 1}`,
+      km:     p._legKm || null,   // km du leg individuel si dispo
+      adresse: p.adresse || p.addressFull || p.address || '',
+    }))
+    .filter(p => p.nom && !p.nom.startsWith('Patient '));
+
+  // Dernier patient = destination finale
+  const lastPat = patients.length ? patients[patients.length - 1] : null;
+
+  // ── Récapitulatif tournée ───────────────────────────────────────
+  if (recap) {
+    if (!uberPats.length || totalKm <= 0) {
+      // Pas de tournée calculée
+      recap.innerHTML = '';
+      if (noTour) noTour.style.display = 'block';
+    } else {
+      if (noTour) noTour.style.display = 'none';
+
+      const patBadges = patients.length
+        ? patients.map(p =>
+            `<span style="display:inline-flex;align-items:center;gap:4px;
+              background:rgba(79,168,255,.07);border:1px solid rgba(79,168,255,.15);
+              border-radius:20px;padding:3px 10px;font-family:var(--fm);font-size:11px;color:var(--a2);margin:2px">
+              👤 ${p.nom}${p.km ? ` <em style="font-size:10px;opacity:.7">${p.km} km</em>` : ''}
+            </span>`
+          ).join('')
+        : `<span style="font-size:11px;color:var(--m);font-style:italic">Aucun patient nommé dans la tournée.</span>`;
+
+      recap.innerHTML = `
+        <div style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);
+          border-radius:10px;padding:14px">
+          <div style="font-family:var(--fm);font-size:10px;color:var(--a);text-transform:uppercase;
+            letter-spacing:1.5px;margin-bottom:10px">📋 Données de la Tournée optimisée</div>
+
+          <!-- Métriques -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:8px;padding:8px 14px;flex:1;min-width:90px;text-align:center">
+              <div style="font-size:18px;font-weight:700;color:var(--a)">${totalKm.toFixed(1)}</div>
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm)">km OSRM</div>
+            </div>
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:8px;padding:8px 14px;flex:1;min-width:90px;text-align:center">
+              <div style="font-size:18px;font-weight:700;color:var(--a2)">${uberPats.length}</div>
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm)">patient${uberPats.length > 1 ? 's' : ''}</div>
+            </div>
+            <div style="background:var(--s);border:1px solid var(--b);border-radius:8px;padding:8px 14px;flex:1;min-width:90px;text-align:center">
+              <div style="font-size:14px;font-weight:700;color:var(--t)">${new Date(today).toLocaleDateString('fr-FR', {weekday:'short',day:'2-digit',month:'short'})}</div>
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm)">date</div>
+            </div>
+          </div>
+
+          <!-- Patients -->
+          <div style="margin-bottom:10px">
+            <div style="font-size:11px;font-family:var(--fm);color:var(--m);margin-bottom:6px">PATIENTS</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">${patBadges}</div>
+          </div>
+
+          <!-- Départ → Arrivée -->
+          <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--m)">
+            <span style="background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2);
+              border-radius:6px;padding:2px 8px;font-family:var(--fm)">
+              📍 Départ : ${startPt ? `${startPt.lat?.toFixed(4)}, ${startPt.lng?.toFixed(4)}` : 'Point de départ tournée'}
+            </span>
+            <span style="color:var(--b)">→</span>
+            <span style="background:rgba(79,168,255,.08);color:var(--a2);border:1px solid rgba(79,168,255,.15);
+              border-radius:6px;padding:2px 8px;font-family:var(--fm)">
+              🏁 ${lastPat ? lastPat.nom : 'Dernier patient'}
+            </span>
+          </div>
+        </div>`;
+    }
   }
 
   // ── Membres IDEs ─────────────────────────────────────────────────
@@ -4105,7 +4186,6 @@ async function _initLiveCabinetTrajetUI() {
     const members = cab.members || [];
     const me = (typeof APP !== 'undefined') ? APP.user : null;
 
-    // Inclure l'utilisateur courant s'il n'est pas dans members
     const allIDEs = [...members];
     if (me && !allIDEs.find(m => m.id === me.id)) {
       allIDEs.unshift({ id: me.id, nom: me.nom || '', prenom: me.prenom || '', role: 'me' });
@@ -4117,9 +4197,9 @@ async function _initLiveCabinetTrajetUI() {
       nursesList.innerHTML = allIDEs.map(m => {
         const label = `${m.prenom || ''} ${m.nom || ''}`.trim() || m.id;
         const isMe  = m.id === me?.id;
-        const role  = m.role === 'titulaire' ? '👑' : isMe ? '🙋' : '👤';
+        const icon  = m.role === 'titulaire' ? '👑' : isMe ? '🙋' : '👤';
         return `
-          <label style="display:inline-flex;align-items:center;gap:7px;padding:7px 13px;
+          <label style="display:inline-flex;align-items:center;gap:7px;padding:7px 14px;
             background:${isMe ? 'rgba(0,212,170,.1)' : 'var(--s)'};
             border:1px solid ${isMe ? 'rgba(0,212,170,.35)' : 'var(--b)'};
             border-radius:20px;cursor:pointer;font-size:12px;color:var(--t);
@@ -4129,90 +4209,28 @@ async function _initLiveCabinetTrajetUI() {
             <input type="checkbox"
               class="km-cab-nurse-cb"
               data-nurse-id="${m.id}"
-              data-nurse-nom="${(m.nom||'').replace(/"/g,'&quot;')}"
-              data-nurse-prenom="${(m.prenom||'').replace(/"/g,'&quot;')}"
+              data-nurse-nom="${(m.nom || '').replace(/"/g, '&quot;')}"
+              data-nurse-prenom="${(m.prenom || '').replace(/"/g, '&quot;')}"
               ${isMe ? 'checked' : ''}
               style="width:15px;height:15px;accent-color:var(--a);flex-shrink:0">
-            <span>${role} ${label}${isMe ? ' <em style="font-size:10px;color:var(--a);font-style:normal">(moi)</em>' : ''}</span>
+            <span>${icon} ${label}${isMe ? ' <em style="font-size:10px;color:var(--a);font-style:normal">(moi)</em>' : ''}</span>
           </label>`;
       }).join('');
     }
   }
-
-  // ── Patients depuis l'IDB ────────────────────────────────────────
-  const patSel = document.getElementById('km-cab-patient-select');
-  if (patSel && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-    try {
-      const rows = await _idbGetAll(PATIENTS_STORE);
-      // Trier alphabétiquement nom
-      const sorted = rows
-        .map(r => ({ id: r.id, label: `${r.prenom || ''} ${r.nom || ''}`.trim() || `#${r.id}` }))
-        .filter(r => r.label && r.label !== '#')
-        .sort((a, b) => a.label.localeCompare(b.label, 'fr'));
-
-      patSel.innerHTML = '<option value="">— Sélectionner un patient du carnet —</option>'
-        + sorted.map(r => `<option value="${r.label.replace(/"/g,'&quot;')}">${r.label}</option>`).join('');
-    } catch (_e) {
-      // IDB indisponible — saisie libre uniquement
-      patSel.style.display = 'none';
-      const patLibre = document.getElementById('km-cab-patient-libre');
-      if (patLibre) { patLibre.style.display = 'block'; }
-      const toggleBtn = document.getElementById('km-cab-patient-toggle-btn');
-      if (toggleBtn) toggleBtn.style.display = 'none';
-    }
-  }
 }
 
-/** Bascule entre select patients et saisie libre */
-function _cabTogglePatientInput() {
-  const sel    = document.getElementById('km-cab-patient-select');
-  const libre  = document.getElementById('km-cab-patient-libre');
-  const btn    = document.getElementById('km-cab-patient-toggle-btn');
-  if (!sel || !libre) return;
-  const isLibre = libre.style.display !== 'none';
-  if (isLibre) {
-    // Revenir au select
-    libre.style.display = 'none';
-    sel.style.display   = '';
-    if (btn) btn.textContent = '✏️ Libre';
-  } else {
-    // Passer en saisie libre
-    sel.style.display   = 'none';
-    libre.style.display = 'block';
-    libre.focus();
-    if (btn) btn.textContent = '📋 Liste';
-  }
-}
-
-/** Réinitialise le formulaire trajet cabinet */
-function _cabResetForm() {
-  const ids = ['km-cab-distance','km-cab-depart','km-cab-arrivee','km-cab-patient-libre'];
-  ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const sel = document.getElementById('km-cab-patient-select');
-  if (sel) sel.value = '';
-  const msg = document.getElementById('km-cab-msg');
-  if (msg) msg.style.display = 'none';
-  const confirm = document.getElementById('km-cab-confirm');
-  if (confirm) confirm.style.display = 'none';
-  // Réinitialiser la date à aujourd'hui
-  const dateEl = document.getElementById('km-cab-date');
-  if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
-}
-
-// ── Auto-init à chaque navigation vers "live" ───────────────────────
-document.addEventListener('app:nav',    e => { if (e.detail?.view === 'live') _initLiveCabinetTrajetUI(); });
-document.addEventListener('ui:navigate',e => { if (e.detail?.view === 'live') _initLiveCabinetTrajetUI(); });
-// Écouter aussi le chargement du cabinet
+// ── Auto-init à chaque navigation vers "live" ─────────────────────────
+document.addEventListener('app:nav',     e => { if (e.detail?.view === 'live') _initLiveCabinetTrajetUI(); });
+document.addEventListener('ui:navigate', e => { if (e.detail?.view === 'live') _initLiveCabinetTrajetUI(); });
+// Re-init quand la tournée est recalculée (uberPatients mis à jour)
+document.addEventListener('tournee:updated', () => {
+  if (document.getElementById('view-live')?.classList.contains('on')) _initLiveCabinetTrajetUI();
+});
 if (typeof APP !== 'undefined' && APP.on) {
   APP.on('cabinet', () => {
-    // Ré-init si la page live est visible
-    if (document.getElementById('view-live')?.classList.contains('on')) {
-      _initLiveCabinetTrajetUI();
-    }
+    if (document.getElementById('view-live')?.classList.contains('on')) _initLiveCabinetTrajetUI();
   });
 }
 
-// Exports
 window._initLiveCabinetTrajetUI = _initLiveCabinetTrajetUI;
-window._cabTogglePatientInput   = _cabTogglePatientInput;
-window._cabResetForm            = _cabResetForm;

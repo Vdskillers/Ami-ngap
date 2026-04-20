@@ -1021,46 +1021,66 @@ window.addOrdonnance      = addOrdonnance;
 window.deleteOrdonnance   = deleteOrdonnance;
 window.renderOrdonnances  = renderOrdonnances;
 
+
+
 /* ════════════════════════════════════════════════════════════════════
-   TRAJET CABINET — Enregistrement kilométrique multi-IDE
+   TRAJET CABINET — Enregistrement kilométrique multi-IDE v2
    ────────────────────────────────────────────────────────────────────
-   addKmCabinetEntry()
-     Lit le formulaire Pilotage → Trajet Cabinet,
-     valide les champs obligatoires, puis enregistre une entrée km
-     enrichie avec :
-       • patient_nom  — nom du patient (select ou saisie libre)
-       • infirmieres  — tableau [{id, nom, prenom}] des IDEs cochées
-       • cabinet: true — flag pour l'affichage dans le journal
-     L'entrée est stockée dans le journal km LOCAL de l'utilisateur
-     courant. Chaque IDE du cabinet devra synchroniser son propre
-     journal via la synchronisation km habituelle (km-push/km-pull).
+   Lit les données depuis la Tournée optimisée par IA :
+     APP.get('uberPatients')   → noms des patients
+     APP.get('tourneeKmJour')  → distance totale OSRM
+     APP.get('startPoint')     → coordonnées départ
+   + saisie manuelle si pas de tournée (km-cab-distance-manual)
+   + IDEs cochées dans .km-cab-nurse-cb
 ═════════════════════════════════════════════════════════════════════= */
 function addKmCabinetEntry() {
   const msgEl     = document.getElementById('km-cab-msg');
   const confirmEl = document.getElementById('km-cab-confirm');
-  const _err = (txt) => {
+  const _err = txt => {
     if (msgEl) { msgEl.textContent = txt; msgEl.className = 'msg e'; msgEl.style.display = 'block'; }
   };
   const _ok = () => { if (msgEl) msgEl.style.display = 'none'; };
 
-  // ── Lecture champs ─────────────────────────────────────────────
-  const date    = document.getElementById('km-cab-date')?.value
-               || new Date().toISOString().slice(0, 10);
-  const dist    = parseFloat(document.getElementById('km-cab-distance')?.value);
-  const depart  = (document.getElementById('km-cab-depart')?.value  || '').trim();
-  const arrivee = (document.getElementById('km-cab-arrivee')?.value || '').trim();
+  // ── Données tournée depuis APP ─────────────────────────────────
+  const uberPats = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || []) : [];
+  let   totalKm  = (typeof APP !== 'undefined' && APP.get)
+    ? (APP.get('tourneeKmJour') || parseFloat(localStorage.getItem('ami_tournee_km') || '0') || 0)
+    : 0;
+  const startPt  = (typeof APP !== 'undefined' && APP.get) ? APP.get('startPoint') : null;
+  const today    = new Date().toISOString().slice(0, 10);
 
-  // Patient : select ou saisie libre
-  const patSel    = document.getElementById('km-cab-patient-select');
-  const patLibre  = document.getElementById('km-cab-patient-libre');
-  let patient_nom = '';
-  if (patLibre && patLibre.style.display !== 'none') {
-    patient_nom = patLibre.value.trim();
-  } else if (patSel) {
-    patient_nom = patSel.value.trim();
+  // Fallback : saisie manuelle si pas de tournée calculée
+  if (!totalKm || totalKm <= 0) {
+    const manualEl = document.getElementById('km-cab-distance-manual');
+    totalKm = parseFloat(manualEl?.value) || 0;
   }
 
-  // IDEs cochées
+  // ── Validation distance ────────────────────────────────────────
+  if (!totalKm || totalKm <= 0) {
+    _err('⚠️ Aucune distance disponible. Optimisez la tournée ou saisissez une distance manuelle.');
+    return;
+  }
+
+  // ── Noms des patients ─────────────────────────────────────────
+  const patientNoms = uberPats
+    .map(p => ((p.nom || '') + ' ' + (p.prenom || '')).trim() || p.label || p.description || '')
+    .filter(n => n && !n.startsWith('Patient '));
+
+  const patient_nom = patientNoms.length
+    ? patientNoms.join(', ')
+    : 'Tournée du ' + new Date(today).toLocaleDateString('fr-FR');
+
+  // ── Départ / Arrivée depuis la tournée ────────────────────────
+  const depart  = startPt
+    ? `Point de départ tournée (${startPt.lat?.toFixed(4)}, ${startPt.lng?.toFixed(4)})`
+    : 'Point de départ tournée';
+  const lastPat = uberPats.length ? uberPats[uberPats.length - 1] : null;
+  const arrivee = lastPat
+    ? ((lastPat.nom || '') + ' ' + (lastPat.prenom || '')).trim()
+        || lastPat.adresse || lastPat.addressFull || 'Dernier patient'
+    : 'Dernier patient';
+
+  // ── IDEs cochées ──────────────────────────────────────────────
   const nurseCheckboxes = document.querySelectorAll('.km-cab-nurse-cb:checked');
   const infirmieres = Array.from(nurseCheckboxes).map(cb => ({
     id:     cb.dataset.nurseId     || '',
@@ -1068,15 +1088,6 @@ function addKmCabinetEntry() {
     prenom: cb.dataset.nursePrenom || '',
   }));
 
-  // ── Validation ────────────────────────────────────────────────
-  if (!dist || dist <= 0) {
-    _err('⚠️ Veuillez saisir une distance valide.');
-    return;
-  }
-  if (!patient_nom) {
-    _err('⚠️ Veuillez sélectionner ou saisir le nom du patient.');
-    return;
-  }
   if (!infirmieres.length) {
     _err('⚠️ Sélectionnez au moins une infirmière pour ce trajet.');
     return;
@@ -1084,23 +1095,22 @@ function addKmCabinetEntry() {
   _ok();
 
   // ── Motif automatique ─────────────────────────────────────────
-  const ideNames  = infirmieres.map(i => ((i.prenom||'') + ' ' + (i.nom||'')).trim()).join(', ');
-  const motif     = `Trajet cabinet — ${patient_nom} (IDE : ${ideNames})`;
+  const ideNames = infirmieres.map(i => ((i.prenom || '') + ' ' + (i.nom || '')).trim()).join(', ');
+  const motif    = `Trajet cabinet — ${patient_nom} (IDE : ${ideNames})`;
 
   // ── Sauvegarde dans le journal km local ───────────────────────
   const entries = _loadKmJournal();
-  const entry = {
+  entries.push({
     id:          Date.now(),
-    date,
+    date:        today,
     depart,
     arrivee,
-    km:          dist,
+    km:          Math.round(totalKm * 10) / 10,
     motif,
     patient_nom,
     infirmieres,
     cabinet:     true,
-  };
-  entries.push(entry);
+  });
   _saveKmJournal(entries);
 
   // ── Confirmation visuelle ─────────────────────────────────────
@@ -1109,40 +1119,26 @@ function addKmCabinetEntry() {
       `<span style="display:inline-block;background:rgba(79,168,255,.1);color:var(--a2);
         border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:1px 8px;
         font-family:var(--fm);font-size:11px;margin:2px">
-        👤 ${((i.prenom||'')+' '+(i.nom||'')).trim()}
+        👤 ${((i.prenom || '') + ' ' + (i.nom || '')).trim()}
       </span>`
     ).join('');
     confirmEl.innerHTML = `
       <div style="font-weight:600;margin-bottom:6px">✅ Trajet enregistré dans le Journal kilométrique</div>
-      <div style="font-size:11px;color:var(--t);margin-bottom:4px">
-        📅 ${new Date(date).toLocaleDateString('fr-FR')} · 
-        🚗 ${dist} km ·
-        👤 Patient : <strong>${patient_nom}</strong>
+      <div style="font-size:11px;color:var(--t);margin-bottom:8px;line-height:1.7">
+        📅 ${new Date(today).toLocaleDateString('fr-FR')} &nbsp;·&nbsp;
+        🚗 <strong>${(Math.round(totalKm * 10) / 10).toFixed(1)} km</strong> &nbsp;·&nbsp;
+        👤 <strong>${patient_nom}</strong>
       </div>
-      <div style="margin-top:6px">${idesHtml}</div>`;
+      <div>${idesHtml}</div>`;
     confirmEl.style.display = 'block';
   }
 
-  // Rafraîchir le journal si on est sur la page km
+  // Rafraîchir le journal si visible
   if (typeof renderKmJournal === 'function') renderKmJournal();
-
-  // Démarrer la synchronisation km si disponible
-  if (typeof syncKmJournal === 'function') syncKmJournal().catch(() => {});
+  if (typeof syncKmJournal   === 'function') syncKmJournal().catch(() => {});
 
   if (typeof showToast === 'function')
-    showToast(`✅ Trajet cabinet enregistré — ${dist} km · ${patient_nom}`, 'ok');
-
-  // Réinitialiser le formulaire (sauf la date et les IDEs)
-  const distEl = document.getElementById('km-cab-distance');
-  const depEl  = document.getElementById('km-cab-depart');
-  const arrEl  = document.getElementById('km-cab-arrivee');
-  if (distEl)  distEl.value  = '';
-  if (depEl)   depEl.value   = '';
-  if (arrEl)   arrEl.value   = '';
-  const pSel = document.getElementById('km-cab-patient-select');
-  if (pSel) pSel.value = '';
-  const pLib = document.getElementById('km-cab-patient-libre');
-  if (pLib) pLib.value = '';
+    showToast(`✅ ${(Math.round(totalKm * 10) / 10).toFixed(1)} km · ${infirmieres.length} IDE(s) · ${patient_nom}`, 'ok');
 }
 
 window.addKmCabinetEntry = addKmCabinetEntry;
