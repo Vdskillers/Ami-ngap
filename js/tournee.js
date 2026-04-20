@@ -407,7 +407,9 @@ function _planningInitCabinetUI() {
     const cb = wrap.querySelector('input[type=checkbox]');
     if (cb) {
       cb.disabled = false;
-      if (cb.checked !== _planningCabinetMode) cb.checked = _planningCabinetMode;
+      // ⚡ NE PAS modifier cb.checked par code — certains navigateurs
+      // déclenchent onchange() → planningToggleCabinetView(false) → boucle
+      // La checkbox reflète uniquement ce que l'utilisateur a cliqué
     }
   }
   if (btnCab) btnCab.style.display = (hasCab || _planningCabinetMode) ? 'inline-flex' : 'none';
@@ -649,11 +651,8 @@ async function renderPlanning(d){
   if (!_planningCabinetMode) {
     try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
   }
-  // Mettre à jour la checkbox si visible (sens unique : mémoire → DOM)
-  try {
-    const _cbEl = document.getElementById('pla-cabinet-mode');
-    if (_cbEl && _cbEl.checked !== _planningCabinetMode) _cbEl.checked = _planningCabinetMode;
-  } catch {}
+  // ⚡ NE PAS modifier _cbEl.checked par code — déclenche onchange sur Edge/Chrome
+  // Source de vérité = localStorage uniquement
 
   const cabinetActive = !!_planningCabinetMode;
   if (cabinetActive && !cab?.id) {
@@ -663,36 +662,34 @@ async function renderPlanning(d){
       if (cabRetry?.id) renderPlanning({}).catch(() => {});
     }, 800);
   }
-  // ⚠️ MODE CABINET DEMANDÉ MAIS PAS PRÊT → BLOQUER + RETRY
-  const cabState = _getCabinetReadyState();
-  if (cabinetActive && !cabState.ready) {
-    if (!window._cabinetRetryCount) window._cabinetRetryCount = 0;
-    window._cabinetRetryCount++;
-    if (window._cabinetRetryCount < 10) {
-      setTimeout(() => renderPlanning({}).catch(() => {}), 500);
-    }
-    const pbody = document.getElementById('pbody');
-    if (pbody) pbody.innerHTML = `
-      <div style="text-align:center;padding:40px 20px">
-        <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
-        <div style="font-size:14px;font-weight:600;color:var(--t)">Chargement du cabinet…</div>
-        <div style="font-size:12px;color:var(--m);margin-top:6px">Synchronisation des infirmières (${window._cabinetRetryCount}/10)</div>
-        ${window._cabinetRetryCount >= 10 ? `<div style="margin-top:16px;font-size:12px;color:var(--d)">⚠️ Cabinet non accessible. <button onclick="window._cabinetRetryCount=0;refreshPlanning()" style="background:none;border:none;color:var(--a);cursor:pointer;text-decoration:underline">Réessayer</button></div>` : ''}
-      </div>`;
-    const resPla = document.getElementById('res-pla');
-    if (resPla) resPla.classList.add('show');
-    return;
-  }
-  window._cabinetRetryCount = 0;
-
-  // ── Distribuer les patients par IDE ──────────────────────────────────────
-  // patientsForCabinet déclaré ICI (scope renderPlanning) pour être accessible dans renderCabinetView()
+  // patientsForCabinet déclaré ici (scope renderPlanning) → accessible dans renderCabinetView()
   const patientsForCabinet = patients.length ? patients : patientsToShow;
   let cabinetAssignments = {};
 
-  if (cabinetActive && cabState.ready) {
+  if (cabinetActive) {
+    const cabNow = APP.get ? APP.get('cabinet') : null;
+    if (!cabNow?.members?.length) {
+      // Cabinet pas encore chargé → bloquer + retry
+      if (!window._cabinetRetryCount) window._cabinetRetryCount = 0;
+      window._cabinetRetryCount++;
+      if (window._cabinetRetryCount < 10) {
+        setTimeout(() => renderPlanning({}).catch(() => {}), 500);
+      }
+      const pbody = document.getElementById('pbody');
+      if (pbody) pbody.innerHTML = `
+        <div style="text-align:center;padding:40px 20px">
+          <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
+          <div style="font-size:14px;font-weight:600;color:var(--t)">Chargement du cabinet…</div>
+          <div style="font-size:12px;color:var(--m);margin-top:6px">Synchronisation (${window._cabinetRetryCount}/10)</div>
+        </div>`;
+      const resPla = document.getElementById('res-pla');
+      if (resPla) resPla.classList.add('show');
+      return;
+    }
+    window._cabinetRetryCount = 0;
+
     // ✅ Membres réels uniquement — zéro fallback IDE fake
-    const effectiveMembers = cabState.members;
+    const effectiveMembers = cabNow.members;
     const COLORS = ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'];
     effectiveMembers.forEach((m, i) => {
       const ideId = m.id || m.infirmiere_id || `ide_${i}`;
@@ -4000,3 +3997,33 @@ function _renderTourneeCabinetHTML(assignments, scoreData) {
       <span>👥 <strong>${assignments.length} IDEs</strong></span>
     </div>`;
 }
+
+/* ════════════════════════════════════════════════════════
+   LISTENER CABINET MODE — câblé une seule fois au boot
+   Utilise addEventListener (pas onchange inline) pour pouvoir
+   distinguer les clics utilisateur des modifications par code.
+   On utilise un flag _ignoreNextCabinetChange pour éviter que
+   la mise à jour programmatique de checked déclenche l'event.
+════════════════════════════════════════════════════════ */
+(function _initCabinetCheckboxListener() {
+  function _bindCabinetCheckbox() {
+    const cb = document.getElementById('pla-cabinet-mode');
+    if (!cb || cb._cabinetListenerBound) return;
+    cb._cabinetListenerBound = true;
+    cb.addEventListener('change', function(e) {
+      // Ignorer si c'est une modification programmatique (pas un vrai clic)
+      if (this._programmaticChange) return;
+      planningToggleCabinetView(this.checked);
+    });
+  }
+  // Essayer au boot
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _bindCabinetCheckbox);
+  } else {
+    _bindCabinetCheckbox();
+  }
+  // Retry après navigation (SPA)
+  document.addEventListener('app:nav', () => setTimeout(_bindCabinetCheckbox, 200));
+  document.addEventListener('ui:navigate', () => setTimeout(_bindCabinetCheckbox, 200));
+  window._bindCabinetCheckbox = _bindCabinetCheckbox;
+})();
