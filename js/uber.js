@@ -61,6 +61,39 @@ async function selectBestPatient() {
   const remaining = patients.filter(p => !p.done && !p.absent);
   if (!remaining.length) { APP.set('nextPatient', null); return; }
 
+  /* ── Contraintes de passage (premier/suivant obligatoire) ──
+     Si le patient contraint est encore dans les restants et qu'aucun
+     patient avant lui n'est encore à faire, on le force en nextPatient.
+     Règle :
+       - firstId  → forcé si aucun autre patient "avant lui" n'a été skip (c'est le 1er tour)
+       - secondId → forcé si le patient firstId est déjà done/absent
+  ─────────────────────────────────────────────────────────── */
+  const firstId  = APP._constraintFirst  || null;
+  const secondId = APP._constraintSecond || null;
+  const allDone  = patients.filter(p => p.done || p.absent);
+
+  if (firstId) {
+    const firstPatient = remaining.find(p => String(p.patient_id || p.id || '') === firstId);
+    if (firstPatient && allDone.length === 0) {
+      // Personne n'a encore été fait → forcer le premier contraint
+      APP.set('nextPatient', firstPatient);
+      return;
+    }
+  }
+
+  if (secondId) {
+    const secondPatient = remaining.find(p => String(p.patient_id || p.id || '') === secondId);
+    // Le 2ème est forcé si le premier contraint est déjà fait (ou absent), et le 2ème n'a encore vu personne devant lui
+    const firstDone = firstId
+      ? patients.some(p => String(p.patient_id || p.id || '') === firstId && (p.done || p.absent))
+      : allDone.length >= 1;
+    if (secondPatient && firstDone && allDone.length <= 1) {
+      APP.set('nextPatient', secondPatient);
+      return;
+    }
+  }
+
+  /* ── Sélection normale : score IA + distance GPS ── */
   const userPos = APP.get('userPos');
   if (userPos) remaining.sort((a,b) => _dist(userPos,a) - _dist(userPos,b));
 
@@ -457,6 +490,8 @@ function loadUberPatients() {
     };
   }));
   _updateUberProgress();
+  // Peupler les selects contraintes si disponibles
+  if (typeof populateConstraintSelects === 'function') populateConstraintSelects();
   selectBestPatient();
 }
 

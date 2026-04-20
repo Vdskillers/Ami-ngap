@@ -45,6 +45,8 @@ function storeImportedData(d){
     const manual=$('pla-manual');
     if(manual)manual.style.display='none';
   }
+  // Mettre à jour les selects de contraintes de passage (Pilotage)
+  if (typeof populateConstraintSelects === 'function') populateConstraintSelects();
   showCaFromImport();
 }
 
@@ -91,6 +93,10 @@ function _applyOptimModeStyle() {
 const _onNavLive = e => {
   if (e.detail?.view === 'live') {
     setTimeout(_bindOptimModeUI, 100);
+    // Peupler les selects de contraintes de passage
+    setTimeout(() => {
+      if (typeof populateConstraintSelects === 'function') populateConstraintSelects();
+    }, 120);
     // Restaurer le CA journée clôturée si la tournée est terminée
     setTimeout(() => {
       try {
@@ -183,8 +189,14 @@ function _planningKey() {
 function _savePlanning(patients) {
   try {
     const key = _planningKey();
-    // Sauvegarder avec timestamp pour TTL éventuel (7 jours)
-    const data = { patients, savedAt: Date.now() };
+    // ⚡ Fixer la date d'assignation sur chaque patient qui n'en a pas encore
+    // → sans ça, la date par défaut serait recalculée à chaque renderPlanning (= glissement quotidien)
+    const todayFixed = new Date().toISOString().split('T')[0];
+    const patientsWithDate = patients.map(p => {
+      if (p.date || p.date_soin || p.date_prevue) return p;
+      return { ...p, date: todayFixed, _dateFixed: true };
+    });
+    const data = { patients: patientsWithDate, savedAt: Date.now() };
     localStorage.setItem(key, JSON.stringify(data));
   } catch(e) { console.warn('[Planning] Save KO:', e.message); }
 }
@@ -352,7 +364,10 @@ function refreshPlanning() {
    PLANNING HEBDOMADAIRE CABINET — variables d'état
 ════════════════════════════════════════════════ */
 let _planningWeekOffset = 0; // 0 = semaine courante, -1 = précédente, +1 = suivante
-let _planningCabinetMode = false; // true = vue multi-IDE active
+// ⚡ Restaurer l'état cabinet mode depuis localStorage (survive aux rechargements)
+let _planningCabinetMode = (() => {
+  try { return localStorage.getItem('ami_planning_cabinet_mode') === '1'; } catch { return false; }
+})();
 
 /** Naviguer d'une semaine en avant/arrière */
 function planningWeekNav(delta) {
@@ -363,6 +378,8 @@ function planningWeekNav(delta) {
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
   _planningCabinetMode = !!active;
+  // ⚡ Persister l'état pour survive aux refreshPlanning() asynchrones
+  try { localStorage.setItem('ami_planning_cabinet_mode', active ? '1' : '0'); } catch {}
   refreshPlanning();
 }
 
@@ -380,7 +397,11 @@ function _planningInitCabinetUI() {
     const label = wrap.querySelector('label');
     if (label) { label.style.opacity = '1'; label.title = ''; }
     const cb = wrap.querySelector('input[type=checkbox]');
-    if (cb) cb.disabled = false;
+    if (cb) {
+      cb.disabled = false;
+      // ⚡ Restaurer l'état coché depuis localStorage + variable en mémoire
+      cb.checked = _planningCabinetMode;
+    }
   }
   if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
 
@@ -482,7 +503,12 @@ async function renderPlanning(d){
     }
   }
 
-  const todayISO = today.toISOString().split('T')[0];
+  // ⚡ Date locale (pas UTC) — évite le décalage timezone (ex: lundi 23h FR = mardi UTC)
+  const todayISO = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
 
   // ── Enrichir depuis le carnet patient (IDB) par patient_id ──────────────
   let carnetIndex = {};
@@ -528,7 +554,9 @@ async function renderPlanning(d){
       }
     }
 
-    const date = p.date || p.date_soin || p.date_prevue || todayISO;
+    // ⚡ La date est fixée au moment de la sauvegarde (_savePlanning).
+    // Ne jamais substituer todayISO ici : sinon le patient glisse chaque jour.
+    const date = p.date || p.date_soin || p.date_prevue || null;
 
     return {
       ...p,
@@ -548,8 +576,11 @@ async function renderPlanning(d){
   const weekStart = weekDates[0];
   const weekEnd   = weekDates[6];
   const patientsThisWeek = patients.filter(p => {
+    // ⚡ Si pas de date fixée → inclure dans la semaine courante uniquement
+    if (!p.date) return _planningWeekOffset === 0;
     try {
       const pd = new Date(p.date);
+      if (isNaN(pd)) return _planningWeekOffset === 0;
       return pd >= weekStart && pd <= weekEnd;
     } catch { return true; }
   });
@@ -576,24 +607,38 @@ async function renderPlanning(d){
       const desc = (p.description || p.texte || '').toLowerCase();
       jourKey = JOURS.find(j => desc.includes(j)) || null;
     }
-    if (!jourKey) jourKey = JOURS[listIdx % JOURS.length];
+    // ⚡ Fallback stable : hash basé sur patient_id/nom, pas sur listIdx (qui change)
+    if (!jourKey) {
+      const stableKey = (p.patient_id || p.id || p.nom || String(listIdx));
+      let hash = 0;
+      for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
+      jourKey = JOURS[hash % JOURS.length];
+    }
     byDay[jourKey].patients.push(p);
   });
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
-  // Activer la vue cabinet dès qu'un cabinet existe, même seul (admin en test)
-  const cabinetActive = _planningCabinetMode && !!(cab?.id);
+  // ⚡ Lire aussi la checkbox DOM — _planningCabinetMode peut être false
+  // si renderPlanning() est appelé avant planningToggleCabinetView() (ex: refreshPlanning)
+  const _cbEl = document.getElementById('pla-cabinet-mode');
+  if (_cbEl && _cbEl.checked && !_planningCabinetMode) _planningCabinetMode = true;
+  // cabinetActive : checkbox cochée ET cabinet chargé (ou en cours de chargement → on tente quand même)
+  const cabinetActive = _planningCabinetMode && (!!(cab?.id) || !!(cab));
   let cabinetAssignments = {};
 
   if (cabinetActive) {
     // Membres réels ou membre synthétique si seul (admin solo)
-    const effectiveMembers = (cab.members?.length)
+    const effectiveMembers = (cab?.members?.length)
       ? cab.members
       : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi', role: 'titulaire' }];
 
+    // ⚡ En mode cabinet, on distribue TOUS les patients (pas seulement patientsToShow)
+    // La grille filtre déjà par jour dans chaque colonne → pas de risque de doublon
+    const patientsForCabinet = patients.length ? patients : patientsToShow;
+
     if (typeof cabinetGeoCluster === 'function') {
-      const clusters = cabinetGeoCluster(patientsToShow, effectiveMembers.length);
+      const clusters = cabinetGeoCluster(patientsForCabinet, effectiveMembers.length);
       effectiveMembers.forEach((m, i) => {
         const ideId = m.id || m.infirmiere_id || `ide_${i}`;
         cabinetAssignments[ideId] = {
@@ -609,7 +654,7 @@ async function renderPlanning(d){
       const solo = (cab.members?.[0]) || { id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' };
       cabinetAssignments[solo.id || 'ide_0'] = {
         nom: solo.nom || '', prenom: solo.prenom || 'Moi', role: 'titulaire',
-        patients: patientsToShow, color: '#00d4aa',
+        patients: patientsForCabinet, color: '#00d4aa',
       };
     }
   }
@@ -684,13 +729,27 @@ async function renderPlanning(d){
 
       const cols = ideList.map(([, a]) => {
         const dayPats = a.patients.filter(p => {
-          try {
-            const pd = new Date(p.date);
-            if (!isNaN(pd)) {
-              const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
-              return JOURS.find(jj => nj.startsWith(jj)) === j;
-            }
-          } catch {}
+          // 1. Date ISO fixée → résolution par jour de la semaine
+          if (p.date) {
+            try {
+              const pd = new Date(p.date);
+              if (!isNaN(pd)) {
+                const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
+                return !!(JOURS.find(jj => nj.startsWith(jj)) === j);
+              }
+            } catch {}
+          }
+          // 2. Mention du jour dans la description ("lundi", "mardi"…)
+          const desc = (p.description || p.texte || '').toLowerCase();
+          const jourDesc = JOURS.find(jj => desc.includes(jj));
+          if (jourDesc) return jourDesc === j;
+          // 3. Fallback stable : hash sur patient_id/nom → même case chaque render
+          const stableKey = String(p.patient_id || p.id || p.nom || p._nomAff || '');
+          if (stableKey) {
+            let hash = 0;
+            for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
+            return JOURS[hash % JOURS.length] === j;
+          }
           return false;
         });
         return `<div style="padding:6px 8px;min-height:40px;border-right:1px solid var(--b)">
@@ -803,7 +862,7 @@ async function renderPlanning(d){
   // cabinetBar uniquement en mode cabinet (jamais en solo)
   const cabinetBar = cabinetActive ? `
     <div style="margin-bottom:16px;padding:10px 14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px">🏥 <strong>${cab.nom}</strong></span>
+      <span style="font-size:13px">🏥 <strong>${cab?.nom || 'Mon cabinet'}</strong></span>
       <span style="font-size:12px;color:var(--m)">${Object.keys(cabinetAssignments).length} IDE(s) · Vue cabinet active</span>
       <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="margin-left:auto"><span>⚡</span> Optimiser la répartition</button>
     </div>` : '';
@@ -1011,7 +1070,8 @@ async function optimiserTournee(){
       const withHeure  = rawPatients.filter(p => p.heure_preferee || p.heure_soin).sort((a,b)=>
         (a.heure_preferee||a.heure_soin||'99:99').localeCompare(b.heure_preferee||b.heure_soin||'99:99'));
       const withoutH   = rawPatients.filter(p => !p.heure_preferee && !p.heure_soin);
-      const route      = [...withHeure, ...withoutH];
+      let route        = [...withHeure, ...withoutH];
+      route            = applyPassageConstraints(route);
       const ca         = estimateRevenue(route);
       const pts        = route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
       let osrm = null;
@@ -1044,7 +1104,10 @@ async function optimiserTournee(){
     _showOptimProgress('🔁 Optimisation 2-opt…');
     route = twoOpt(route);
 
-    /* ── 2b. Enrichir route avec CA estimé par patient ──────────────────────
+    /* ── 2b. Appliquer les contraintes de passage (premier/suivant obligatoire) ── */
+    route = applyPassageConstraints(route);
+
+    /* ── 2c. Enrichir route avec CA estimé par patient ──────────────────────
        scoreTourneeRentabilite lit p.total || p.amount.
        Les patients importés n'ont ni l'un ni l'autre → totalCA = 0 → 0€/h.
        On injecte le CA estimé individuellement via estimateRevenue([patient]).
@@ -2175,34 +2238,27 @@ function renderLivePatientList() {
   });
 
   // ── Réordonner pour que la liste suive l'ordre uber (sélection GPS temps réel) ──
-  // Le nextPatient sélectionné par selectBestPatient() passe en tête des restants.
-  // Les autres restants suivent l'ordre uberPatients (distance croissante).
-  // Les done/absent restent en bas, dans leur ordre d'origine.
+  // nextPatient en tête des restants, puis ordre uberPatients, puis done/absent en bas.
   const nextPat = APP.get('nextPatient');
   const nextKey = nextPat ? String(nextPat.patient_id || nextPat.id || '') : '';
 
-  // Index de position dans uberPatients pour trier les restants dans le même ordre
   const uberOrder = {};
   uber.forEach((p, i) => {
     const k = String(p.patient_id || p.id || '');
     if (k) uberOrder[k] = i;
   });
 
-  const restants  = patients.filter(p => !p._done && !p._absent);
-  const termines  = patients.filter(p => p._done || p._absent);
+  const restants = patients.filter(p => !p._done && !p._absent);
+  const termines = patients.filter(p => p._done || p._absent);
 
-  // Trier les restants : nextPatient d'abord, puis ordre uberPatients
   restants.sort((a, b) => {
     const ka = String(a.patient_id || a.id || '');
     const kb = String(b.patient_id || b.id || '');
     if (ka === nextKey) return -1;
     if (kb === nextKey) return 1;
-    const oa = uberOrder[ka] ?? 9999;
-    const ob = uberOrder[kb] ?? 9999;
-    return oa - ob;
+    return (uberOrder[ka] ?? 9999) - (uberOrder[kb] ?? 9999);
   });
 
-  // Liste finale : restants (triés) puis terminés/absents
   const orderedPatients = [...restants, ...termines];
 
   // Écrire uniquement dans uber-next-patient (visible) — live-next reste caché (compat fantôme)
@@ -2241,22 +2297,18 @@ function renderLivePatientList() {
     ${orderedPatients.map((p, i) => {
       const k = String(p.patient_id || p.id || '');
       const isNext = !p._done && !p._absent && k === nextKey;
-      // Retrouver l'index original dans importedData pour les callbacks (openCotationPatient/removeImportedPatient)
+      // Index original dans importedData pour les callbacks (évite décalage après réordonnancement)
       const origIdx = (APP.importedData?.patients || APP.importedData?.entries || [])
         .findIndex(op => String(op.patient_id || op.id || '') === k);
       const safeIdx = origIdx >= 0 ? origIdx : i;
       const desc = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.texte || `Patient ${i+1}`;
-      const statusIcon = p._done ? '✅' : p._absent ? '❌' : isNext ? '📍' : '⏳';
+      const statusIcon  = p._done ? '✅' : p._absent ? '❌' : isNext ? '📍' : '⏳';
       const statusColor = p._done
         ? 'rgba(34,197,94,.08)'
         : p._absent
           ? 'rgba(255,95,109,.05)'
-          : isNext
-            ? 'rgba(0,212,170,.08)'
-            : 'var(--s)';
-      const borderStyle = isNext
-        ? 'border:2px solid var(--a);'
-        : 'border:1px solid var(--b);';
+          : isNext ? 'rgba(0,212,170,.08)' : 'var(--s)';
+      const borderStyle = isNext ? 'border:2px solid var(--a);' : 'border:1px solid var(--b);';
       const heure = p.heure_soin || p.heure_preferee || p.heure || '';
       return `<div class="route-item" style="background:${statusColor};${borderStyle}border-radius:10px;margin-bottom:6px;padding:10px 12px;align-items:center">
         <div class="route-num" style="font-size:16px">${statusIcon}</div>
@@ -2279,6 +2331,106 @@ function renderLivePatientList() {
   if (uberProg) uberProg.style.display = 'none';
   // Mettre à jour le bandeau CA en continu
   if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
+}
+
+/* ════════════════════════════════════════════════════════════
+   CONTRAINTES DE PASSAGE — Premier & Suivant obligatoire
+   ════════════════════════════════════════════════════════════
+   APP._constraintFirst  → id/patient_id du 1er patient forcé
+   APP._constraintSecond → id/patient_id du 2ème patient forcé
+   ══════════════════════════════════════════════════════════ */
+
+/* Peuple les selects avec les patients importés */
+function populateConstraintSelects() {
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const selFirst  = $('constraint-first-patient');
+  const selSecond = $('constraint-second-patient');
+  if (!selFirst || !selSecond) return;
+
+  const savedFirst  = APP._constraintFirst  || '';
+  const savedSecond = APP._constraintSecond || '';
+
+  const opts = patients.map(p => {
+    const id    = String(p.patient_id || p.id || '');
+    const nom   = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.texte || 'Patient';
+    const heure = p.heure_soin || p.heure_preferee || '';
+    const label = nom + (heure ? ` (${heure})` : '');
+    return `<option value="${id}">${label}</option>`;
+  }).join('');
+
+  const empty = '<option value="">— Aucune contrainte —</option>';
+  selFirst.innerHTML  = empty + opts;
+  selSecond.innerHTML = empty + opts;
+
+  // Restaurer les sélections précédentes si le patient est toujours dans la liste
+  if (savedFirst  && patients.some(p => String(p.patient_id || p.id || '') === savedFirst))
+    selFirst.value  = savedFirst;
+  if (savedSecond && patients.some(p => String(p.patient_id || p.id || '') === savedSecond))
+    selSecond.value = savedSecond;
+
+  updateConstraintBadge('first');
+  updateConstraintBadge('second');
+}
+
+/* Met à jour le badge de confirmation sous chaque select */
+function updateConstraintBadge(which) {
+  const selId   = which === 'first' ? 'constraint-first-patient'  : 'constraint-second-patient';
+  const badgeId = which === 'first' ? 'constraint-first-badge'    : 'constraint-second-badge';
+  const sel   = $(selId);
+  const badge = $(badgeId);
+  if (!sel || !badge) return;
+
+  const val = sel.value;
+  if (which === 'first')  APP._constraintFirst  = val || null;
+  if (which === 'second') APP._constraintSecond = val || null;
+
+  if (!val) { badge.style.display = 'none'; return; }
+
+  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  const p = patients.find(pt => String(pt.patient_id || pt.id || '') === val);
+  if (!p) { badge.style.display = 'none'; return; }
+
+  const nom   = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || 'Patient';
+  const heure = p.heure_soin || p.heure_preferee || '';
+  const pos   = which === 'first' ? '🥇 1ère position' : '🥈 2ème position';
+  badge.style.display = 'block';
+  badge.textContent   = `${pos} → ${nom}${heure ? ' · ' + heure : ''}`;
+}
+
+/* Efface une contrainte */
+function clearConstraint(which) {
+  const selId = which === 'first' ? 'constraint-first-patient' : 'constraint-second-patient';
+  const sel = $(selId);
+  if (sel) sel.value = '';
+  if (which === 'first')  APP._constraintFirst  = null;
+  if (which === 'second') APP._constraintSecond = null;
+  updateConstraintBadge(which);
+  if (typeof showToast === 'function')
+    showToast(`🔓 Contrainte ${which === 'first' ? '1ère' : '2ème'} position effacée.`);
+}
+
+/* Applique les contraintes sur un tableau de patients trié.
+   Retourne le tableau réordonné avec les patients contraints en tête. */
+function applyPassageConstraints(route) {
+  const firstId  = APP._constraintFirst  || null;
+  const secondId = APP._constraintSecond || null;
+  if (!firstId && !secondId) return route;
+
+  let result = [...route];
+
+  // Extraire secondId d'abord (firstId viendra l'écraser en position 0 ensuite)
+  if (secondId) {
+    const idx = result.findIndex(p => String(p.patient_id || p.id || '') === secondId);
+    if (idx > 0) { const [p] = result.splice(idx, 1); result.unshift(p); }
+  }
+
+  // Extraire firstId et le forcer absolument en tête
+  if (firstId) {
+    const idx = result.findIndex(p => String(p.patient_id || p.id || '') === firstId);
+    if (idx > 0) { const [p] = result.splice(idx, 1); result.unshift(p); }
+  }
+
+  return result;
 }
 
 function removeImportedPatient(index) {
@@ -3524,19 +3676,44 @@ async function optimiserTourneeCabinet() {
     return;
   }
 
-  // Accepter même 1 seul membre (admin solo en test)
-  const members = cab.members?.length ? cab.members : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' }];
+  // Membres normalisés — accepter id | infirmiere_id
+  const members = (cab.members?.length
+    ? cab.members
+    : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' }]
+  ).map((m, idx) => ({
+    id:     m.id || m.infirmiere_id || `ide_${idx}`,
+    nom:    m.nom    || '',
+    prenom: m.prenom || `IDE ${idx + 1}`,
+    role:   m.role   || 'membre',
+  }));
 
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
+  // Source patients : _planningData (enrichi IDB) > importedData > uberPatients
+  const rawPatientsSrc = (
+    window.APP._planningData?.patients ||
+    APP.importedData?.patients ||
+    APP.importedData?.entries ||
+    APP.get('uberPatients') ||
+    []
+  );
+  const patients = rawPatientsSrc.map(p => ({
+    ...p,
+    id:      p.id || p.patient_id || null,
+    nom:     p.nom || p._nomAff || '',
+    prenom:  p.prenom || '',
+    lat:     parseFloat(p.lat ?? p.latitude ?? '') || null,
+    lng:     parseFloat(p.lng ?? p.lon ?? p.longitude ?? '') || null,
+    adresse: p.adresse || p.address || p.addressFull || '',
+  }));
+
   if (!patients.length) {
-    result.innerHTML = '<div class="ai wa">Importez d\'abord vos patients via le Carnet patients.</div>';
+    result.innerHTML = '<div class="ai wa">Aucun patient disponible. Ajoutez des patients via le Carnet patients.</div>';
     return;
   }
 
   result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Calcul de la répartition…</p></div>';
 
   try {
-    // Appel backend si cabinet, sinon calcul local
+    // Appel backend
     let assignments;
     try {
       const d = await apiCall('/webhook/cabinet-tournee', {
@@ -3547,7 +3724,7 @@ async function optimiserTourneeCabinet() {
       assignments = d.ok ? d.assignments : null;
     } catch {}
 
-    // Fallback : calcul client (cabinetPlanDay de ai-tournee.js)
+    // Fallback client (cabinetPlanDay de ai-tournee.js)
     if (!assignments && typeof cabinetPlanDay === 'function') {
       assignments = cabinetPlanDay(patients, members);
     }
