@@ -619,19 +619,27 @@ async function renderPlanning(d){
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
-  // ⚡ Lire aussi la checkbox DOM — _planningCabinetMode peut être false
-  // si renderPlanning() est appelé avant planningToggleCabinetView() (ex: refreshPlanning)
+  // ⚡ Lire aussi la checkbox DOM pour synchroniser _planningCabinetMode
   const _cbEl = document.getElementById('pla-cabinet-mode');
   if (_cbEl && _cbEl.checked && !_planningCabinetMode) _planningCabinetMode = true;
-  // cabinetActive : checkbox cochée ET cabinet chargé (ou en cours de chargement → on tente quand même)
-  const cabinetActive = _planningCabinetMode && (!!(cab?.id) || !!(cab));
+
+  // cabinetActive : checkbox cochée suffit — on ne bloque plus sur cab?.id
+  // Si cab est null (chargement async), on programme un retry dans 800ms
+  const cabinetActive = !!_planningCabinetMode;
+  if (cabinetActive && !cab?.id) {
+    // Cabinet pas encore chargé → retry silencieux
+    setTimeout(() => {
+      const cabRetry = APP.get ? APP.get('cabinet') : null;
+      if (cabRetry?.id) renderPlanning({}).catch(() => {});
+    }, 800);
+  }
   let cabinetAssignments = {};
 
   if (cabinetActive) {
-    // Membres réels ou membre synthétique si seul (admin solo)
+    // Membres réels, ou synthétique si cab pas encore chargé / admin seul
     const effectiveMembers = (cab?.members?.length)
       ? cab.members
-      : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi', role: 'titulaire' }];
+      : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || APP.user?.email?.split('@')[0] || '', prenom: APP.user?.prenom || 'Moi', role: 'titulaire' }];
 
     // ⚡ En mode cabinet, on distribue TOUS les patients (pas seulement patientsToShow)
     // La grille filtre déjà par jour dans chaque colonne → pas de risque de doublon
@@ -722,7 +730,9 @@ async function renderPlanning(d){
     // Grille des jours pour chaque IDE
     const dayRows = JOURS.map((j, ji) => {
       const dateJ    = weekDates[ji];
-      const isToday  = dateJ.toISOString().slice(0,10) === todayISO;
+      // ⚡ Comparaison en heure locale (pas UTC) — évite le décalage timezone
+      const _djY = dateJ.getFullYear(), _djM = String(dateJ.getMonth()+1).padStart(2,'0'), _djD = String(dateJ.getDate()).padStart(2,'0');
+      const isToday  = `${_djY}-${_djM}-${_djD}` === todayISO;
       const dateStr  = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
       const jourCap  = j.charAt(0).toUpperCase() + j.slice(1);
 
@@ -822,7 +832,9 @@ async function renderPlanning(d){
     // Lignes jours — même structure exacte que renderCabinetView dayRows
     const dayRows = JOURS.map((j, ji) => {
       const dateJ   = weekDates[ji];
-      const isToday = dateJ.toISOString().slice(0,10) === todayISO;
+      // ⚡ Comparaison en heure locale (pas UTC) — évite le décalage timezone
+      const _djY2 = dateJ.getFullYear(), _djM2 = String(dateJ.getMonth()+1).padStart(2,'0'), _djD2 = String(dateJ.getDate()).padStart(2,'0');
+      const isToday = `${_djY2}-${_djM2}-${_djD2}` === todayISO;
       const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
       const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
       const pDay    = byDay[j].patients;
