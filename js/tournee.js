@@ -1250,8 +1250,10 @@ async function optimiserTournee(){
   // Lire importedData depuis toutes les sources possibles
   // APP.importedData est posé par storeImportedData() (accès direct)
   // APP.get('importedData') lit depuis le store réactif (peut différer)
+  // window.APP._planningData est posé par la sync planning serveur
   const _impData = APP.importedData
     || APP.get('importedData')
+    || window.APP._planningData
     || (typeof loadTourneeData === 'function' ? loadTourneeData() : null);
   const rawPatients = _impData?.patients || _impData?.entries || [];
   if(!rawPatients.length){
