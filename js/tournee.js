@@ -475,8 +475,7 @@ async function generatePlanningFromImport(){
 }
 
 /* ════════════════════════════════════════════════
-   GUARD CABINET — état de chargement centralisé
-   Retourne exists / hasMembers / ready
+   GUARD CABINET — source de vérité centralisée
 ════════════════════════════════════════════════ */
 function _getCabinetReadyState() {
   const cab = APP.get ? APP.get('cabinet') : null;
@@ -642,30 +641,30 @@ async function renderPlanning(d){
     byDay[jourKey].patients.push(p);
   });
 
-  // ── Cabinet : état et distribution multi-IDE ────────────────────────────
-  // ⚡ Source de vérité : localStorage (jamais la checkbox DOM)
+  // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
+  const cab = APP.get ? APP.get('cabinet') : null;
+
+  // ⚡ Source de vérité UNIQUEMENT localStorage + variable JS
+  // Ne jamais lire la checkbox (peut être dans un conteneur display:none → introuvable)
   if (!_planningCabinetMode) {
     try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
   }
-  // Mettre à jour la checkbox (sens unique : mémoire → DOM)
+  // Mettre à jour la checkbox si visible (sens unique : mémoire → DOM)
   try {
     const _cbEl = document.getElementById('pla-cabinet-mode');
     if (_cbEl && _cbEl.checked !== _planningCabinetMode) _cbEl.checked = _planningCabinetMode;
   } catch {}
 
-  const cabState = _getCabinetReadyState();
   const cabinetActive = !!_planningCabinetMode;
-
-  // Debug log pour diagnostiquer
-  console.info('[AMI Cabinet]', {
-    cabinetMode: _planningCabinetMode,
-    cabExists: cabState.exists,
-    hasMembers: cabState.hasMembers,
-    ready: cabState.ready,
-    nbMembers: cabState.members.length,
-  });
-
+  if (cabinetActive && !cab?.id) {
+    // Cabinet pas encore chargé → retry silencieux
+    setTimeout(() => {
+      const cabRetry = APP.get ? APP.get('cabinet') : null;
+      if (cabRetry?.id) renderPlanning({}).catch(() => {});
+    }, 800);
+  }
   // ⚠️ MODE CABINET DEMANDÉ MAIS PAS PRÊT → BLOQUER + RETRY
+  const cabState = _getCabinetReadyState();
   if (cabinetActive && !cabState.ready) {
     if (!window._cabinetRetryCount) window._cabinetRetryCount = 0;
     window._cabinetRetryCount++;
@@ -677,34 +676,23 @@ async function renderPlanning(d){
       <div style="text-align:center;padding:40px 20px">
         <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
         <div style="font-size:14px;font-weight:600;color:var(--t)">Chargement du cabinet…</div>
-        <div style="font-size:12px;color:var(--m);margin-top:6px">
-          Synchronisation des infirmières (${window._cabinetRetryCount}/10)
-        </div>
-        ${window._cabinetRetryCount >= 10 ? `
-          <div style="margin-top:16px;font-size:12px;color:var(--d)">
-            ⚠️ Cabinet non accessible. Vérifiez votre connexion puis
-            <button onclick="window._cabinetRetryCount=0;refreshPlanning()"
-              style="background:none;border:none;color:var(--a);cursor:pointer;text-decoration:underline">
-              réessayez
-            </button>.
-          </div>` : ''}
+        <div style="font-size:12px;color:var(--m);margin-top:6px">Synchronisation des infirmières (${window._cabinetRetryCount}/10)</div>
+        ${window._cabinetRetryCount >= 10 ? `<div style="margin-top:16px;font-size:12px;color:var(--d)">⚠️ Cabinet non accessible. <button onclick="window._cabinetRetryCount=0;refreshPlanning()" style="background:none;border:none;color:var(--a);cursor:pointer;text-decoration:underline">Réessayer</button></div>` : ''}
       </div>`;
     const resPla = document.getElementById('res-pla');
     if (resPla) resPla.classList.add('show');
     return;
   }
-
-  // Reset compteur quand prêt
   window._cabinetRetryCount = 0;
 
+  // ── Distribuer les patients par IDE ──────────────────────────────────────
+  // patientsForCabinet déclaré ICI (scope renderPlanning) pour être accessible dans renderCabinetView()
+  const patientsForCabinet = patients.length ? patients : patientsToShow;
   let cabinetAssignments = {};
 
   if (cabinetActive && cabState.ready) {
-    // ✅ Membres réels uniquement — jamais de fallback fake
+    // ✅ Membres réels uniquement — zéro fallback IDE fake
     const effectiveMembers = cabState.members;
-    const patientsForCabinet = patients.length ? patients : patientsToShow;
-
-    // Initialiser les assignments pour chaque membre
     const COLORS = ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'];
     effectiveMembers.forEach((m, i) => {
       const ideId = m.id || m.infirmiere_id || `ide_${i}`;
@@ -716,13 +704,9 @@ async function renderPlanning(d){
         color:    COLORS[i % 5],
       };
     });
-
-    // Distribuer : _assignedIde (manuel) en priorité, puis clustering
     const patsWithManual      = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
     const patsNeedsClustering = patientsForCabinet.filter(p => !p._assignedIde || !cabinetAssignments[p._assignedIde]);
-
     patsWithManual.forEach(p => cabinetAssignments[p._assignedIde].patients.push(p));
-
     if (patsNeedsClustering.length && typeof cabinetGeoCluster === 'function') {
       const clusters = cabinetGeoCluster(patsNeedsClustering, effectiveMembers.length);
       effectiveMembers.forEach((m, i) => {
@@ -784,16 +768,16 @@ async function renderPlanning(d){
   function renderCabinetView() {
     const ideList = Object.entries(cabinetAssignments);
 
-    // ⚡ Guard : pas d'assignments → état incohérent (ne devrait plus arriver avec le guard central)
+    // ⚡ Pas de membres → cabinet en cours de chargement (initCabinet async)
     if (!ideList.length) {
+      setTimeout(() => {
+        const cabNow = APP.get ? APP.get('cabinet') : null;
+        if (cabNow?.members?.length) renderPlanning({}).catch(() => {});
+      }, 900);
       return `<div style="text-align:center;padding:32px 16px">
-        <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
-        <div style="font-size:14px;font-weight:600;color:var(--t)">Initialisation du planning cabinet…</div>
-        <div style="font-size:12px;color:var(--m);margin-top:6px">
-          <code style="font-size:10px;background:var(--s);padding:2px 6px;border-radius:4px">
-            cabinet.members: ${JSON.stringify(_getCabinetReadyState().members.map(m=>m.prenom))}
-          </code>
-        </div>
+        <div class="spin spinw" style="width:24px;height:24px;margin:0 auto 10px"></div>
+        <div style="font-size:13px;color:var(--m)">Chargement des membres du cabinet…</div>
+        <div style="font-size:11px;color:var(--m);margin-top:6px">Si le problème persiste, cliquez sur ↻ Actualiser</div>
       </div>`;
     }
 
