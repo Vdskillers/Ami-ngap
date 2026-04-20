@@ -985,7 +985,18 @@
         </div>
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn bp" id="btn-tur" onclick="optimiserTournee()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bp" id="btn-tur" onclick="(async()=>{
+            /* Garantir APP.importedData depuis toutes les sources avant optimisation */
+            if(!APP.importedData?.patients?.length && !APP.importedData?.entries?.length){
+              const _pd=window.APP?._planningData;
+              if(_pd?.patients?.length||_pd?.entries?.length){ APP.importedData=_pd; }
+              else if(typeof loadTourneeData==='function'){
+                const _td=loadTourneeData();
+                if(_td?.patients?.length||_td?.entries?.length) APP.importedData=_td;
+              }
+            }
+            if(typeof optimiserTournee==='function') optimiserTournee();
+          })()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
           <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
