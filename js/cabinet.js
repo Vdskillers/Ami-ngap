@@ -685,43 +685,20 @@ async function cabinetPushSync() {
       } catch (e) { console.warn('[cabinet push cotations]', e.message); }
     }
 
-    // Piluliers — données de santé : chiffrées AES avant envoi
-    if (prefs.what.piluliers && typeof getAllPatients === 'function') {
+    // Piluliers & Constantes — transportés via patients_meta avec patient_id
+    // Le destinataire les importe via syncPatientsFromServer qui transporte le _data complet.
+    // On envoie juste les métadonnées : patient_id + nom_hash pour le matching
+    // Les données cliniques elles-mêmes transitent dans le _data patient (chiffré)
+    // qui est synchronisé par patients-push/pull (même clé userId pour le même compte).
+    //
+    // Pour le cabinet (IDEs différentes), on pousse d'abord les patients via patients-push,
+    // ce qui transporte automatiquement piluliers[] et constantes[] dans le _data.
+    // Donc rien à faire ici — syncPatientsFromServer côté destinataire fait le travail.
+    if ((prefs.what.piluliers || prefs.what.constantes) && typeof syncPatientsToServer === 'function') {
       try {
-        const pts = await getAllPatients();
-        // Collecter tous les piluliers de tous les patients
-        const allPiluliers = pts
-          .filter(p => Array.isArray(p.piluliers) && p.piluliers.length)
-          .map(p => ({
-            patient_id:  p.id,
-            // Hash stable du nom pour matching cross-appareils (jamais le vrai nom)
-            nom_hash:    btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
-            piluliers:   p.piluliers,
-          }));
-        if (allPiluliers.length) {
-          // Chiffrement stable (clé userId — déchiffrable par tous les appareils du même compte)
-          payload.data.piluliers_enc = btoa(unescape(encodeURIComponent(JSON.stringify(allPiluliers))));
-        }
-      } catch (e) { console.warn('[cabinet push piluliers]', e.message); }
-    }
-
-    // Constantes — données de santé : chiffrées AES avant envoi
-    if (prefs.what.constantes && typeof getAllPatients === 'function') {
-      try {
-        const pts = await getAllPatients();
-        const allConstantes = pts
-          .filter(p => Array.isArray(p.constantes) && p.constantes.length)
-          .map(p => ({
-            patient_id:  p.id,
-            // Hash stable du nom pour matching cross-appareils (jamais le vrai nom)
-            nom_hash:    btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
-            constantes:  p.constantes,
-          }));
-        if (allConstantes.length) {
-          // Chiffrement stable (clé userId — déchiffrable par tous les appareils du même compte)
-          payload.data.constantes_enc = btoa(unescape(encodeURIComponent(JSON.stringify(allConstantes))));
-        }
-      } catch (e) { console.warn('[cabinet push constantes]', e.message); }
+        // S'assurer que les fiches patients avec leurs piluliers/constantes sont à jour sur le serveur
+        await syncPatientsToServer();
+      } catch (e) { console.warn('[cabinet push patients sync]', e.message); }
     }
 
     const d = await apiCall('/webhook/cabinet-sync-push', payload);
@@ -818,78 +795,19 @@ async function cabinetPullSync() {
         } catch (e) { console.warn('[cabinet pull cotations]', e.message); }
       }
 
-      // ── Piluliers — déchiffrement btoa stable ─────────────────────────
-      if (item.what.includes('piluliers') && item.data?.piluliers_enc) {
-        try {
-          let allPiluliers = null;
+      // ── Piluliers & Constantes — déjà transportés dans le _data patient ──────
+      // syncPatientsFromServer (appelé en début de cette fonction) a déjà importé
+      // les fiches patients complètes incluant leurs piluliers[] et constantes[].
+      // Pas de traitement séparé nécessaire — c'est le _data patient qui fait le travail.
+      if (item.what.includes('piluliers') || item.what.includes('constantes')) {
+        // Un 2e pull patient pour s'assurer que les données sont bien à jour
+        if (typeof syncPatientsFromServer === 'function') {
           try {
-            allPiluliers = JSON.parse(decodeURIComponent(escape(atob(item.data.piluliers_enc))));
-          } catch (_) {
-            console.warn('[cabinet pull piluliers] Format incompatible — ignoré');
-          }
-          if (Array.isArray(allPiluliers)) {
-            let nbPil = 0;
-            const localPts = typeof getAllPatients === 'function' ? await getAllPatients() : [];
-            // Index double : par id exact ET par nom_hash
-            const localById   = new Map(localPts.map(p => [p.id, p]));
-            const localByHash = new Map(localPts.map(p => [
-              btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
-              p
-            ]));
-            for (const entry of allPiluliers) {
-              // Chercher le patient local par id exact, puis par nom_hash
-              let localPat = localById.get(entry.patient_id);
-              if (!localPat && entry.nom_hash) localPat = localByHash.get(entry.nom_hash);
-              if (!localPat) {
-                console.warn('[cabinet pull piluliers] patient introuvable localement — id:', entry.patient_id, 'hash:', entry.nom_hash);
-                continue;
-              }
-              for (const pil of (entry.piluliers || [])) {
-                if (typeof patientAddPilulier === 'function') {
-                  await patientAddPilulier(localPat.id, pil);
-                  nbPil++;
-                }
-              }
-            }
-            if (nbPil > 0) { applied++; details.push(`💊 ${nbPil} pilulier(s)`); }
-          }
-        } catch (e) { console.warn('[cabinet pull piluliers]', e.message); }
-      }
-
-      // ── Constantes — déchiffrement btoa stable ────────────────────────
-      if (item.what.includes('constantes') && item.data?.constantes_enc) {
-        try {
-          let allConstantes = null;
-          try {
-            allConstantes = JSON.parse(decodeURIComponent(escape(atob(item.data.constantes_enc))));
-          } catch (_) {
-            console.warn('[cabinet pull constantes] Format incompatible — ignoré');
-          }
-          if (Array.isArray(allConstantes)) {
-            let nbConst = 0;
-            const localPts = typeof getAllPatients === 'function' ? await getAllPatients() : [];
-            const localById   = new Map(localPts.map(p => [p.id, p]));
-            const localByHash = new Map(localPts.map(p => [
-              btoa(unescape(encodeURIComponent((p.nom||'').toLowerCase().trim() + '|' + (p.prenom||'').toLowerCase().trim()))).slice(0, 24),
-              p
-            ]));
-            for (const entry of allConstantes) {
-              let localPat = localById.get(entry.patient_id);
-              if (!localPat && entry.nom_hash) localPat = localByHash.get(entry.nom_hash);
-              if (!localPat) {
-                console.warn('[cabinet pull constantes] patient introuvable localement — id:', entry.patient_id, 'hash:', entry.nom_hash);
-                continue;
-              }
-              for (const mesure of (entry.constantes || [])) {
-                if (typeof patientAddConstante === 'function') {
-                  await patientAddConstante(localPat.id, mesure);
-                  nbConst++;
-                }
-              }
-            }
-            if (nbConst > 0) { applied++; details.push(`📊 ${nbConst} mesure(s)`); }
-          }
-        } catch (e) { console.warn('[cabinet pull constantes]', e.message); }
+            await syncPatientsFromServer();
+            if (item.what.includes('piluliers'))  { applied++; details.push('💊 piluliers (via fiches patients)'); }
+            if (item.what.includes('constantes')) { applied++; details.push('📊 constantes (via fiches patients)'); }
+          } catch {}
+        }
       }
     }
 
