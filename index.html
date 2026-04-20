@@ -985,18 +985,7 @@
         </div>
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn bp" id="btn-tur" onclick="(async()=>{
-            /* Garantir APP.importedData depuis toutes les sources avant optimisation */
-            if(!APP.importedData?.patients?.length && !APP.importedData?.entries?.length){
-              const _pd=window.APP?._planningData;
-              if(_pd?.patients?.length||_pd?.entries?.length){ APP.importedData=_pd; }
-              else if(typeof loadTourneeData==='function'){
-                const _td=loadTourneeData();
-                if(_td?.patients?.length||_td?.entries?.length) APP.importedData=_td;
-              }
-            }
-            if(typeof optimiserTournee==='function') optimiserTournee();
-          })()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bp" id="btn-tur" onclick="(async()=>{if(!APP.importedData?.patients?.length&&!APP.importedData?.entries?.length){const _pd=window.APP?._planningData;if(_pd?.patients?.length||_pd?.entries?.length){APP.importedData=_pd;}else if(typeof loadTourneeData==='function'){const _td=loadTourneeData();if(_td?.patients?.length||_td?.entries?.length)APP.importedData=_td;}}if(typeof optimiserTournee==='function')optimiserTournee();})()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
           <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
@@ -2684,61 +2673,61 @@
 ════════════════════════════════════ -->
 
 <!-- Utilitaires de base (doit être en premier) -->
-<script src="js/utils.js"></script>
+<script src="js/utils.js?v=3.8"></script>
 
 <!-- Modules fonctionnels -->
-<script src="js/auth.js"></script>
-<script src="js/cabinet.js"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
-<script src="js/security.js"></script><!-- RGPD + AES + PIN + Consentement -->
-<script src="js/admin.js"></script>
-<script src="js/profil.js"></script>
-<script src="js/cotation.js"></script>
-<script src="js/contact.js"></script>
-<script src="js/geocode.js"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
-<script src="js/navigation.js"></script><!-- computeGeoScore + openNavigation -->
-<script src="js/patients.js"></script>
-<script src="js/tresorerie.js"></script>
-<script src="js/offline-queue.js"></script>
-<script src="js/voice.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/auth.js?v=3.8"></script>
+<script src="js/cabinet.js?v=3.8"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
+<script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
+<script src="js/admin.js?v=3.8"></script>
+<script src="js/profil.js?v=3.8"></script>
+<script src="js/cotation.js?v=3.8"></script>
+<script src="js/contact.js?v=3.8"></script>
+<script src="js/geocode.js?v=3.8"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
+<script src="js/navigation.js?v=3.8"></script><!-- computeGeoScore + openNavigation -->
+<script src="js/patients.js?v=3.8"></script>
+<script src="js/tresorerie.js?v=3.8"></script>
+<script src="js/offline-queue.js?v=3.8"></script>
+<script src="js/voice.js?v=3.8"></script>
+<script src="js/dashboard.js?v=3.8"></script>
 
 <!-- Interface & Navigation -->
-<script src="js/ui.js"></script>
+<script src="js/ui.js?v=3.8"></script>
 
 <!-- Leaflet (doit être chargé AVANT map.js et uber.js) -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Modules dépendant de Leaflet -->
-<script src="js/map.js"></script>
-<script src="js/uber.js"></script>
+<script src="js/map.js?v=3.8"></script>
+<script src="js/uber.js?v=3.8"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
-<script src="js/ai-tournee.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/pwa.js"></script>
+<script src="js/ai-tournee.js?v=3.8"></script>
+<script src="js/ai-assistant.js?v=3.8"></script>
+<script src="js/pwa.js?v=3.8"></script>
 
 <!-- Tournée — dépend de tout ce qui précède -->
-<script src="js/tournee.js"></script>
+<script src="js/tournee.js?v=3.8"></script>
 
 <!-- Extras — fonctions complémentaires de ami-ngap.html -->
-<script src="js/extras.js"></script>
+<script src="js/extras.js?v=3.8"></script>
 
 <!-- Onboarding — intros contextuelles par section (première visite) -->
-<script src="js/onboarding.js"></script>
+<script src="js/onboarding.js?v=3.8"></script>
 
 <!-- Nouveaux modules SaaS médical -->
-<script src="js/signature.js"></script>
-<script src="js/copilote.js"></script>
-<script src="js/rapport.js"></script>
+<script src="js/signature.js?v=3.8"></script>
+<script src="js/copilote.js?v=3.8"></script>
+<script src="js/rapport.js?v=3.8"></script>
 
 <!-- Modules cliniques AMI v2 -->
-<script src="js/transmissions.js"></script>
-<script src="js/constantes.js"></script>
-<script src="js/pilulier.js"></script>
-<script src="js/bsi.js"></script>
-<script src="js/consentements.js"></script>
-<script src="js/alertes-medicaments.js"></script>
-<script src="js/audit-cpam.js"></script>
+<script src="js/transmissions.js?v=3.8"></script>
+<script src="js/constantes.js?v=3.8"></script>
+<script src="js/pilulier.js?v=3.8"></script>
+<script src="js/bsi.js?v=3.8"></script>
+<script src="js/consentements.js?v=3.8"></script>
+<script src="js/alertes-medicaments.js?v=3.8"></script>
+<script src="js/audit-cpam.js?v=3.8"></script>
 
 <script>
 /* ══ Bannières admin — modules cliniques v2 ══
@@ -3227,7 +3216,7 @@ document.addEventListener('click', function(e) {
 })();
 </script>
 
-<script src="js/infirmiere-tools.js"></script>
+<script src="js/infirmiere-tools.js?v=3.8"></script>
 
 <!-- ══ TOAST CONTAINER ══ -->
 <div id="toast-container"></div>
