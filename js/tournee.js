@@ -363,7 +363,21 @@ function planningWeekNav(delta) {
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
   _planningCabinetMode = !!active;
+  // Persister pour survivre aux rechargements de page
+  try { localStorage.setItem('ami_planning_cabinet_mode', _planningCabinetMode ? '1' : '0'); } catch {}
   refreshPlanning();
+}
+
+/** Restaurer l'état de la vue cabinet au chargement */
+function _restorePlanningCabinetMode() {
+  try {
+    const saved = localStorage.getItem('ami_planning_cabinet_mode');
+    if (saved === '1') {
+      _planningCabinetMode = true;
+      const cb = document.getElementById('pla-cabinet-mode');
+      if (cb) cb.checked = true;
+    }
+  } catch {}
 }
 
 /** Affiche ou masque le toggle cabinet selon APP.cabinet */
@@ -383,6 +397,9 @@ function _planningInitCabinetUI() {
     if (cb) cb.disabled = false;
   }
   if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
+
+  // Restaurer l'état persisté si cabinet disponible
+  if (hasCab) _restorePlanningCabinetMode();
 
   // Retry si APP.cabinet pas encore chargé (initCabinet() async)
   if (!hasCab && !window._planningCabinetInitDone) {

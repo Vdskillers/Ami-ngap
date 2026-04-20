@@ -754,6 +754,10 @@ async function cabinetPushSync() {
     // 2. patients_cabinet : fiches complètes chiffrées clé cabinet (import carnet collègue)
     if (prefs.what.patients && typeof getAllPatients === 'function') {
       try {
+        // S'assurer que les cotations Supabase sont dans les fiches avant de pousser
+        if (typeof syncCotationsFromServer === 'function') {
+          try { await syncCotationsFromServer(); } catch {}
+        }
         const pts = await getAllPatients();
         // Métadonnées GPS pour la tournée
         payload.data.patients_meta = pts.map(p => ({
@@ -1068,14 +1072,14 @@ async function cabinetPullSync() {
         try { await loadPatients(); } catch {}
       }
       if (typeof syncCotationsFromServer === 'function') syncCotationsFromServer().catch(() => {});
-      // Fallback reload si carnet vide après import
+      // Rafraîchir la liste patients sans reload brutal
       setTimeout(() => {
         const list = document.getElementById('patients-list');
         if (list && list.children.length === 0 && applied > 0) {
-          console.warn('[cabinetPullSync] UI stale après import → reload');
-          window.location.reload();
+          console.warn('[cabinetPullSync] UI stale → retry loadPatients');
+          if (typeof loadPatients === 'function') loadPatients().catch(() => {});
         }
-      }, 600);
+      }, 800);
     } else {
       // Afficher le détail pour aider au diagnostic
       const whatReceived = items.map(i => i.what?.join(', ') || '(vide)').join(' | ');
