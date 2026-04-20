@@ -302,6 +302,12 @@ async function _autoCoterEtImporterPatient(p) {
         };
       }
 
+      // ── Enrichir p avec le nom trouvé en IDB pour que _syncCotationsToSupabase
+      //    puisse inclure patient_nom dans le payload Supabase → Historique des soins ──
+      p.nom    = p.nom    || pat.nom    || '';
+      p.prenom = p.prenom || pat.prenom || '';
+
+
       if (!pat.cotations) pat.cotations = [];
 
       // Guard : ne sauvegarder que si au moins un acte technique (pas juste DIM/IFD...)

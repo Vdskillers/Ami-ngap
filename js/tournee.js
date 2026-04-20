@@ -1191,19 +1191,52 @@ function _planningResetAll() {
 /* ============================================================
    ROUTING OSRM
    ============================================================ */
+
+/* Préférence autoroutes — 'auto' (inclure, défaut) | 'avoid' (éviter) */
+if (typeof APP !== 'undefined') APP._routeAutoroutes = APP._routeAutoroutes || 'auto';
+
+function _setRouteAutoroutes(mode) {
+  if (typeof APP !== 'undefined') APP._routeAutoroutes = mode;
+  // Mettre à jour le style des boutons
+  const btnAuto   = document.getElementById('btn-route-auto');
+  const btnNoAuto = document.getElementById('btn-route-noauto');
+  const lbl       = document.getElementById('route-autoroute-label');
+  if (btnAuto) {
+    btnAuto.style.background   = mode === 'auto' ? 'rgba(0,212,170,.15)' : 'var(--s)';
+    btnAuto.style.borderColor  = mode === 'auto' ? 'rgba(0,212,170,.4)'  : 'var(--b)';
+    btnAuto.style.color        = mode === 'auto' ? 'var(--a)' : 'var(--m)';
+  }
+  if (btnNoAuto) {
+    btnNoAuto.style.background  = mode === 'avoid' ? 'rgba(255,181,71,.15)' : 'var(--s)';
+    btnNoAuto.style.borderColor = mode === 'avoid' ? 'rgba(255,181,71,.4)'  : 'var(--b)';
+    btnNoAuto.style.color       = mode === 'avoid' ? 'var(--w)' : 'var(--m)';
+  }
+  if (lbl) lbl.textContent = mode === 'avoid'
+    ? '🚫 Autoroutes exclues — routes nationales / dép.'
+    : '✅ Itinéraire standard';
+  if (typeof showToast === 'function')
+    showToast(mode === 'avoid' ? '🚫 Autoroutes exclues — relancez l\'optimisation' : '✅ Autoroutes incluses — relancez l\'optimisation');
+}
+window._setRouteAutoroutes = _setRouteAutoroutes;
+
 async function getOsrmRoute(waypoints){
   // waypoints = [{lat,lng}, ...]
   if(!waypoints||waypoints.length<2)return null;
   try{
-    const coords=waypoints.map(w=>`${w.lng},${w.lat}`).join(';');
-    const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false`);
-    const d=await r.json();
-    if(d.code!=='Ok')return null;
-    const route=d.routes[0];
+    const coords = waypoints.map(w=>`${w.lng},${w.lat}`).join(';');
+    const avoidMotorway = (typeof APP !== 'undefined') && APP._routeAutoroutes === 'avoid';
+    // OSRM v5 supporte ?exclude=motorway,toll pour éviter les autoroutes
+    const excludeParam = avoidMotorway ? '&exclude=motorway,toll' : '';
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false${excludeParam}`;
+    const r = await fetch(url);
+    const d = await r.json();
+    if(d.code!=='Ok') return null;
+    const route = d.routes[0];
     return{
-      total_km:Math.round(route.distance/100)/10,
-      total_min:Math.round(route.duration/60),
-      legs:route.legs.map(l=>({km:Math.round(l.distance/100)/10,min:Math.round(l.duration/60)}))
+      total_km:  Math.round(route.distance/100)/10,
+      total_min: Math.round(route.duration/60),
+      legs: route.legs.map(l=>({km:Math.round(l.distance/100)/10, min:Math.round(l.duration/60)})),
+      avoid_motorway: avoidMotorway,
     };
   }catch{return null;}
 }
@@ -1390,6 +1423,7 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;margin-top:10px">
       <div class="dreb">📍 ${total} patients</div>
       ${osrm?`<div class="dreb">🚗 ${osrm.total_km} km</div><div class="dreb">⏱ ~${osrm.total_min} min</div>`:''}
+      ${osrm?.avoid_motorway ? `<div class="dreb" style="background:rgba(255,181,71,.1);border-color:rgba(255,181,71,.3);color:var(--w)">🚫 Sans autoroutes</div>` : ''}
       <div class="ca-pill">💶 CA estimé : ${parseFloat(ca).toFixed(2)} €</div>
       ${rentab?`<div class="ca-pill" style="background:rgba(79,168,255,.1);border-color:rgba(79,168,255,.3);color:var(--a2)">📊 ${rentab.euro_heure}€/h</div>`:''}
       <button class="btn bs bsm" style="margin-left:auto;color:var(--d);border-color:rgba(255,95,109,.3);font-size:11px" onclick="clearTournee()">🗑️ Vider</button>
@@ -1706,6 +1740,27 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
 
     const allToSync = [...fromMemory, ...fromIDB];
     if (!allToSync.length) return;
+
+    // ── Enrichissement noms patients (fromMemory sans nom/prenom) ─────────
+    // Les uberPatients issus d'un import calendrier n'ont souvent que `description`
+    // (pas de champs nom/prenom séparés). On les enrichit depuis l'IDB avant sync.
+    try {
+      if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+        const _idbRowsEnrich = await _idbGetAll(PATIENTS_STORE);
+        const _idbIdxEnrich  = {};
+        _idbRowsEnrich.forEach(r => { _idbIdxEnrich[r.id] = r; });
+
+        fromMemory.forEach(p => {
+          if ((p.nom || p.prenom)) return; // déjà renseigné
+          const pid = p.patient_id || p.id || p._idb_patient_id;
+          const row = pid ? _idbIdxEnrich[pid] : null;
+          if (row) {
+            p.nom    = row.nom    || '';
+            p.prenom = row.prenom || '';
+          }
+        });
+      }
+    } catch (_enrichErr) { /* silencieux */ }
 
     const cotations = allToSync
       // Ne jamais envoyer sans actes valides (évite les entrées DIM-seul parasites)
