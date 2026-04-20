@@ -59,6 +59,45 @@ function _defaultSyncPrefs() {
   };
 }
 
+/* ════════════════════════════════════════════════
+   MODULE CRYPTO CABINET — plug & play
+   Aujourd'hui : clé symétrique cabinet_id (btoa)
+   Demain : RSA-OAEP asymétrique — sans rien casser
+   Toggle : CAB_CRYPTO.enabled = true
+════════════════════════════════════════════════ */
+const CAB_CRYPTO = {
+  enabled: false, // 🔥 false = clé symétrique actuelle | true = RSA futur
+
+  async encrypt(data, cabinetId) {
+    if (!this.enabled) return _cabEnc(data, cabinetId);
+    // Futur : chiffrement RSA-OAEP multi-destinataires
+    return _cabEnc(data, cabinetId); // fallback pendant migration
+  },
+
+  async decrypt(payload, cabinetId) {
+    if (!this.enabled) return _cabDec(payload, cabinetId);
+    // Futur : déchiffrement RSA avec clé privée locale
+    return _cabDec(payload, cabinetId); // fallback pendant migration
+  },
+
+  // Génération future d'une paire de clés par IDE
+  async generateKeyPair() {
+    if (!window.crypto?.subtle) return null;
+    try {
+      const kp = await crypto.subtle.generateKey(
+        { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1,0,1]), hash: 'SHA-256' },
+        true, ['encrypt','decrypt']
+      );
+      const pub  = await crypto.subtle.exportKey('spki',  kp.publicKey);
+      const priv = await crypto.subtle.exportKey('pkcs8', kp.privateKey);
+      return {
+        publicKey:  btoa(String.fromCharCode(...new Uint8Array(pub))),
+        privateKey: btoa(String.fromCharCode(...new Uint8Array(priv))),
+      };
+    } catch { return null; }
+  },
+};
+
 /* ── Chiffrement partagé cabinet (clé = cabinet_id) ───────────────────
    Même cabinet_id pour tous les membres → même clé → déchiffrement mutuel.
    Utilisé pour les données partagées entre comptes différents.
@@ -104,6 +143,58 @@ function _cabDec(str, cabinetId) {
    2. INITIALISATION AU LOGIN
    Appelé par auth.js après showApp()
 ════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════
+   TEMPS RÉEL — WebSocket cabinet
+   Sync instantanée quand un collègue pousse
+   Fallback automatique si WS indisponible
+════════════════════════════════════════════════ */
+let _cabinetWS = null;
+
+function initCabinetRealtime() {
+  const cab = APP.get('cabinet');
+  if (!cab?.id || _cabinetWS) return;
+
+  try {
+    // Construction URL WebSocket depuis l'URL Worker
+    const workerUrl = typeof W !== 'undefined' ? W : '';
+    const wsUrl = workerUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    if (!wsUrl) return;
+
+    _cabinetWS = new WebSocket(`${wsUrl}/ws?cabinet_id=${cab.id}`);
+
+    _cabinetWS.onopen = () => {
+      console.info('[cabinet WS] 🟢 Connecté — sync temps réel active');
+    };
+
+    _cabinetWS.onmessage = async (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'CABINET_SYNC' && msg.cabinet_id === cab.id) {
+          console.info('[cabinet WS] ⚡ Sync reçue en live depuis', msg.sender || 'collègue');
+          // Réutilise le pull existant — robuste et déjà testé
+          if (typeof cabinetPullSync === 'function') {
+            await cabinetPullSync();
+          }
+        }
+      } catch {}
+    };
+
+    _cabinetWS.onerror = () => {
+      console.warn('[cabinet WS] Erreur — fallback sur pull manuel');
+      _cabinetWS = null;
+    };
+
+    _cabinetWS.onclose = () => {
+      console.info('[cabinet WS] 🔴 Déconnecté — reconnexion dans 5s');
+      _cabinetWS = null;
+      setTimeout(initCabinetRealtime, 5000); // reconnexion auto
+    };
+  } catch (e) {
+    console.warn('[cabinet WS] WS non disponible — mode pull manuel uniquement');
+    _cabinetWS = null;
+  }
+}
+
 async function initCabinet() {
   try {
     const d = await apiCall('/webhook/cabinet-get', {});
@@ -121,6 +212,8 @@ async function initCabinet() {
       if (typeof initCotationCabinetToggle === 'function') initCotationCabinetToggle();
       // Afficher le panel cabinet dans la tournée
       _updateTourneeCabinetPanel();
+      // Démarrer la sync temps réel (WebSocket)
+      setTimeout(initCabinetRealtime, 500);
     } else {
       APP.set('cabinet', null);
       _updateCabinetBadge(0);
@@ -634,6 +727,19 @@ function cabinetToggleSyncWith(memberId, checked) {
    6. SYNCHRONISATION PUSH / PULL
 ════════════════════════════════════════════════ */
 
+/* ── Audit log cabinet ──────────────────────────────────────────────── */
+async function _cabinetAuditLog(action, meta = {}) {
+  try {
+    await apiCall('/webhook/log', {
+      type: 'CABINET_ACTION',
+      cabinet_id: APP.get('cabinet')?.id,
+      user_id:    APP.user?.id,
+      action,
+      meta:       JSON.stringify(meta),
+    });
+  } catch {} // silencieux — ne pas bloquer le flux
+}
+
 async function cabinetPushSync() {
   const cab   = APP.get('cabinet');
   if (!cab?.id) { _syncMsg('Vous n\'êtes pas dans un cabinet.', 'e'); return; }
@@ -696,8 +802,9 @@ async function cabinetPushSync() {
           lng:        p.lng       || null,
           heure_soin: p.heure_soin|| null,
         }));
-        // Fiches complètes pour import dans le carnet du collègue
+        // Fiches patients pour import dans le carnet du collègue
         // Chiffrées avec la clé cabinet (partagée entre tous les membres)
+        // On limite aux champs identité + cliniques essentiels pour rester sous la limite 100KB
         const full = pts.map(p => ({
           id: p.id, nom: p.nom||'', prenom: p.prenom||'',
           adresse: p.adresse||'', lat: p.lat||null, lng: p.lng||null,
@@ -705,11 +812,33 @@ async function cabinetPushSync() {
           medecin: p.medecin||'', allergies: p.allergies||'',
           pathologies: p.pathologies||'', traitements: p.traitements||'',
           heure_preferee: p.heure_preferee||'', actes_recurrents: p.actes_recurrents||'',
-          cotations: p.cotations||[], piluliers: p.piluliers||[],
-          constantes: p.constantes||[], ordonnances: p.ordonnances||[],
+          // Versioning pour résolution de conflits
+          _version:    (p._version || 0),
+          _updated_at: p.updated_at ? new Date(p.updated_at).getTime() : Date.now(),
+          // Données cliniques limitées pour rester sous 80KB
+          cotations:   (p.cotations  ||[]).slice(-20),
+          piluliers:   (p.piluliers  ||[]).slice(-10),
+          constantes:  (p.constantes ||[]).slice(-30),
+          ordonnances: (p.ordonnances||[]).slice(-5),
         }));
-        const enc = _cabEnc(full, cab.id);
-        if (enc) payload.data.patients_cabinet = enc;
+        const enc = await CAB_CRYPTO.encrypt(full, cab.id);
+        const encSize = enc ? Math.round(enc.length / 1024) + 'KB' : 'ECHEC';
+        console.info('[cabinet push] patients_cabinet:', full.length, 'patients,', encSize);
+        if (!enc) { console.warn('[cabinet push] Encodage patients_cabinet échoué'); }
+        if (enc && enc.length < 80000) { // limite sécuritaire 80KB
+          payload.data.patients_cabinet = enc;
+        } else if (enc) {
+          console.warn('[cabinet push] patients_cabinet trop volumineux (' + encSize + ') — envoi sans données cliniques');
+          // Réessayer sans cotations/piluliers/constantes
+          const fullLight = pts.map(p => ({
+            id: p.id, nom: p.nom||'', prenom: p.prenom||'',
+            adresse: p.adresse||'', lat: p.lat||null, lng: p.lng||null,
+            ddn: p.ddn||'', secu: p.secu||'', amo: p.amo||'', amc: p.amc||'',
+            medecin: p.medecin||'', heure_preferee: p.heure_preferee||'',
+          }));
+          const encLight = _cabEnc(fullLight, cab.id);
+          if (encLight) payload.data.patients_cabinet = encLight;
+        }
       } catch (e) { console.warn('[cabinet push patients]', e.message); }
     }
 
@@ -759,6 +888,7 @@ async function cabinetPushSync() {
     if (!d.ok) throw new Error(d.error || 'Erreur synchronisation');
 
     _syncOk(`✅ Données envoyées à ${withIds.length} collègue(s) — ${whatKeys.join(', ')}`);
+    _cabinetAuditLog('SYNC_PUSH', { what: whatKeys, targets: withIds.length });
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
   } finally {
@@ -794,14 +924,24 @@ async function cabinetPullSync() {
     }
 
     // Log détaillé pour debug
-    console.info('[cabinetPullSync] Données reçues:', items.map(i => ({
-      sender: i.sender_prenom + ' ' + i.sender_nom,
-      what: i.what,
-      dataKeys: Object.keys(i.data || {}),
-      hasPatientsCAB: !!i.data?.patients_cabinet,
-      hasPiluliers: !!i.data?.piluliers_enc,
-      hasConstantes: !!i.data?.constantes_enc,
-    })));
+    console.info('[cabinetPullSync] Données reçues:', items.length, 'item(s)');
+    items.forEach((i, idx) => {
+      console.info('  Item', idx, ':', {
+        sender: i.sender_prenom + ' ' + i.sender_nom,
+        what: i.what,
+        dataKeys: Object.keys(i.data || {}),
+        patients_cabinet_len: i.data?.patients_cabinet?.length || 0,
+        patients_meta_len: (i.data?.patients_meta || []).length,
+        cab_id_used: cab.id,
+      });
+      // Tenter le déchiffrement maintenant pour voir l'erreur exacte
+      if (i.data?.patients_cabinet) {
+        const testDec = _cabDec(i.data.patients_cabinet, cab.id);
+        console.info('  _cabDec test:', testDec === null ? 'NULL — échec' : Array.isArray(testDec) ? testDec.length + ' patients OK' : typeof testDec);
+      } else {
+        console.warn('  patients_cabinet ABSENT de item.data');
+      }
+    });
 
     let applied = 0;
     const details = []; // résumé des imports pour le message final
@@ -832,76 +972,99 @@ async function cabinetPullSync() {
         } catch {}
       }
 
-      // ── Patients cabinet (fiches complètes chiffrées clé cabinet) ────
+      // ── Patients cabinet (VERSION CLEAN) ──────────────────────────────
       if (item.what.includes('patients') && item.data?.patients_cabinet) {
         try {
-          const pts = _cabDec(item.data.patients_cabinet, cab.id);
-          console.info('[cabinet pull] _cabDec résultat:', pts === null ? 'null (échec déchiffrement)' : Array.isArray(pts) ? pts.length + ' patients' : typeof pts);
+          const pts = await CAB_CRYPTO.decrypt(item.data.patients_cabinet, cab.id);
+          console.info('[cabinet pull] _cabDec:', pts === null ? 'ECHEC' : Array.isArray(pts) ? pts.length + ' patients' : typeof pts);
+
           if (Array.isArray(pts) && pts.length) {
             await initPatientsDB();
             const localRows = await _idbGetAll(PATIENTS_STORE);
             const localMap  = new Map(localRows.map(r => [r.id, r]));
             let nbPt = 0;
+
+            // Helper merge tableau sans doublons
+            const mergeArr = (localArr, incoming, uniqueKey) => {
+              if (!Array.isArray(incoming) || !incoming.length) return false;
+              if (!Array.isArray(localArr)) return false;
+              const existSet = new Set(localArr.map(x => x[uniqueKey]).filter(Boolean));
+              let changed = false;
+              for (const item of incoming) {
+                if (item[uniqueKey] && !existSet.has(item[uniqueKey])) {
+                  localArr.push({ ...item, _synced: true });
+                  existSet.add(item[uniqueKey]);
+                  changed = true;
+                }
+              }
+              return changed;
+            };
+
+            // Helper versioning : faut-il écraser ?
+            const shouldOverride = (incoming, localDecoded) => {
+              if (!localDecoded) return true;
+              if ((incoming._version || 0) > (localDecoded._version || 0)) return true;
+              if ((incoming._updated_at || 0) > (localDecoded._updated_at || 0)) return true;
+              return false;
+            };
+
             for (const p of pts) {
               if (!p.id || !p.nom) continue;
-              const existing = localMap.get(p.id);
-              // Chiffrer avec la clé userId LOCAL du destinataire
-              const encoded = _enc(p);
+              const existing   = localMap.get(p.id);
+              const localDecoded = existing ? (_dec(existing._data) || {}) : null;
+
+              // ✅ CRITIQUE : toujours encoder avec la clé locale du destinataire
+              // Enrichir avec version + traçabilité
+              const enriched = {
+                ...p,
+                _version:    (p._version || 0) + 1,
+                _updated_at: Date.now(),
+                _updated_by: item.sender_id,
+                source:      'cabinet',
+                owner_id:    item.sender_id,
+              };
+              const encoded = _enc(enriched);
               if (!encoded) continue;
-              if (!existing) {
-                // Nouveau patient — créer la fiche
-                await _idbPut(PATIENTS_STORE, {
-                  id: p.id, nom: p.nom, prenom: p.prenom||'',
-                  _data: encoded, updated_at: new Date().toISOString(),
-                });
+
+              // ✅ CRITIQUE : infirmiere_id = userId LOCAL du destinataire
+              const baseRow = {
+                id:            p.id,
+                nom:           p.nom,
+                prenom:        p.prenom || '',
+                _data:         encoded,
+                updated_at:    new Date().toISOString(),
+                infirmiere_id: APP.user?.id,   // ← clé de visibilité
+              };
+
+              if (!existing || shouldOverride(p, localDecoded)) {
+                // Nouveau patient OU version distante plus récente
+                await _idbPut(PATIENTS_STORE, baseRow);
                 nbPt++;
               } else {
-                // Patient existant — merger cotations/piluliers/constantes
-                const localP = { id: existing.id, nom: existing.nom, prenom: existing.prenom, ...(_dec(existing._data)||{}) };
+                // Version locale plus récente — merger les tableaux uniquement
                 let changed = false;
-                // Merger cotations
-                if (Array.isArray(p.cotations) && p.cotations.length) {
-                  if (!Array.isArray(localP.cotations)) localP.cotations = [];
-                  const localInv = new Set(localP.cotations.map(c => c.invoice_number).filter(Boolean));
-                  for (const cot of p.cotations) {
-                    if (cot.invoice_number && !localInv.has(cot.invoice_number)) {
-                      localP.cotations.push({ ...cot, _synced: true }); localInv.add(cot.invoice_number); changed = true;
-                    }
-                  }
-                }
-                // Merger piluliers
-                if (Array.isArray(p.piluliers) && p.piluliers.length) {
-                  if (!Array.isArray(localP.piluliers)) localP.piluliers = [];
-                  const localSem = new Set(localP.piluliers.map(x => x.semaine_debut).filter(Boolean));
-                  for (const pil of p.piluliers) {
-                    if (pil.semaine_debut && !localSem.has(pil.semaine_debut)) {
-                      localP.piluliers.push({ ...pil, _synced: true }); localSem.add(pil.semaine_debut); changed = true;
-                    }
-                  }
-                }
-                // Merger constantes
-                if (Array.isArray(p.constantes) && p.constantes.length) {
-                  if (!Array.isArray(localP.constantes)) localP.constantes = [];
-                  const localDates = new Set(localP.constantes.map(c => c.patient_id+'|'+c.date).filter(Boolean));
-                  for (const cst of p.constantes) {
-                    if (cst.date && !localDates.has(p.id+'|'+cst.date)) {
-                      localP.constantes.push({ ...cst, _synced: true }); localDates.add(p.id+'|'+cst.date); changed = true;
-                    }
-                  }
-                }
+                if (!Array.isArray(localDecoded.cotations))  localDecoded.cotations  = [];
+                if (!Array.isArray(localDecoded.piluliers))  localDecoded.piluliers  = [];
+                if (!Array.isArray(localDecoded.constantes)) localDecoded.constantes = [];
+
+                if (mergeArr(localDecoded.cotations,  p.cotations,  'invoice_number')) changed = true;
+                if (mergeArr(localDecoded.piluliers,  p.piluliers,  'semaine_debut'))  changed = true;
+                if (mergeArr(localDecoded.constantes, p.constantes, 'date'))           changed = true;
+
                 if (changed) {
-                  localP.updated_at = new Date().toISOString();
+                  localDecoded.updated_at = new Date().toISOString();
                   await _idbPut(PATIENTS_STORE, {
-                    id: existing.id, nom: existing.nom, prenom: existing.prenom,
-                    _data: _enc(localP), updated_at: localP.updated_at,
+                    ...baseRow,
+                    _data: _enc(localDecoded),
                   });
                   nbPt++;
                 }
               }
             }
-            if (nbPt > 0) { applied++; details.push(`👤 ${nbPt} patient(s) importé(s)`); }
+
+            if (nbPt > 0) { applied++; details.push(`👤 ${nbPt} patient(s)`); }
           }
-        } catch (e) { console.warn('[cabinet pull patients_cabinet]', e.message); }
+        } catch (e) { console.error('[cabinet pull patients_cabinet]', e); }
       }
 
       // ── Ordonnances (anonymisées) ─────────────────────────────────────
@@ -934,13 +1097,23 @@ async function cabinetPullSync() {
     }
 
     console.info('[cabinetPullSync] items reçus:', items.length, '| applied:', applied, '| details:', details);
+    _cabinetAuditLog('SYNC_PULL', { received: items.length, applied });
     if (applied > 0) {
       _syncOk(`✅ Import depuis ${items.length} collègue(s) — ${details.join(', ')}`);
       showToast('success', 'Données importées', details.join(', '));
-      // Rafraîchir le carnet patients
-      if (typeof loadPatients === 'function') setTimeout(() => loadPatients().catch(() => {}), 300);
-      // Rafraîchir les cotations
+      // 🔥 Refresh UI fiable — attendre que l'IDB soit committed avant reload
+      if (typeof loadPatients === 'function') {
+        try { await loadPatients(); } catch {}
+      }
       if (typeof syncCotationsFromServer === 'function') syncCotationsFromServer().catch(() => {});
+      // Fallback reload si carnet vide après import
+      setTimeout(() => {
+        const list = document.getElementById('patients-list');
+        if (list && list.children.length === 0 && applied > 0) {
+          console.warn('[cabinetPullSync] UI stale après import → reload');
+          window.location.reload();
+        }
+      }, 600);
     } else {
       // Afficher le détail pour aider au diagnostic
       const whatReceived = items.map(i => i.what?.join(', ') || '(vide)').join(' | ');
@@ -1082,6 +1255,8 @@ async function cabinetTournee(patients) {
 
 /* Exposer les fonctions globalement */
 window.initCabinet          = initCabinet;
+window.initCabinetRealtime  = initCabinetRealtime;
+window.CAB_CRYPTO           = CAB_CRYPTO;
 
 function _updateTourneeCabinetPanel() {
   const panel = document.getElementById('tur-cabinet-panel');
