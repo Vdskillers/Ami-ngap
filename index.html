@@ -1130,7 +1130,87 @@
 
       </div><!-- /.card Mode Uber Médical -->
 
-      <!-- ═══════════════════════════════════════════════════
+      <!-- ═══════════════════════════════════════════════════════
+           🏥 TRAJET CABINET — Enregistrement km partagé multi-IDE
+           ═══════════════════════════════════════════════════════ -->
+      <div class="card" id="live-cabinet-km-card" style="margin-top:16px;display:none">
+
+        <!-- En-tête -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+          <div class="ct" style="margin-bottom:0">🏥 Trajet Cabinet</div>
+          <span style="font-family:var(--fm);font-size:10px;background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:2px 10px;border-radius:20px;letter-spacing:1px">MULTI-IDE</span>
+        </div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:14px;line-height:1.6">
+          Enregistrez un trajet effectué avec une ou plusieurs collègues du cabinet.
+          Chaque IDE sélectionnée verra ce trajet ajouté automatiquement à son propre
+          <strong style="color:var(--t)">Journal kilométrique</strong>.
+        </p>
+
+        <!-- Notice : pas de cabinet -->
+        <div id="live-cab-no-cabinet" style="display:none;background:rgba(255,181,71,.07);border:1px solid rgba(255,181,71,.2);border-radius:10px;padding:14px;font-size:12px;color:var(--w);line-height:1.6">
+          ⚠️ Vous n'êtes pas encore dans un cabinet.
+          <a onclick="navTo('cabinet')" style="color:var(--a);cursor:pointer;font-weight:600;margin-left:6px">Rejoindre ou créer un cabinet →</a>
+        </div>
+
+        <!-- Formulaire trajet cabinet -->
+        <div id="live-cab-form" style="display:none">
+
+          <!-- Sélection patient -->
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-family:var(--fm);color:var(--m);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px">Patient</label>
+            <div style="display:flex;gap:8px;align-items:stretch">
+              <select id="km-cab-patient-select" style="flex:1;padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+                <option value="">— Sélectionner un patient du carnet —</option>
+              </select>
+              <button onclick="_cabTogglePatientInput()" title="Saisir un nom libre" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--m);cursor:pointer;font-size:13px;flex-shrink:0;white-space:nowrap" id="km-cab-patient-toggle-btn">✏️ Libre</button>
+            </div>
+            <input type="text" id="km-cab-patient-libre" placeholder="Nom du patient (saisie libre)…"
+              style="display:none;width:100%;margin-top:6px;padding:10px 12px;background:var(--s);border:1px solid rgba(0,212,170,.4);border-radius:var(--r);color:var(--t);font-size:13px;box-sizing:border-box">
+          </div>
+
+          <!-- Sélection IDEs (checkboxes générées par JS) -->
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-family:var(--fm);color:var(--m);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:8px">Infirmière(s) ayant effectué le trajet</label>
+            <div id="km-cab-nurses-list" style="display:flex;flex-wrap:wrap;gap:8px">
+              <div style="font-size:12px;color:var(--m);font-style:italic">Chargement des membres du cabinet…</div>
+            </div>
+          </div>
+
+          <!-- Date + Distance + Départ/Arrivée -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:12px">
+            <div class="af">
+              <label>Date</label>
+              <input type="date" id="km-cab-date">
+            </div>
+            <div class="af">
+              <label>Distance (km)</label>
+              <input type="number" id="km-cab-distance" placeholder="Ex: 8.5" min="0.1" step="0.1">
+            </div>
+            <div class="af">
+              <label>Départ <span style="font-weight:400;color:var(--m)">(optionnel)</span></label>
+              <input type="text" id="km-cab-depart" placeholder="Ex: Cabinet">
+            </div>
+            <div class="af">
+              <label>Arrivée <span style="font-weight:400;color:var(--m)">(optionnel)</span></label>
+              <input type="text" id="km-cab-arrivee" placeholder="Ex: Domicile patient">
+            </div>
+          </div>
+
+          <div class="msg e" id="km-cab-msg" style="display:none;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn bp" onclick="addKmCabinetEntry()" style="flex:1">
+              <span>📍</span> Enregistrer le trajet cabinet
+            </button>
+            <button class="btn bs bsm" onclick="_cabResetForm()" title="Réinitialiser le formulaire">↺</button>
+          </div>
+
+          <!-- Confirmation après enregistrement -->
+          <div id="km-cab-confirm" style="display:none;margin-top:12px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:12px;font-size:12px;color:var(--a)"></div>
+        </div>
+
+      </div><!-- /.card Trajet Cabinet -->
+
+            <!-- ═══════════════════════════════════════════════════
            MODALE — État de la tournée / Bilan
            Ouverte par ouvrirEtatTournee() et terminerTourneeAvecBilan()
            ═══════════════════════════════════════════════════ -->
