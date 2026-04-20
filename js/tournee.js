@@ -668,28 +668,16 @@ async function renderPlanning(d){
 
   if (cabinetActive) {
     const cabNow = APP.get ? APP.get('cabinet') : null;
-    if (!cabNow?.members?.length) {
-      // Cabinet pas encore chargé → bloquer + retry
-      if (!window._cabinetRetryCount) window._cabinetRetryCount = 0;
-      window._cabinetRetryCount++;
-      if (window._cabinetRetryCount < 10) {
-        setTimeout(() => renderPlanning({}).catch(() => {}), 500);
-      }
-      const pbody = document.getElementById('pbody');
-      if (pbody) pbody.innerHTML = `
-        <div style="text-align:center;padding:40px 20px">
-          <div class="spin spinw" style="width:28px;height:28px;margin:0 auto 12px"></div>
-          <div style="font-size:14px;font-weight:600;color:var(--t)">Chargement du cabinet…</div>
-          <div style="font-size:12px;color:var(--m);margin-top:6px">Synchronisation (${window._cabinetRetryCount}/10)</div>
-        </div>`;
-      const resPla = document.getElementById('res-pla');
-      if (resPla) resPla.classList.add('show');
-      return;
-    }
-    window._cabinetRetryCount = 0;
+    const cabMembers = cabNow?.members?.length ? cabNow.members : null;
 
-    // ✅ Membres réels uniquement — zéro fallback IDE fake
-    const effectiveMembers = cabNow.members;
+    // ⚡ Pas de early return — renderCabinetView() gère l'état "membres pas encore chargés"
+    // Si membres pas disponibles → retry dans 600ms, cabinetAssignments reste vide → spinner
+    if (!cabMembers) {
+      setTimeout(() => renderPlanning({}).catch(() => {}), 600);
+      // cabinetAssignments reste {} → renderCabinetView affichera le spinner
+    } else {
+      // ✅ Membres disponibles → distribuer les patients
+      const effectiveMembers = cabMembers;
     const COLORS = ['#00d4aa','#4fa8ff','#ff9f43','#ff6b6b','#a29bfe'];
     effectiveMembers.forEach((m, i) => {
       const ideId = m.id || m.infirmiere_id || `ide_${i}`;
@@ -701,22 +689,23 @@ async function renderPlanning(d){
         color:    COLORS[i % 5],
       };
     });
-    const patsWithManual      = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
-    const patsNeedsClustering = patientsForCabinet.filter(p => !p._assignedIde || !cabinetAssignments[p._assignedIde]);
-    patsWithManual.forEach(p => cabinetAssignments[p._assignedIde].patients.push(p));
-    if (patsNeedsClustering.length && typeof cabinetGeoCluster === 'function') {
-      const clusters = cabinetGeoCluster(patsNeedsClustering, effectiveMembers.length);
-      effectiveMembers.forEach((m, i) => {
-        const ideId = m.id || m.infirmiere_id || `ide_${i}`;
-        (clusters[i] || []).forEach(p => cabinetAssignments[ideId].patients.push(p));
-      });
-    } else if (patsNeedsClustering.length) {
-      patsNeedsClustering.forEach((p, i) => {
-        const ideId = Object.keys(cabinetAssignments)[i % effectiveMembers.length];
-        if (cabinetAssignments[ideId]) cabinetAssignments[ideId].patients.push(p);
-      });
-    }
-  }
+      const patsWithManual      = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
+      const patsNeedsClustering = patientsForCabinet.filter(p => !p._assignedIde || !cabinetAssignments[p._assignedIde]);
+      patsWithManual.forEach(p => cabinetAssignments[p._assignedIde].patients.push(p));
+      if (patsNeedsClustering.length && typeof cabinetGeoCluster === 'function') {
+        const clusters = cabinetGeoCluster(patsNeedsClustering, effectiveMembers.length);
+        effectiveMembers.forEach((m, i) => {
+          const ideId = m.id || m.infirmiere_id || `ide_${i}`;
+          (clusters[i] || []).forEach(p => cabinetAssignments[ideId].patients.push(p));
+        });
+      } else if (patsNeedsClustering.length) {
+        patsNeedsClustering.forEach((p, i) => {
+          const ideId = Object.keys(cabinetAssignments)[i % effectiveMembers.length];
+          if (cabinetAssignments[ideId]) cabinetAssignments[ideId].patients.push(p);
+        });
+      }
+    } // fin else (membres chargés)
+  } // fin if (cabinetActive)
 
   // ── KPIs semaine ─────────────────────────────────────────────────────────
   const totalCot = patientsToShow.reduce((s, p) => s + (p._cotation?.validated ? (p._cotation.total||0) : 0), 0);
