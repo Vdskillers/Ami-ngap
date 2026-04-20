@@ -1252,7 +1252,6 @@ async function optimiserTournee(){
   // APP.get('importedData') lit depuis le store réactif (peut différer)
   const _impData = APP.importedData
     || APP.get('importedData')
-    || window.APP._planningData
     || (typeof loadTourneeData === 'function' ? loadTourneeData() : null);
   const rawPatients = _impData?.patients || _impData?.entries || [];
   if(!rawPatients.length){
@@ -1315,11 +1314,11 @@ async function optimiserTournee(){
 
     /* ── 1. Moteur IA local — VRPTW greedy + cache OSRM ── */
     // Badge trafic en temps réel pendant l'optimisation
-    const _tfInfo = (typeof getTrafficInfo === 'function') ? getTrafficInfo(startTimeMin) : { label: '' };
-    _showOptimProgress(`⚡ Optimisation VRPTW en cours… ${_tfInfo.label}`);
-    /* Heure de départ = heure actuelle en minutes depuis minuit (pas 8h00 fixe) */
+    /* Heure de départ = heure actuelle en minutes depuis minuit */
     const _now = new Date();
     const startTimeMin = _now.getHours() * 60 + _now.getMinutes();
+    const _tfInfo = (typeof getTrafficInfo === 'function') ? getTrafficInfo(startTimeMin) : { label: '' };
+    _showOptimProgress(`⚡ Optimisation VRPTW en cours… ${_tfInfo.label}`);
     let route = await optimizeTour(rawPatients, startPoint, startTimeMin, optimMode);
 
     /* ── 2. 2-opt — amélioration du chemin (sauf si contraintes strictes) ── */
