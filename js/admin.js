@@ -685,3 +685,41 @@ function _escAdm(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+
+/* ══════════════════════════════════════════════════════
+   MAINTENANCE — Corriger les noms patients manquants
+   Appelle /webhook/admin-fix-patient-nom pour rétropatcher
+   toutes les cotations admin sans patient_nom en base
+══════════════════════════════════════════════════════ */
+async function adminFixPatientNom() {
+  const btn    = document.getElementById('btn-fix-patient-nom');
+  const result = document.getElementById('fix-patient-nom-result');
+  if (!btn || !result) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Correction en cours…';
+  result.textContent = '';
+  result.style.color = 'var(--m)';
+
+  try {
+    const d = await wpost('/webhook/admin-fix-patient-nom', {});
+    if (d.ok) {
+      result.textContent = `✅ ${d.message}`;
+      result.style.color = 'var(--ok)';
+      // Recharger l'historique si visible
+      if (typeof hist === 'function') {
+        const histView = document.getElementById('view-his');
+        if (histView && histView.classList.contains('on')) hist();
+      }
+    } else {
+      result.textContent = '❌ ' + (d.error || 'Erreur inconnue');
+      result.style.color = 'var(--d)';
+    }
+  } catch(e) {
+    result.textContent = '❌ ' + e.message;
+    result.style.color = 'var(--d)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '👤 Corriger les noms manquants';
+  }
+}
