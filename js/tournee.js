@@ -183,8 +183,14 @@ function _planningKey() {
 function _savePlanning(patients) {
   try {
     const key = _planningKey();
-    // Sauvegarder avec timestamp pour TTL éventuel (7 jours)
-    const data = { patients, savedAt: Date.now() };
+    // ⚡ Fixer la date d'assignation sur chaque patient qui n'en a pas encore
+    // → sans ça, la date par défaut serait recalculée à chaque renderPlanning (= glissement quotidien)
+    const todayFixed = new Date().toISOString().split('T')[0];
+    const patientsWithDate = patients.map(p => {
+      if (p.date || p.date_soin || p.date_prevue) return p;
+      return { ...p, date: todayFixed, _dateFixed: true };
+    });
+    const data = { patients: patientsWithDate, savedAt: Date.now() };
     localStorage.setItem(key, JSON.stringify(data));
   } catch(e) { console.warn('[Planning] Save KO:', e.message); }
 }
@@ -363,21 +369,7 @@ function planningWeekNav(delta) {
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
   _planningCabinetMode = !!active;
-  // Persister pour survivre aux rechargements de page
-  try { localStorage.setItem('ami_planning_cabinet_mode', _planningCabinetMode ? '1' : '0'); } catch {}
   refreshPlanning();
-}
-
-/** Restaurer l'état de la vue cabinet au chargement */
-function _restorePlanningCabinetMode() {
-  try {
-    const saved = localStorage.getItem('ami_planning_cabinet_mode');
-    if (saved === '1') {
-      _planningCabinetMode = true;
-      const cb = document.getElementById('pla-cabinet-mode');
-      if (cb) cb.checked = true;
-    }
-  } catch {}
 }
 
 /** Affiche ou masque le toggle cabinet selon APP.cabinet */
@@ -397,9 +389,6 @@ function _planningInitCabinetUI() {
     if (cb) cb.disabled = false;
   }
   if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
-
-  // Restaurer l'état persisté si cabinet disponible
-  if (hasCab) _restorePlanningCabinetMode();
 
   // Retry si APP.cabinet pas encore chargé (initCabinet() async)
   if (!hasCab && !window._planningCabinetInitDone) {
@@ -545,7 +534,9 @@ async function renderPlanning(d){
       }
     }
 
-    const date = p.date || p.date_soin || p.date_prevue || todayISO;
+    // ⚡ La date est fixée au moment de la sauvegarde (_savePlanning).
+    // Ne jamais substituer todayISO ici : sinon le patient glisse chaque jour.
+    const date = p.date || p.date_soin || p.date_prevue || null;
 
     return {
       ...p,
@@ -565,8 +556,11 @@ async function renderPlanning(d){
   const weekStart = weekDates[0];
   const weekEnd   = weekDates[6];
   const patientsThisWeek = patients.filter(p => {
+    // ⚡ Si pas de date fixée → inclure dans la semaine courante uniquement
+    if (!p.date) return _planningWeekOffset === 0;
     try {
       const pd = new Date(p.date);
+      if (isNaN(pd)) return _planningWeekOffset === 0;
       return pd >= weekStart && pd <= weekEnd;
     } catch { return true; }
   });
@@ -593,7 +587,13 @@ async function renderPlanning(d){
       const desc = (p.description || p.texte || '').toLowerCase();
       jourKey = JOURS.find(j => desc.includes(j)) || null;
     }
-    if (!jourKey) jourKey = JOURS[listIdx % JOURS.length];
+    // ⚡ Fallback stable : hash basé sur patient_id/nom, pas sur listIdx (qui change)
+    if (!jourKey) {
+      const stableKey = (p.patient_id || p.id || p.nom || String(listIdx));
+      let hash = 0;
+      for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
+      jourKey = JOURS[hash % JOURS.length];
+    }
     byDay[jourKey].patients.push(p);
   });
 
@@ -605,12 +605,16 @@ async function renderPlanning(d){
 
   if (cabinetActive) {
     // Membres réels ou membre synthétique si seul (admin solo)
-    const effectiveMembers = (cab.members?.length)
+    const effectiveMembers = (cab?.members?.length)
       ? cab.members
       : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi', role: 'titulaire' }];
 
+    // ⚡ En mode cabinet, on distribue TOUS les patients (pas seulement patientsToShow)
+    // La grille filtre déjà par jour dans chaque colonne → pas de risque de doublon
+    const patientsForCabinet = patients.length ? patients : patientsToShow;
+
     if (typeof cabinetGeoCluster === 'function') {
-      const clusters = cabinetGeoCluster(patientsToShow, effectiveMembers.length);
+      const clusters = cabinetGeoCluster(patientsForCabinet, effectiveMembers.length);
       effectiveMembers.forEach((m, i) => {
         const ideId = m.id || m.infirmiere_id || `ide_${i}`;
         cabinetAssignments[ideId] = {
@@ -626,7 +630,7 @@ async function renderPlanning(d){
       const solo = (cab.members?.[0]) || { id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' };
       cabinetAssignments[solo.id || 'ide_0'] = {
         nom: solo.nom || '', prenom: solo.prenom || 'Moi', role: 'titulaire',
-        patients: patientsToShow, color: '#00d4aa',
+        patients: patientsForCabinet, color: '#00d4aa',
       };
     }
   }
@@ -701,13 +705,27 @@ async function renderPlanning(d){
 
       const cols = ideList.map(([, a]) => {
         const dayPats = a.patients.filter(p => {
-          try {
-            const pd = new Date(p.date);
-            if (!isNaN(pd)) {
-              const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
-              return JOURS.find(jj => nj.startsWith(jj)) === j;
-            }
-          } catch {}
+          // 1. Date ISO fixée → résolution par jour de la semaine
+          if (p.date) {
+            try {
+              const pd = new Date(p.date);
+              if (!isNaN(pd)) {
+                const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
+                return !!(JOURS.find(jj => nj.startsWith(jj)) === j);
+              }
+            } catch {}
+          }
+          // 2. Mention du jour dans la description ("lundi", "mardi"…)
+          const desc = (p.description || p.texte || '').toLowerCase();
+          const jourDesc = JOURS.find(jj => desc.includes(jj));
+          if (jourDesc) return jourDesc === j;
+          // 3. Fallback stable : hash sur patient_id/nom → même case chaque render
+          const stableKey = String(p.patient_id || p.id || p.nom || p._nomAff || '');
+          if (stableKey) {
+            let hash = 0;
+            for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
+            return JOURS[hash % JOURS.length] === j;
+          }
           return false;
         });
         return `<div style="padding:6px 8px;min-height:40px;border-right:1px solid var(--b)">
@@ -820,7 +838,7 @@ async function renderPlanning(d){
   // cabinetBar uniquement en mode cabinet (jamais en solo)
   const cabinetBar = cabinetActive ? `
     <div style="margin-bottom:16px;padding:10px 14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px">🏥 <strong>${cab.nom}</strong></span>
+      <span style="font-size:13px">🏥 <strong>${cab?.nom || 'Mon cabinet'}</strong></span>
       <span style="font-size:12px;color:var(--m)">${Object.keys(cabinetAssignments).length} IDE(s) · Vue cabinet active</span>
       <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="margin-left:auto"><span>⚡</span> Optimiser la répartition</button>
     </div>` : '';
