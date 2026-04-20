@@ -247,6 +247,22 @@ async function _autoCoterEtImporterPatient(p) {
         let cot = (typeof autoCotationLocale === 'function')
           ? autoCotationLocale(texte) : { actes: [], total: 0 };
         try {
+          // ── Résoudre nom/prenom depuis l'IDB avant l'appel ──────────────
+          // Indispensable pour que le worker sauvegarde patient_nom dans Supabase
+          let _nomPatient = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+          if (!_nomPatient) {
+            // Chercher dans l'IDB si pas encore enrichi
+            const _enrichRows = (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined')
+              ? await _idbGetAll(PATIENTS_STORE).catch(() => []) : [];
+            const _eRow = _enrichRows.find(r => r.id === p.patient_id || r.id === p.id);
+            if (_eRow) {
+              p.nom    = p.nom    || _eRow.nom    || '';
+              p.prenom = p.prenom || _eRow.prenom || '';
+              _nomPatient = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+            }
+          }
+          const _patientId = p.patient_id || p.id || null;
+
           const d = await (typeof apiCall === 'function' ? apiCall('/webhook/ami-calcul', {
             mode: 'ngap', texte,
             infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
@@ -254,6 +270,9 @@ async function _autoCoterEtImporterPatient(p) {
             date_soin: todayStr,
             heure_soin: p.heure_soin || p.heure_preferee || '',
             _live_auto: true,
+            // ── Nom patient → stocké dans planning_patients.patient_nom ──────
+            ...(_nomPatient ? { patient_nom: _nomPatient } : {}),
+            ...(_patientId  ? { patient_id:  _patientId  } : {}),
           }) : Promise.reject('no apiCall'));
           if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
         } catch (_e) { /* silencieux — fallback local déjà prêt */ }
