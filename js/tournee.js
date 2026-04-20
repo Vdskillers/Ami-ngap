@@ -696,8 +696,7 @@ async function renderPlanning(d){
       ${soin ? `<div style="font-size:11px;color:${actes ? 'var(--a)' : 'var(--m)'};margin-bottom:6px;line-height:1.4">${actes ? '💊 ' : ''}${soin}</div>` : ''}
       ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-        <button onclick="openCotationPatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(0,212,170,.3);background:rgba(0,212,170,.06);color:var(--a);cursor:pointer">${cot ? '✏️ Modifier' : '⚡ Coter'}</button>
-        ${cot ? `<button onclick="_planningDeleteCotation(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid rgba(255,95,109,.3);background:rgba(255,95,109,.05);color:var(--d);cursor:pointer">🗑️</button>` : ''}
+
         <button onclick="_planningRemovePatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕</button>
       </div>
     </div>`;
@@ -2319,7 +2318,7 @@ function renderLivePatientList() {
           ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
         </div>
         ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat,lng:p.lng,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Naviguer vers ce patient">🗺️</button>` : ''}
-        <button class="btn bp bsm" onclick="openCotationPatient(${safeIdx})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Voir / modifier la cotation">📋</button>
+
         <button class="btn bs bsm" onclick="removeImportedPatient(${safeIdx})" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--d);border-color:rgba(255,95,109,.2);background:rgba(255,95,109,.05)" title="Supprimer ce patient">✕</button>
       </div>`;
     }).join('')}
