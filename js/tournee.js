@@ -388,28 +388,32 @@ function _planningInitCabinetUI() {
   const wrap   = document.getElementById('pla-cabinet-toggle-wrap');
   const btnCab = document.getElementById('btn-pla-cabinet');
   const cab    = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
-
-  // Visible et cliquable dès qu'un cabinet existe — admin seul inclus
   const hasCab = !!(cab?.id);
 
   if (wrap) {
-    wrap.style.display = hasCab ? 'block' : 'none';
+    // ⚡ Ne jamais masquer si mode cabinet actif — évite que le chargement async efface l'état
+    if (hasCab || _planningCabinetMode) wrap.style.display = 'block';
+    else wrap.style.display = 'none';
     const label = wrap.querySelector('label');
     if (label) { label.style.opacity = '1'; label.title = ''; }
     const cb = wrap.querySelector('input[type=checkbox]');
     if (cb) {
       cb.disabled = false;
-      // ⚡ Restaurer l'état coché depuis localStorage + variable en mémoire
-      cb.checked = _planningCabinetMode;
+      // ⚡ Ne pas écraser checked si l'utilisateur vient de cocher
+      if (cb.checked !== _planningCabinetMode) cb.checked = _planningCabinetMode;
     }
   }
-  if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
+  if (btnCab) btnCab.style.display = (hasCab || _planningCabinetMode) ? 'inline-flex' : 'none';
 
-  // Retry si APP.cabinet pas encore chargé (initCabinet() async)
+  // Retry si cabinet pas encore chargé — déclencher un re-render quand il arrive
   if (!hasCab && !window._planningCabinetInitDone) {
     setTimeout(() => {
       const cabRetry = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
-      if (cabRetry?.id) _planningInitCabinetUI();
+      if (cabRetry?.id) {
+        _planningCabinetInitDone = true;
+        _planningInitCabinetUI();
+        if (_planningCabinetMode) renderPlanning({}).catch(() => {});
+      }
     }, 1000);
   }
 }
@@ -619,12 +623,20 @@ async function renderPlanning(d){
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
-  // ⚡ Lire aussi la checkbox DOM pour synchroniser _planningCabinetMode
+  // ⚡ Synchroniser _planningCabinetMode avec le DOM ET localStorage
   const _cbEl = document.getElementById('pla-cabinet-mode');
-  if (_cbEl && _cbEl.checked && !_planningCabinetMode) _planningCabinetMode = true;
+  if (_cbEl) {
+    // DOM → mémoire (si l'utilisateur a coché manuellement)
+    if (_cbEl.checked && !_planningCabinetMode) _planningCabinetMode = true;
+    // Mémoire → DOM (restauration après rechargement)
+    if (_planningCabinetMode && !_cbEl.checked) _cbEl.checked = true;
+  }
+  // Fallback localStorage si DOM pas encore dispo
+  if (!_planningCabinetMode) {
+    try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
+  }
 
-  // cabinetActive : checkbox cochée suffit — on ne bloque plus sur cab?.id
-  // Si cab est null (chargement async), on programme un retry dans 800ms
+  // cabinetActive : mode actif suffit — ne bloque plus sur cab?.id
   const cabinetActive = !!_planningCabinetMode;
   if (cabinetActive && !cab?.id) {
     // Cabinet pas encore chargé → retry silencieux
