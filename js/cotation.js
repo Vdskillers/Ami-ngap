@@ -834,6 +834,8 @@ async function _cotationPipeline() {
       prescripteur_rpps: gv('f-pr-rp') || '',
       date_prescription: gv('f-pr-dt') || '',
       ...(prescripteur_id ? { prescripteur_id } : {}),
+      // patient_nom → affiché dans l'historique (champ f-pt)
+      ...((gv('f-pt') || '').trim() ? { patient_nom: (gv('f-pt') || '').trim() } : {}),
       // patient_id IDB → rattachement cotation ↔ fiche dans planning_patients
       // Note : _prePatientId est résolu juste avant cet appel
       ...(_prePatientId ? { patient_id: _prePatientId } : {}),
