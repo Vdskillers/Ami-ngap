@@ -316,7 +316,7 @@ function _renderCabinetDashboard(root, d) {
   const whatItems = [
     { key: 'planning',    icon: '📅', label: 'Planning & tournée', desc: 'Partagez votre planning du jour pour coordonner les visites' },
     { key: 'patients',    icon: '👤', label: 'Patients communs', desc: 'Partagez la liste de vos patients (noms anonymisés)' },
-    { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP', desc: 'Synchronisez les cotations multi-IDE pour la facturation cabinet' },
+    { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP & Historique des soins', desc: 'Synchronisez les cotations multi-IDE — visibles dans la vue Historique des soins de votre collègue' },
     { key: 'ordonnances', icon: '💊', label: 'Ordonnances', desc: 'Partagez les ordonnances actives pour éviter les doublons' },
     { key: 'km',          icon: '🚗', label: 'Journal kilométrique', desc: 'Synchronisez les km pour les statistiques cabinet' },
     { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier', desc: 'Partagez les semainiers patients avec vos collègues — chiffré AES' },
@@ -546,13 +546,13 @@ function _renderCabinetDemoDashboard(root, cab) {
   const prefs    = _loadSyncPrefs();
 
   const whatItems = [
-    { key: 'planning',    icon: '📅', label: 'Planning & tournée',    desc: 'Partagez votre planning du jour' },
-    { key: 'patients',    icon: '👤', label: 'Patients communs',       desc: 'Partagez la liste de vos patients' },
-    { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP',         desc: 'Synchronisez les cotations multi-IDE' },
-    { key: 'ordonnances', icon: '💊', label: 'Ordonnances',             desc: 'Partagez les ordonnances actives' },
-    { key: 'km',          icon: '🚗', label: 'Journal kilométrique',    desc: 'Synchronisez les km cabinet' },
-    { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier',    desc: 'Partagez les semainiers patients — chiffré AES' },
-    { key: 'constantes',  icon: '📊', label: 'Constantes patients',     desc: 'Partagez les constantes TA, glycémie… — chiffré AES' },
+    { key: 'planning',    icon: '📅', label: 'Planning & tournée',                    desc: 'Partagez votre planning du jour' },
+    { key: 'patients',    icon: '👤', label: 'Patients communs',                       desc: 'Partagez la liste de vos patients' },
+    { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP & Historique des soins',  desc: 'Synchronisez les cotations — visibles dans Historique des soins' },
+    { key: 'ordonnances', icon: '💊', label: 'Ordonnances',                             desc: 'Partagez les ordonnances actives' },
+    { key: 'km',          icon: '🚗', label: 'Journal kilométrique',                    desc: 'Synchronisez les km cabinet' },
+    { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier',                    desc: 'Partagez les semainiers patients — chiffré AES' },
+    { key: 'constantes',  icon: '📊', label: 'Constantes patients',                     desc: 'Partagez les constantes TA, glycémie… — chiffré AES' },
   ];
 
   root.innerHTML = `
@@ -731,21 +731,27 @@ async function cabinetPushSync() {
       data:        {},
     };
 
-    // Planning
+    // Planning hebdomadaire
+    // ⚠️ FIX : utiliser _loadPlanning() qui appelle _planningKey() avec la bonne sanitisation
+    // et qui gère le format { patients, savedAt } correctement
     if (prefs.what.planning) {
       try {
-        const planKey = `ami_planning_${APP.user?.id}`;
-        const planRaw = localStorage.getItem(planKey);
-        payload.data.planning = planRaw ? JSON.parse(planRaw) : null;
+        const planPatients = typeof _loadPlanning === 'function'
+          ? _loadPlanning()
+          : null;
+        payload.data.planning = planPatients?.length ? planPatients : null;
       } catch {}
     }
 
     // Journal km
+    // ⚠️ FIX : utiliser _loadKmJournal() qui appelle _kmKey() avec la bonne sanitisation
+    // (les userId contenant des caractères spéciaux étaient mal lus avec la clé brute)
     if (prefs.what.km) {
       try {
-        const kmKey = `ami_km_journal_${APP.user?.id}`;
-        const kmRaw = localStorage.getItem(kmKey);
-        payload.data.km = kmRaw ? JSON.parse(kmRaw) : null;
+        const kmEntries = typeof _loadKmJournal === 'function'
+          ? _loadKmJournal()
+          : JSON.parse(localStorage.getItem(`ami_km_journal_${APP.user?.id}`) || '[]');
+        payload.data.km = kmEntries.length ? kmEntries : null;
       } catch {}
     }
 
@@ -754,9 +760,15 @@ async function cabinetPushSync() {
     // 2. patients_cabinet : fiches complètes chiffrées clé cabinet (import carnet collègue)
     if (prefs.what.patients && typeof getAllPatients === 'function') {
       try {
-        // S'assurer que les cotations Supabase sont dans les fiches avant de pousser
-        if (typeof syncCotationsFromServer === 'function') {
-          try { await syncCotationsFromServer(); } catch {}
+        // ⚠️ FIX historique soins : synchroniser les notes_soins dans chaque fiche patient
+        // AVANT de lire getAllPatients(), sinon notes_soins est vide dans _data chiffré
+        if (typeof _syncNotesIntoPatient === 'function' && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          try {
+            const allRows = await _idbGetAll(PATIENTS_STORE);
+            for (const row of allRows) {
+              await _syncNotesIntoPatient(row.id).catch(() => {});
+            }
+          } catch (_) {}
         }
         const pts = await getAllPatients();
         // Métadonnées GPS pour la tournée
@@ -794,13 +806,17 @@ async function cabinetPushSync() {
         if (enc && enc.length < 80000) { // limite sécuritaire 80KB
           payload.data.patients_cabinet = enc;
         } else if (enc) {
-          console.warn('[cabinet push] patients_cabinet trop volumineux (' + encSize + ') — envoi sans données cliniques');
-          // Réessayer sans cotations/piluliers/constantes
+          console.warn('[cabinet push] patients_cabinet trop volumineux (' + encSize + ') — envoi sans cotations');
+          // ⚠️ FIX : conserver notes_soins et constantes dans la version allégée
+          // Seules les cotations sont retirées (les plus volumineuses)
           const fullLight = pts.map(p => ({
             id: p.id, nom: p.nom||'', prenom: p.prenom||'',
             adresse: p.adresse||'', lat: p.lat||null, lng: p.lng||null,
             ddn: p.ddn||'', secu: p.secu||'', amo: p.amo||'', amc: p.amc||'',
             medecin: p.medecin||'', heure_preferee: p.heure_preferee||'',
+            // ✅ Conserver notes_soins et constantes même en mode light
+            notes_soins: (p.notes_soins||[]).slice(-20),
+            constantes:  (p.constantes ||[]).slice(-10),
           }));
           const encLight = _cabEnc(fullLight, cab.id);
           if (encLight) payload.data.patients_cabinet = encLight;
@@ -847,8 +863,31 @@ async function cabinetPushSync() {
       } catch (e) { console.warn('[cabinet push cotations]', e.message); }
     }
 
-    // Piluliers & Constantes : déjà inclus dans patients_cabinet ci-dessus.
-    // Rien de plus à faire — ils transitent dans les fiches patients complètes.
+    // Piluliers — ⚠️ FIX : les piluliers vivent dans une IDB séparée (ami_piluliers_<uid>)
+    // et ne sont PAS garantis dans p.piluliers de la fiche patient.
+    // On lit directement depuis _pilulierDb() et on les envoie chiffrés dans payload.data.piluliers_cabinet.
+    if (prefs.what.piluliers && typeof _pilulierDb === 'function' && typeof _pilEnc === 'function') {
+      try {
+        const pilDb = await _pilulierDb();
+        const allPils = await new Promise((res, rej) => {
+          const tx = pilDb.transaction('piluliers', 'readonly');
+          const req = tx.objectStore('piluliers').getAll();
+          req.onsuccess = e => res(e.target.result || []);
+          req.onerror   = e => rej(e.target.error);
+        });
+        if (allPils.length) {
+          // Chiffrer avec la clé cabinet (partagée entre membres)
+          const encPils = await CAB_CRYPTO.encrypt(allPils, cab.id);
+          if (encPils) {
+            payload.data.piluliers_cabinet = encPils;
+            console.info('[cabinet push] piluliers_cabinet:', allPils.length, 'pilulier(s)');
+          }
+        }
+      } catch (e) { console.warn('[cabinet push piluliers]', e.message); }
+    }
+
+    // Piluliers & Constantes : aussi inclus dans patients_cabinet via p.piluliers/p.constantes
+    // (double canal intentionnel — piluliers_cabinet est la source fiable)
 
     const d = await apiCall('/webhook/cabinet-sync-push', payload);
     if (!d.ok) throw new Error(d.error || 'Erreur synchronisation');
@@ -918,7 +957,20 @@ async function cabinetPullSync() {
       // ── Planning ─────────────────────────────────────────────────────
       if (item.what.includes('planning') && item.data?.planning) {
         try {
+          // Stocker le planning du collègue pour la vue cabinet (tournée combinée)
           localStorage.setItem(`ami_cabinet_planning_${item.sender_id}`, JSON.stringify(item.data.planning));
+
+          // ⚠️ FIX : si le planning local est vide, injecter directement dans _planningData
+          // pour que la vue "Planning hebdomadaire" se mette à jour sans rechargement
+          const localPlan = typeof _loadPlanning === 'function' ? _loadPlanning() : null;
+          if (!localPlan || !localPlan.length) {
+            const pts = Array.isArray(item.data.planning) ? item.data.planning : [];
+            if (pts.length) {
+              if (typeof _savePlanning === 'function') _savePlanning(pts);
+              if (window.APP) window.APP._planningData = { patients: pts, total: pts.length, source: 'cabinet_sync' };
+              if (typeof _renderPlanningIfVisible === 'function') _renderPlanningIfVisible();
+            }
+          }
           applied++; details.push('📅 planning');
         } catch {}
       }
@@ -1059,6 +1111,72 @@ async function cabinetPullSync() {
         } catch (e) { console.warn('[cabinet pull cotations]', e.message); }
       }
 
+      // ── Piluliers (canal dédié piluliers_cabinet) ─────────────────────
+      // ⚠️ FIX : les piluliers transitent maintenant via payload.data.piluliers_cabinet
+      // chiffré avec la clé cabinet — distinct de patients_cabinet pour éviter les pertes
+      if (item.what.includes('piluliers') && item.data?.piluliers_cabinet && typeof _pilulierDb === 'function') {
+        try {
+          const remotePils = await CAB_CRYPTO.decrypt(item.data.piluliers_cabinet, cab.id);
+          if (Array.isArray(remotePils) && remotePils.length) {
+            const pilDb = await _pilulierDb();
+            const existing = await new Promise((res, rej) => {
+              const tx = pilDb.transaction('piluliers', 'readonly');
+              const req = tx.objectStore('piluliers').getAll();
+              req.onsuccess = e => res(e.target.result || []);
+              req.onerror   = e => rej(e.target.error);
+            });
+            // Clé de déduplication : patient_id + semaine_debut (ou id si absent)
+            const existSet = new Set(existing.map(p => `${p.patient_id}|${p.semaine_debut||p.id}`));
+            const txW = pilDb.transaction('piluliers', 'readwrite');
+            const store = txW.objectStore('piluliers');
+            let nbPils = 0;
+            for (const pil of remotePils) {
+              const key = `${pil.patient_id}|${pil.semaine_debut || pil.id}`;
+              if (!existSet.has(key)) {
+                const { id: _drop, ...pilWithoutId } = pil;
+                store.add({ ...pilWithoutId, _synced: true, _from_cabinet: item.sender_id });
+                nbPils++;
+              }
+            }
+            await new Promise((res, rej) => { txW.oncomplete = () => res(); txW.onerror = e => rej(e.target.error); });
+            if (nbPils > 0) { applied++; details.push(`💊 ${nbPils} pilulier(s)`); }
+          }
+        } catch (e) { console.warn('[cabinet pull piluliers_cabinet]', e.message); }
+      }
+
+      // ── Historique des soins (notes_soins dans patients_cabinet) ──────
+      // ⚠️ FIX : les notes_soins sont embarquées dans chaque fiche patient (via _syncNotesIntoPatient)
+      // Au pull, on les réinsère dans NOTES_STORE si elles n'existent pas localement
+      if (item.what.includes('patients') && item.data?.patients_cabinet &&
+          typeof _idbGetByIndex === 'function' && typeof NOTES_STORE !== 'undefined') {
+        try {
+          const ptsForNotes = await CAB_CRYPTO.decrypt(item.data.patients_cabinet, cab.id);
+          if (Array.isArray(ptsForNotes)) {
+            let nbNotes = 0;
+            for (const p of ptsForNotes) {
+              if (!Array.isArray(p.notes_soins) || !p.notes_soins.length) continue;
+              // Lire les notes existantes pour ce patient
+              const localNotes = await _idbGetByIndex(NOTES_STORE, 'patient_id', p.id).catch(() => []);
+              const existDates = new Set(localNotes.map(n => n.date));
+              for (const note of p.notes_soins) {
+                if (!note.date || existDates.has(note.date)) continue;
+                await _idbPut(NOTES_STORE, {
+                  patient_id: p.id,
+                  texte:      note.texte || '',
+                  date:       note.date,
+                  heure:      note.heure || '',
+                  date_edit:  note.date_edit || null,
+                  _synced:    true,
+                  _from_cabinet: item.sender_id,
+                }).catch(() => {});
+                nbNotes++;
+              }
+            }
+            if (nbNotes > 0) { applied++; details.push(`📋 ${nbNotes} note(s) de soins`); }
+          }
+        } catch (e) { console.warn('[cabinet pull notes_soins]', e.message); }
+      }
+
       // Piluliers & Constantes inclus dans patients_cabinet — déjà traités ci-dessus.
     }
 
@@ -1072,14 +1190,14 @@ async function cabinetPullSync() {
         try { await loadPatients(); } catch {}
       }
       if (typeof syncCotationsFromServer === 'function') syncCotationsFromServer().catch(() => {});
-      // Rafraîchir la liste patients sans reload brutal
+      // Fallback reload si carnet vide après import
       setTimeout(() => {
         const list = document.getElementById('patients-list');
         if (list && list.children.length === 0 && applied > 0) {
-          console.warn('[cabinetPullSync] UI stale → retry loadPatients');
-          if (typeof loadPatients === 'function') loadPatients().catch(() => {});
+          console.warn('[cabinetPullSync] UI stale après import → reload');
+          window.location.reload();
         }
-      }, 800);
+      }, 600);
     } else {
       // Afficher le détail pour aider au diagnostic
       const whatReceived = items.map(i => i.what?.join(', ') || '(vide)').join(' | ');
