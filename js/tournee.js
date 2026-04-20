@@ -997,7 +997,28 @@ async function renderPlanning(d){
       <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="margin-left:auto"><span>⚡</span> Optimiser la répartition</button>
     </div>` : '';
 
-  $('pbody').innerHTML = `
+  // ⚡ Construire le HTML en 2 étapes pour éviter qu'une erreur dans renderCabinetView()
+  // fasse échouer silencieusement tout le template literal (pbody.innerHTML non mis à jour)
+  let _dynamicView = '';
+  console.info('[AMI Planning] cabinetActive =', cabinetActive, '| assignments =', Object.keys(cabinetAssignments).length);
+  if (cabinetActive) {
+    try {
+      _dynamicView = renderCabinetView();
+      console.info('[AMI Planning] renderCabinetView OK, longueur HTML =', _dynamicView.length);
+    } catch(e) {
+      console.error('[AMI Planning] renderCabinetView ERREUR :', e.message, e.stack);
+      _dynamicView = `<div class="ai er">Erreur vue cabinet : ${e.message}<br><small>${e.stack}</small></div>`;
+    }
+  } else {
+    try {
+      _dynamicView = renderSoloView();
+    } catch(e) {
+      console.error('[AMI Planning] renderSoloView ERREUR :', e.message);
+      _dynamicView = `<div class="ai er">Erreur vue solo : ${e.message}</div>`;
+    }
+  }
+
+  const _shellHTML = `
     <div class="card">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
         <div>
@@ -1008,19 +1029,20 @@ async function renderPlanning(d){
           🗑️ Effacer tout le planning
         </button>
       </div>
-
-      <!-- KPI bande -->
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
         ${caWeek ? `<div style="background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CA ESTIMÉ SEMAINE</div><div style="color:var(--a);font-weight:700">${caWeek.toFixed(2)} €</div></div>` : ''}
         ${nbCot > 0 ? `<div style="background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">COTATIONS VALIDÉES</div><div style="color:#22c55e;font-weight:700">${totalCot.toFixed(2)} €</div></div>` : ''}
         ${cabinetActive ? `<div style="background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:8px 14px;font-size:12px"><div style="color:var(--m);font-family:var(--fm);font-size:10px;margin-bottom:2px">CABINET</div><div style="color:var(--a);font-weight:700">${Object.keys(cabinetAssignments).length} IDE(s)</div></div>` : ''}
       </div>
-
       ${cabinetBar}
-
-      <!-- Vue dynamique : cabinet ou solo -->
-      ${cabinetActive ? renderCabinetView() : renderSoloView()}
+      <div id="planning-dynamic-view"></div>
     </div>`;
+
+  $('pbody').innerHTML = _shellHTML;
+
+  // Injecter la vue dynamique dans son conteneur dédié (évite le crash silencieux)
+  const _dynEl = document.getElementById('planning-dynamic-view');
+  if (_dynEl) _dynEl.innerHTML = _dynamicView;
 
   const resPla = document.getElementById('res-pla');
   if (resPla) resPla.classList.add('show');
