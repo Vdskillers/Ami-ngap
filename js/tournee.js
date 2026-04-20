@@ -358,7 +358,10 @@ function refreshPlanning() {
    PLANNING HEBDOMADAIRE CABINET — variables d'état
 ════════════════════════════════════════════════ */
 let _planningWeekOffset = 0; // 0 = semaine courante, -1 = précédente, +1 = suivante
-let _planningCabinetMode = false; // true = vue multi-IDE active
+// ⚡ Restaurer l'état cabinet mode depuis localStorage (survive aux rechargements)
+let _planningCabinetMode = (() => {
+  try { return localStorage.getItem('ami_planning_cabinet_mode') === '1'; } catch { return false; }
+})();
 
 /** Naviguer d'une semaine en avant/arrière */
 function planningWeekNav(delta) {
@@ -369,6 +372,8 @@ function planningWeekNav(delta) {
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
   _planningCabinetMode = !!active;
+  // ⚡ Persister l'état pour survive aux refreshPlanning() asynchrones
+  try { localStorage.setItem('ami_planning_cabinet_mode', active ? '1' : '0'); } catch {}
   refreshPlanning();
 }
 
@@ -386,7 +391,11 @@ function _planningInitCabinetUI() {
     const label = wrap.querySelector('label');
     if (label) { label.style.opacity = '1'; label.title = ''; }
     const cb = wrap.querySelector('input[type=checkbox]');
-    if (cb) cb.disabled = false;
+    if (cb) {
+      cb.disabled = false;
+      // ⚡ Restaurer l'état coché depuis localStorage + variable en mémoire
+      cb.checked = _planningCabinetMode;
+    }
   }
   if (btnCab) btnCab.style.display = hasCab ? 'inline-flex' : 'none';
 
@@ -488,7 +497,12 @@ async function renderPlanning(d){
     }
   }
 
-  const todayISO = today.toISOString().split('T')[0];
+  // ⚡ Date locale (pas UTC) — évite le décalage timezone (ex: lundi 23h FR = mardi UTC)
+  const todayISO = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
 
   // ── Enrichir depuis le carnet patient (IDB) par patient_id ──────────────
   let carnetIndex = {};
@@ -599,8 +613,12 @@ async function renderPlanning(d){
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
-  // Activer la vue cabinet dès qu'un cabinet existe, même seul (admin en test)
-  const cabinetActive = _planningCabinetMode && !!(cab?.id);
+  // ⚡ Lire aussi la checkbox DOM — _planningCabinetMode peut être false
+  // si renderPlanning() est appelé avant planningToggleCabinetView() (ex: refreshPlanning)
+  const _cbEl = document.getElementById('pla-cabinet-mode');
+  if (_cbEl && _cbEl.checked && !_planningCabinetMode) _planningCabinetMode = true;
+  // cabinetActive : checkbox cochée ET cabinet chargé (ou en cours de chargement → on tente quand même)
+  const cabinetActive = _planningCabinetMode && (!!(cab?.id) || !!(cab));
   let cabinetAssignments = {};
 
   if (cabinetActive) {
