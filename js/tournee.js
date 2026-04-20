@@ -378,8 +378,12 @@ function planningWeekNav(delta) {
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
   _planningCabinetMode = !!active;
-  // ⚡ Persister l'état pour survive aux refreshPlanning() asynchrones
-  try { localStorage.setItem('ami_planning_cabinet_mode', active ? '1' : '0'); } catch {}
+  // ⚡ Persister IMMÉDIATEMENT dans localStorage — source de vérité absolue
+  // renderPlanning lit localStorage, pas la checkbox DOM
+  try {
+    localStorage.setItem('ami_planning_cabinet_mode', active ? '1' : '0');
+    console.info('[AMI] Cabinet mode:', active, '→ localStorage écrit');
+  } catch {}
   refreshPlanning();
 }
 
@@ -390,8 +394,12 @@ function _planningInitCabinetUI() {
   const cab    = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
   const hasCab = !!(cab?.id);
 
+  // ⚡ Source de vérité : localStorage (jamais la checkbox DOM)
+  if (!_planningCabinetMode) {
+    try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
+  }
+
   if (wrap) {
-    // ⚡ Ne jamais masquer si mode cabinet actif — évite que le chargement async efface l'état
     if (hasCab || _planningCabinetMode) wrap.style.display = 'block';
     else wrap.style.display = 'none';
     const label = wrap.querySelector('label');
@@ -399,13 +407,11 @@ function _planningInitCabinetUI() {
     const cb = wrap.querySelector('input[type=checkbox]');
     if (cb) {
       cb.disabled = false;
-      // ⚡ Ne pas écraser checked si l'utilisateur vient de cocher
       if (cb.checked !== _planningCabinetMode) cb.checked = _planningCabinetMode;
     }
   }
   if (btnCab) btnCab.style.display = (hasCab || _planningCabinetMode) ? 'inline-flex' : 'none';
 
-  // Retry si cabinet pas encore chargé — déclencher un re-render quand il arrive
   if (!hasCab && !window._planningCabinetInitDone) {
     setTimeout(() => {
       const cabRetry = typeof APP !== 'undefined' && APP.get ? APP.get('cabinet') : null;
@@ -623,20 +629,18 @@ async function renderPlanning(d){
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
-  // ⚡ Synchroniser _planningCabinetMode avec le DOM ET localStorage
-  const _cbEl = document.getElementById('pla-cabinet-mode');
-  if (_cbEl) {
-    // DOM → mémoire (si l'utilisateur a coché manuellement)
-    if (_cbEl.checked && !_planningCabinetMode) _planningCabinetMode = true;
-    // Mémoire → DOM (restauration après rechargement)
-    if (_planningCabinetMode && !_cbEl.checked) _cbEl.checked = true;
-  }
-  // Fallback localStorage si DOM pas encore dispo
+
+  // ⚡ Source de vérité UNIQUEMENT localStorage + variable JS
+  // Ne jamais lire la checkbox (peut être dans un conteneur display:none → introuvable)
   if (!_planningCabinetMode) {
     try { if (localStorage.getItem('ami_planning_cabinet_mode') === '1') _planningCabinetMode = true; } catch {}
   }
+  // Mettre à jour la checkbox si visible (sens unique : mémoire → DOM)
+  try {
+    const _cbEl = document.getElementById('pla-cabinet-mode');
+    if (_cbEl && _cbEl.checked !== _planningCabinetMode) _cbEl.checked = _planningCabinetMode;
+  } catch {}
 
-  // cabinetActive : mode actif suffit — ne bloque plus sur cab?.id
   const cabinetActive = !!_planningCabinetMode;
   if (cabinetActive && !cab?.id) {
     // Cabinet pas encore chargé → retry silencieux
