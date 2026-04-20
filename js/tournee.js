@@ -1393,8 +1393,9 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
       const sd  = encodeURIComponent(p.acte || p.texte || p.description || '');
       const spn = encodeURIComponent(((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.patient || '');
       const nomAff = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient ' + (i+1);
-      const pId = encodeURIComponent(p.id || p.patient_id || String(i));
-      const leg = osrm?.legs?.[i];
+      const pId  = encodeURIComponent(p.id || p.patient_id || String(i));
+      const pKey = String(p.id || p.patient_id || i);
+      const leg  = osrm?.legs?.[i];
       const hasTime = p.start_str && p.start_str !== '—';
       const heureAff = p.heure_preferee || p.heure_soin || '';
       const contrainteBadge = p.respecter_horaire
@@ -1402,23 +1403,80 @@ function _renderRouteHTML(route, osrm, ca, rentab, mode) {
         : heureAff
         ? `<span style="font-size:10px;background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;font-family:var(--fm)">⏰ ${heureAff}</span>`
         : '';
-      return `<div class="route-item ${p.urgent?'route-urgent':''}">
-        <div class="route-num">${i+1}</div>
-        <div class="route-info">
-          <strong style="font-size:13px">${nomAff}</strong>
-          <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
-            ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
-            ${contrainteBadge}
+
+      // ── Sélecteur multi-IDE par patient/leg ──────────────────────────────
+      const _cab      = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+      const _me       = (typeof APP !== 'undefined') ? APP.user : null;
+      const _members  = _cab?.members ? [..._cab.members] : [];
+      if (_me && !_members.find(m => m.id === _me.id)) {
+        _members.unshift({ id: _me.id, nom: _me.nom || '', prenom: _me.prenom || '' });
+      }
+      const _assigned = (APP._ideAssignments || {})[pKey] || [];
+      const _safeKey  = pKey.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const _ideSelectorHTML = _members.length ? `
+        <div style="padding:6px 12px 9px;border-top:1px dashed rgba(255,255,255,.06);background:rgba(0,0,0,.05)">
+          <div style="font-size:10px;font-family:var(--fm);color:var(--m);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">🎯 IDE(s) pour ce patient</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${_members.map(m => {
+              const mid       = (m.id || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+              const mlabel    = (`${m.prenom||''} ${m.nom||''}`).trim() || m.id || 'IDE';
+              const mlabelSafe= mlabel.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+              const isChk     = _assigned.some(a => a.id === m.id);
+              return `<label style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;background:${isChk?'rgba(0,212,170,.12)':'var(--s)'};border:1px solid ${isChk?'rgba(0,212,170,.35)':'var(--b)'};border-radius:16px;font-size:11px;color:var(--t);cursor:pointer;user-select:none;transition:background .15s,border-color .15s">
+                <input type="checkbox" ${isChk?'checked':''} onchange="_toggleIdeAssignment('${mid}','${mlabelSafe}','${_safeKey}',this.checked)" style="accent-color:var(--a);width:12px;height:12px;flex-shrink:0">
+                <span>${mlabel}</span>
+              </label>`;
+            }).join('')}
           </div>
+        </div>` : '';
+
+      return `<div class="route-item ${p.urgent?'route-urgent':''}" style="flex-direction:column;align-items:stretch;padding:0;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
+          <div class="route-num">${i+1}</div>
+          <div class="route-info">
+            <strong style="font-size:13px">${nomAff}</strong>
+            <div style="font-size:11px;color:var(--m);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              ${hasTime?`🕐 Arrivée ~${p.arrival_str} · Soin ${p.start_str}`:''}
+              ${p.urgent?'<span style="color:#ff5f6d;font-weight:700">🚨 URGENT</span>':''}
+              ${contrainteBadge}
+            </div>
+          </div>
+          ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km" title="Inclut correction trafic">~${p.travel_min}min</div>`:'')}
+          ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
+          <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
         </div>
-        ${leg?`<div class="route-km">+${leg.km}km·${leg.min}min</div>`:(p.travel_min?`<div class="route-km" title="Inclut correction trafic">~${p.travel_min}min</div>`:'')}
-        ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat||null,lng:p.lng||null,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" title="Naviguer vers ce patient">🗺️</button>` : ''}
-        <button class="btn bs bsm" style="padding:6px 8px;color:var(--d)" onclick="removeFromTournee('${pId}',${i})" title="Retirer de la tournée">✕</button>
+        ${_ideSelectorHTML}
       </div>`;
     }).join('')}
   </div>`;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   ASSIGNATION IDE PAR LEG — Tournée optimisée par IA
+   APP._ideAssignments = { patientKey: [{id, label}] }
+   Persisté en mémoire (réinitialisé avec la tournée)
+═════════════════════════════════════════════════════════════════════= */
+function _toggleIdeAssignment(nurseId, nurseName, patientKey, checked) {
+  if (!APP._ideAssignments) APP._ideAssignments = {};
+  if (!APP._ideAssignments[patientKey]) APP._ideAssignments[patientKey] = [];
+  if (checked) {
+    if (!APP._ideAssignments[patientKey].some(a => a.id === nurseId)) {
+      APP._ideAssignments[patientKey].push({ id: nurseId, label: nurseName });
+    }
+  } else {
+    APP._ideAssignments[patientKey] = APP._ideAssignments[patientKey].filter(a => a.id !== nurseId);
+  }
+  // Mise à jour visuelle du label sans re-render
+  try {
+    const cb  = document.activeElement;
+    const lbl = cb?.closest ? cb.closest('label') : null;
+    if (lbl) {
+      lbl.style.background   = checked ? 'rgba(0,212,170,.12)' : 'var(--s)';
+      lbl.style.borderColor  = checked ? 'rgba(0,212,170,.35)' : 'var(--b)';
+    }
+  } catch (_) {}
+}
+window._toggleIdeAssignment = _toggleIdeAssignment;
 
 /* Retirer un patient de la tournée optimisée */
 function removeFromTournee(encodedId, fallbackIndex) {
@@ -2501,6 +2559,7 @@ function renderLivePatientList() {
           ${isNext ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a);margin-top:1px">▶ Prochain patient</div>` : ''}
           ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
           ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
+          ${((APP._ideAssignments||{})[k]||[]).length ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a2);margin-top:2px">🎯 ${(APP._ideAssignments[k]).map(a=>a.label).join(' · ')}</div>` : ''}
         </div>
         ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat,lng:p.lng,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Naviguer vers ce patient">🗺️</button>` : ''}
 
@@ -3721,6 +3780,7 @@ function resetTourneeJour() {
   APP.importedData  = null;
   APP.uberPatients  = [];
   APP.nextPatient   = null;
+  APP._ideAssignments = {};
 
   // Arrêter le timer live
   if (LIVE_TIMER_ID) { clearInterval(LIVE_TIMER_ID); LIVE_TIMER_ID = null; }
