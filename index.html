@@ -538,19 +538,6 @@
       </div>
       <div id="adm-system-health-body" style="margin-bottom:28px"><div class="empty" style="padding:20px"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:8px;color:var(--m);font-size:13px">Chargement...</p></div></div>
 
-      <!-- Maintenance données -->
-      <div style="margin-bottom:24px;padding:16px;background:rgba(255,181,71,.06);border:1px solid rgba(255,181,71,.2);border-radius:12px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--w)">🔧 Maintenance des données</div>
-        <div style="font-size:12px;color:var(--m);margin-bottom:14px">Outils de correction pour les données de test admin. N'affecte que vos propres cotations.</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="bs bsm" onclick="adminFixPatientNom()" id="btn-fix-patient-nom"
-            style="padding:8px 16px;font-size:12px;background:rgba(255,181,71,.12);border-color:rgba(255,181,71,.3);color:var(--w)">
-            👤 Corriger les noms manquants
-          </button>
-          <span id="fix-patient-nom-result" style="font-size:12px;color:var(--m)"></span>
-        </div>
-      </div>
-
       <!-- Logs système récents -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="lbl">📄 Logs système récents <span style="font-size:11px;color:var(--m);font-weight:400">(N8N · IA · Frontend)</span></div>
@@ -1513,7 +1500,7 @@
         <!-- Toggle vue cabinet — affiché uniquement si cabinet actif -->
         <div id="pla-cabinet-toggle-wrap" style="display:none">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 12px;border:1px solid rgba(0,212,170,.25);border-radius:20px;background:rgba(0,212,170,.04);font-size:12px">
-            <input type="checkbox" id="pla-cabinet-mode" onchange="planningToggleCabinetView(this.checked)"
+            <input type="checkbox" id="pla-cabinet-mode"
               style="width:15px;height:15px;accent-color:var(--a);flex-shrink:0">
             <span>🏥 Vue cabinet multi-IDE</span>
           </label>
@@ -2851,7 +2838,14 @@ async function hist() {
         <td class="pt-ca" style="white-space:nowrap">${parseFloat(r.total||0).toFixed(2)}&nbsp;€</td>
         <td>${statutHtml}</td>
         <td>${alertsHtml}</td>
-
+        <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
+          data-hist-id="${r.id}"
+          data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
+          data-hist-date="${(r.date_soin||'').replace(/"/g,'&quot;')}"
+          data-hist-heure="${(r.heure_soin||'').replace(/"/g,'&quot;')}"
+          data-hist-patid="${(r.patient_id||'').replace(/"/g,'&quot;')}"
+          data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
+          title="Modifier cette cotation">✏️</button></td>
         <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
@@ -3058,7 +3052,20 @@ async function editFromHist(data) {
   }, 250);
 }
 
-/* Bouton modifier cotation supprimé — édition désactivée dans l'historique */
+/* Délégué d'événement pour les boutons ✏️ de l'historique */
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.hist-edit-btn');
+  if (!btn) return;
+  const data = {
+    id:             btn.dataset.histId    || '',
+    invoice_number: btn.dataset.histInv   || '',
+    date_soin:      btn.dataset.histDate  || '',
+    heure_soin:     btn.dataset.histHeure || '',
+    patient_id:     btn.dataset.histPatid || '',
+    actes:          (() => { try { return JSON.parse(decodeURIComponent(btn.dataset.histActes || '%5B%5D')); } catch { return []; } })(),
+  };
+  editFromHist(data);
+});
 
 </script>
 
