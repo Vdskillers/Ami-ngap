@@ -208,8 +208,14 @@ function stopLiveTracking() {
    défensive (typeof guard) pour ne jamais bloquer le rendu.
    ============================================================ */
 async function _autoCoterEtImporterPatient(p) {
-  const today    = new Date().toISOString();
+  const _now     = new Date();
+  const today    = _now.toISOString();
   const todayStr = today.split('T')[0];
+  // ⚡ Heure RÉELLE de fin de soin (clic "Terminer" dans le Mode Uber Médical).
+  // NE PAS utiliser p.heure_soin / p.heure_preferee : ce sont les contraintes
+  // horaires PLANIFIÉES de la tournée, pas l'horodatage effectif à inscrire
+  // dans la cotation CPAM / Historique des soins.
+  const heureReelle = _now.toTimeString().slice(0, 5); // "HH:MM" locale
   const u        = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
   /* ── 1. AUTO-COTATION ── */
@@ -268,7 +274,7 @@ async function _autoCoterEtImporterPatient(p) {
             infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
             adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
             date_soin: todayStr,
-            heure_soin: p.heure_soin || p.heure_preferee || '',
+            heure_soin: heureReelle, // ⚡ heure RÉELLE de fin de soin (pas la contrainte horaire)
             _live_auto: true,
             // ── Nom patient → stocké dans planning_patients.patient_nom ──────
             ...(_nomPatient ? { patient_nom: _nomPatient } : {}),
@@ -285,6 +291,7 @@ async function _autoCoterEtImporterPatient(p) {
           auto:           true,
           validated:      true,
           invoice_number: cot.invoice_number || null,
+          _heure_reelle:  heureReelle, // ⚡ propagé à _syncCotationsToSupabase
         };
       }
     }
@@ -343,8 +350,16 @@ async function _autoCoterEtImporterPatient(p) {
         (c.source === 'tournee_live' || c.source === 'tournee' || c.source === 'tournee_auto') &&
         (c.date || '').slice(0, 10) === _todayStr
       );
+      // ⚡ Préserver l'heure de la cotation existante si on upsert, sinon heure réelle.
+      // Évite qu'un double-clic accidentel sur "Terminer" décale l'horodatage.
+      const _heureUber = (_existUberIdx >= 0 && pat.cotations[_existUberIdx].heure)
+        ? pat.cotations[_existUberIdx].heure
+        : heureReelle;
+      // Re-taguer _cotation avec l'heure finale retenue (utile si upsert d'une cotation préexistante)
+      if (p._cotation) p._cotation._heure_reelle = _heureUber;
       const _cotEntryUber = {
         date:   today,
+        heure:  _heureUber, // ⚡ heure RÉELLE de fin de soin (pas la contrainte horaire planifiée)
         actes:  p._cotation.actes || [],
         total:  parseFloat(p._cotation.total || 0),
         soin:   (p.description || p.texte || '').slice(0, 120),

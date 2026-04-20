@@ -1247,13 +1247,15 @@ async function getOsrmRoute(waypoints){
 async function optimiserTournee(){
   if(!requireAuth()) return;
 
-  // Lire importedData depuis toutes les sources possibles
-  // APP.importedData est posé par storeImportedData() (accès direct)
-  // APP.get('importedData') lit depuis le store réactif (peut différer)
+  /* ══════════════════════════════════════════════════════════════════
+     1. SOURCE DE DONNÉES — toutes sources, ordre de priorité garanti
+     ══════════════════════════════════════════════════════════════════ */
   const _impData = APP.importedData
     || APP.get('importedData')
+    || window.APP._planningData
     || (typeof loadTourneeData === 'function' ? loadTourneeData() : null);
   const rawPatients = _impData?.patients || _impData?.entries || [];
+
   if(!rawPatients.length){
     const tbody=$('tbody');
     if(tbody) tbody.innerHTML=`<div class="card">
@@ -1268,6 +1270,9 @@ async function optimiserTournee(){
     return;
   }
 
+  /* ══════════════════════════════════════════════════════════════════
+     2. POINT DE DÉPART
+     ══════════════════════════════════════════════════════════════════ */
   const startLat = parseFloat($('t-lat')?.value) || APP.get('startPoint')?.lat || null;
   const startLng = parseFloat($('t-lng')?.value) || APP.get('startPoint')?.lng || null;
   if(!startLat || !startLng){
@@ -1279,32 +1284,52 @@ async function optimiserTournee(){
   ld('btn-tur',true); $('res-tur').classList.remove('show');
   _showOptimProgress('🧠 Calcul des temps de trajet réels…');
 
-  /* ── Lire le mode d'optimisation choisi ── */
-  const optimMode = getOptimMode();
+  const optimMode  = getOptimMode();
+  const startPoint = { lat: startLat, lng: startLng };
+
+  /* ── Fonction locale de persistance d'erreur (audit) ── */
+  const _logErr = (e, stage) => {
+    console.error(`[AMI] optimiserTournee crash @ ${stage}:`, e?.message, e);
+    try {
+      const _arr = JSON.parse(localStorage.getItem('ami_errors') || '[]');
+      _arr.push({ t: Date.now(), stage, msg: e?.message, stack: e?.stack?.slice(0,400) });
+      localStorage.setItem('ami_errors', JSON.stringify(_arr.slice(-10)));
+    } catch {}
+  };
+
+  /* ── Fallback local : tri par heures sans OSRM ── */
+  const _fallbackRender = (route, errMsg) => {
+    const caF = estimateRevenue(route);
+    const tbodyEl = $('tbody');
+    if(tbodyEl) tbodyEl.innerHTML = _renderRouteHTML(route, null, caF, null, optimMode);
+    $('terr').style.display = 'flex';
+    $('terr-m').textContent = errMsg;
+    APP.set('uberPatients', route.map((p,i) => ({
+      ...p, id: p.patient_id||p.id||i, done:false, absent:false, late:false,
+      amount: parseFloat(p.total||p.amount||0)||estimateRevenue([p]),
+    })));
+    _renderCabinetAssignmentPanel();
+    startLiveOptimization();
+  };
 
   try {
     const startPoint = { lat: startLat, lng: startLng };
 
-    /* ── MODE HEURES PRÉFÉRÉES : tri chronologique strict ── */
+    /* ── MODE HEURES PRÉFÉRÉES ── */
     if (optimMode === 'heure') {
       _showOptimProgress('🕐 Tri par heures préférées…');
-      const withHeure  = rawPatients.filter(p => p.heure_preferee || p.heure_soin).sort((a,b)=>
-        (a.heure_preferee||a.heure_soin||'99:99').localeCompare(b.heure_preferee||b.heure_soin||'99:99'));
-      const withoutH   = rawPatients.filter(p => !p.heure_preferee && !p.heure_soin);
-      let route        = [...withHeure, ...withoutH];
-      route            = applyPassageConstraints(route);
-      const ca         = estimateRevenue(route);
-      const pts        = route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
+      const withHeure = rawPatients.filter(p => p.heure_preferee || p.heure_soin)
+        .sort((a,b)=>(a.heure_preferee||a.heure_soin||'99:99').localeCompare(b.heure_preferee||b.heure_soin||'99:99'));
+      const withoutH  = rawPatients.filter(p => !p.heure_preferee && !p.heure_soin);
+      let route = applyPassageConstraints([...withHeure, ...withoutH]);
+      const ca  = estimateRevenue(route);
+      const pts = route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
       let osrm = null;
       if(pts.length >= 2) osrm = await getOsrmRoute([startPoint,...pts]);
       $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, null, 'heure');
       $('terr').style.display = 'none';
-      if(osrm?.total_km) {
-        APP.set('tourneeKmJour', osrm.total_km);
-        try { localStorage.setItem('ami_tournee_km', String(osrm.total_km)); } catch {}
-      }
-      if(typeof renderPatientsOnMap === 'function')
-        renderPatientsOnMap(route, startPoint).catch(()=>{});
+      if(osrm?.total_km){ APP.set('tourneeKmJour', osrm.total_km); try{localStorage.setItem('ami_tournee_km', String(osrm.total_km));}catch{} }
+      if(typeof renderPatientsOnMap === 'function') renderPatientsOnMap(route, startPoint).catch(()=>{});
       APP.set('uberPatients', route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false,late:false,amount:parseFloat(p.total||p.montant||0)||estimateRevenue([p])})));
       startLiveOptimization();
       $('res-tur').classList.add('show');
@@ -1312,87 +1337,75 @@ async function optimiserTournee(){
       return;
     }
 
-    /* ── 1. Moteur IA local — VRPTW greedy + cache OSRM ── */
-    // Badge trafic en temps réel pendant l'optimisation
-    /* Heure de départ = heure actuelle en minutes depuis minuit */
-    const _now = new Date();
+    /* ══ MOTEUR IA LOCAL — VRPTW + 2-opt ══
+       ⚠️  startTimeMin DOIT être déclaré ICI, avant toute utilisation
+           (const en zone morte temporelle = ReferenceError si inversé) */
+    const _now         = new Date();
     const startTimeMin = _now.getHours() * 60 + _now.getMinutes();
-    const _tfInfo = (typeof getTrafficInfo === 'function') ? getTrafficInfo(startTimeMin) : { label: '' };
+    const _tfInfo      = (typeof getTrafficInfo === 'function') ? getTrafficInfo(startTimeMin) : { label: '' };
     _showOptimProgress(`⚡ Optimisation VRPTW en cours… ${_tfInfo.label}`);
-    let route = await optimizeTour(rawPatients, startPoint, startTimeMin, optimMode);
 
-    /* ── 2. 2-opt — amélioration du chemin (sauf si contraintes strictes) ── */
+    let route = await optimizeTour(rawPatients, startPoint, startTimeMin, optimMode);
     _showOptimProgress('🔁 Optimisation 2-opt…');
     route = twoOpt(route);
-
-    /* ── 2b. Appliquer les contraintes de passage (premier/suivant obligatoire) ── */
     route = applyPassageConstraints(route);
 
-    /* ── 2c. Enrichir route avec CA estimé par patient ──────────────────────
-       scoreTourneeRentabilite lit p.total || p.amount.
-       Les patients importés n'ont ni l'un ni l'autre → totalCA = 0 → 0€/h.
-       On injecte le CA estimé individuellement via estimateRevenue([patient]).
-    ─────────────────────────────────────────────────────────────────────── */
+    /* Enrichir CA patient par patient */
     route = route.map(p => {
-      if (parseFloat(p.total || p.amount || 0) > 0) return p; // déjà valorisé
-      const ca = estimateRevenue([p]);
-      return { ...p, amount: ca };
+      if(parseFloat(p.total || p.amount || 0) > 0) return p;
+      return { ...p, amount: estimateRevenue([p]) };
     });
 
-    /* ── 3. Scoring rentabilité ───────────────────────── */
     const ca     = estimateRevenue(route);
     const rentab = scoreTourneeRentabilite(route);
 
-    /* ── 4. OSRM route pour distances précises ────────── */
+    /* OSRM */
     let osrm = null;
     const pts = route.filter(p=>p.lat&&p.lng).map(p=>({lat:p.lat,lng:p.lng}));
-    if(pts.length >= 2) {
-      const wps = [startPoint, ...pts];
-      osrm = await getOsrmRoute(wps);
-    }
+    if(pts.length >= 2) osrm = await getOsrmRoute([startPoint, ...pts]);
 
-    /* ── 5. Rendu liste ───────────────────────────────── */
+    /* Rendu */
     $('tbody').innerHTML = _renderRouteHTML(route, osrm, ca, rentab, optimMode);
     $('terr').style.display = 'none';
-    if(osrm?.total_km) {
-      APP.set('tourneeKmJour', osrm.total_km);
-      try { localStorage.setItem('ami_tournee_km', String(osrm.total_km)); } catch {}
-    }
+    if(osrm?.total_km){ APP.set('tourneeKmJour', osrm.total_km); try{localStorage.setItem('ami_tournee_km', String(osrm.total_km));}catch{} }
+    if(typeof renderPatientsOnMap === 'function') renderPatientsOnMap(route, startPoint).catch(e=>logWarn('map:',e.message));
 
-    /* ── 6. Map premium — markers + route + timeline ──── */
-    if(typeof renderPatientsOnMap === 'function') {
-      renderPatientsOnMap(route, startPoint).catch(e=>logWarn('renderPatientsOnMap:',e.message));
-    }
-
-    /* ── 7. Préparer patients Uber pour mode live ─────── */
     APP.set('uberPatients', route.map((p,i) => ({
       ...p,
       id:      p.patient_id || p.id || i,
       label:   p.description || p.label || 'Patient '+(i+1),
-      done:    false, absent: false, late: false,
-      urgence: !!(p.urgent || p.urgence),
+      done:false, absent:false, late:false, urgence:!!(p.urgent||p.urgence),
       time:    p.start_min ? p.start_min * 60000 : null,
-      // amount : cotation réelle > montant enrichi (étape 2b) > estimation
-      amount:  parseFloat(p.total || p.montant || 0) || parseFloat(p.amount || 0) || estimateRevenue([p]),
-      // _legKm : distance OSRM du leg individuel — utilisé pour le calcul CA/km par IDE
+      amount:  parseFloat(p.total||p.montant||0) || parseFloat(p.amount||0) || estimateRevenue([p]),
       _legKm:  parseFloat(osrm?.legs?.[i]?.km || 0),
     })));
 
-    /* ── 7b. Rafraîchir le panel cabinet avec les nouvelles données ── */
     _renderCabinetAssignmentPanel();
-
-    /* ── 8. Démarrer optimisation live ───────────────── */
     startLiveOptimization();
 
   } catch(e) {
-    /* Fallback API backend si moteur local échoue */
-    logWarn('Moteur IA local échoué, fallback API:', e.message);
-    await _optimiserTourneeAPI(startLat, startLng);
+    /* ══ CATCH ROBUSTE — jamais silencieux, jamais l'API fantôme ══
+       1. Log + persistance pour audit
+       2. Fallback local : tri par heures (fonctionne sans réseau)
+       3. Message clair dans l'UI (pas "Aucun patient importé") */
+    _logErr(e, 'main');
+
+    try {
+      const fallback = [...rawPatients].sort((a,b) =>
+        (a.heure_soin||a.heure_preferee||'99:99')
+          .localeCompare(b.heure_soin||b.heure_preferee||'99:99')
+      );
+      _fallbackRender(fallback,
+        `⚠️ Moteur IA indisponible — Tri par heures · Erreur : ${e.message}`);
+    } catch(fe) {
+      _logErr(fe, 'fallback');
+      const terr = $('terr'); if(terr) terr.style.display='flex';
+      const terrm = $('terr-m'); if(terrm) terrm.textContent = `❌ Erreur : ${e.message}`;
+    }
   }
 
   $('res-tur').classList.add('show');
   ld('btn-tur',false);
-  // Notifier la carte Trajet Cabinet pour se rafraîchir
   document.dispatchEvent(new CustomEvent('tournee:updated'));
 }
 
@@ -1791,7 +1804,11 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
           actes:          p._cotation.actes || [],
           total:          parseFloat(p._cotation.total || 0),
           date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
-          heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
+          // ⚡ Heure RÉELLE du soin (clic "Terminer") — JAMAIS la contrainte horaire
+          // planifiée (p.heure_soin / p.heure_preferee) qui vient de la tournée.
+          // Priorité : _heure_reelle (mémoire, taguée par uber.js/_validateCotationLive)
+          //        puis cot.heure (IDB, posée à la sauvegarde) → null sinon.
+          heure_soin:     p._cotation?._heure_reelle || p._idb_cot?.heure || null,
           soin:           (_soinBase + _idesSuffix).slice(0, 255),
           source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
           dre_requise:    !!p._cotation.dre_requise,
@@ -1921,7 +1938,9 @@ async function autoFacturation(patient){
       infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
       adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
       date_soin: new Date().toISOString().split('T')[0],
-      heure_soin: patient.heure_soin || patient.heure_preferee || new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+      // ⚡ Heure RÉELLE de l'auto-facturation (pas la contrainte horaire
+      // planifiée patient.heure_soin / patient.heure_preferee).
+      heure_soin: new Date().toTimeString().slice(0, 5),
       _live_auto: true,
       preuve_soin: { type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
@@ -3449,6 +3468,13 @@ function _validateCotationLive() {
   const total   = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
   const patient = _cotModalState.patient;
 
+  // ⚡ Heure RÉELLE de validation de la cotation. NE PAS utiliser
+  // patient.heure_soin / patient.heure_preferee — ce sont les contraintes
+  // horaires PLANIFIÉES (🕐 Tournée — Contrainte horaire / Heure de passage
+  // préférée), pas l'horodatage effectif du soin à inscrire dans la cotation
+  // CPAM / Historique des soins.
+  const heureReelleLive = new Date().toTimeString().slice(0, 5); // "HH:MM" locale
+
   // Correction CA : soustraire l'ancien montant avant d'ajouter le nouveau
   const ancienTotal = patient?._cotation?.validated ? parseFloat(patient._cotation.total || 0) : 0;
   LIVE_CA_TOTAL = Math.max(0, LIVE_CA_TOTAL - ancienTotal) + total;
@@ -3460,6 +3486,9 @@ function _validateCotationLive() {
 
   // Conserver l'invoice_number existant (evite un nouvel ID a chaque correction)
   const existingInvoice = patient?._cotation?.invoice_number || null;
+  // Préserver l'heure réelle déjà posée (ex: par uber.js au clic "Terminer")
+  // pour qu'une correction manuelle ultérieure n'écrase pas l'horodatage du soin.
+  const existingHeureMem = patient?._cotation?._heure_reelle || patient?._cotation?.heure || null;
 
   if (patient) patient._cotation = {
     actes,
@@ -3467,6 +3496,7 @@ function _validateCotationLive() {
     validated:      true,
     invoice_number: existingInvoice,
     _tournee_date:  patient._cotation?._tournee_date || new Date().toISOString().slice(0, 10),
+    _heure_reelle:  existingHeureMem || heureReelleLive, // ⚡ propagé à _syncCotationsToSupabase
   };
 
   // Sync Supabase + sauvegarde IDB en séquence pour garantir la cohérence
@@ -3500,8 +3530,18 @@ function _validateCotationLive() {
         console.warn('[AMI] Cotation ignorée (majoration seule sans acte technique):', actes.map(a=>a.code));
         return;
       }
+      // ⚡ Heure finale : préserver l'heure existante de l'IDB si on upsert une cotation
+      // déjà saisie (ne pas écraser l'horodatage réel du soin lors d'une correction),
+      // sinon utiliser l'heure réelle calculée au moment du clic "Valider".
+      const _heureExistIDB = existingIdx >= 0 ? (p.cotations[existingIdx].heure || null) : null;
+      const heureFinalLive = existingHeureMem || _heureExistIDB || heureReelleLive;
+      // Re-taguer patient._cotation avec l'heure finale pour que _syncCotationsToSupabase
+      // (et autres sync différés) envoient systématiquement la bonne valeur.
+      if (patient?._cotation) patient._cotation._heure_reelle = heureFinalLive;
+
       const cotEntry = {
         date:           existingIdx >= 0 ? p.cotations[existingIdx].date : new Date().toISOString(),
+        heure:          heureFinalLive, // ⚡ heure RÉELLE du soin (pas la contrainte horaire planifiée)
         actes,
         total,
         soin:           soinLabel,
@@ -3533,7 +3573,7 @@ function _validateCotationLive() {
                 actes,
                 total,
                 date_soin:      today,
-                heure_soin:     patient.heure_soin || patient.heure_preferee || null,
+                heure_soin:     heureFinalLive, // ⚡ heure RÉELLE (pas la contrainte horaire)
                 soin:           soinLabel,
                 source:         'tournee',
                 invoice_number: cotEntry.invoice_number || null,
@@ -3931,13 +3971,20 @@ async function openCotationPatient(patientIndex) {
   let cotation = null;
   try {
     const u = S?.user || {};
+    // ⚡ Heure : préserver l'heure existante si on édite une cotation déjà en
+    // IDB (patient._cotation.heure, posé par le chemin "mettre à jour" plus haut),
+    // sinon utiliser l'heure RÉELLE — jamais la contrainte horaire planifiée.
+    const _heureEditExist = patient._cotation?._heure_reelle
+      || patient._cotation?.heure
+      || null;
+    const _heureForApi = _heureEditExist || new Date().toTimeString().slice(0, 5);
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap',
       texte: texteForCot,
       infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
       adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
       date_soin: new Date().toISOString().split('T')[0],
-      heure_soin: patient.heure_soin || patient.heure_preferee || '',
+      heure_soin: _heureForApi,
       _live_auto: true,
       preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
@@ -3957,6 +4004,10 @@ async function openCotationPatient(patientIndex) {
       total:          parseFloat(cotation.total || 0),
       validated:      true,
       auto:           true,
+      // ⚡ Tag d'heure réelle → _syncCotationsToSupabase enverra cette valeur
+      _heure_reelle:  patient._cotation?._heure_reelle
+                       || patient._cotation?.heure
+                       || new Date().toTimeString().slice(0, 5),
     };
   }
 
