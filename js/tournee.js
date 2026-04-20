@@ -1485,7 +1485,7 @@ function _renderCabinetAssignmentPanel() {
     patients.forEach(p => {
       const pk = String(p.patient_id || p.id || '');
       if ((APP._ideAssignments?.[pk] || []).some(a => a.id === mid)) {
-        ca += parseFloat(p.amount || 0);
+        ca += parseFloat(p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
         km += parseFloat(p._legKm || 0);
         nb++;
       }
@@ -1496,7 +1496,7 @@ function _renderCabinetAssignmentPanel() {
       const pNom   = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient';
       const isChk  = (APP._ideAssignments?.[pk] || []).some(a => a.id === mid);
       const safePk = pk.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-      const pCa    = parseFloat(p.amount || 0);
+      const pCa    = parseFloat(p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
       const pKm    = parseFloat(p._legKm || 0);
       return `<label data-ide="${mid.replace(/"/g,'&quot;')}" data-pk="${pk.replace(/"/g,'&quot;')}"
         style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
@@ -1547,7 +1547,7 @@ function _refreshCabinetStats() {
     patients.forEach(p => {
       const pk = String(p.patient_id || p.id || '');
       if ((assignments[pk] || []).some(a => a.id === ideId)) {
-        ca += parseFloat(p.amount || 0);
+        ca += parseFloat(p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
         km += parseFloat(p._legKm || 0);
         nb++;
       }
@@ -1719,18 +1719,27 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
           || null;
         const _patId  = p.patient_id || p.id || p._idb_patient_id || null;
 
+        // ── IDEs assignés à ce patient (pour Historique des soins) ──────
+        const _pKeySync = String(p.patient_id || p.id || p._idb_patient_id || '');
+        const _ideArrSync = (typeof APP !== 'undefined' ? APP._ideAssignments?.[_pKeySync] : null) || [];
+        const _idesSuffix = _ideArrSync.length
+          ? ` [IDEs: ${_ideArrSync.map(a => a.label).join(', ')}]` : '';
+        const _soinBase = (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 180);
+
         return {
           actes:          p._cotation.actes || [],
           total:          parseFloat(p._cotation.total || 0),
           date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
           heure_soin:     p.heure_soin || p.heure_preferee || p._idb_cot?.heure || null,
-          soin:           (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 200),
+          soin:           (_soinBase + _idesSuffix).slice(0, 255),
           source:         p._cotation.auto ? 'tournee_auto' : 'tournee_live',
           dre_requise:    !!p._cotation.dre_requise,
           // patient_nom → affiché dans Historique des soins (identique à cotation.js)
           ...(_patNom ? { patient_nom: _patNom } : {}),
           // patient_id → rattachement IDB / Supabase
           ...(_patId  ? { patient_id:  _patId  } : {}),
+          // ides → champ dédié si le worker le supporte
+          ...(_ideArrSync.length ? { ides: _ideArrSync.map(a => a.label) } : {}),
           // invoice_number existant -> PATCH (correction), sinon POST (nouvelle ligne)
           invoice_number: p._cotation.invoice_number || null,
         };
@@ -4134,6 +4143,7 @@ async function optimiserTourneeCabinet() {
 
 /**
  * optimiserTourneeCabinetCA — optimise la répartition pour maximiser les revenus
+ * Pré-remplit APP._ideAssignments puis affiche le panel interactif.
  */
 async function optimiserTourneeCabinetCA() {
   const result = document.getElementById('tur-cabinet-result');
@@ -4142,50 +4152,81 @@ async function optimiserTourneeCabinetCA() {
   const cab = APP.get ? APP.get('cabinet') : null;
   if (!cab?.id) return;
 
-  // Accepter même 1 seul membre (admin solo en test)
-  const members = cab.members?.length ? cab.members : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' }];
+  // Membres normalisés
+  const members = (cab.members?.length
+    ? cab.members
+    : [{ id: APP.user?.id || 'ide_0', nom: APP.user?.nom || '', prenom: APP.user?.prenom || 'Moi' }]
+  ).map((m, idx) => ({
+    id:     m.id || m.infirmiere_id || `ide_${idx}`,
+    nom:    m.nom    || '',
+    prenom: m.prenom || `IDE ${idx + 1}`,
+  }));
 
-  const patients = APP.importedData?.patients || APP.importedData?.entries || [];
-  if (!patients.length) {
-    result.innerHTML = '<div class="ai wa">Importez d\'abord vos patients.</div>';
+  // Source patients : uberPatients (avec _legKm + amount) > importedData
+  const rawSrc = APP.get('uberPatients') || APP.importedData?.patients || APP.importedData?.entries || [];
+  if (!rawSrc.length) {
+    result.innerHTML = '<div class="ai wa">Optimisez d\'abord la tournée pour charger les patients.</div>';
     return;
   }
 
   result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Optimisation des revenus…</p></div>';
 
   try {
-    // Calcul initial avec members corrigé
-    let assignments = typeof cabinetPlanDay === 'function'
-      ? cabinetPlanDay(patients, members)
-      : null;
+    const patients = rawSrc.map(p => ({
+      ...p,
+      id:     p.id || p.patient_id || null,
+      nom:    p.nom || p._nomAff || '',
+      prenom: p.prenom || '',
+      total:  parseFloat(p.amount || p.total || p.montant || 0)
+                || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0),
+    }));
 
-    if (!assignments?.length) {
-      result.innerHTML = '<div class="ai er">Impossible de calculer.</div>';
-      return;
-    }
+    // Répartition initiale
+    let assignments = typeof cabinetPlanDay === 'function'
+      ? cabinetPlanDay(patients, members) : null;
+    if (!assignments?.length) { result.innerHTML = '<div class="ai er">Impossible de calculer.</div>'; return; }
 
     const before = typeof cabinetScoreDistribution === 'function'
-      ? cabinetScoreDistribution(assignments)
-      : null;
+      ? cabinetScoreDistribution(assignments) : null;
 
-    // Optimisation itérative avec members corrigé
+    // Optimisation revenus
     if (typeof cabinetOptimizeRevenue === 'function') {
       assignments = cabinetOptimizeRevenue(assignments, members);
     }
 
     const after = typeof cabinetScoreDistribution === 'function'
-      ? cabinetScoreDistribution(assignments)
-      : null;
+      ? cabinetScoreDistribution(assignments) : null;
 
-    const gain = after && before
-      ? (after.total_revenue - before.total_revenue).toFixed(2)
-      : '?';
+    const gain = (after && before)
+      ? (after.total_revenue - before.total_revenue).toFixed(2) : '0.00';
 
-    result.innerHTML = `
-      ${gain > 0 ? `<div class="ai su" style="margin-bottom:10px;font-size:13px">⚡ Optimisation : <strong>+${gain} €</strong> par rapport à la répartition initiale</div>` : ''}
-      ${_renderTourneeCabinetHTML(assignments, after)}`;
+    // ── Pré-remplir APP._ideAssignments depuis la répartition optimisée ──
+    if (!APP._ideAssignments) APP._ideAssignments = {};
+    // Effacer les assignations existantes pour repartir d'une base propre
+    Object.keys(APP._ideAssignments).forEach(k => { APP._ideAssignments[k] = []; });
 
-    if (typeof showToast === 'function') showToast(`⚡ Revenus optimisés +${gain} €`, 'ok');
+    assignments.forEach(a => {
+      const mid    = a.ide_id || a.id || '';
+      const mLabel = (`${a.prenom||''} ${a.nom||''}`).trim() || mid;
+      (a.patients || []).forEach(p => {
+        const pk = String(p.id || p.patient_id || '');
+        if (!pk) return;
+        if (!APP._ideAssignments[pk]) APP._ideAssignments[pk] = [];
+        if (!APP._ideAssignments[pk].some(x => x.id === mid)) {
+          APP._ideAssignments[pk].push({ id: mid, label: mLabel });
+        }
+      });
+    });
+
+    // Afficher le panel interactif avec les pré-cochages optimisés
+    _renderCabinetAssignmentPanel();
+
+    if (typeof showToast === 'function') {
+      const msg = parseFloat(gain) > 0
+        ? `⚡ Revenus optimisés +${gain} € — ajustez si besoin`
+        : '✅ Répartition optimale calculée — ajustez si besoin';
+      showToast(msg, 'ok');
+    }
 
   } catch(e) {
     result.innerHTML = `<div class="ai er">Erreur : ${e.message}</div>`;
