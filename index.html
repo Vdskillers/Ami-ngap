@@ -1130,76 +1130,7 @@
 
       </div><!-- /.card Mode Uber Médical -->
 
-      <!-- ═══════════════════════════════════════════════════════
-           🏥 TRAJET CABINET — Enregistrement km partagé multi-IDE
-           Lit directement les données de la Tournée optimisée par IA :
-           patients, distance OSRM, date, départ, arrivée.
-           ═══════════════════════════════════════════════════════ -->
-      <div class="card" id="live-cabinet-km-card" style="margin-top:16px;display:none">
-
-        <!-- En-tête -->
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
-          <div class="ct" style="margin-bottom:0">🏥 Trajet Cabinet</div>
-          <span style="font-family:var(--fm);font-size:10px;background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:2px 10px;border-radius:20px;letter-spacing:1px">MULTI-IDE</span>
-        </div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:14px;line-height:1.6">
-          Enregistrez la tournée du jour comme trajet cabinet partagé.
-          Les données sont reprises automatiquement depuis la
-          <strong style="color:var(--t)">Tournée optimisée par IA</strong>
-          — patients, distance, départ et arrivée.
-        </p>
-
-        <!-- Notice : pas de cabinet -->
-        <div id="live-cab-no-cabinet" style="display:none;background:rgba(255,181,71,.07);border:1px solid rgba(255,181,71,.2);border-radius:10px;padding:14px;font-size:12px;color:var(--w);line-height:1.6">
-          ⚠️ Vous n'êtes pas encore dans un cabinet.
-          <a onclick="navTo('cabinet')" style="color:var(--a);cursor:pointer;font-weight:600;margin-left:6px">Rejoindre ou créer un cabinet →</a>
-        </div>
-
-        <!-- Formulaire trajet cabinet -->
-        <div id="live-cab-form" style="display:none">
-
-          <!-- ── Récapitulatif tournée (lu depuis APP) ─────────────────────── -->
-          <div id="km-cab-tournee-recap" style="margin-bottom:16px;border-radius:10px;overflow:hidden">
-            <!-- Rempli par _initLiveCabinetTrajetUI() -->
-          </div>
-
-          <!-- Notice tournée manquante -->
-          <div id="km-cab-no-tournee" style="display:none;background:rgba(255,181,71,.07);border:1px solid rgba(255,181,71,.2);border-radius:10px;padding:12px;font-size:12px;color:var(--w);margin-bottom:14px;line-height:1.6">
-            ⚠️ Aucune tournée optimisée en cours.
-            Optimisez d'abord votre tournée ci-dessus pour charger automatiquement
-            les données (patients, distance, départ, arrivée).
-            <div style="margin-top:10px">
-              <label style="font-size:11px;font-family:var(--fm);color:var(--m);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">Distance manuelle (km)</label>
-              <input type="number" id="km-cab-distance-manual" placeholder="Ex: 18.5" min="0.1" step="0.1"
-                style="width:140px;padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
-            </div>
-          </div>
-
-          <!-- ── Sélection IDEs ─────────────────────────────────────────────── -->
-          <div style="margin-bottom:14px">
-            <label style="font-size:12px;font-family:var(--fm);color:var(--m);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:8px">
-              Infirmière(s) ayant effectué ce trajet
-            </label>
-            <div id="km-cab-nurses-list" style="display:flex;flex-wrap:wrap;gap:8px">
-              <div style="font-size:12px;color:var(--m);font-style:italic">Chargement des membres du cabinet…</div>
-            </div>
-          </div>
-
-          <div class="msg e" id="km-cab-msg" style="display:none;margin-bottom:10px"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn bp" onclick="addKmCabinetEntry()" style="flex:1">
-              <span>📍</span> Enregistrer le trajet cabinet
-            </button>
-            <button class="btn bs bsm" onclick="_initLiveCabinetTrajetUI()" title="Rafraîchir depuis la tournée">🔄</button>
-          </div>
-
-          <!-- Confirmation après enregistrement -->
-          <div id="km-cab-confirm" style="display:none;margin-top:12px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:12px;font-size:12px;color:var(--a)"></div>
-        </div>
-
-      </div><!-- /.card Trajet Cabinet -->
-
-            <!-- ═══════════════════════════════════════════════════
+      <!-- ═══════════════════════════════════════════════════
            MODALE — État de la tournée / Bilan
            Ouverte par ouvrirEtatTournee() et terminerTourneeAvecBilan()
            ═══════════════════════════════════════════════════ -->
@@ -1373,44 +1304,101 @@
             } catch (_eHav) { console.warn('[AMI] Haversine KO:', _eHav.message); }
           }
 
-          // Écrire le journal kilométrique même si kmTotal = 0 :
-          // l'infirmière a toujours fait des km même sans données GPS.
-          // Une entrée avec km=0 permet la correction manuelle dans le journal.
+          // Écrire le journal kilométrique — une entrée par IDE si assignations existent,
+          // sinon une entrée globale (mode solo).
           {
             let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
             if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
-            const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
-            let journal = [];
-            try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
 
-            // Éviter un doublon si une entrée auto existe déjà pour aujourd'hui
-            const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
-            if (!_alreadyToday) {
-              const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
-                || snapshot.length;
-              // _isEstimate : vrai si km calculé par haversine ou absent (pas de GPS)
-              const _hasGpsKm  = parseFloat(APP.get('tourneeKmJour') || 0) > 0
-                               || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
-              const _isEstimate = !_hasGpsKm;
-              // Si aucune donnée GPS ni haversine → km=0 avec flag _requiresManualUpdate
-              // pour que l'infirmière complète manuellement dans le journal.
-              const _needsManual = kmTotal === 0;
-              const motifSuffix = _needsManual
-                ? ' (km à compléter)'
-                : (_isEstimate ? ' (estimé)' : '');
-              journal.push({
-                id:      Date.now(),
-                date:    todayStr,
-                depart:  'Cabinet',
-                arrivee: 'Tournée patients',
-                km:      kmTotal,
-                motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${motifSuffix}`,
-                _source: 'tournee_auto',
-                _requiresManualUpdate: _needsManual,
+            const _ideAssign = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+            const _hasIdeAssign = Object.values(_ideAssign).some(arr => arr?.length > 0);
+            const _uberPats = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || snapshot) : snapshot;
+            const _needsManual = kmTotal === 0;
+            const _hasGpsKm = parseFloat(APP.get('tourneeKmJour') || 0) > 0
+                            || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
+            const _isEstimate = !_hasGpsKm;
+            const motifSuffix = _needsManual ? ' (km à compléter)' : (_isEstimate ? ' (estimé)' : '');
+
+            if (_hasIdeAssign) {
+              // ── Mode cabinet multi-IDE : une entrée par IDE ──────────────────
+              // Construire la map IDE → { label, patients, km }
+              const _ideMap = {};
+              _uberPats.forEach(p => {
+                const pk   = String(p.patient_id || p.id || '');
+                const pNom = ((p.nom||'') + ' ' + (p.prenom||'')).trim()
+                           || p.description || p.label || 'Patient';
+                const pKm  = parseFloat(p._legKm || 0);
+                (_ideAssign[pk] || []).forEach(a => {
+                  if (!_ideMap[a.id]) _ideMap[a.id] = { label: a.label, patients: [], km: 0 };
+                  _ideMap[a.id].patients.push(pNom);
+                  _ideMap[a.id].km += pKm;
+                });
               });
-              localStorage.setItem(KM_KEY, JSON.stringify(journal));
-              if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
+
+              // Écrire une entrée dans le journal de chaque IDE (clé par uid)
+              Object.entries(_ideMap).forEach(([ideId, ideData]) => {
+                // Le journal est clé-user, chaque IDE gère le sien.
+                // On écrit dans la clé de l'utilisateur courant si on ne connaît pas leur uid.
+                // Pour le cabinet, on écrit dans la clé de l'utilisateur qui clôture (admin/titulaire)
+                const _kmKeyIde = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+                let _journalIde = [];
+                try { _journalIde = JSON.parse(localStorage.getItem(_kmKeyIde) || '[]'); } catch {}
+
+                const _alreadyIde = _journalIde.some(e =>
+                  e._source === 'tournee_auto' && e.date === todayStr && e._ide_id === ideId
+                );
+                if (!_alreadyIde) {
+                  const patientsLabel = ideData.patients.slice(0, 5).join(', ')
+                    + (ideData.patients.length > 5 ? ` +${ideData.patients.length - 5} autres` : '');
+                  const ideKm = ideData.km > 0 ? ideData.km : (kmTotal / Math.max(Object.keys(_ideMap).length, 1));
+                  _journalIde.push({
+                    id:      Date.now() + Math.floor(Math.random() * 1000),
+                    date:    todayStr,
+                    depart:  'Cabinet',
+                    arrivee: `Patients : ${patientsLabel}`,
+                    km:      Math.round(ideKm * 10) / 10,
+                    motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${ideData.patients.length} patient(s) · IDE : ${ideData.label}${motifSuffix}`,
+                    _source: 'tournee_auto',
+                    _ide_id: ideId,
+                    _ide_label: ideData.label,
+                    _patients:  ideData.patients,
+                    _requiresManualUpdate: _needsManual,
+                  });
+                  localStorage.setItem(_kmKeyIde, JSON.stringify(_journalIde));
+                  if (typeof _syncKmToServer === 'function') _syncKmToServer(_journalIde).catch(() => {});
+                }
+              });
+
+            } else {
+              // ── Mode solo : une entrée globale (comportement original) ──────
+              const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+              let journal = [];
+              try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
+
+              const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
+              if (!_alreadyToday) {
+                const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
+                  || snapshot.length;
+                let _me = '';
+                if (typeof S !== 'undefined' && S?.user) {
+                  _me = (`${S.user.prenom||''} ${S.user.nom||''}`).trim() || S.user.email || '';
+                }
+                const _ideSuffix = _me ? ` · IDE : ${_me}` : '';
+                journal.push({
+                  id:      Date.now(),
+                  date:    todayStr,
+                  depart:  'Cabinet',
+                  arrivee: 'Tournée patients',
+                  km:      kmTotal,
+                  motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_ideSuffix}${motifSuffix}`,
+                  _source: 'tournee_auto',
+                  _requiresManualUpdate: _needsManual,
+                });
+                localStorage.setItem(KM_KEY, JSON.stringify(journal));
+                if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
+              }
             }
+
             APP.set('tourneeKmJour', 0);
             APP.set('_lastVisitedPos', null);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
@@ -1511,10 +1499,16 @@
             const cotBadge = hasCot
               ? `<span style="font-size:10px;font-family:var(--fm);background:${p._cotation.auto?'rgba(79,168,255,.12)':'rgba(0,212,170,.12)'};color:${p._cotation.auto?'var(--a2)':'var(--a)'};border-radius:20px;padding:1px 7px;margin-left:5px">${p._cotation.auto?'⚡':' ✍️'} ${parseFloat(p._cotation.total||0).toFixed(2)} €</span>`
               : '';
+            // ── IDEs assignés depuis la Tournée IA ────────────────────────────
+            const pKey       = String(p.id || p.patient_id || i);
+            const ideAssigned = ((typeof APP !== 'undefined' ? APP._ideAssignments : null) || {})[pKey] || [];
+            const ideBadge   = ideAssigned.length
+              ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);border-radius:20px;padding:1px 8px;margin-left:5px">🎯 ${ideAssigned.map(a=>a.label).join(' · ')}</span>`
+              : '';
             const btnLabel = hasCot ? '🩺 Corriger' : '🩺 Coter';
             return `<div style="background:${bg};border:${border};border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
               <div style="flex:1;min-width:0">
-                <div style="font-weight:600;font-size:13px;color:var(--t);margin-bottom:2px">${nom}${cotBadge}</div>
+                <div style="font-weight:600;font-size:13px;color:var(--t);margin-bottom:2px">${nom}${cotBadge}${ideBadge}</div>
                 <div style="font-size:11px;color:var(--m);font-family:var(--fm)">${heure?'⏰ '+heure+' · ':''}${statut}${p.urgence?' · 🚨 Urgent':''}</div>
               </div>
               <button class="btn bp bsm" onclick="ouvrirCotationDepuisEtat(${i})" style="flex-shrink:0;font-size:11px;padding:6px 12px">${btnLabel}</button>
