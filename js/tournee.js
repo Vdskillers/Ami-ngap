@@ -389,7 +389,7 @@ function planningWeekNav(delta) {
 /** Activer / désactiver la vue cabinet */
 function planningToggleCabinetView(active) {
   _setCabinetMode(!!active);
-  console.info('[AMI] Cabinet mode:', !!active, '→ localStorage écrit. Lecture immédiate:', _getCabinetMode());
+
   refreshPlanning();
 }
 
@@ -646,7 +646,6 @@ async function renderPlanning(d){
 
   // ⚡ Lecture DIRECTE localStorage — source de vérité absolue, zéro variable stale
   const cabinetActive = _getCabinetMode();
-  console.info('[AMI Planning] cabinetActive =', cabinetActive, '| raw localStorage =', localStorage.getItem('ami_planning_cabinet_mode'));
   if (cabinetActive && !cab?.id) {
     // Cabinet pas encore chargé → retry silencieux
     setTimeout(() => {
@@ -828,7 +827,36 @@ async function renderPlanning(d){
       return null;
     }
 
-    // ── Grille jours × IDEs ───────────────────────────────────────────────
+    // ── Layout : bandeau IDEs en haut (flex wrap) + liste jours en dessous ──
+    // Scalable : fonctionne avec 2 comme avec 10 IDEs sans casser la mise en page
+
+    // Bandeau IDEs — cartes horizontales avec wrap automatique
+    const ideCards = ideList.map(([ideId, a]) => {
+      const caV   = caValByIde[ideId] || 0;
+      const caE   = caEstByIde[ideId] || 0;
+      const shown = caV > 0 ? caV : caE;
+      const isVal = caV > 0;
+      return `<div style="flex:1;min-width:160px;max-width:280px;padding:12px 14px;
+                          background:${a.color}10;border:1px solid ${a.color}30;
+                          border-top:3px solid ${a.color};border-radius:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="width:28px;height:28px;border-radius:50%;background:${a.color}20;
+                      display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">
+            ${a.role === 'titulaire' ? '👑' : '👤'}
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--t)">${a.prenom} ${a.nom}</div>
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm)">${a.patients.length} patient(s)</div>
+          </div>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:${a.color};font-family:var(--fm)">
+          💶 ${shown.toFixed(2)} €
+          <span style="font-size:9px;font-weight:400;opacity:.7">${isVal ? 'validé' : 'estimé'}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Lignes de jours — colonne Jour + patients de TOUS les IDEs avec badge couleur IDE
     const dayRows = JOURS.map((j, ji) => {
       const dateJ  = weekDates[ji];
       const _y = dateJ.getFullYear(), _m = String(dateJ.getMonth()+1).padStart(2,'0'), _d = String(dateJ.getDate()).padStart(2,'0');
@@ -836,74 +864,79 @@ async function renderPlanning(d){
       const dateStr = dateJ.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
       const jourCap = j.charAt(0).toUpperCase() + j.slice(1);
 
-      // Nb patients ce jour (tous IDEs confondus)
-      const nbJour = ideList.reduce((s, [, a]) => s + a.patients.filter(p => resolveJour(p) === j).length, 0);
+      // Tous les patients de ce jour, tous IDEs confondus — avec couleur IDE
+      const allDayPats = [];
+      ideList.forEach(([ideId, a]) => {
+        a.patients.filter(p => resolveJour(p) === j).forEach(p => {
+          allDayPats.push({ p, ideId, color: a.color, prenom: a.prenom });
+        });
+      });
 
-      const cols = ideList.map(([ideId, a]) => {
-        const dayPats = a.patients.filter(p => resolveJour(p) === j);
-        return `<div style="padding:6px 8px;min-height:44px;border-left:1px solid var(--b)">
-          ${dayPats.length
-            ? dayPats.map(p => patCardCab(p, ideId, a.color)).join('')
-            : `<div style="font-size:11px;color:var(--b);text-align:center;padding:12px 0">—</div>`}
-        </div>`;
-      }).join('');
+      const patsHtml = allDayPats.length
+        ? allDayPats.map(({ p, ideId, color, prenom }) => {
+            const nom   = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
+            const soin  = (p.actes_recurrents || p.description || p.texte || '').slice(0, 60);
+            const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+            const cot   = p._cotation?.validated;
+            const caEst = typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30;
+            return `<div style="background:var(--c);border:1px solid var(--b);border-left:3px solid ${color};
+                                border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:flex-start;gap:8px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--t)">${nom}</div>
+                ${heure ? `<div style="font-size:10px;color:var(--w);font-family:var(--fm)">⏰ ${heure}</div>` : ''}
+                ${soin  ? `<div style="font-size:10px;color:var(--m);margin-top:2px">${soin}</div>` : ''}
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+                  <span style="font-size:10px;font-family:var(--fm);font-weight:600;color:${cot ? 'var(--a)' : color}">
+                    💶 ${cot ? parseFloat(p._cotation.total).toFixed(2) : '~' + caEst.toFixed(2)} €
+                  </span>
+                  ${ideSelectHtml(p, ideId)}
+                </div>
+              </div>
+              <div style="flex-shrink:0;font-size:10px;font-family:var(--fm);color:${color};
+                          background:${color}15;padding:2px 7px;border-radius:20px;border:1px solid ${color}30;
+                          white-space:nowrap;margin-top:2px">${prenom}</div>
+            </div>`;
+          }).join('')
+        : `<div style="font-size:11px;color:var(--b);padding:12px 0;text-align:center">—</div>`;
 
-      return `<div style="display:grid;grid-template-columns:68px repeat(${ideList.length},1fr);border-bottom:1px solid var(--b)${isToday ? ';background:rgba(0,212,170,.03)' : ''}">
+      return `<div style="display:grid;grid-template-columns:72px 1fr;border-bottom:1px solid var(--b)${isToday ? ';background:rgba(0,212,170,.025)' : ''}">
         <div style="padding:8px 6px;border-right:1px solid var(--b);display:flex;flex-direction:column;justify-content:center;gap:2px">
           <div style="font-size:11px;font-weight:${isToday ? '700' : '600'};color:${isToday ? 'var(--a)' : 'var(--t)'}">${jourCap}</div>
           <div style="font-size:10px;color:var(--m);font-family:var(--fm)">${dateStr}</div>
           ${isToday ? '<div style="font-size:9px;color:var(--a);font-family:var(--fm)">Auj.</div>' : ''}
-          ${nbJour ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 5px;border-radius:10px;text-align:center;margin-top:2px">${nbJour}</div>` : ''}
+          ${allDayPats.length ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 5px;border-radius:10px;text-align:center;margin-top:2px">${allDayPats.length}</div>` : ''}
         </div>
-        ${cols}
+        <div style="padding:8px">${patsHtml}</div>
       </div>`;
     }).join('');
 
     return `
-      <!-- En-tête IDEs avec CA estimé par IDE -->
-      <div style="display:grid;grid-template-columns:68px repeat(${ideList.length},1fr);border-radius:10px 10px 0 0;overflow:hidden;border:1px solid var(--b)">
-        <div style="padding:8px 6px;background:var(--s);display:flex;align-items:center;justify-content:center">
-          <span style="font-size:10px;color:var(--m);font-family:var(--fm);text-align:center">Jour</span>
-        </div>
-        ${ideList.map(([ideId, a]) => {
-          const caV = caValByIde[ideId] || 0;
-          const caE = caEstByIde[ideId] || 0;
-          const shown = caV > 0 ? caV : caE;
-          const isVal = caV > 0;
-          return `<div style="padding:10px 12px;background:${a.color}12;border-left:1px solid var(--b);border-top:3px solid ${a.color}">
-            <div style="font-weight:700;font-size:13px;color:var(--t)">${a.prenom} ${a.nom}</div>
-            <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${a.role === 'titulaire' ? '👑' : '👤'} · ${a.patients.length} patient(s)</div>
-            <div style="font-size:12px;font-weight:700;color:${a.color};font-family:var(--fm);margin-top:5px">
-              💶 ${shown.toFixed(2)} €
-              <span style="font-size:9px;font-weight:400;opacity:.7">${isVal ? 'validé' : 'estimé'}</span>
-            </div>
-          </div>`;
-        }).join('')}
+      <!-- Bandeau IDEs — flex wrap, scalable -->
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        ${ideCards}
       </div>
-      <!-- Grille jours × IDEs -->
-      <div style="border:1px solid var(--b);border-top:none;border-radius:0 0 10px 10px;overflow:hidden">
+      <!-- Grille jours — 1 colonne, patients avec badge IDE coloré -->
+      <div style="border:1px solid var(--b);border-radius:10px;overflow:hidden">
         ${dayRows}
       </div>
-      <!-- Barre récap CA cabinet semaine -->
-      <div style="margin-top:12px;padding:14px 16px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.2);border-radius:10px">
-        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-          <div style="flex:1;min-width:150px">
-            <div style="font-size:10px;color:var(--m);font-family:var(--fm);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">CA ESTIMÉ SEMAINE · CABINET</div>
-            <div style="font-size:20px;font-weight:700;color:var(--a)">${(caValTotal > 0 ? caValTotal : caEstTotal).toFixed(2)} €</div>
-            <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${caValTotal > 0 ? 'cotations validées' : 'estimation NGAP'} · ${patientsForCabinet.length} patient(s)</div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${ideList.map(([ideId, a]) => {
-              const shown = (caValByIde[ideId]||0) > 0 ? caValByIde[ideId] : caEstByIde[ideId]||0;
-              return `<div style="padding:8px 12px;background:${a.color}12;border:1px solid ${a.color}30;border-radius:8px;text-align:center;min-width:80px">
-                <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-bottom:2px">${a.prenom}</div>
-                <div style="font-size:14px;font-weight:700;color:${a.color}">${shown.toFixed(2)} €</div>
-                <div style="font-size:9px;color:var(--m);font-family:var(--fm)">${a.patients.length} pat.</div>
-              </div>`;
-            }).join('')}
-          </div>
-          <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="font-size:11px;white-space:nowrap">⚡ Optimiser</button>
+      <!-- Barre CA cabinet -->
+      <div style="margin-top:12px;padding:12px 16px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.2);border-radius:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">CA ESTIMÉ SEMAINE · CABINET</div>
+          <div style="font-size:20px;font-weight:700;color:var(--a)">${(caValTotal > 0 ? caValTotal : caEstTotal).toFixed(2)} €</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${caValTotal > 0 ? 'cotations validées' : 'estimation NGAP'} · ${patientsForCabinet.length} patient(s)</div>
         </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${ideList.map(([ideId, a]) => {
+            const shown = (caValByIde[ideId]||0) > 0 ? caValByIde[ideId] : caEstByIde[ideId]||0;
+            return `<div style="padding:6px 12px;background:${a.color}12;border:1px solid ${a.color}30;border-radius:8px;text-align:center;min-width:72px">
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-bottom:1px">${a.prenom}</div>
+              <div style="font-size:13px;font-weight:700;color:${a.color}">${shown.toFixed(2)} €</div>
+              <div style="font-size:9px;color:var(--m);font-family:var(--fm)">${a.patients.length} pat.</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="font-size:11px;white-space:nowrap">⚡ Optimiser</button>
       </div>
     `;
   }
@@ -981,11 +1014,9 @@ async function renderPlanning(d){
   // ⚡ Construire le HTML en 2 étapes pour éviter qu'une erreur dans renderCabinetView()
   // fasse échouer silencieusement tout le template literal (pbody.innerHTML non mis à jour)
   let _dynamicView = '';
-  console.info('[AMI Planning] cabinetActive =', cabinetActive, '| assignments =', Object.keys(cabinetAssignments).length);
   if (cabinetActive) {
     try {
       _dynamicView = renderCabinetView();
-      console.info('[AMI Planning] renderCabinetView OK, longueur HTML =', _dynamicView.length);
     } catch(e) {
       console.error('[AMI Planning] renderCabinetView ERREUR :', e.message, e.stack);
       _dynamicView = `<div class="ai er">Erreur vue cabinet : ${e.message}<br><small>${e.stack}</small></div>`;
