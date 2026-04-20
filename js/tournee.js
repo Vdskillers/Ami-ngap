@@ -4061,3 +4061,158 @@ function _renderTourneeCabinetHTML(assignments, scoreData) {
   document.addEventListener('ui:navigate', () => setTimeout(_bindCabinetCheckbox, 200));
   window._bindCabinetCheckbox = _bindCabinetCheckbox;
 })();
+
+/* ════════════════════════════════════════════════════════════════════
+   TRAJET CABINET — UI Pilotage de journée
+   ────────────────────────────────────────────────────────────────────
+   _initLiveCabinetTrajetUI()  — appelé à chaque navigation vers "live"
+     • Affiche/masque la carte selon le cabinet
+     • Peuple le select patients depuis l'IDB
+     • Peuple les checkboxes IDEs depuis cabinet.members
+   _cabTogglePatientInput()    — bascule select ↔ saisie libre
+   _cabResetForm()             — réinitialise le formulaire
+═════════════════════════════════════════════════════════════════════= */
+
+async function _initLiveCabinetTrajetUI() {
+  const card   = document.getElementById('live-cabinet-km-card');
+  const noCab  = document.getElementById('live-cab-no-cabinet');
+  const form   = document.getElementById('live-cab-form');
+  if (!card) return;
+
+  // Toujours afficher la carte
+  card.style.display = 'block';
+
+  const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+
+  // Pas de cabinet
+  if (!cab?.id) {
+    if (noCab) noCab.style.display = 'block';
+    if (form)  form.style.display  = 'none';
+    return;
+  }
+  if (noCab) noCab.style.display = 'none';
+  if (form)  form.style.display  = 'block';
+
+  // ── Date du jour par défaut ──────────────────────────────────────
+  const dateEl = document.getElementById('km-cab-date');
+  if (dateEl && !dateEl.value) {
+    dateEl.value = new Date().toISOString().slice(0, 10);
+  }
+
+  // ── Membres IDEs ─────────────────────────────────────────────────
+  const nursesList = document.getElementById('km-cab-nurses-list');
+  if (nursesList) {
+    const members = cab.members || [];
+    const me = (typeof APP !== 'undefined') ? APP.user : null;
+
+    // Inclure l'utilisateur courant s'il n'est pas dans members
+    const allIDEs = [...members];
+    if (me && !allIDEs.find(m => m.id === me.id)) {
+      allIDEs.unshift({ id: me.id, nom: me.nom || '', prenom: me.prenom || '', role: 'me' });
+    }
+
+    if (!allIDEs.length) {
+      nursesList.innerHTML = '<div style="font-size:12px;color:var(--m);font-style:italic">Aucun membre dans le cabinet.</div>';
+    } else {
+      nursesList.innerHTML = allIDEs.map(m => {
+        const label = `${m.prenom || ''} ${m.nom || ''}`.trim() || m.id;
+        const isMe  = m.id === me?.id;
+        const role  = m.role === 'titulaire' ? '👑' : isMe ? '🙋' : '👤';
+        return `
+          <label style="display:inline-flex;align-items:center;gap:7px;padding:7px 13px;
+            background:${isMe ? 'rgba(0,212,170,.1)' : 'var(--s)'};
+            border:1px solid ${isMe ? 'rgba(0,212,170,.35)' : 'var(--b)'};
+            border-radius:20px;cursor:pointer;font-size:12px;color:var(--t);
+            transition:background .15s;user-select:none"
+            onmouseenter="this.style.background='rgba(0,212,170,.08)'"
+            onmouseleave="this.style.background='${isMe ? 'rgba(0,212,170,.1)' : 'var(--s)'}'">
+            <input type="checkbox"
+              class="km-cab-nurse-cb"
+              data-nurse-id="${m.id}"
+              data-nurse-nom="${(m.nom||'').replace(/"/g,'&quot;')}"
+              data-nurse-prenom="${(m.prenom||'').replace(/"/g,'&quot;')}"
+              ${isMe ? 'checked' : ''}
+              style="width:15px;height:15px;accent-color:var(--a);flex-shrink:0">
+            <span>${role} ${label}${isMe ? ' <em style="font-size:10px;color:var(--a);font-style:normal">(moi)</em>' : ''}</span>
+          </label>`;
+      }).join('');
+    }
+  }
+
+  // ── Patients depuis l'IDB ────────────────────────────────────────
+  const patSel = document.getElementById('km-cab-patient-select');
+  if (patSel && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+    try {
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      // Trier alphabétiquement nom
+      const sorted = rows
+        .map(r => ({ id: r.id, label: `${r.prenom || ''} ${r.nom || ''}`.trim() || `#${r.id}` }))
+        .filter(r => r.label && r.label !== '#')
+        .sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+
+      patSel.innerHTML = '<option value="">— Sélectionner un patient du carnet —</option>'
+        + sorted.map(r => `<option value="${r.label.replace(/"/g,'&quot;')}">${r.label}</option>`).join('');
+    } catch (_e) {
+      // IDB indisponible — saisie libre uniquement
+      patSel.style.display = 'none';
+      const patLibre = document.getElementById('km-cab-patient-libre');
+      if (patLibre) { patLibre.style.display = 'block'; }
+      const toggleBtn = document.getElementById('km-cab-patient-toggle-btn');
+      if (toggleBtn) toggleBtn.style.display = 'none';
+    }
+  }
+}
+
+/** Bascule entre select patients et saisie libre */
+function _cabTogglePatientInput() {
+  const sel    = document.getElementById('km-cab-patient-select');
+  const libre  = document.getElementById('km-cab-patient-libre');
+  const btn    = document.getElementById('km-cab-patient-toggle-btn');
+  if (!sel || !libre) return;
+  const isLibre = libre.style.display !== 'none';
+  if (isLibre) {
+    // Revenir au select
+    libre.style.display = 'none';
+    sel.style.display   = '';
+    if (btn) btn.textContent = '✏️ Libre';
+  } else {
+    // Passer en saisie libre
+    sel.style.display   = 'none';
+    libre.style.display = 'block';
+    libre.focus();
+    if (btn) btn.textContent = '📋 Liste';
+  }
+}
+
+/** Réinitialise le formulaire trajet cabinet */
+function _cabResetForm() {
+  const ids = ['km-cab-distance','km-cab-depart','km-cab-arrivee','km-cab-patient-libre'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const sel = document.getElementById('km-cab-patient-select');
+  if (sel) sel.value = '';
+  const msg = document.getElementById('km-cab-msg');
+  if (msg) msg.style.display = 'none';
+  const confirm = document.getElementById('km-cab-confirm');
+  if (confirm) confirm.style.display = 'none';
+  // Réinitialiser la date à aujourd'hui
+  const dateEl = document.getElementById('km-cab-date');
+  if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
+}
+
+// ── Auto-init à chaque navigation vers "live" ───────────────────────
+document.addEventListener('app:nav',    e => { if (e.detail?.view === 'live') _initLiveCabinetTrajetUI(); });
+document.addEventListener('ui:navigate',e => { if (e.detail?.view === 'live') _initLiveCabinetTrajetUI(); });
+// Écouter aussi le chargement du cabinet
+if (typeof APP !== 'undefined' && APP.on) {
+  APP.on('cabinet', () => {
+    // Ré-init si la page live est visible
+    if (document.getElementById('view-live')?.classList.contains('on')) {
+      _initLiveCabinetTrajetUI();
+    }
+  });
+}
+
+// Exports
+window._initLiveCabinetTrajetUI = _initLiveCabinetTrajetUI;
+window._cabTogglePatientInput   = _cabTogglePatientInput;
+window._cabResetForm            = _cabResetForm;

@@ -342,8 +342,18 @@ function renderKmJournal() {
           <span style="font-family:var(--fm);font-size:10px;color:var(--m)">${new Date(e.date).toLocaleDateString('fr-FR')}</span>
           <span style="font-size:12px;color:var(--t);font-weight:600">${e.km} km</span>
           ${e.depart ? `<span style="font-size:11px;color:var(--m)">${e.depart} → ${e.arrivee||'?'}</span>` : ''}
+          ${e.cabinet ? `<span style="font-family:var(--fm);font-size:10px;background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2);padding:1px 7px;border-radius:10px">Cabinet</span>` : ''}
         </div>
+        ${e.patient_nom ? `<div style="font-size:11px;font-weight:600;color:var(--t);margin-top:3px">👤 ${e.patient_nom}</div>` : ''}
         <div style="font-size:11px;color:var(--m);margin-top:2px">${e.motif}</div>
+        ${Array.isArray(e.infirmieres) && e.infirmieres.length > 0
+          ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">`
+            + e.infirmieres.map(ide => {
+                const label = (ide.prenom || '') + ' ' + (ide.nom || '');
+                return `<span style="font-family:var(--fm);font-size:10px;background:rgba(79,168,255,.08);color:var(--a2);border:1px solid rgba(79,168,255,.18);padding:1px 8px;border-radius:10px">👤 ${label.trim()}</span>`;
+              }).join('')
+            + `</div>`
+          : ''}
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:11px;color:var(--a);font-family:var(--fm)">${(e.km * tauxKm).toFixed(2)} €</div>
@@ -364,13 +374,20 @@ function exportKmCSV() {
   const taux = _getKmRate(cv, kmAnnuel, electrique);
   const baremeLbl = `${KM_BAREME_2025_2026[cv]?.label || '5 CV'} · barème 2025/2026${electrique ? ' · électrique +20%' : ''}`;
 
-  const header = ['Date','Départ','Arrivée','Distance (km)','Motif','Taux (€/km)','Déduction (€)','Barème'];
-  const lines  = entries.map(e => [
-    e.date, e.depart||'', e.arrivee||'', e.km, e.motif,
-    taux.toFixed(3),
-    (e.km * taux).toFixed(2),
-    baremeLbl
-  ].join(';'));
+  const header = ['Date','Départ','Arrivée','Distance (km)','Motif','Patient','IDE(s)','Taux (€/km)','Déduction (€)','Barème'];
+  const lines  = entries.map(e => {
+    const patientCol = e.patient_nom || '';
+    const idesCol    = Array.isArray(e.infirmieres) && e.infirmieres.length
+      ? e.infirmieres.map(i => ((i.prenom||'') + ' ' + (i.nom||'')).trim()).join(' + ')
+      : '';
+    return [
+      e.date, e.depart||'', e.arrivee||'', e.km, e.motif,
+      patientCol, idesCol,
+      taux.toFixed(3),
+      (e.km * taux).toFixed(2),
+      baremeLbl
+    ].join(';');
+  });
 
   const csv  = [header.join(';'), ...lines].join('\n');
   const blob = new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8' });
@@ -1003,3 +1020,129 @@ window.utiliserSimulation = utiliserSimulation;
 window.addOrdonnance      = addOrdonnance;
 window.deleteOrdonnance   = deleteOrdonnance;
 window.renderOrdonnances  = renderOrdonnances;
+
+/* ════════════════════════════════════════════════════════════════════
+   TRAJET CABINET — Enregistrement kilométrique multi-IDE
+   ────────────────────────────────────────────────────────────────────
+   addKmCabinetEntry()
+     Lit le formulaire Pilotage → Trajet Cabinet,
+     valide les champs obligatoires, puis enregistre une entrée km
+     enrichie avec :
+       • patient_nom  — nom du patient (select ou saisie libre)
+       • infirmieres  — tableau [{id, nom, prenom}] des IDEs cochées
+       • cabinet: true — flag pour l'affichage dans le journal
+     L'entrée est stockée dans le journal km LOCAL de l'utilisateur
+     courant. Chaque IDE du cabinet devra synchroniser son propre
+     journal via la synchronisation km habituelle (km-push/km-pull).
+═════════════════════════════════════════════════════════════════════= */
+function addKmCabinetEntry() {
+  const msgEl     = document.getElementById('km-cab-msg');
+  const confirmEl = document.getElementById('km-cab-confirm');
+  const _err = (txt) => {
+    if (msgEl) { msgEl.textContent = txt; msgEl.className = 'msg e'; msgEl.style.display = 'block'; }
+  };
+  const _ok = () => { if (msgEl) msgEl.style.display = 'none'; };
+
+  // ── Lecture champs ─────────────────────────────────────────────
+  const date    = document.getElementById('km-cab-date')?.value
+               || new Date().toISOString().slice(0, 10);
+  const dist    = parseFloat(document.getElementById('km-cab-distance')?.value);
+  const depart  = (document.getElementById('km-cab-depart')?.value  || '').trim();
+  const arrivee = (document.getElementById('km-cab-arrivee')?.value || '').trim();
+
+  // Patient : select ou saisie libre
+  const patSel    = document.getElementById('km-cab-patient-select');
+  const patLibre  = document.getElementById('km-cab-patient-libre');
+  let patient_nom = '';
+  if (patLibre && patLibre.style.display !== 'none') {
+    patient_nom = patLibre.value.trim();
+  } else if (patSel) {
+    patient_nom = patSel.value.trim();
+  }
+
+  // IDEs cochées
+  const nurseCheckboxes = document.querySelectorAll('.km-cab-nurse-cb:checked');
+  const infirmieres = Array.from(nurseCheckboxes).map(cb => ({
+    id:     cb.dataset.nurseId     || '',
+    nom:    cb.dataset.nurseNom    || '',
+    prenom: cb.dataset.nursePrenom || '',
+  }));
+
+  // ── Validation ────────────────────────────────────────────────
+  if (!dist || dist <= 0) {
+    _err('⚠️ Veuillez saisir une distance valide.');
+    return;
+  }
+  if (!patient_nom) {
+    _err('⚠️ Veuillez sélectionner ou saisir le nom du patient.');
+    return;
+  }
+  if (!infirmieres.length) {
+    _err('⚠️ Sélectionnez au moins une infirmière pour ce trajet.');
+    return;
+  }
+  _ok();
+
+  // ── Motif automatique ─────────────────────────────────────────
+  const ideNames  = infirmieres.map(i => ((i.prenom||'') + ' ' + (i.nom||'')).trim()).join(', ');
+  const motif     = `Trajet cabinet — ${patient_nom} (IDE : ${ideNames})`;
+
+  // ── Sauvegarde dans le journal km local ───────────────────────
+  const entries = _loadKmJournal();
+  const entry = {
+    id:          Date.now(),
+    date,
+    depart,
+    arrivee,
+    km:          dist,
+    motif,
+    patient_nom,
+    infirmieres,
+    cabinet:     true,
+  };
+  entries.push(entry);
+  _saveKmJournal(entries);
+
+  // ── Confirmation visuelle ─────────────────────────────────────
+  if (confirmEl) {
+    const idesHtml = infirmieres.map(i =>
+      `<span style="display:inline-block;background:rgba(79,168,255,.1);color:var(--a2);
+        border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:1px 8px;
+        font-family:var(--fm);font-size:11px;margin:2px">
+        👤 ${((i.prenom||'')+' '+(i.nom||'')).trim()}
+      </span>`
+    ).join('');
+    confirmEl.innerHTML = `
+      <div style="font-weight:600;margin-bottom:6px">✅ Trajet enregistré dans le Journal kilométrique</div>
+      <div style="font-size:11px;color:var(--t);margin-bottom:4px">
+        📅 ${new Date(date).toLocaleDateString('fr-FR')} · 
+        🚗 ${dist} km ·
+        👤 Patient : <strong>${patient_nom}</strong>
+      </div>
+      <div style="margin-top:6px">${idesHtml}</div>`;
+    confirmEl.style.display = 'block';
+  }
+
+  // Rafraîchir le journal si on est sur la page km
+  if (typeof renderKmJournal === 'function') renderKmJournal();
+
+  // Démarrer la synchronisation km si disponible
+  if (typeof syncKmJournal === 'function') syncKmJournal().catch(() => {});
+
+  if (typeof showToast === 'function')
+    showToast(`✅ Trajet cabinet enregistré — ${dist} km · ${patient_nom}`, 'ok');
+
+  // Réinitialiser le formulaire (sauf la date et les IDEs)
+  const distEl = document.getElementById('km-cab-distance');
+  const depEl  = document.getElementById('km-cab-depart');
+  const arrEl  = document.getElementById('km-cab-arrivee');
+  if (distEl)  distEl.value  = '';
+  if (depEl)   depEl.value   = '';
+  if (arrEl)   arrEl.value   = '';
+  const pSel = document.getElementById('km-cab-patient-select');
+  if (pSel) pSel.value = '';
+  const pLib = document.getElementById('km-cab-patient-libre');
+  if (pLib) pLib.value = '';
+}
+
+window.addKmCabinetEntry = addKmCabinetEntry;
