@@ -1,4 +1,4 @@
-# AMI — Documentation Architecture v10.0
+# AMI — Documentation Architecture v10.1
 
 > **Application web progressive (PWA) pour infirmières libérales.**
 > Cotation NGAP automatique, tournée optimisée, carnet patients chiffré, signatures électroniques, **mode cabinet multi-IDE**, moteur hybride Smart Engine IA, planning hebdomadaire, modules cliniques avancés (transmissions, constantes, pilulier, BSI, consentements, alertes médicamenteuses, simulateur audit CPAM, compte-rendu de passage).
@@ -11,8 +11,12 @@
 |---|---|---|
 | **Worker backend** | **v7.1** | Fix `isHallucination` — suppression du test regex `/unknown/` qui déclenchait le fallback sur les réponses légitimes |
 | **Agent IA N8N** | **v10** | 51 nœuds — RL Decision Logger + Heatmap Zone Scorer · fix `Fusionner réponse` `.first()` + parallélisation |
+| **Preuve Update** | **v1** | Workflow séparé — UPDATE `preuve_soin` sur cotation existante via `invoice_number` (signature post-cotation) |
+| **ML Nightly** | **v1** | Workflow Cron 2h — entraînement SGD depuis RL_DECISION + staffing + rapport Supabase |
 | **utils.js** | **v5.1** | `_PATHO_MAP` v2.0 — 23 catégories, 80+ abréviations médicales couvertes |
 | **tournee.js** | **v6.1** | Fix enrichissement `texteForCot` pathologies → actes · `autoCotationLocale` aligné sur `_PATHO_MAP` v2 |
+| **cotation.js** | **v8.1** | Doctrine upsert stricte — résolution index `cotationIdx > invoice_number > invoice_number original > date YYYY-MM-DD` |
+| **ui.js** | **v5.2** | Fix parser Markdown FAQ — rendu tableau unifié (thead/tbody), suppression `<br>` parasites |
 | Module cabinet | v2.1 | Démo solo admin, mode cabinet sans membres réels |
 | Cotation | v8 | NLP 17 patterns, sélecteur IDE par acte, estimation NGAP correcte côté client |
 | Planning hebdomadaire | v2.0 | Navigation semaine, vue cabinet multi-IDE |
@@ -126,6 +130,79 @@
                       └─→ [21] RL Decision Logger
                                 └─→ [22] Heatmap Zone Scorer  (terminal)
 ```
+
+---
+
+## Workflows N8N auxiliaires
+
+### Workflow — `AMI_Cotation_Preuve_Update_v1`
+
+> **Route :** `POST /webhook/cotation-preuve-update`
+> **Déclencheur :** l'infirmière signe un patient **après** que la cotation ait déjà été créée (cas nominal — signature UX post-cotation).
+> **Objectif :** mettre à jour le champ `preuve_soin` (JSONB) d'une cotation existante, identifiée par son `invoice_number`, sans créer de doublon dans l'historique des soins.
+
+**Pipeline (8 nœuds) :**
+```
+[🎣 Webhook Preuve Update]
+        │
+[✅ Valider payload] ── invoice_number + user_id + preuve_soin{type,timestamp,hash,…}
+        │
+[🔀 Payload valide ?]
+        ├── false → [⛔ Respond 400]
+        └── true  → [🗄️ Ensure colonne preuve_soin]  ← ALTER TABLE IF NOT EXISTS (idempotent)
+                          │
+                          ▼
+                   [🔐 UPDATE preuve_soin]  ← WHERE invoice_number=$1 AND user_id=$2
+                          │
+                          ▼
+                   [🔍 Résultat UPDATE]  ← 0 rows → 404 · 1 row → 200
+                          │
+                          ▼
+                   [📤 Respond Update]
+```
+
+**Doctrine AMI respectée :**
+- **UPDATE uniquement** (jamais d'INSERT) — pas de doublon dans l'Historique des soins
+- **Double isolation** : `invoice_number + user_id` (RGPD / HDS)
+- **Hash SHA-256 opaque** uniquement — jamais l'image de signature ni la photo
+- **ALTER TABLE IF NOT EXISTS** → idempotent, compatible BDD existante
+- **CORS `*`**, `responseNode`, erreurs explicites (400 / 404 / 200)
+
+---
+
+### Workflow — `AMI_ML_Nightly_v1`
+
+> **Déclencheur :** `Cron schedule` — chaque nuit à **2h00** (pas de charge diurne).
+> **Objectif :** entraîner le modèle ML du Smart Engine sur les logs RL_DECISION de la veille, générer un rapport staffing, et notifier le Worker.
+
+**Pipeline (9 nœuds) :**
+```
+[🕑 Cron Nightly 2h]
+        │
+        ├─→ [📥 Fetch RL_DECISION Logs]     ← system_logs table Supabase (24h window)
+        └─→ [📥 Fetch Cotations]            ← planning_patients table Supabase
+                          │
+                          ▼
+                   [🔧 Build ML Dataset]     ← features : injection, perfusion, heure,
+                          │                    domicile, ambiguïté, contexte cabinet
+                          ▼
+                   [🧠 ML Retrain (SGD)]     ← Stochastic Gradient Descent
+                          │                    nouveau jeu de poids → model_weights
+                          ▼
+                   [👥 Staffing + Rapport]   ← forecast besoin IDE / zone / créneau
+                          │
+                          ▼
+                   [💾 Save Report → Supabase]  ← table ml_reports
+                          │
+                          ▼
+                   [📡 Notify Worker (optional)] ← POST /webhook/ml-model-updated
+
+[🚨 Error Logger] ← branché sur tous les nœuds critiques (catch errors → system_logs)
+```
+
+**Credentials requis :** `Supabase Service Key` (HTTP Header Auth avec `apikey` + `Authorization: Bearer`).
+
+**Pourquoi à 2h :** évite la charge diurne, les cotations de la veille sont toutes consolidées, le Worker peut récupérer le nouveau modèle avant l'activité matinale.
 
 ---
 
@@ -452,25 +529,52 @@ Fix v7.1 : isHallucination() ne déclenche plus sur "unknown" légitime
 
 ---
 
-## Logique cotation — règles upsert
+## Logique cotation — doctrine upsert stricte
+
+> Règle fondamentale : **jamais de doublon dans l'Historique des soins**.
+> Un soin donné pour un patient donné à une date donnée = **une seule cotation**.
+
+### Arbre de décision
 
 ```
 Patient existe dans le carnet ?
-├── OUI → Upsert (cotation existante)
-│         Résolution index : cotationIdx > invoice_number > invoice_number original
+├── OUI → Upsert (mise à jour de la cotation existante)
+│         Jamais de push(), jamais de doublon
+│         Résolution index :
+│           1. cotationIdx (si fourni explicitement)
+│           2. invoice_number retourné par l'API
+│           3. invoice_number original du _editRef (cas correction post-tournée/planning)
+│           4. date YYYY-MM-DD (fallback robuste : couvre ISO complet vs date courte)
 │         Si aucun index trouvé ET mode édition (_editRef) → ne rien faire
 │
-└── NON → Créer fiche patient + cotation (une seule fois)
+└── NON → Créer la fiche patient + la cotation (une seule fois)
           Uniquement si ce n'est PAS une correction (_editRef absent)
 ```
 
-| Situation | Comportement |
-|---|---|
-| Patient existant + mode édition + index trouvé | Mise à jour |
-| Patient existant + pas de mode édition | Ajout (1ère fois) |
-| Patient existant + mode édition + index introuvable | Rien (évite doublon) |
-| Patient absent + pas de mode édition | Crée fiche + cotation |
-| Patient absent + mode édition | Rien (évite fiche fantôme) |
+### Matrice de comportement `cotation()` — ⚡ Coter avec l'IA
+
+| Patient | Mode édition (`_editRef`) | Index trouvé | Comportement |
+|---|---|---|---|
+| Existant | ✅ Oui | ✅ Oui | **Mise à jour** de la cotation existante |
+| Existant | ❌ Non | — | **Ajout** de la cotation (1ère fois) |
+| Existant | ✅ Oui | ❌ Non | **Rien** (évite doublon) |
+| Absent | ❌ Non | — | **Crée fiche patient + cotation** |
+| Absent | ✅ Oui | — | **Rien** (évite fiche fantôme) |
+
+### Fix historique — comparaison de date (v8.1)
+
+**Bug résolu :** `c.date` stocké en ISO complet `"2026-04-19T13:00:00.000Z"` vs `_dateCheck` au format `"2026-04-19"` → `===` toujours `false` → INSERT systématique au lieu de PATCH.
+
+**Correction :** `.slice(0, 10)` des deux côtés dans `checkDoublon`, `auto-détection`, et `upsert IDB`.
+
+### Fix complémentaire — tournée/planning (v8.1)
+
+`_fromTournee` seul ne suffit **pas** comme signal de mise à jour : il est posé dès l'ouverture de la page, **avant** qu'une cotation existe. La doctrine est :
+```javascript
+if (_ref?.cotationIdx != null && _ref.cotationIdx >= 0) → bypass modale doublon
+if (_ref?.invoice_number)                              → bypass modale doublon
+// _fromTournee SEUL → toujours vérifier IDB d'abord
+```
 
 ---
 
@@ -566,6 +670,98 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 
 ---
 
+## Checklist RGPD / HDS (audit-ready)
+
+> Classification A–J inspirée de la méthodologie CNIL / référentiel HDS.
+> Chaque point est mappé à une implémentation technique dans le codebase.
+
+### 📜 A. Gouvernance
+| Exigence | État | Implémentation |
+|---|---|---|
+| Registre des traitements | ✅ | `GUIDE_INFIRMIERES.md` + CGU footer `index.html` |
+| Responsable de traitement défini | ✅ | Mentions légales CGU (Ai BonoVan — éditeur) |
+| DPO (si >250 employés OU données sensibles massives) | ⚠️ | Non obligatoire à ce stade — à prévoir avant commercialisation B2B |
+| CGU + politique RGPD | ✅ | `#cgv-footer` (8 articles + mentions légales) |
+
+### 🔐 B. Sécurité technique
+| Exigence | État | Implémentation |
+|---|---|---|
+| HTTPS partout | ✅ | GitHub Pages + Cloudflare Workers (TLS 1.3) |
+| Chiffrement données (AES) | ✅ | `security.js` — AES-256-GCM (IV aléatoire par opération) |
+| Mots de passe hashés | ✅ | `worker.js` — PBKDF2 100k itérations + sel unique |
+| JWT sécurisé | ✅ | Token Bearer, jamais en cookie, TTL 24h |
+| Firewall / clés API | ✅ | Cloudflare Workers `env.XAI_API_KEY` + `env.SUPABASE_SERVICE_KEY` (jamais exposés client) |
+
+### 🏥 C. Données de santé (HDS)
+| Exigence | État | Implémentation |
+|---|---|---|
+| Accès restreint par rôle | ✅ | RBAC `nurse`/`admin` dans `worker.js` (tableau `PERMISSIONS`) |
+| Logs d'accès | ✅ | `audit_logs` (LOGIN, REGISTER, COTATION, FRAUDE, ADMIN actions) |
+| Carnet patients 100% local | ✅ | IndexedDB `ami_patients_db_<userId>` chiffré, jamais transmis |
+| Admins sans accès aux données patients | ✅ | Isolation `infirmiere_id=eq.${user.id}` + bannière admin sur chaque module |
+
+### 👤 D. Accès utilisateur
+| Exigence | État | Implémentation |
+|---|---|---|
+| Authentification forte | ✅ | Email + mot de passe + PIN local (SHA-256 + sel) |
+| Gestion sessions | ✅ | Table `sessions` + `created_at` + TTL 24h |
+| Déconnexion auto | ✅ | `security.js` — verrouillage PIN après 10 min d'inactivité |
+| Comptes bloqués | ✅ | `is_blocked` → sessions révoquées |
+
+### 📡 E. Données
+| Exigence | État | Implémentation |
+|---|---|---|
+| Minimisation | ✅ | Patients NIR jamais stocké ; signature en hash opaque uniquement |
+| Anonymisation partielle | ✅ | Cache Smart Engine : clé sha256(texte+heure+km+date) → pas de PII |
+| Séparation logique | ✅ | IndexedDB isolé par userId ; Supabase filtré `infirmiere_id` |
+
+### 💾 F. Stockage
+| Exigence | État | Implémentation |
+|---|---|---|
+| Données chiffrées | ✅ | AES-256-GCM côté client ; chiffrement champ côté Supabase |
+| Backups réguliers | ✅ | Supabase daily auto-backup (infra hébergeur) |
+| Purge automatique | ✅ | `cleanOldLogs()` — logs > 90 jours purgés |
+
+### 📤 G. Droits utilisateurs
+| Exigence | État | Implémentation |
+|---|---|---|
+| Export données | ✅ | Cotations CSV (`tresorerie.js`) · Patients JSON RGPD (`security.js` → `exportRGPD()`) |
+| Suppression compte | ✅ | `/webhook/delete-account` — purge complète serveur |
+| Droit à l'oubli patients | ✅ | `deletePatient()` IDB + suppression cotations associées |
+| Modification | ✅ | `savePatient()` + `profil-save` worker |
+
+### 📜 H. Consentement
+| Exigence | État | Implémentation |
+|---|---|---|
+| CGU + politique RGPD | ✅ | `#cgv-footer` dépliable dans l'app après login |
+| Consentement explicite | ✅ | Modale consentement au premier démarrage (localStorage `ami_consent_v1`) |
+| Traçabilité | ✅ | `audit_logs.event=CONSENT` avec timestamp |
+
+### 🔍 I. Audit & logs
+| Exigence | État | Implémentation |
+|---|---|---|
+| Logs accès | ✅ | `audit_logs` (LOGIN, REGISTER) |
+| Logs actions | ✅ | `audit_logs` (COTATION, PROFIL_UPDATE, ADMIN_*) |
+| Logs système | ✅ | `system_logs` (N8N_FAILURE, IA_FALLBACK, FRAUD_ALERT, INTERNAL_ERROR, RL_DECISION) |
+| Logs sans PII | ✅ | Filtrage côté worker (`writeAuditLog` / `writeSystemLog`) |
+
+### 🔁 J. Incident
+| Exigence | État | Implémentation |
+|---|---|---|
+| Plan de réponse | ✅ | Monitoring temps réel (vue admin Santé du système) |
+| Notification CNIL < 72h | ✅ | Contact admin intégré (`contact.js`) + logs horodatés exploitable |
+| Surveillance | ✅ | `/webhook/admin-logs` + `/webhook/admin-engine-stats` temps réel |
+
+### Ce que les admins ne peuvent PAS voir
+
+- Données patients (nom, prénom, NIR, DDN, N° sécu) des infirmières
+- Détail des factures et prescripteurs des patients
+- Logs de cotation individuels contenant des PII
+- Autres comptes administrateurs dans le panneau d'administration
+- Signatures et photos de preuve soin (hash uniquement)
+
+---
+
 ## Architecture des fichiers
 
 | Fichier | Rôle | Version |
@@ -577,7 +773,7 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 | `auth.js` | Login/logout/session/navigation | v4.1 |
 | `security.js` | AES-256-GCM, PIN, RGPD, export, audit | v2.0 |
 | `cabinet.js` | Cabinet multi-IDE + mode démo solo admin | v2.1 |
-| `cotation.js` | Cotation NGAP + mode cabinet | v8 |
+| `cotation.js` | Cotation NGAP + mode cabinet + doctrine upsert stricte | **v8.1** |
 | `ai-tournee.js` | TSP, clustering, fatigue, surge, prédiction retard | v6.0 |
 | `map.js` | Leaflet + heatmap zones rentables | v2.0 |
 | `dashboard.js` | KPIs + stats cabinet + simulateur | v2.0 |
@@ -594,7 +790,7 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 | `admin.js` | Panneau admin + Smart Engine stats | v4.1 |
 | `infirmiere-tools.js` | Charges, km, modèles, majorations | v1.0 |
 | `copilote.js` | Chat Copilote NGAP | v1.0 |
-| `ui.js` | Navigation + handlers spéciaux | v5.1 |
+| `ui.js` | Navigation + handlers + parser FAQ Markdown (fix v5.2) | **v5.2** |
 | `ai-assistant.js` | Assistant vocal NLP + TTS | v1.1 |
 | `voice.js` | Dictée médicale | v1.0 |
 | `onboarding.js` | Introductions guidées (4 modules) | v1.0 |
@@ -602,6 +798,8 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 | `extras.js` | OSRM, scoring fraude front | v1.0 |
 | `uber.js` | Mode Uber Médical | v1.0 |
 | `contact.js` | Messagerie infirmière → admin | v1.0 |
-| `AI_Agent_AMI_v10.json` | Workflow N8N — 51 nœuds | v10 |
-| `README.md` | Documentation technique (ce fichier) | **v10.0** |
-| `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ (chargé dynamiquement) | **v2.0** |
+| `AI_Agent_AMI_v10.json` | Workflow N8N principal — 51 nœuds | v10 |
+| `AMI_Cotation_Preuve_Update_v1.json` | Workflow N8N — UPDATE preuve_soin post-signature (8 nœuds) | **v1** |
+| `AMI_ML_Nightly_v1.json` | Workflow N8N — Cron 2h : retrain SGD + rapport staffing (9 nœuds) | **v1** |
+| `README.md` | Documentation technique (ce fichier) | **v10.1** |
+| `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ (chargé dynamiquement) | **v2.1** |

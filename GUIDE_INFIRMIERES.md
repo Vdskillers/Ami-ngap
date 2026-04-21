@@ -22,6 +22,18 @@ Vos données patients restent sur votre appareil. La déconnexion ferme simpleme
 ### Une autre infirmière peut-elle voir mes patients ?
 Non. AMI est conçu pour un usage partagé sur le même appareil : chaque infirmière a sa propre base de données isolée. Personne d'autre ne peut y accéder.
 
+### Comment mes données sont-elles isolées des administrateurs ?
+Les administrateurs d'AMI ont un rôle de **maintenance technique et de démonstration** de l'application. Ils ne voient **jamais** les données médicales des patients que vous créez. Concrètement :
+
+- Chaque infirmière ne voit que **ses propres données** (patients, cotations, signatures) — identification stricte par son compte
+- Les administrateurs ne voient aucune information sur les patients ajoutés par les infirmières
+- Les administrateurs ont accès aux pages de l'application pour les tester, avec leurs **propres patients de test** qu'ils créent eux-mêmes pour la démonstration
+- Les administrateurs **ne se voient pas entre eux** dans le panneau d'administration — seuls les comptes infirmières apparaissent avec leurs statistiques agrégées
+- Les administrateurs voient les **noms et prénoms** des utilisateurs ainsi que leurs statistiques d'utilisation (nombre de cotations, dernière connexion, etc.) — jamais le contenu médical
+
+### Comment AMI protège-t-il mes signatures et photos de preuve ?
+Les signatures et photos de preuve de soin sont stockées **uniquement sur votre appareil** en IndexedDB chiffré (AES-256). Lorsqu'une preuve est associée à une cotation envoyée au serveur, seul un **hash SHA-256 opaque** est transmis — jamais l'image. Ce hash permet d'attester qu'une preuve existe sans jamais révéler son contenu.
+
 ---
 
 ## 🧑‍⚕️ Carnet patients
@@ -122,6 +134,30 @@ AMI enregistre la cotation dans une file d'attente hors-ligne. Dès que la conne
 | Majoration nuit profonde (23h–5h) | 18,30 € |
 | Majoration dimanche/férié | 8,50 € |
 | IK (indemnité kilométrique) | km × 2 × 0,35 € |
+
+### Qu'est-ce que la preuve de soin ?
+AMI enregistre pour chaque cotation une **preuve de soin** qui renforce votre dossier médico-légal en cas de contrôle CPAM. Trois niveaux de preuve sont gérés automatiquement :
+
+| Type | Force probante | Impact fraude | Impact CPAM |
+|---|---|---|---|
+| Auto-déclaration | Standard | Neutre | Accepté |
+| Signature patient | Forte | −3 points | Supprime 1 anomalie |
+| Photo (hash uniquement) | Forte | −3 points | Supprime 1 anomalie |
+| Absente | Aucune | +3 points | Anomalie ajoutée |
+
+**⚠️ Confidentialité :** la photo et la signature ne sont **jamais transmises** à nos serveurs — seul un hash SHA-256 opaque est conservé pour attestation. L'image reste sur votre appareil.
+
+### Puis-je signer un patient après avoir créé la cotation ?
+Oui. C'est même le cas nominal : vous cotez pendant ou après le soin, puis vous faites signer le patient avant de partir. AMI met à jour la preuve de soin sur la cotation existante **sans créer de doublon** dans l'Historique des soins. La cotation conserve son numéro de facture d'origine.
+
+### Comment AMI empêche-t-il les doublons de cotation ?
+AMI applique une **doctrine stricte** pour garantir qu'un soin donné à un patient donné à une date donnée ne génère jamais deux cotations :
+
+- **Patient déjà dans le carnet** → mise à jour de la cotation existante (identifiée par son numéro de facture, sa date, ou l'index explicite)
+- **Correction d'une cotation déjà créée** → aucun doublon, la ligne existante est modifiée
+- **Nouveau patient non encore dans le carnet** → la fiche et la cotation sont créées en une seule fois
+
+Si vous revenez sur une cotation déjà enregistrée et cliquez à nouveau sur ⚡ *Coter avec l'IA*, c'est la cotation existante qui est mise à jour, pas une nouvelle qui est ajoutée.
 
 ---
 
@@ -291,4 +327,32 @@ Depuis l'application : **Menu** → **Contact** → rédigez votre message. L'é
 
 ---
 
-*Guide AMI v2.0 — NGAP 2026 · Mise à jour : avril 2026*
+## 🛡️ Conformité RGPD & HDS — vos droits
+
+### Vos droits en tant qu'utilisatrice
+
+- **Droit d'accès** — vous pouvez à tout moment exporter l'ensemble de vos données (Profil → Exporter mes données) au format JSON chiffré
+- **Droit de rectification** — modifiez librement votre profil et vos fiches patients à tout moment
+- **Droit à l'effacement** — suppression de votre compte depuis Profil → Supprimer mon compte (irréversible, purge complète sous 30 jours)
+- **Droit à la portabilité** — export au format standard JSON + CSV pour migration vers un autre outil
+- **Droit d'opposition** — vous pouvez refuser l'usage de vos statistiques d'activité pour les analyses globales
+
+### Ce qui est conservé sur votre appareil uniquement
+- Fiches patients (nom, prénom, adresse, notes médicales, ordonnances, constantes, piluliers)
+- Signatures électroniques et photos de preuve de soin
+- Comptes-rendus de passage et transmissions infirmières
+- Bilans BSI et consentements éclairés signés
+
+### Ce qui est synchronisé avec le serveur (pour votre propre accès multi-appareils)
+- Cotations (actes NGAP, montants, numéros de facture) — chiffrées côté serveur
+- Votre profil professionnel (nom, prénom, ADELI, RPPS, structure)
+- Journal d'audit de vos actions (logs horodatés sans PII patient)
+
+### En cas d'incident de sécurité
+AMI s'engage à notifier la CNIL et les utilisatrices concernées dans un délai de **72 heures** après détection, conformément au RGPD. Un monitoring temps réel de la santé du système est en place.
+
+Pour toute question sur vos données, contactez-nous via **Contact** dans l'application.
+
+---
+
+*Guide AMI v2.1 — NGAP 2026 · Mise à jour : avril 2026*
