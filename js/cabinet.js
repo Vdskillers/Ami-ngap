@@ -220,6 +220,16 @@ async function renderCabinetSection() {
   } catch (e) {
     root.innerHTML = `<div class="card"><div class="msg e">Erreur chargement : ${e.message}</div></div>`;
   }
+
+  /* ── Widgets déplacés depuis le Dashboard (v3.9+) ──
+     Le widget 🛡️ Conformité cabinet et la section 📊 Statistiques cabinet
+     vivent désormais dans la vue « Cabinet & synchronisation ».
+     On les rafraîchit ici pour qu'ils suivent le cycle de vie de la vue
+     (navigation + clic sur ↻ Actualiser). Non bloquant. */
+  try { if (typeof renderComplianceBadge === 'function') renderComplianceBadge(); }
+  catch (e) { console.warn('[compliance widget]', e.message); }
+  try { if (typeof loadDashCabinet === 'function') setTimeout(loadDashCabinet, 100); }
+  catch (e) { console.warn('[dash cabinet]', e.message); }
 }
 
 /* ── Pas de cabinet — formulaire créer/rejoindre ── */

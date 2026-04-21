@@ -436,11 +436,8 @@ function renderDashboard(arr) {
   // 🆕 Widget score de confiance global
   try { renderTrustWidget(arr); } catch (e) { console.warn('[trust widget]', e.message); }
 
-  // 🛡️ Widget Conformité cabinet (v3.9) — score 4 piliers + reminders
-  try { renderComplianceBadge(); } catch (e) { console.warn('[compliance widget]', e.message); }
-
-  // Section cabinet — afficher si cabinet actif
-  if (typeof loadDashCabinet === 'function') setTimeout(loadDashCabinet, 100);
+  // 🛡️ Widget Conformité cabinet & 📊 Dashboard cabinet : DÉPLACÉS vers la vue
+  //    « Cabinet & synchronisation ». Appelés désormais par renderCabinetSection().
 }
 
 /* ════════════════════════════════════════════════
