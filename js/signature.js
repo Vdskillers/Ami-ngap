@@ -28,10 +28,14 @@
 ════════════════════════════════════════════════ */
 
 const SIG_STORE = 'ami_signatures';
+// ⚡ Clé réservée pour la signature personnelle de l'infirmier(ère)
+// Utilisée pour l'auto-injection dans les PDF générés (facture, BSI, etc.)
+const IDE_SELF_SIG_ID = '__ide_self__';
 let _sigCanvas = null, _sigCtx = null, _sigDrawing = false;
 let _currentInvoiceId = null, _sigDB = null;
 let _sigDBUserId = null;        // Garde la trace du user actif pour la DB signatures
 let _sigDBOpeningPromise = null; // Verrou contre les ouvertures simultanées
+let _sigModalMode = 'patient';  // 'patient' | 'ide_self' — détermine le flow de saveSignature
 
 /* ════════════════════════════════════════════════
    PREUVE MÉDICO-LÉGALE — État courant
@@ -428,6 +432,7 @@ async function _syncSignatureNow(invoiceId, png, signedAt) {
    seule l'empreinte PNG+timestamp+invoice est hashée.
 ════════════════════════════════════════════════ */
 function openSignatureModal(invoiceId, context) {
+  _sigModalMode = 'patient';
   _currentInvoiceId = invoiceId || 'sig_' + Date.now();
   _currentProofContext = context && typeof context === 'object' ? {
     patient_id: context.patient_id || '',
@@ -618,6 +623,45 @@ async function saveSignature() {
     if (!confirm('Aucune signature tracée. Valider quand même ?')) return;
   }
 
+  // ── BRANCHE : signature personnelle de l'infirmier(ère) ──
+  //   → pas de preuve médico-légale (c'est un template, pas un acte de soin)
+  //   → stockage sous clé réservée, synchronisé entre appareils via chiffrement AES
+  if (_sigModalMode === 'ide_self') {
+    const png       = _sigCanvas.toDataURL('image/png');
+    const signedAt  = new Date().toISOString();
+    await _sigPut({
+      invoice_id:  IDE_SELF_SIG_ID,
+      png,
+      signed_at:   signedAt,
+      user_agent:  navigator.userAgent.slice(0, 100),
+      ide_self:    true,
+    });
+    // Sync chiffrée vers le serveur (mécanisme existant, même clé)
+    _syncSignatureNow(IDE_SELF_SIG_ID, png, signedAt).catch(() => {});
+
+    closeSignatureModal();
+    _sigModalMode = 'patient'; // reset
+
+    // Rafraîchir UI appelante si présente
+    const preview = document.getElementById('ide-sig-preview');
+    if (preview) {
+      preview.innerHTML = `<img src="${png}" style="width:100%;height:100%;object-fit:contain">`;
+    }
+    const stateBtn = document.getElementById('btn-ide-sig');
+    if (stateBtn) stateBtn.textContent = '✏️ Modifier ma signature';
+    const delBtn = document.getElementById('btn-ide-sig-delete');
+    if (delBtn) delBtn.style.display = 'inline-flex';
+
+    // Rafraîchir la vue signatures si elle est montée
+    if (typeof loadSignatureList === 'function') loadSignatureList();
+
+    if (typeof showToast === 'function') {
+      showToast('✍️ Signature enregistrée — elle sera injectée dans les PDF générés.', 'ok');
+    }
+    return;
+  }
+
+  // ── BRANCHE : signature patient (flow médico-légal complet) ──
   const png       = _sigCanvas.toDataURL('image/png');
   const signedAt  = new Date().toISOString();
   const ctx       = _currentProofContext || {};
@@ -730,7 +774,13 @@ async function deleteSignature(invoiceId) {
 }
 
 /* ════════════════════════════════════════════════
-   INJECTION DANS LA FACTURE PDF — avec preuve médico-légale
+   INJECTION DANS LA FACTURE PDF — signature IDE + preuve médico-légale
+   ────────────────────────────────────────────────
+   Injecte :
+     - à GAUCHE : la signature de l'infirmier(ère) depuis la profil (si enregistrée)
+     - à DROITE : la signature du patient + preuve opposable
+   Les deux signatures sont indépendantes : l'IDE signe UNE FOIS dans son
+   profil, puis sa signature est auto-injectée dans tous les PDF générés.
 ════════════════════════════════════════════════ */
 async function injectSignatureInPDF(invoiceId) {
   const row = await _sigGet(invoiceId);
@@ -753,14 +803,27 @@ async function injectSignatureInPDF(invoiceId) {
     hasPhoto ? 'Preuve présence (hash)' : null,
   ].filter(Boolean).join(' · ');
 
+  // ── Récupération de la signature IDE depuis le profil (auto-injection) ──
+  let ideSigHTML = `
+    <div style="height:80px;border:1px dashed #ccd5e0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">
+      À signer
+    </div>`;
+  try {
+    const ideRow = await _sigGet(IDE_SELF_SIG_ID);
+    if (ideRow?.png) {
+      const ideTs = ideRow.signed_at ? new Date(ideRow.signed_at).toLocaleDateString('fr-FR') : '';
+      ideSigHTML = `
+        <img src="${ideRow.png}" style="width:100%;max-height:80px;border:1px solid #e0e7ef;border-radius:6px;object-fit:contain;background:#fff">
+        <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signature enregistrée${ideTs ? ' · ' + ideTs : ''}</div>`;
+    }
+  } catch (_) {}
+
   return `
     <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e0e7ef">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
         <div>
           <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:8px">Signature infirmier(ère)</div>
-          <div style="height:80px;border:1px dashed #ccd5e0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">
-            À signer
-          </div>
+          ${ideSigHTML}
         </div>
         <div>
           <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:8px">Signature patient — accord soins</div>
@@ -774,6 +837,122 @@ async function injectSignatureInPDF(invoiceId) {
     </div>`;
 }
 
+/* ════════════════════════════════════════════════
+   SIGNATURE PERSONNELLE DE L'INFIRMIER(ÈRE)
+   ────────────────────────────────────────────────
+   Enregistrée une seule fois depuis le profil.
+   Auto-injectée dans tous les PDF générés par l'app qui ont besoin
+   d'une signature IDE (factures, BSI, transmissions, consentements…).
+   Stockée sous la clé réservée IDE_SELF_SIG_ID dans la même IDB
+   (ami_sig_db_<userId>) — donc isolée par utilisateur et synchronisée
+   via le même canal chiffré AES-256-GCM que les signatures patients.
+════════════════════════════════════════════════ */
+function openIDESignatureModal() {
+  _sigModalMode = 'ide_self';
+  _currentInvoiceId = IDE_SELF_SIG_ID;
+  _currentProofContext = null;
+  _currentPhotoHash = null;
+  _currentGeozone = null;
+
+  // Réutilise le modal existant, mais on masque le bloc preuve médico-légale
+  // (non pertinent pour une signature template)
+  let modal = document.getElementById('sig-modal');
+  // Forcer recréation si existant (pour basculer en mode IDE_self)
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'sig-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:1500;display:flex;align-items:center;
+    justify-content:center;background:rgba(11,15,20,.92);
+    backdrop-filter:blur(12px);padding:20px;overflow-y:auto`;
+  modal.innerHTML = `
+    <div style="background:var(--c);border:1px solid var(--b);border-radius:20px;
+      padding:28px;width:100%;max-width:520px;box-shadow:0 0 60px rgba(0,0,0,.6);margin:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:var(--fs);font-size:20px">✍️ Ma signature — infirmier(ère)</div>
+        <button onclick="closeSignatureModal()" style="background:var(--s);border:1px solid var(--b);
+          color:var(--m);width:32px;height:32px;border-radius:50%;cursor:pointer;
+          display:grid;place-items:center;font-size:16px">✕</button>
+      </div>
+      <p style="font-size:12px;color:var(--m);margin-bottom:14px">
+        Signez une seule fois — votre signature sera ensuite <strong>auto-injectée</strong> dans toutes les factures et PDF générés par l'application (BSI, transmissions, consentements…).
+        Stockée localement et chiffrée AES-256.
+      </p>
+      <div style="position:relative;border:2px dashed var(--b);border-radius:var(--r);
+        background:var(--s);overflow:hidden;touch-action:none" id="sig-wrap">
+        <canvas id="sig-canvas" width="480" height="200"
+          style="width:100%;height:200px;display:block;cursor:crosshair"></canvas>
+        <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;
+          align-items:center;justify-content:center;color:var(--m);font-size:13px;
+          pointer-events:none;font-family:var(--fm)">Signez ici ✍️</div>
+      </div>
+      <div id="sig-info" style="font-family:var(--fm);font-size:10px;color:var(--m);
+        margin-top:8px;text-align:right"></div>
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn bp" onclick="saveSignature()" style="flex:1">💾 Enregistrer ma signature</button>
+        <button class="btn bs bsm" onclick="clearSignature()">🗑️ Effacer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.style.display = 'flex';
+  _initCanvas();
+
+  const info = document.getElementById('sig-info');
+  if (info) info.textContent = 'Signature personnelle · ' + ((typeof S !== 'undefined' && S?.user?.email) ? S.user.email : 'infirmier(ère)');
+}
+
+/* Récupère la signature IDE (PNG base64) — null si non enregistrée */
+async function getIDESignature() {
+  const row = await _sigGet(IDE_SELF_SIG_ID);
+  return row?.png || null;
+}
+
+/* Supprime la signature IDE (local + serveur) */
+async function deleteIDESignature() {
+  if (!confirm('Supprimer votre signature ? Elle ne sera plus auto-injectée dans les PDF.')) return;
+  await _sigDelete(IDE_SELF_SIG_ID);
+  try {
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    if (typeof S !== 'undefined' && S?.token)
+      wpost('/webhook/signatures-delete', { invoice_id: IDE_SELF_SIG_ID }).catch(() => {});
+  } catch(_) {}
+
+  // Rafraîchir UI
+  const preview = document.getElementById('ide-sig-preview');
+  if (preview) preview.innerHTML = '<div style="color:var(--m);font-size:12px">Aucune signature enregistrée</div>';
+  const stateBtn = document.getElementById('btn-ide-sig');
+  if (stateBtn) stateBtn.textContent = '✍️ Créer ma signature';
+  const delBtn = document.getElementById('btn-ide-sig-delete');
+  if (delBtn) delBtn.style.display = 'none';
+  if (typeof loadSignatureList === 'function') loadSignatureList();
+
+  if (typeof showToast === 'function') showToast('🗑️ Signature infirmier(ère) supprimée.', 'ok');
+}
+
+/* Charge la signature IDE dans le profil au moment de l'ouverture */
+async function refreshIDESignatureUI() {
+  const preview = document.getElementById('ide-sig-preview');
+  const btn     = document.getElementById('btn-ide-sig');
+  const delBtn  = document.getElementById('btn-ide-sig-delete');
+  if (!preview) return;
+  try {
+    const png = await getIDESignature();
+    if (png) {
+      preview.innerHTML = `<img src="${png}" style="width:100%;height:100%;object-fit:contain">`;
+      if (btn)    btn.textContent = '✏️ Modifier ma signature';
+      if (delBtn) delBtn.style.display = 'inline-flex';
+    } else {
+      preview.innerHTML = '<div style="color:var(--m);font-size:12px">Aucune signature enregistrée</div>';
+      if (btn)    btn.textContent = '✍️ Créer ma signature';
+      if (delBtn) delBtn.style.display = 'none';
+    }
+  } catch (_) {
+    preview.innerHTML = '<div style="color:var(--m);font-size:12px">Chargement…</div>';
+  }
+}
+
 /* Exposer globalement */
 window.openSignatureModal  = openSignatureModal;
 window.closeSignatureModal = closeSignatureModal;
@@ -785,6 +964,11 @@ window.injectSignatureInPDF = injectSignatureInPDF;
 window.syncSignaturesToServer   = syncSignaturesToServer;
 window.syncSignaturesFromServer = syncSignaturesFromServer;
 window.captureProofPhoto   = captureProofPhoto;
+// ── Signature personnelle infirmier(ère) ──
+window.openIDESignatureModal = openIDESignatureModal;
+window.getIDESignature       = getIDESignature;
+window.deleteIDESignature    = deleteIDESignature;
+window.refreshIDESignatureUI = refreshIDESignatureUI;
 
 /* ── Patch printInv pour injecter la signature automatiquement ── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -824,11 +1008,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ════════════════════════════════════════════════
    LISTE DES SIGNATURES (vue #view-sig)
+   ────────────────────────────────────────────────
+   Affiche deux sections distinctes :
+     1. Ma signature infirmier(ère) — template auto-injecté dans les PDF
+     2. Signatures patients enregistrées — liées aux cotations
 ════════════════════════════════════════════════ */
 async function loadSignatureList() {
   const el = document.getElementById('sig-list-body');
   if (!el) return;
+  // Bloc dédié à la signature IDE (peuplé ensuite si le slot existe dans le HTML)
+  const ideEl = document.getElementById('ide-sig-card-body');
   el.innerHTML = '<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Chargement…</p>';
+
   try {
     const all = await _sigExec(db => new Promise((res, rej) => {
       const tx  = db.transaction(SIG_STORE, 'readonly');
@@ -837,14 +1028,55 @@ async function loadSignatureList() {
       req.onerror   = () => rej(req.error);
     }));
 
-    if (!all.length) {
+    // ── Séparer la signature IDE des signatures patients ──
+    const ideSig     = all.find(s => s.invoice_id === IDE_SELF_SIG_ID) || null;
+    const patientSig = all.filter(s => s.invoice_id !== IDE_SELF_SIG_ID);
+
+    // ── 1) Rendu section IDE (slot dédié dans view-sig) ──
+    if (ideEl) {
+      if (ideSig && ideSig.png) {
+        const ideDate = ideSig.signed_at ? new Date(ideSig.signed_at).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+        ideEl.innerHTML = `
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 0">
+            <div style="width:96px;height:56px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
+              <img src="${ideSig.png}" style="width:100%;height:100%;object-fit:contain">
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500">Signature enregistrée</div>
+              <div style="font-size:11px;color:var(--m)">Auto-injectée dans les PDF · ${ideDate}</div>
+              <div style="margin-top:4px">
+                <span style="display:inline-block;padding:2px 6px;background:rgba(0,212,170,.15);color:var(--a);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">👤 Infirmier(ère)</span>
+                <span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm)">AES-256</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn bv bsm" onclick="openIDESignatureModal()" style="font-size:11px;padding:6px 10px">✏️ Modifier</button>
+              <button class="btn bs bsm" onclick="deleteIDESignature()" style="font-size:11px;padding:6px 10px">🗑️</button>
+            </div>
+          </div>`;
+      } else {
+        ideEl.innerHTML = `
+          <div style="padding:14px 0;text-align:center">
+            <div style="font-size:13px;color:var(--m);margin-bottom:10px">Aucune signature infirmier(ère) enregistrée.</div>
+            <button class="btn bv bsm" onclick="openIDESignatureModal()" style="font-size:12px">
+              ✍️ Créer ma signature
+            </button>
+            <div style="font-size:10px;color:var(--m);margin-top:8px;opacity:.7">
+              Elle sera auto-injectée dans les factures et PDF de l'application.
+            </div>
+          </div>`;
+      }
+    }
+
+    // ── 2) Rendu section signatures patients ──
+    if (!patientSig.length) {
       el.innerHTML = `<p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">
-        Aucune signature enregistrée.<br><span style="font-size:11px;opacity:.6">Les signatures apparaissent après chaque cotation signée.</span>
+        Aucune signature patient enregistrée.<br><span style="font-size:11px;opacity:.6">Les signatures patients apparaissent après chaque cotation signée.</span>
       </p>`;
       return;
     }
 
-    el.innerHTML = all.map(sig => {
+    el.innerHTML = patientSig.map(sig => {
       const _dateRaw = sig.signed_at || sig.created_at || null;
       const date = _dateRaw ? new Date(_dateRaw).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
       const invoiceId = sig.invoice_id || '—';

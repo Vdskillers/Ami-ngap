@@ -1,11 +1,12 @@
 /* ════════════════════════════════════════════════
-   profil.js — AMI NGAP
+   profil.js — AMI NGAP (v3.9 — signature IDE)
    ────────────────────────────────────────────────
    Modale profil utilisateur
    - openPM() / closePM()
    - savePM() — sauvegarde les infos professionnelles
    - changePwd() — changement mot de passe
    - delAccount() — suppression compte RGPD
+   - ✍️ Onglet signature électronique IDE (via signature.js)
 ════════════════════════════════════════════════ */
 /* PROFIL */
 async function openPM(){
@@ -13,6 +14,8 @@ async function openPM(){
   const u=S?.user||{};
   $('p-fn').value=u.prenom||'';$('p-ln').value=u.nom||'';$('p-ad').value=u.adeli||'';$('p-rp').value=u.rpps||'';$('p-st').value=u.structure||'';$('p-adr').value=u.adresse||'';$('p-tel').value=u.tel||'';
   try{const d=await wpost('/webhook/profil-get',{});if(d.ok&&d.profil){const p=d.profil;$('p-fn').value=p.prenom||'';$('p-ln').value=p.nom||'';$('p-ad').value=p.adeli||'';$('p-rp').value=p.rpps||'';$('p-st').value=p.structure||'';$('p-adr').value=p.adresse||'';$('p-tel').value=p.tel||'';}}catch{}
+  // ✍️ Signature électronique IDE — rafraîchir l'UI (preview + état boutons)
+  try{if(typeof refreshIDESignatureUI==='function')refreshIDESignatureUI();}catch{}
 }
 function closePM(){$('pm').classList.remove('open');}
 async function savePM(){
