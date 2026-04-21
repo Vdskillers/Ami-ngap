@@ -170,44 +170,120 @@ document.querySelectorAll('.ni[data-v]').forEach(item => {
    + recherche en temps réel
 ════════════════════════════════════════════════ */
 
-/** Convertit le Markdown simplifié du guide en HTML accordéon */
+/**
+ * Convertit le Markdown simplifié du guide en HTML accordéon.
+ * Version line-based (v2) — corrige le rendu des tableaux :
+ *  - plus de wrap <p> autour du body (HTML invalide avec <table>)
+ *  - tableaux parsés en un seul <table> (thead + tbody)
+ *  - plus de doublons de <br> qui créaient d'énormes espaces vides
+ */
 function _mdToFaqHtml(md) {
-  const lines   = md.split('\n');
-  let html      = '';
-  let inSection = false;
-  let inAnswer  = false;
-  let answerBuf = '';
+  const lines     = md.split('\n');
+  let html        = '';
+  let inSection   = false;
+  let inAnswer    = false;
+  let answerLines = [];
+
+  /* ── Inline : gras, italique, code ── */
+  const _inline = (s) => (s || '')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?!\w)/g, '$1<em>$2</em>')
+    .replace(/`([^`\n]+)`/g, '<code style="background:var(--s);padding:1px 5px;border-radius:4px;font-size:12px">$1</code>');
+
+  /* ── Parser cellules d'une ligne Markdown | a | b | c | ── */
+  const _parseRow = (row) => {
+    // Retire les | de début/fin puis split sur |
+    const trimmed = row.replace(/^\s*\|/, '').replace(/\|\s*$/, '');
+    return trimmed.split('|').map(c => c.trim());
+  };
+
+  /* ── Rendu d'un bloc de lignes markdown formant un tableau ── */
+  const _renderTable = (rows) => {
+    if (rows.length < 2) return '';
+    const header   = _parseRow(rows[0]);
+    // Ligne 1 = séparateur |---|---|  → on saute
+    // Lignes 2+ = données, en filtrant toute ligne de dashes résiduelle
+    const bodyRows = rows.slice(2).filter(r => !/^\s*\|[\s\-:|]+\|\s*$/.test(r));
+
+    let t = `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;table-layout:auto">`;
+    t += `<thead><tr>` + header.map(h =>
+      `<th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--a);color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:.8px;text-transform:uppercase;font-weight:600">${_inline(h)}</th>`
+    ).join('') + `</tr></thead>`;
+    t += `<tbody>` + bodyRows.map(r => {
+      const cells = _parseRow(r);
+      return `<tr>` + cells.map(c =>
+        `<td style="padding:8px 10px;border-bottom:1px solid var(--b);vertical-align:top;line-height:1.5">${_inline(c)}</td>`
+      ).join('') + `</tr>`;
+    }).join('') + `</tbody></table>`;
+    return t;
+  };
+
+  /* ── Convertit l'ensemble des lignes d'une réponse en HTML ── */
+  const _processAnswer = (arr) => {
+    let out = '';
+    let i   = 0;
+    const isTable  = (l) => /^\s*\|.+\|\s*$/.test(l);
+    const isList   = (l) => /^\s*- /.test(l);
+    const isQuote  = (l) => /^\s*> /.test(l);
+    const isEmpty  = (l) => l.trim() === '';
+
+    while (i < arr.length) {
+      const line = arr[i];
+
+      if (isEmpty(line))       { i++; continue; }
+
+      if (isTable(line)) {
+        const block = [];
+        while (i < arr.length && isTable(arr[i])) { block.push(arr[i]); i++; }
+        out += _renderTable(block);
+        continue;
+      }
+
+      if (isList(line)) {
+        const items = [];
+        while (i < arr.length && isList(arr[i])) {
+          items.push(arr[i].trim().replace(/^-\s+/, ''));
+          i++;
+        }
+        out += `<ul style="padding-left:1.2rem;margin:8px 0;line-height:1.7">` +
+          items.map(x => `<li>${_inline(x)}</li>`).join('') + `</ul>`;
+        continue;
+      }
+
+      if (isQuote(line)) {
+        // Regrouper les lignes de blockquote contiguës
+        const ql = [];
+        while (i < arr.length && isQuote(arr[i])) {
+          ql.push(arr[i].trim().replace(/^>\s+/, ''));
+          i++;
+        }
+        out += `<div style="border-left:3px solid var(--a);padding:10px 14px;margin:10px 0;background:var(--s);border-radius:0 8px 8px 0;font-size:13px;line-height:1.6">${_inline(ql.join(' '))}</div>`;
+        continue;
+      }
+
+      // Paragraphe : lignes contiguës non-vides, non-spéciales
+      const para = [];
+      while (i < arr.length && !isEmpty(arr[i]) && !isTable(arr[i]) && !isList(arr[i]) && !isQuote(arr[i])) {
+        para.push(arr[i].trim());
+        i++;
+      }
+      if (para.length) {
+        out += `<p style="margin:8px 0;line-height:1.6">${_inline(para.join(' '))}</p>`;
+      }
+    }
+
+    return out;
+  };
 
   const _flushAnswer = () => {
     if (!inAnswer) return;
-    // Convertir le contenu de la réponse en HTML basique
-    let body = answerBuf.trim()
-      // Tableaux Markdown simples
-      .replace(/\|(.+)\|/g, (m) => {
-        const cells = m.split('|').filter(c => c.trim() && !/^[-\s|]+$/.test(c));
-        return cells.length ? '<tr>' + cells.map(c => `<td style="padding:6px 10px;border-bottom:1px solid var(--b)">${c.trim()}</td>`).join('') + '</tr>' : '';
-      })
-      // Lignes de séparation tableau → wrapper
-      .replace(/((<tr>.*<\/tr>\n?)+)/g, (m) => `<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px">${m}</table>`)
-      // Gras
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      // Italique
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      // Code inline
-      .replace(/`([^`]+)`/g, '<code style="background:var(--s);padding:1px 5px;border-radius:4px;font-size:12px">$1</code>')
-      // Listes à tirets
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
-      .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul style="padding-left:1.2rem;margin:6px 0">${m}</ul>`)
-      // Sauts de ligne
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br>');
-    html += `<div class="accord-body"><p>${body}</p></div></div>`;
-    answerBuf = '';
-    inAnswer  = false;
+    html += `<div class="accord-body">${_processAnswer(answerLines)}</div></div>`;
+    answerLines = [];
+    inAnswer    = false;
   };
 
   for (const raw of lines) {
-    const line = raw.trimEnd();
+    const line = raw.replace(/\s+$/, '');   // trim trailing whitespace seulement
 
     // Titre de section (##)
     if (/^## /.test(line)) {
@@ -236,10 +312,8 @@ function _mdToFaqHtml(md) {
     // Ligne de séparation ---
     if (/^---+$/.test(line)) { _flushAnswer(); continue; }
 
-    // Lignes de contenu de la réponse
-    if (inAnswer) {
-      answerBuf += line + '\n';
-    }
+    // Lignes de contenu de la réponse (on garde les lignes vides pour détecter les blocs)
+    if (inAnswer) answerLines.push(line);
   }
 
   _flushAnswer();
