@@ -318,6 +318,7 @@ function _renderCabinetDashboard(root, d) {
     { key: 'patients',    icon: '👤', label: 'Patients communs', desc: 'Partagez la liste de vos patients (noms anonymisés)' },
     { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP & Historique des soins', desc: 'Synchronisez les cotations multi-IDE — visibles dans la vue Historique des soins de votre collègue' },
     { key: 'bsi',         icon: '📋', label: 'BSI — Bilan de Soins Infirmiers', desc: 'Partagez le BSI entre IDE du cabinet — 1 patient = 1 BSI actif unique (règle CPAM)' },
+    { key: 'compte_rendu',icon: '📋', label: 'Compte-rendu de passage (partagés)', desc: 'Partage uniquement les CR marqués "partagés" ou avec alerte. Les CR privés restent strictement locaux (règle CR 2 niveaux)' },
     { key: 'ordonnances', icon: '💊', label: 'Ordonnances', desc: 'Partagez les ordonnances actives pour éviter les doublons' },
     { key: 'km',          icon: '🚗', label: 'Journal kilométrique', desc: 'Synchronisez les km pour les statistiques cabinet' },
     { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier', desc: 'Partagez les semainiers patients avec vos collègues — chiffré AES' },
@@ -558,6 +559,7 @@ function _renderCabinetDemoDashboard(root, cab) {
     { key: 'planning',    icon: '📅', label: 'Planning & tournée',                    desc: 'Partagez votre planning du jour' },
     { key: 'patients',    icon: '👤', label: 'Patients communs',                       desc: 'Partagez la liste de vos patients' },
     { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP & Historique des soins',  desc: 'Synchronisez les cotations — visibles dans Historique des soins' },
+    { key: 'compte_rendu',icon: '📋', label: 'Compte-rendu de passage (partagés)',     desc: 'CR marqués partagés ou avec alerte — privés restent locaux' },
     { key: 'ordonnances', icon: '💊', label: 'Ordonnances',                             desc: 'Partagez les ordonnances actives' },
     { key: 'km',          icon: '🚗', label: 'Journal kilométrique',                    desc: 'Synchronisez les km cabinet' },
     { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier',                    desc: 'Partagez les semainiers patients — chiffré AES' },
@@ -962,6 +964,43 @@ async function cabinetPushSync() {
           console.info('[cabinet push] bsi_shared:', bsiPayload.length, 'BSI actif(s)');
         }
       } catch (e) { console.warn('[cabinet push bsi]', e.message); }
+    }
+
+    // 🆕 Compte-rendu de passage — uniquement les CR PARTAGÉS ou avec ALERTE
+    // Règle stricte "CR 2 niveaux" : les CR privés ne quittent jamais l'IDE
+    // qui les a créés. Seuls les CR marqués type='shared' ou alert=true partent.
+    if (prefs.what.compte_rendu && typeof window._crGetAllShared === 'function') {
+      try {
+        const sharedCRs = await window._crGetAllShared();
+        if (Array.isArray(sharedCRs) && sharedCRs.length) {
+          // Payload léger — pas de constantes brutes, pas de données identifiantes superflues
+          const crPayload = sharedCRs.map(c => ({
+            patient_id:    c.patient_id,
+            patient_nom:   c.patient_nom || '',
+            date:          c.date,
+            user_id:       c.user_id,
+            inf_nom:       c.inf_nom || '',
+            medecin:       c.medecin || '',
+            actes:         c.actes || '',
+            observations:  c.observations || '',
+            transmissions: c.transmissions || '',
+            urgence:       c.urgence || 'normal',
+            type:          'shared',                  // force partagé
+            alert:         c.alert === true,
+            saved_at:      c.saved_at || c.date,
+            // Constantes : partagées (utiles au médecin) mais seulement les textuelles
+            ta:            c.ta || '',
+            glycemie:      c.glycemie || '',
+            spo2:          c.spo2 || '',
+            temperature:   c.temperature || '',
+            fc:            c.fc || '',
+            eva:           c.eva || '',
+            _cr_version:   c._cr_version || 2,
+          }));
+          payload.data.compte_rendu_shared = crPayload;
+          console.info('[cabinet push] compte_rendu_shared:', crPayload.length, 'CR partagé(s)');
+        }
+      } catch (e) { console.warn('[cabinet push compte_rendu]', e.message); }
     }
 
     // Piluliers & Constantes : aussi inclus dans patients_cabinet via p.piluliers/p.constantes
@@ -1389,6 +1428,16 @@ async function cabinetPullSync() {
           const nbBsi = await window.bsiHandleCabinetPull([item]);
           if (nbBsi > 0) { applied++; details.push(`📋 ${nbBsi} BSI partagé(s)`); }
         } catch (e) { console.warn('[cabinet pull bsi]', e.message); }
+      }
+
+      // 🆕 Compte-rendu de passage (partagés cabinet)
+      // Règle : seuls les CR type=shared ou alert=true sont propagés.
+      // Last-write-wins basé sur saved_at — pas d'écrasement d'un CR plus récent local.
+      if (item.what.includes('compte_rendu') && Array.isArray(item.data?.compte_rendu_shared) && typeof window.crHandleCabinetPull === 'function') {
+        try {
+          const nbCR = await window.crHandleCabinetPull(item);
+          if (nbCR > 0) { applied++; details.push(`📋 ${nbCR} CR partagé(s)`); }
+        } catch (e) { console.warn('[cabinet pull compte_rendu]', e.message); }
       }
 
       // Piluliers & Constantes inclus dans patients_cabinet — déjà traités ci-dessus.
