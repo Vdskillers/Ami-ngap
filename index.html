@@ -2248,6 +2248,22 @@
           <div class="ai su">✅ Conforme HDS · Signature horodatée · Intégrée automatiquement au PDF de la facture.</div>
         </div>
       </div>
+
+      <!-- ── Preuve médico-légale ── -->
+      <div class="card nurse-only" style="margin-top:14px">
+        <div class="ct">🛡️ Preuve médico-légale renforcée</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:10px">
+          Chaque signature génère une preuve opposable en cas de contrôle CPAM ou litige.
+          Aucune donnée personnelle n'est transmise — uniquement des empreintes cryptographiques.
+        </p>
+        <div class="aic">
+          <div class="ai in"><strong>✔ Hash signature</strong> — SHA-256 du tracé + date + acte + patient. Toute modification invalide le hash.</div>
+          <div class="ai in"><strong>✔ Photo (optionnelle)</strong> — hashée puis <strong>supprimée immédiatement</strong>. Seule l'empreinte reste — zéro donnée biométrique stockée.</div>
+          <div class="ai in"><strong>✔ Horodatage ISO 8601</strong> — prouve quand le soin a eu lieu.</div>
+          <div class="ai in"><strong>✔ Géozone floue (~1km)</strong> — lat/lng arrondis : prouve la zone sans tracer précisément.</div>
+          <div class="ai su"><strong>✔ Signature serveur HMAC-SHA256</strong> — impossible à antidater ou falsifier. Niveau légal renforcé.</div>
+        </div>
+      </div>
     </section>
 
     <!-- SECURITE -->
@@ -2700,7 +2716,7 @@
 <script src="js/onboarding.js?v=3.8"></script>
 
 <!-- Nouveaux modules SaaS médical -->
-<script src="js/signature.js?v=3.8"></script>
+<script src="js/signature.js?v=3.9"></script>
 <script src="js/copilote.js?v=3.8"></script>
 <script src="js/rapport.js?v=3.8"></script>
 
