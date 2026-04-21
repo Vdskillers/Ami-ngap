@@ -1938,9 +1938,14 @@ async function autoFacturation(patient){
       infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
       adeli: u.adeli||'', rpps: u.rpps||'', structure: u.structure||'',
       date_soin: new Date().toISOString().split('T')[0],
-      // ⚡ Heure RÉELLE de l'auto-facturation (pas la contrainte horaire
-      // planifiée patient.heure_soin / patient.heure_preferee).
-      heure_soin: new Date().toTimeString().slice(0, 5),
+      // ⚡ Heure RÉELLE. Priorité :
+      //   1. patient._done_at : posé par liveAction('patient_done') ou markUberDone
+      //      au clic "Terminer" — préservé même si autoFacturation est rappelée
+      //      plus tard en batch.
+      //   2. new Date() : fallback direct (auto-facturation déclenchée sans
+      //      clic "Terminer" préalable).
+      // Jamais patient.heure_soin / patient.heure_preferee (contrainte planifiée).
+      heure_soin: patient?._done_at || new Date().toTimeString().slice(0, 5),
       _live_auto: true,
       preuve_soin: { type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
@@ -2589,6 +2594,11 @@ window.liveAction=async function(action){
     if(activeP){
       // Marquer comme fait
       activeP._done = true;
+      // ⚡ Mémoriser l'heure RÉELLE du clic "Terminer" (cohérent avec markUberDone).
+      // Sert d'ancre pour autoFacturation + tout rattrapage ultérieur en batch
+      // depuis terminerTourneeAvecBilan ("Clôturer la journée").
+      activeP._done_at     = new Date().toTimeString().slice(0, 5);
+      activeP._done_at_iso = new Date().toISOString();
       // Auto-facturation CA
       const cot = await autoFacturation(activeP);
       // Cotation locale en fallback si API indisponible

@@ -211,11 +211,18 @@ async function _autoCoterEtImporterPatient(p) {
   const _now     = new Date();
   const today    = _now.toISOString();
   const todayStr = today.split('T')[0];
-  // ⚡ Heure RÉELLE de fin de soin (clic "Terminer" dans le Mode Uber Médical).
-  // NE PAS utiliser p.heure_soin / p.heure_preferee : ce sont les contraintes
+  // ⚡ Heure RÉELLE de fin de soin. Priorité :
+  //   1. p._done_at : posé par markUberDone() au clic "Terminer" — c'est l'ancre
+  //      fiable, même si cette fonction est ré-appelée plus tard en batch par
+  //      terminerTourneeAvecBilan ("Clôturer la journée") ou _autoCoterEtImporterPatient
+  //      après un retry async.
+  //   2. new Date() : fallback pour les patients clôturés sans clic "Terminer"
+  //      préalable (cas rare : l'infirmière clique directement "Clôturer" après
+  //      avoir coché done manuellement).
+  // NE JAMAIS utiliser p.heure_soin / p.heure_preferee : ce sont les contraintes
   // horaires PLANIFIÉES de la tournée, pas l'horodatage effectif à inscrire
   // dans la cotation CPAM / Historique des soins.
-  const heureReelle = _now.toTimeString().slice(0, 5); // "HH:MM" locale
+  const heureReelle = p._done_at || _now.toTimeString().slice(0, 5); // "HH:MM" locale
   const u        = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
   /* ── 1. AUTO-COTATION ── */
@@ -422,6 +429,13 @@ async function _autoCoterEtImporterPatient(p) {
 async function markUberDone() {
   const p = APP.get('nextPatient'); if (!p) return;
   p.done = true;
+
+  // ⚡ Mémoriser l'heure RÉELLE du clic "Terminer" — point d'ancrage unique.
+  // Ainsi, même si _autoCoterEtImporterPatient est ré-appelée plus tard par
+  // terminerTourneeAvecBilan ("Clôturer la journée"), c'est cette heure-ci
+  // qui sera utilisée, pas celle du clic Clôturer.
+  p._done_at = new Date().toTimeString().slice(0, 5); // "HH:MM" locale
+  p._done_at_iso = new Date().toISOString();
 
   /* Déclencher cotation + import + km pour ce patient (non bloquant) */
   _autoCoterEtImporterPatient(p).catch(e => console.warn('[AMI] markUberDone async KO:', e));
