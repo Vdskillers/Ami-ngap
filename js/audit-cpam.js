@@ -1200,13 +1200,29 @@ async function auditLancer() {
   const mois = parseInt(document.getElementById('audit-periode')?.value || '6');
   const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
 
+  // Map mois → period accepté par le worker (year couvre tout, on filtre côté client ensuite)
+  const periodParam = mois <= 1 ? 'month'
+                    : mois <= 3 ? '3month'
+                    : 'year';
+
   let cotations = [];
   try {
     if (typeof apiCall === 'function') {
-      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
-      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
+      const res = await apiCall('/webhook/ami-historique', { period: periodParam });
+      // ⚡ Fix : le worker répond { ok:true, data:[...], count:N } — accepter data, cotations, ou array
+      const raw = Array.isArray(res?.data)      ? res.data
+                : Array.isArray(res?.cotations) ? res.cotations
+                : Array.isArray(res)            ? res
+                : [];
+      // Filtre côté client sur la période exacte (ex: 6 mois)
+      cotations = raw.filter(c => {
+        const d = (c.date_soin || c.date || '').slice(0, 10);
+        return d && d >= depuis;
+      });
     }
-  } catch (_) {}
+  } catch (e) {
+    console.warn('[AMI][audit] ami-historique KO:', e.message);
+  }
 
   if (!cotations.length) {
     resultEl.innerHTML = `<div class="ai in">Aucune cotation trouvée sur la période. Cotez des soins pour générer un rapport d'audit.</div>`;
@@ -1318,14 +1334,27 @@ async function auditModeControleCPAM() {
   // ── Charger cotations + patients + BSI ─────────────
   const mois = 6;
   const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
+  // Map mois → period accepté par le worker (year couvre tout, on filtre côté client ensuite)
+  const periodParam = mois <= 1 ? 'month' : mois <= 3 ? '3month' : 'year';
   let cotations = [], patients = [];
   try {
     if (typeof apiCall === 'function') {
-      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
-      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
+      const res = await apiCall('/webhook/ami-historique', { period: periodParam });
+      // ⚡ Fix : le worker répond { ok:true, data:[...], count:N } — accepter data, cotations, ou array
+      const raw = Array.isArray(res?.data)      ? res.data
+                : Array.isArray(res?.cotations) ? res.cotations
+                : Array.isArray(res)            ? res
+                : [];
+      // Filtre côté client sur la période exacte (6 mois)
+      cotations = raw.filter(c => {
+        const d = (c.date_soin || c.date || '').slice(0, 10);
+        return d && d >= depuis;
+      });
     }
     if (typeof getAllPatients === 'function') patients = await getAllPatients();
-  } catch (_) {}
+  } catch (e) {
+    console.warn('[AMI][audit-controle] ami-historique KO:', e.message);
+  }
 
   if (!cotations.length) {
     resultEl.innerHTML = `<div class="ai in">Aucune cotation trouvée. Cotez des soins pour générer un rapport de contrôle.</div>`;

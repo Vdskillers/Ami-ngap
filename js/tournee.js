@@ -680,9 +680,32 @@ async function renderPlanning(d){
         color:    COLORS[i % 5],
       };
     });
-      const patsWithManual      = patientsForCabinet.filter(p => p._assignedIde && cabinetAssignments[p._assignedIde]);
-      const patsNeedsClustering = patientsForCabinet.filter(p => !p._assignedIde || !cabinetAssignments[p._assignedIde]);
-      patsWithManual.forEach(p => cabinetAssignments[p._assignedIde].patients.push(p));
+      // Helper : récupère la liste des IDEs assignés manuellement à un patient
+      // (rétrocompat : _assignedIde singleton → converti en liste)
+      const _getAssignedIdes = (p) => {
+        if (Array.isArray(p._assignedIdes) && p._assignedIdes.length) return p._assignedIdes;
+        if (p._assignedIde) return [p._assignedIde];
+        return [];
+      };
+
+      // Patients avec au moins une assignation manuelle valide
+      const patsWithManual = patientsForCabinet.filter(p => {
+        const ides = _getAssignedIdes(p);
+        return ides.some(id => cabinetAssignments[id]);
+      });
+      // Patients sans assignation → clustering auto
+      const patsNeedsClustering = patientsForCabinet.filter(p => {
+        const ides = _getAssignedIdes(p);
+        return !ides.some(id => cabinetAssignments[id]);
+      });
+
+      // Distribuer les patients manuels : un patient peut apparaître dans PLUSIEURS IDEs
+      patsWithManual.forEach(p => {
+        _getAssignedIdes(p).forEach(ideId => {
+          if (cabinetAssignments[ideId]) cabinetAssignments[ideId].patients.push(p);
+        });
+      });
+
       if (patsNeedsClustering.length && typeof cabinetGeoCluster === 'function') {
         const clusters = cabinetGeoCluster(patsNeedsClustering, effectiveMembers.length);
         effectiveMembers.forEach((m, i) => {
@@ -759,6 +782,8 @@ async function renderPlanning(d){
     }
 
     // ── CA validé + CA estimé par IDE ─────────────────────────────────────
+    // Par IDE : compte le CA complet de chaque patient qui lui est assigné (un IDE "voit" tout le CA de ses patients)
+    // Total global : dédupliqué par patient pour éviter de compter 2 fois un patient assigné à 2 IDEs
     const caValByIde = {}, caEstByIde = {};
     ideList.forEach(([ideId, a]) => {
       caValByIde[ideId] = a.patients.reduce((s, p) =>
@@ -766,21 +791,60 @@ async function renderPlanning(d){
       caEstByIde[ideId] = typeof estimateRevenue === 'function'
         ? estimateRevenue(a.patients) : a.patients.length * 6.30;
     });
-    const caValTotal = Object.values(caValByIde).reduce((s, v) => s + v, 0);
-    const caEstTotal = Object.values(caEstByIde).reduce((s, v) => s + v, 0);
+    // Total dédupliqué : chaque patient compté une seule fois (clé patient_id ou _planIdx)
+    const _seenPat = new Set();
+    let caValTotal = 0, caEstTotal = 0;
+    ideList.forEach(([_, a]) => {
+      (a.patients || []).forEach(p => {
+        const key = p.patient_id || p.id || `_idx_${p._planIdx}`;
+        if (_seenPat.has(key)) return;
+        _seenPat.add(key);
+        if (p._cotation?.validated) caValTotal += parseFloat(p._cotation.total||0);
+        caEstTotal += (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30);
+      });
+    });
 
-    // ── Sélecteur IDE pour réassigner un patient manuellement ─────────────
+    // ── Sélecteur multi-IDE (cases à cocher) — un patient peut être assigné à plusieurs IDEs ─
+    // Affiché dans chaque carte patient de la vue cabinet : permet de cocher/décocher
+    // les IDEs qui réalisent l'acte. Le patient apparaît dans toutes les colonnes cochées.
     function ideSelectHtml(p, currentIdeId) {
       const safeIdx = p._planIdx ?? -1;
-      return `<select
-        onchange="window._planningReassignIDE(this.value, ${safeIdx})"
-        style="font-size:10px;font-family:var(--fm);padding:2px 5px;border-radius:6px;
-               border:1px solid var(--b);background:var(--s);color:var(--t);cursor:pointer;
-               max-width:120px;margin-top:4px">
-        ${ideList.map(([id, a]) =>
-          `<option value="${id}" ${id === currentIdeId ? 'selected' : ''}>${a.prenom} ${a.nom}</option>`
-        ).join('')}
-      </select>`;
+      // Récupère la liste des IDEs assignés (rétrocompat _assignedIde unique)
+      const assigned = Array.isArray(p._assignedIdes)
+        ? p._assignedIdes.slice()
+        : (p._assignedIde ? [p._assignedIde] : []);
+      // Si vide → le patient est dans l'IDE courant (clustering auto)
+      if (!assigned.length && currentIdeId) assigned.push(currentIdeId);
+
+      return `<details style="margin-top:4px;font-family:var(--fm)">
+        <summary style="font-size:10px;padding:2px 7px;border-radius:6px;border:1px solid var(--b);
+          background:var(--s);color:var(--t);cursor:pointer;user-select:none;display:inline-flex;
+          align-items:center;gap:4px;list-style:none;max-width:140px">
+          <span style="color:var(--a)">👥</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">
+            ${assigned.length} IDE${assigned.length > 1 ? 's' : ''}
+          </span>
+          <span style="color:var(--m)">▾</span>
+        </summary>
+        <div style="position:absolute;z-index:100;background:var(--c);border:1px solid var(--b);
+          border-radius:8px;padding:6px;margin-top:2px;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+          ${ideList.map(([id, a]) => {
+            const chk   = assigned.includes(id);
+            const label = `${a.prenom} ${a.nom}`.trim() || id;
+            const safeId = id.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+            return `<label style="display:flex;align-items:center;gap:6px;padding:4px 6px;
+              border-radius:5px;cursor:pointer;font-size:11px;color:var(--t);
+              background:${chk?'rgba(0,212,170,.08)':'transparent'};
+              transition:background .1s">
+              <input type="checkbox" ${chk?'checked':''}
+                onchange="window._planningToggleIDE('${safeId}', ${safeIdx}, this.checked)"
+                onclick="event.stopPropagation()"
+                style="accent-color:var(--a);width:12px;height:12px;flex-shrink:0">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+            </label>`;
+          }).join('')}
+        </div>
+      </details>`;
     }
 
     // ── Carte patient compacte pour la grille cabinet ─────────────────────
@@ -1145,6 +1209,22 @@ function _planningRemovePatient(idx) {
 
 /* Réassigner un patient à un autre IDE dans la vue cabinet */
 window._planningReassignIDE = function(newIdeId, patientIdx) {
+  // Rétrocompat : si un ancien code appelle encore cette fonction, on REMPLACE toute la liste
+  const planData = window.APP._planningData;
+  const arr = planData?.patients
+    || APP.importedData?.patients
+    || APP.importedData?.entries
+    || [];
+  if (patientIdx < 0 || patientIdx >= arr.length) return;
+  arr[patientIdx] = { ...arr[patientIdx], _assignedIdes: [newIdeId], _assignedIde: newIdeId };
+  _savePlanning(arr);
+  _syncPlanningToServer(arr).catch(() => {});
+  renderPlanning({}).catch(() => {});
+};
+
+/* Toggle un IDE pour un patient : coche/décoche l'IDE dans la liste _assignedIdes.
+   Garantit qu'au moins un IDE reste assigné (empêche un patient orphelin). */
+window._planningToggleIDE = function(ideId, patientIdx, checked) {
   const planData = window.APP._planningData;
   const arr = planData?.patients
     || APP.importedData?.patients
@@ -1152,10 +1232,32 @@ window._planningReassignIDE = function(newIdeId, patientIdx) {
     || [];
   if (patientIdx < 0 || patientIdx >= arr.length) return;
 
-  // Stocker l'assignation IDE dans le patient (clé _assignedIde)
-  arr[patientIdx] = { ...arr[patientIdx], _assignedIde: newIdeId };
+  const p = arr[patientIdx];
+  // Normaliser : rétrocompat _assignedIde singleton → tableau
+  let ides = Array.isArray(p._assignedIdes)
+    ? p._assignedIdes.slice()
+    : (p._assignedIde ? [p._assignedIde] : []);
 
-  // Persister + re-render
+  if (checked) {
+    if (!ides.includes(ideId)) ides.push(ideId);
+  } else {
+    ides = ides.filter(id => id !== ideId);
+    // Garde-fou : au moins un IDE doit rester assigné
+    if (!ides.length) {
+      if (typeof showToast === 'function') {
+        showToast('⚠️ Au moins un IDE doit rester assigné', 'wa');
+      }
+      renderPlanning({}).catch(() => {});
+      return;
+    }
+  }
+
+  arr[patientIdx] = {
+    ...p,
+    _assignedIdes: ides,
+    _assignedIde:  ides[0],   // rétrocompat : champ singleton = premier IDE de la liste
+  };
+
   _savePlanning(arr);
   _syncPlanningToServer(arr).catch(() => {});
   renderPlanning({}).catch(() => {});
