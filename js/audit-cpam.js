@@ -1215,10 +1215,19 @@ async function auditLancer() {
                 : Array.isArray(res)            ? res
                 : [];
       // Filtre côté client sur la période exacte (ex: 6 mois)
-      cotations = raw.filter(c => {
-        const d = (c.date_soin || c.date || '').slice(0, 10);
-        return d && d >= depuis;
-      });
+      // + normaliser actes (string JSON Supabase → tableau) pour que toutes les règles d'audit fonctionnent
+      cotations = raw
+        .filter(c => {
+          const d = (c.date_soin || c.date || '').slice(0, 10);
+          return d && d >= depuis;
+        })
+        .map(c => {
+          let actes = c.actes;
+          if (typeof actes === 'string') {
+            try { actes = JSON.parse(actes || '[]'); } catch { actes = []; }
+          }
+          return { ...c, actes: Array.isArray(actes) ? actes : [] };
+        });
     }
   } catch (e) {
     console.warn('[AMI][audit] ami-historique KO:', e.message);
@@ -1346,10 +1355,19 @@ async function auditModeControleCPAM() {
                 : Array.isArray(res)            ? res
                 : [];
       // Filtre côté client sur la période exacte (6 mois)
-      cotations = raw.filter(c => {
-        const d = (c.date_soin || c.date || '').slice(0, 10);
-        return d && d >= depuis;
-      });
+      // + normaliser actes (string JSON Supabase → tableau) pour que toutes les règles d'audit fonctionnent
+      cotations = raw
+        .filter(c => {
+          const d = (c.date_soin || c.date || '').slice(0, 10);
+          return d && d >= depuis;
+        })
+        .map(c => {
+          let actes = c.actes;
+          if (typeof actes === 'string') {
+            try { actes = JSON.parse(actes || '[]'); } catch { actes = []; }
+          }
+          return { ...c, actes: Array.isArray(actes) ? actes : [] };
+        });
     }
     if (typeof getAllPatients === 'function') patients = await getAllPatients();
   } catch (e) {
