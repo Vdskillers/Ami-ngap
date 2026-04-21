@@ -123,6 +123,28 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 #dep-map .leaflet-container{background:var(--s);border-radius:var(--r)}
 /* Plein écran map */
 #dep-map.fullscreen{position:fixed;inset:0;height:100dvh !important;width:100vw !important;border-radius:0;border:none;z-index:9000;margin:0}
+
+/* ── FIX TRAITS BLANCS VERTICAUX SUR LES TUILES LEAFLET ──
+   Bug connu : le rendu subpixel crée des gaps de ~0.5px entre les tuiles
+   sur certains navigateurs/DPI. Fix : chevaucher légèrement les tuiles
+   (width: 256.5px) + optimisation du rendu d'image. */
+.leaflet-container .leaflet-tile-pane{will-change:transform;transform:translateZ(0)}
+.leaflet-tile{
+  /* Chevauchement d'un demi-pixel pour masquer les gaps subpixel */
+  width:256.5px !important;
+  height:256.5px !important;
+  /* Rendu d'image net, sans lissage entre tuiles */
+  image-rendering:-webkit-optimize-contrast;
+  image-rendering:crisp-edges;
+  /* Force la composition hardware */
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+/* Idem pour la carte Live et toute carte Leaflet */
+.leaflet-tile-container img{
+  width:256.5px !important;
+  height:256.5px !important;
+}
 /* Recherche adresse */
 .map-search{display:flex;gap:8px;margin-bottom:10px}
 .map-search input{flex:1;background:var(--s);border:1px solid var(--b);color:var(--t);border-radius:var(--r);padding:9px 13px;font-size:13px;font-family:var(--ff)}
