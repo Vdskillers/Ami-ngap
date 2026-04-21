@@ -1933,6 +1933,19 @@ async function autoFacturation(patient){
       ? actesRec  // actes_recurrents suffisent, pas besoin d'ajouter la pathologie brute
       : _texteBase;
 
+    /* ── 3. Résoudre patient_nom + patient_id — INDISPENSABLE pour l'Historique ──
+       Sans ces champs, la ligne Supabase reste avec patient_nom=null et affiche
+       "?" + ID#XXX dans la colonne Patient de l'Historique des soins.
+       Priorité : patient.prenom/nom (mémoire) > ficheIDB (fallback IDB).      */
+    let _patNom = ((patient.prenom || '') + ' ' + (patient.nom || '')).trim();
+    if (!_patNom && ficheIDB && (ficheIDB.nom || ficheIDB.prenom)) {
+      _patNom = ((ficheIDB.prenom || '') + ' ' + (ficheIDB.nom || '')).trim();
+      // Enrichir le patient en mémoire pour que les appels downstream l'aient aussi
+      patient.nom    = patient.nom    || ficheIDB.nom    || '';
+      patient.prenom = patient.prenom || ficheIDB.prenom || '';
+    }
+    const _patId = patient.patient_id || patient.id || null;
+
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: texteForCot,
       infirmiere: ((u.prenom||'') + ' ' + (u.nom||'')).trim(),
@@ -1947,6 +1960,11 @@ async function autoFacturation(patient){
       // Jamais patient.heure_soin / patient.heure_preferee (contrainte planifiée).
       heure_soin: patient?._done_at || new Date().toTimeString().slice(0, 5),
       _live_auto: true,
+      // ⚡ Nom + ID patient → stockés dans planning_patients pour affichage dans
+      // l'Historique des soins (colonne Patient). Sans ces champs, la ligne
+      // remontait avec un avatar "?" et "ID #XXX" seul.
+      ...(_patNom ? { patient_nom: _patNom } : {}),
+      ...(_patId  ? { patient_id:  _patId  } : {}),
       preuve_soin: { type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     return d;
@@ -3607,6 +3625,9 @@ function _validateCotationLive() {
           const _CODES_MAJ_SB = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
           const _hasTechSB = actes.some(a => !_CODES_MAJ_SB.has((a.code||'').toUpperCase()));
           if (_hasTechSB) {
+            // ⚡ patient_nom : résolu depuis p (déchiffré IDB) — garantit l'affichage
+            // correct dans l'Historique des soins (évite "?" + ID seul).
+            const _patNomSB = ((p.prenom || '') + ' ' + (p.nom || '')).trim();
             const sbRes = await apiCall('/webhook/ami-save-cotation', {
               cotations: [{
                 actes,
@@ -3617,6 +3638,7 @@ function _validateCotationLive() {
                 source:         'tournee',
                 invoice_number: cotEntry.invoice_number || null,
                 patient_id:     pid,
+                ...(_patNomSB ? { patient_nom: _patNomSB } : {}),
               }]
             });
             // Mettre à jour l'invoice_number retourné dans IDB + mémoire
@@ -4017,6 +4039,10 @@ async function openCotationPatient(patientIndex) {
       || patient._cotation?.heure
       || null;
     const _heureForApi = _heureEditExist || new Date().toTimeString().slice(0, 5);
+    // ⚡ Nom + ID patient — INDISPENSABLE pour l'Historique des soins.
+    // Sans ces champs, la ligne remonte avec un avatar "?" et "ID #XXX" seul.
+    const _patNomOCP = ((patient.prenom || '') + ' ' + (patient.nom || '')).trim();
+    const _patIdOCP  = patient.patient_id || patient.id || null;
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap',
       texte: texteForCot,
@@ -4025,6 +4051,8 @@ async function openCotationPatient(patientIndex) {
       date_soin: new Date().toISOString().split('T')[0],
       heure_soin: _heureForApi,
       _live_auto: true,
+      ...(_patNomOCP ? { patient_nom: _patNomOCP } : {}),
+      ...(_patIdOCP  ? { patient_id:  _patIdOCP  } : {}),
       preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     cotation = d;
