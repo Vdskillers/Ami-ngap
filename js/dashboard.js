@@ -433,8 +433,75 @@ function renderDashboard(arr) {
   const notice = $('dash-admin-notice');
   if (notice) notice.style.display = isAdmin ? 'flex' : 'none';
 
+  // 🆕 Widget score de confiance global
+  try { renderTrustWidget(arr); } catch (e) { console.warn('[trust widget]', e.message); }
+
   // Section cabinet — afficher si cabinet actif
   if (typeof loadDashCabinet === 'function') setTimeout(loadDashCabinet, 100);
+}
+
+/* ════════════════════════════════════════════════
+   🆕 WIDGET SCORE DE CONFIANCE (Trust Score)
+   ────────────────────────────────────────────────
+   Affiche en haut du dashboard un score global
+   agrégant NGAP + BSI + Risque CPAM. Donne à
+   l'IDE une vision instantanée de sa sérénité.
+═══════════════════════════════════════════════ */
+function renderTrustWidget(arr) {
+  const el = document.getElementById('dash-trust-widget');
+  if (!el || !window.BSI_ENGINE) return;
+
+  // ── Estimation rapide des inputs à partir des cotations disponibles ──
+  const cots = Array.isArray(arr) ? arr : [];
+  if (!cots.length) { el.style.display = 'none'; return; }
+
+  // ngapCompliance = part de cotations sans DRE manquant ni alerte majeure
+  const nb = cots.length;
+  const nbDre = cots.filter(c => c.dre_requise).length;
+  const nbAlertes = cots.filter(c => {
+    try {
+      const a = typeof c.alerts === 'string' ? JSON.parse(c.alerts || '[]') : (c.alerts || []);
+      return Array.isArray(a) && a.some(x => /erreur|invalide|critique/i.test(JSON.stringify(x)));
+    } catch { return false; }
+  }).length;
+  const ngapCompliance = nb ? Math.max(0, 1 - (nbDre * 0.3 + nbAlertes * 0.5) / nb) : 1;
+
+  // bsiCoherence : approximation — 1 par défaut (sans calcul patient-par-patient coûteux)
+  // Le vrai calcul se fait dans auditModeControleCPAM. Ici on reste en estimation.
+  const bsiCoherence = 0.9;
+
+  // riskScore : approximation basée sur DRE et alertes
+  const riskScore = Math.min(20, Math.round((nbDre * 0.4 + nbAlertes * 0.6) / Math.max(1, nb) * 20));
+
+  const trust = window.BSI_ENGINE.computeTrustScore({
+    ngapCompliance, bsiCoherence, riskScore, riskMax: 20,
+  });
+
+  const emoji = trust.score >= 85 ? '🛡️' : trust.score >= 70 ? '✅' : trust.score >= 50 ? '⚠️' : '🔴';
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="background:linear-gradient(135deg,${trust.color}14,${trust.color}06);border:1px solid ${trust.color}40;border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:260px">
+        <div style="font-size:36px;line-height:1">${emoji}</div>
+        <div style="flex:1">
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm);letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">Score de confiance</div>
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+            <span style="font-family:var(--fs);font-size:32px;color:${trust.color};line-height:1">${trust.score}<span style="font-size:14px;color:var(--m)">/100</span></span>
+            <span style="font-size:13px;font-weight:600;color:${trust.color}">${trust.label}</span>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;font-size:10px;color:var(--m);font-family:var(--fm)">
+            <span>NGAP <strong style="color:var(--t)">${trust.parts.ngap}</strong></span>
+            <span>BSI <strong style="color:var(--t)">${trust.parts.bsi}</strong></span>
+            <span>Risque <strong style="color:var(--t)">${trust.parts.risk}</strong></span>
+          </div>
+        </div>
+      </div>
+      <button class="btn bp bsm" onclick="navTo('audit-cpam',null);setTimeout(()=>typeof auditModeControleCPAM==='function'&&auditModeControleCPAM(),400)" style="flex-shrink:0">
+        <span>🛡️</span> Lancer le contrôle
+      </button>
+    </div>
+  `;
 }
 
 /* ============================================================

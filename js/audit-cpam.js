@@ -551,3 +551,426 @@ function auditExportPDF(score, niveau, nbCots, mois) {
   w.document.close();
   setTimeout(() => w.print(), 400);
 }
+
+/* ════════════════════════════════════════════════
+   🆕 MODE CONTRÔLE CPAM — Simulation complète
+   ────────────────────────────────────────────────
+   Simule un contrôle CPAM : passe en revue tous les
+   patients, évalue la cohérence BSI / actes,
+   calcule le score de risque global et propose
+   des recommandations priorisées.
+═══════════════════════════════════════════════ */
+async function auditModeControleCPAM() {
+  const resultEl = document.getElementById('audit-result');
+  if (!resultEl) return;
+
+  resultEl.innerHTML = `<div style="text-align:center;padding:32px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><div style="font-size:13px;color:var(--m)">🛡️ Mode contrôle CPAM — analyse complète en cours…</div></div>`;
+
+  // ── Charger cotations + patients + BSI ─────────────
+  const mois = 6;
+  const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
+  let cotations = [], patients = [];
+  try {
+    if (typeof apiCall === 'function') {
+      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
+      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
+    }
+    if (typeof getAllPatients === 'function') patients = await getAllPatients();
+  } catch (_) {}
+
+  if (!cotations.length) {
+    resultEl.innerHTML = `<div class="ai in">Aucune cotation trouvée. Cotez des soins pour générer un rapport de contrôle.</div>`;
+    return;
+  }
+
+  // ── 1. Audit classique (règles existantes) ─────────
+  const ruleResults = AUDIT_RULES.map(rule => {
+    try {
+      const { score, details } = rule.check(cotations, patients);
+      return { ...rule, score: Math.max(0, Math.min(100, score||0)), details };
+    } catch (_) {
+      return { ...rule, score: 0, details: null };
+    }
+  });
+  const globalRisk = _auditGlobalRisk(ruleResults);
+
+  // ── 2. Analyse BSI vs actes (par patient) ──────────
+  const bsiIssues = [];
+  if (window.BSI_ENGINE && typeof window._bsiGetActive === 'function') {
+    for (const p of patients) {
+      try {
+        const active = await window._bsiGetActive(p.id);
+        if (!active) continue;
+        // Agrégation actes sur 30 jours
+        const cutoff = Date.now() - 30 * 86400000;
+        const recent = (p.cotations || []).filter(c => new Date(c.date || 0).getTime() >= cutoff);
+        if (!recent.length) continue;
+        const actes = recent.flatMap(c => c.actes || []);
+        const jours = new Set(recent.map(c => (c.date || '').slice(0,10))).size;
+        const freqPerDay = jours ? recent.length / jours : 1;
+        const issues = window.BSI_ENGINE.checkBSIConsistency({
+          bsiLevel: active.level, actes, freqPerDay,
+        });
+        issues.forEach(iss => bsiIssues.push({
+          patient: `${p.nom||''} ${p.prenom||''}`.trim(),
+          ...iss,
+        }));
+      } catch {}
+    }
+  }
+
+  // ── 3. Calcul risque CPAM enrichi ──────────────────
+  const patientsPerDay = (() => {
+    if (!cotations.length) return 0;
+    const dates = {};
+    cotations.forEach(c => {
+      const d = (c.date_soin || c.date || '').slice(0,10);
+      if (!d) return;
+      dates[d] = (dates[d] || new Set()).add?.(c.patient_id) || (dates[d] = new Set([c.patient_id]));
+    });
+    const counts = Object.values(dates).map(s => (s.size || 0));
+    return counts.length ? Math.round(counts.reduce((a,b)=>a+b,0) / counts.length) : 0;
+  })();
+
+  const kmPerDay = (() => {
+    if (!cotations.length) return 0;
+    const perDay = {};
+    cotations.forEach(c => {
+      const d = (c.date_soin || c.date || '').slice(0,10);
+      if (!d) return;
+      perDay[d] = (perDay[d] || 0) + (parseFloat(c.km) || 0);
+    });
+    const vals = Object.values(perDay);
+    return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0) / vals.length) : 0;
+  })();
+
+  const dre_missing = cotations.filter(c => {
+    const hasPerf = (c.actes||[]).some(a => /perf/i.test(a.description||a.code||''));
+    return hasPerf && !c.prescripteur && !c.medecin;
+  }).length;
+
+  let cpamRisk = { level: 'LOW', label: 'FAIBLE', color: '#22c55e', score: 0, max: 20, alerts: [] };
+  if (window.BSI_ENGINE) {
+    cpamRisk = window.BSI_ENGINE.computeCPAMRisk({
+      cotations,
+      bsiIncoherences: bsiIssues.length,
+      patientsPerDay,
+      kmPerDay,
+      dre_missing,
+      sameActRepeated: ruleResults.find(r => r.id === 'actes_complexes_repetitifs')?.score || 0,
+    });
+  }
+
+  // ── 4. Trust score global ──────────────────────────
+  const ngapCompliance = Math.max(0, 1 - (globalRisk.score / 100));
+  const bsiCoherence = bsiIssues.length ? Math.max(0, 1 - (bsiIssues.length / Math.max(10, patients.length))) : 1;
+  let trust = { score: 0, label:'N/A', color:'#6b7280', parts:{ngap:0,bsi:0,risk:0} };
+  if (window.BSI_ENGINE) {
+    trust = window.BSI_ENGINE.computeTrustScore({
+      ngapCompliance, bsiCoherence,
+      riskScore: cpamRisk.score, riskMax: cpamRisk.max,
+    });
+    // 🆕 Enregistrer snapshot mensuel pour historique de conformité
+    window.BSI_ENGINE.saveTrustSnapshot({
+      trustScore:   trust.score,
+      trustLabel:   trust.label,
+      riskLevel:    cpamRisk.level,
+      riskScore:    cpamRisk.score,
+      bsiIssues:    bsiIssues.length,
+      ngapRisk:     globalRisk.score,
+      cotations:    cotations.length,
+    });
+  }
+
+  // ── 5. Rendu ───────────────────────────────────────
+  const patientsConcernes = bsiIssues.length;
+  const actesAVerifier = ruleResults.filter(r => r.score > 0).length;
+
+  resultEl.innerHTML = `
+    <!-- Titre mode contrôle -->
+    <div style="background:linear-gradient(135deg,rgba(59,130,246,.1),rgba(0,212,170,.05));border:1px solid rgba(59,130,246,.3);border-radius:14px;padding:20px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-size:24px">🛡️</span>
+        <div>
+          <div style="font-size:16px;font-weight:700;color:#3b82f6">Mode contrôle CPAM</div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Simulation complète — ${cotations.length} cotations · ${patients.length} patients</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Score de confiance global -->
+    <div style="background:${trust.color}15;border:1px solid ${trust.color}44;border-radius:14px;padding:24px;margin-bottom:20px;text-align:center">
+      <div style="font-size:11px;font-family:var(--fm);color:${trust.color};letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">Score de confiance global</div>
+      <div style="font-family:var(--fs);font-size:52px;color:${trust.color};line-height:1">${trust.score}<span style="font-size:20px">/100</span></div>
+      <div style="font-size:16px;font-weight:700;color:${trust.color};margin-top:6px">🛡️ ${trust.label}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px">
+        <div style="text-align:center"><div style="font-size:10px;color:var(--m);font-family:var(--fm)">NGAP</div><div style="font-family:var(--fs);font-size:22px;color:var(--t)">${trust.parts.ngap}</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--m);font-family:var(--fm)">BSI</div><div style="font-family:var(--fs);font-size:22px;color:var(--t)">${trust.parts.bsi}</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--m);font-family:var(--fm)">Risque CPAM</div><div style="font-family:var(--fs);font-size:22px;color:var(--t)">${trust.parts.risk}</div></div>
+      </div>
+    </div>
+
+    <!-- Simulation contrôle -->
+    <div style="background:${cpamRisk.color}15;border:1px solid ${cpamRisk.color}44;border-radius:12px;padding:16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:2px">Simulation contrôle CPAM</div>
+          <div style="font-size:18px;font-weight:700;color:${cpamRisk.color}">Niveau de risque : ${cpamRisk.label}</div>
+        </div>
+        <div style="font-family:var(--fs);font-size:28px;color:${cpamRisk.color}">${cpamRisk.score}/${cpamRisk.max}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+        <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Patients concernés</div>
+          <div style="font-family:var(--fs);font-size:20px;color:var(--t);margin-top:2px">${patientsConcernes}</div>
+        </div>
+        <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Actes à vérifier</div>
+          <div style="font-family:var(--fs);font-size:20px;color:var(--t);margin-top:2px">${actesAVerifier}</div>
+        </div>
+        <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">BSI à revoir</div>
+          <div style="font-family:var(--fs);font-size:20px;color:var(--t);margin-top:2px">${bsiIssues.filter(i => i.severity === 'eleve' || i.severity === 'moyen').length}</div>
+        </div>
+      </div>
+      ${cpamRisk.alerts.length ? `
+      <div style="font-size:11px;font-family:var(--fm);color:var(--m);margin-bottom:6px">Points détectés :</div>
+      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">
+        ${cpamRisk.alerts.map(a => `<li style="font-size:12px;color:var(--t);line-height:1.4">${a.msg}</li>`).join('')}
+      </ul>` : '<div style="font-size:12px;color:#22c55e">Aucune anomalie majeure détectée.</div>'}
+    </div>
+
+    ${bsiIssues.length ? `
+    <!-- Incohérences BSI détaillées -->
+    <div class="lbl" style="margin-bottom:12px">⚠️ Incohérences BSI détectées (${bsiIssues.length})</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+      ${bsiIssues.slice(0, 10).map(iss => {
+        const sevCol = iss.severity === 'eleve' ? '#f97316' : iss.severity === 'moyen' ? '#f59e0b' : '#84cc16';
+        return `
+          <div style="background:${sevCol}15;border-left:3px solid ${sevCol};border-radius:6px;padding:10px 12px">
+            <div style="font-size:13px;font-weight:600;color:var(--t);margin-bottom:3px">${iss.patient}</div>
+            <div style="font-size:12px;color:var(--m);line-height:1.4">${iss.message}</div>
+            ${iss.suggestion ? `<div style="font-size:11px;color:${sevCol};font-family:var(--fm);margin-top:3px">→ Niveau BSI suggéré : ${iss.suggestion}</div>` : ''}
+          </div>`;
+      }).join('')}
+      ${bsiIssues.length > 10 ? `<div style="font-size:11px;color:var(--m);text-align:center;margin-top:4px">… et ${bsiIssues.length - 10} autre(s)</div>` : ''}
+    </div>` : ''}
+
+    <!-- Recommandations priorisées -->
+    <div style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:16px;margin-bottom:16px">
+      <div class="lbl" style="margin-bottom:10px">💡 Recommandations priorisées</div>
+      <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--t);line-height:1.5">
+        ${trust.score < 50 ? '<li style="color:#ef4444">🔴 <strong>Action urgente :</strong> Score de confiance bas — corriger les incohérences critiques avant le prochain cycle de facturation.</li>' : ''}
+        ${bsiIssues.filter(i=>i.severity==='eleve').length ? `<li>🟠 Revoir en priorité les ${bsiIssues.filter(i=>i.severity==='eleve').length} BSI à incohérence élevée.</li>` : ''}
+        ${dre_missing > 0 ? `<li>📄 Ajouter le prescripteur sur ${dre_missing} cotation(s) sans DRE (perfusions).</li>` : ''}
+        <li>Relancez le mode contrôle tous les mois pour maintenir la vigilance.</li>
+        <li>Vérifiez que chaque patient avec cotation BSI a une évaluation datant de moins de 3 mois.</li>
+      </ul>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      <button class="btn bp" onclick="auditShowHistoriqueConformite()"><span>📅</span> Historique de conformité</button>
+      <button class="btn bs" onclick="auditExportControle(${trust.score}, '${trust.label}', ${cotations.length}, ${bsiIssues.length}, '${cpamRisk.label}')"><span>🖨️</span> Imprimer le rapport</button>
+    </div>
+  `;
+}
+
+/* ════════════════════════════════════════════════
+   🆕 HISTORIQUE DE CONFORMITÉ
+   ────────────────────────────────────────────────
+   Affiche l'évolution mensuelle du score de
+   confiance. Preuve juridique de la vigilance.
+═══════════════════════════════════════════════ */
+function auditShowHistoriqueConformite() {
+  const resultEl = document.getElementById('audit-result');
+  if (!resultEl || !window.BSI_ENGINE) return;
+
+  const history = window.BSI_ENGINE.getTrustHistory();
+  if (!history.length) {
+    resultEl.innerHTML = `<div class="ai in">📅 Aucun historique de conformité — lancez le mode contrôle CPAM chaque mois pour constituer une preuve juridique de votre vigilance.</div>
+    <div style="margin-top:12px"><button class="btn bp" onclick="auditModeControleCPAM()">🛡️ Lancer le mode contrôle</button></div>`;
+    return;
+  }
+
+  const months = {
+    '01':'Jan','02':'Fév','03':'Mar','04':'Avr','05':'Mai','06':'Juin',
+    '07':'Juil','08':'Août','09':'Sep','10':'Oct','11':'Nov','12':'Déc',
+  };
+  const rows = history.map(h => {
+    const [y, m] = h.month.split('-');
+    const label = `${months[m] || m} ${y}`;
+    const col = h.trustScore >= 85 ? '#22c55e' : h.trustScore >= 70 ? '#84cc16' : h.trustScore >= 50 ? '#f59e0b' : '#ef4444';
+    return `
+      <div style="display:grid;grid-template-columns:110px 1fr 80px 100px;gap:10px;align-items:center;padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;margin-bottom:6px">
+        <div style="font-size:12px;font-weight:600;color:var(--t);font-family:var(--fm)">${label}</div>
+        <div style="height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden"><div style="height:100%;width:${h.trustScore}%;background:${col};border-radius:4px"></div></div>
+        <div style="font-family:var(--fs);font-size:18px;color:${col};text-align:right">${h.trustScore}</div>
+        <div style="font-size:11px;color:var(--m);font-family:var(--fm);text-align:right">${h.trustLabel||''}</div>
+      </div>`;
+  }).join('');
+
+  // Calculs stats
+  const latest = history[history.length - 1];
+  const avg = Math.round(history.reduce((s,h)=>s+(h.trustScore||0), 0) / history.length);
+  const trend = history.length >= 2 ? (latest.trustScore - history[history.length-2].trustScore) : 0;
+
+  resultEl.innerHTML = `
+    <div style="background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(59,130,246,.04));border:1px solid rgba(0,212,170,.25);border-radius:14px;padding:20px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-size:24px">📅</span>
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--a)">Historique de conformité</div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Preuve juridique de votre vigilance mensuelle</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">
+        <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Score actuel</div>
+          <div style="font-family:var(--fs);font-size:22px;color:var(--t);margin-top:2px">${latest.trustScore}</div>
+        </div>
+        <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Moyenne ${history.length} mois</div>
+          <div style="font-family:var(--fs);font-size:22px;color:var(--t);margin-top:2px">${avg}</div>
+        </div>
+        <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Tendance</div>
+          <div style="font-family:var(--fs);font-size:22px;color:${trend>=0?'#22c55e':'#ef4444'};margin-top:2px">${trend>=0?'+':''}${trend}</div>
+        </div>
+      </div>
+    </div>
+    <div class="lbl" style="margin-bottom:10px">📊 Évolution mensuelle</div>
+    ${rows}
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn bp" onclick="auditModeControleCPAM()"><span>🛡️</span> Relancer le contrôle</button>
+      <button class="btn bs" onclick="auditExportHistoriqueConformite()"><span>🖨️</span> Imprimer l'historique</button>
+    </div>
+  `;
+}
+
+/* ════════════════════════════════════════════════
+   🆕 AUDIT MENSUEL AUTOMATIQUE
+   ────────────────────────────────────────────────
+   Au chargement de l'app, si le mois en cours n'a
+   pas de snapshot, invite l'IDE à faire un contrôle.
+═══════════════════════════════════════════════ */
+function auditCheckMonthlyReminder() {
+  if (!window.BSI_ENGINE) return;
+  const history = window.BSI_ENGINE.getTrustHistory();
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const hasThisMonth = history.some(h => h.month === monthKey);
+  if (hasThisMonth) return; // déjà fait ce mois-ci
+
+  // Rappel : on lance l'audit en fond automatiquement le 1er jour disponible du mois
+  // pour alimenter l'historique de conformité (preuve juridique).
+  // Si showToast dispo → notifier l'IDE.
+  if (typeof showToast === 'function') {
+    setTimeout(() => {
+      showToast('info',
+        '📅 Audit mensuel',
+        'Pensez à lancer le mode contrôle CPAM pour ce mois-ci.');
+    }, 3000);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   🆕 EXPORT PDF — Rapport mode contrôle
+═══════════════════════════════════════════════ */
+function auditExportControle(trustScore, trustLabel, nbCots, bsiIssues, cpamLevel) {
+  const w = window.open('','_blank');
+  const infNom = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim() || '—';
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Mode Contrôle CPAM — AMI</title>
+    <style>body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:680px;margin:0 auto}h1{font-size:18px;color:#3b82f6}h2{font-size:14px;color:#007a6a;border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:20px}p,li{font-size:12px;line-height:1.7}.score{font-size:42px;color:#007a6a;text-align:center;margin:16px 0}@media print{@page{margin:15mm}}</style>
+    </head><body>
+    <h1>🛡️ Rapport Mode Contrôle CPAM — AMI</h1>
+    <p><strong>Infirmier(ère) :</strong> ${infNom} · <strong>Date :</strong> ${new Date().toLocaleString('fr-FR')}</p>
+    <h2>Score de confiance global</h2>
+    <div class="score">${trustScore} / 100 — ${trustLabel}</div>
+    <h2>Résultats de la simulation</h2>
+    <p><strong>Cotations analysées :</strong> ${nbCots}</p>
+    <p><strong>Incohérences BSI détectées :</strong> ${bsiIssues}</p>
+    <p><strong>Niveau de risque CPAM :</strong> ${cpamLevel}</p>
+    <h2>Attestation</h2>
+    <p>Le soussigné(e) atteste avoir effectué à cette date une simulation complète de contrôle CPAM sur son activité professionnelle, conformément à son obligation de vigilance NGAP.</p>
+    <p style="margin-top:40px;font-size:11px">Signature :  _________________________</p>
+    <p style="font-size:10px;color:#888;margin-top:40px">Rapport généré par AMI — Simulation à des fins de vigilance professionnelle. Ne remplace pas un conseil juridique ou comptable officiel.</p>
+    </body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
+/* ════════════════════════════════════════════════
+   🆕 EXPORT PDF — Historique de conformité
+═══════════════════════════════════════════════ */
+function auditExportHistoriqueConformite() {
+  if (!window.BSI_ENGINE) return;
+  const history = window.BSI_ENGINE.getTrustHistory();
+  if (!history.length) { showToast?.('warning','Aucun historique'); return; }
+
+  const w = window.open('','_blank');
+  const infNom = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim() || '—';
+  const months = {
+    '01':'Janvier','02':'Février','03':'Mars','04':'Avril','05':'Mai','06':'Juin',
+    '07':'Juillet','08':'Août','09':'Septembre','10':'Octobre','11':'Novembre','12':'Décembre',
+  };
+  const rows = history.map(h => {
+    const [y, m] = h.month.split('-');
+    return `<tr>
+      <td style="border:1px solid #ddd;padding:6px 10px">${months[m]} ${y}</td>
+      <td style="border:1px solid #ddd;padding:6px 10px">${h.trustScore}/100</td>
+      <td style="border:1px solid #ddd;padding:6px 10px">${h.trustLabel||'—'}</td>
+      <td style="border:1px solid #ddd;padding:6px 10px">${h.riskLevel||'—'}</td>
+      <td style="border:1px solid #ddd;padding:6px 10px">${h.cotations||0}</td>
+    </tr>`;
+  }).join('');
+
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Historique de conformité — AMI</title>
+    <style>body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:720px;margin:0 auto}h1{font-size:18px;color:#007a6a}table{border-collapse:collapse;width:100%;margin:14px 0}th,td{font-size:12px}th{background:#f0f0f0;padding:8px;border:1px solid #ddd;text-align:left}@media print{@page{margin:15mm}}</style>
+    </head><body>
+    <h1>📅 Historique de conformité — AMI</h1>
+    <p><strong>Infirmier(ère) :</strong> ${infNom} · <strong>Date d'édition :</strong> ${new Date().toLocaleString('fr-FR')}</p>
+    <p>Ce document atteste de la vigilance mensuelle continue exercée par le professionnel sur la conformité NGAP de son activité.</p>
+    <table>
+      <thead><tr><th>Mois</th><th>Score confiance</th><th>Évaluation</th><th>Risque CPAM</th><th>Cotations</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="margin-top:40px;font-size:11px">Signature :  _________________________</p>
+    <p style="font-size:10px;color:#888;margin-top:30px">Rapport généré par AMI — Preuve de vigilance professionnelle au titre de l'obligation de conformité NGAP.</p>
+    </body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
+/* ════════════════════════════════════════════════
+   🆕 Modifier renderAuditCPAM pour ajouter les
+   boutons Mode Contrôle + Historique
+═══════════════════════════════════════════════ */
+// Patch de renderAuditCPAM — ajout des boutons en haut
+const _origRenderAuditCPAM = renderAuditCPAM;
+renderAuditCPAM = async function() {
+  await _origRenderAuditCPAM();
+  // Ajouter la barre mode contrôle + historique
+  const wrap = document.getElementById('audit-cpam-root');
+  if (!wrap) return;
+  const firstCard = wrap.querySelector('.card');
+  if (!firstCard) return;
+  // Insérer les boutons avant la 1re card existante
+  const bar = document.createElement('div');
+  bar.className = 'card';
+  bar.style.cssText = 'background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(0,212,170,.04));border:1px solid rgba(59,130,246,.25)';
+  bar.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#3b82f6;margin-bottom:4px">🛡️ Mode contrôle CPAM</div>
+        <div style="font-size:12px;color:var(--m)">Simulation complète + score de confiance + historique juridique</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn bp bsm" onclick="auditModeControleCPAM()"><span>🛡️</span> Lancer le contrôle</button>
+        <button class="btn bs bsm" onclick="auditShowHistoriqueConformite()"><span>📅</span> Historique</button>
+      </div>
+    </div>
+  `;
+  wrap.insertBefore(bar, firstCard);
+  // Rappel mensuel en arrière-plan
+  auditCheckMonthlyReminder();
+};

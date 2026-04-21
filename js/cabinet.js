@@ -317,6 +317,7 @@ function _renderCabinetDashboard(root, d) {
     { key: 'planning',    icon: '📅', label: 'Planning & tournée', desc: 'Partagez votre planning du jour pour coordonner les visites' },
     { key: 'patients',    icon: '👤', label: 'Patients communs', desc: 'Partagez la liste de vos patients (noms anonymisés)' },
     { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP & Historique des soins', desc: 'Synchronisez les cotations multi-IDE — visibles dans la vue Historique des soins de votre collègue' },
+    { key: 'bsi',         icon: '📋', label: 'BSI — Bilan de Soins Infirmiers', desc: 'Partagez le BSI entre IDE du cabinet — 1 patient = 1 BSI actif unique (règle CPAM)' },
     { key: 'ordonnances', icon: '💊', label: 'Ordonnances', desc: 'Partagez les ordonnances actives pour éviter les doublons' },
     { key: 'km',          icon: '🚗', label: 'Journal kilométrique', desc: 'Synchronisez les km pour les statistiques cabinet' },
     { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier', desc: 'Partagez les semainiers patients avec vos collègues — chiffré AES' },
@@ -937,6 +938,32 @@ async function cabinetPushSync() {
       } catch (e) { console.warn('[cabinet push piluliers]', e.message); }
     }
 
+    // 🆕 BSI — Bilans de Soins Infirmiers actifs
+    // Règle cabinet : 1 patient = 1 seul BSI actif partagé entre tous les IDE
+    if (prefs.what.bsi && typeof _bsiGetAllActive === 'function') {
+      try {
+        const activeBsis = await _bsiGetAllActive();
+        if (Array.isArray(activeBsis) && activeBsis.length) {
+          // Construire payload léger (sans _data interne IDB)
+          const bsiPayload = activeBsis.map(b => ({
+            patient_id:    b.patient_id,
+            patient_nom:   b.patient_nom || '',
+            date:          b.date,
+            level:         b.level,
+            total:         b.total,
+            scores:        b.scores || {},
+            medecin:       b.medecin || '',
+            observations:  b.observations || '',
+            created_by:    b.created_by || '',
+            saved_at:      b.saved_at || b.date,
+            active:        true,
+          }));
+          payload.data.bsi_shared = bsiPayload;
+          console.info('[cabinet push] bsi_shared:', bsiPayload.length, 'BSI actif(s)');
+        }
+      } catch (e) { console.warn('[cabinet push bsi]', e.message); }
+    }
+
     // Piluliers & Constantes : aussi inclus dans patients_cabinet via p.piluliers/p.constantes
     // (double canal intentionnel — piluliers_cabinet est la source fiable)
 
@@ -1353,6 +1380,15 @@ async function cabinetPullSync() {
             if (nbNotes > 0) { applied++; details.push(`📋 ${nbNotes} note(s) de soins`); }
           }
         } catch (e) { console.warn('[cabinet pull notes_soins]', e.message); }
+      }
+
+      // 🆕 BSI — Bilans de Soins Infirmiers partagés
+      // Règle cabinet : 1 patient = 1 seul BSI actif — last-write-wins par saved_at
+      if (item.what.includes('bsi') && Array.isArray(item.data?.bsi_shared) && typeof window.bsiHandleCabinetPull === 'function') {
+        try {
+          const nbBsi = await window.bsiHandleCabinetPull([item]);
+          if (nbBsi > 0) { applied++; details.push(`📋 ${nbBsi} BSI partagé(s)`); }
+        } catch (e) { console.warn('[cabinet pull bsi]', e.message); }
       }
 
       // Piluliers & Constantes inclus dans patients_cabinet — déjà traités ci-dessus.
