@@ -1484,6 +1484,16 @@ async function syncCotationsPatient(patientId) {
     const remote  = histRes?.data || (Array.isArray(histRes) ? histRes : []);
 
     const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
+    // Index composite (date + total) — détecte les doublons serveur quand
+    // l'invoice_number diffère du local (ex: ancienne tournée envoyée 2× à
+    // Supabase avant le fix uber.js skipIDB:true → 2 invoice_numbers serveur
+    // pour 1 cotation locale). Sans ce filtre, le pull manuel réinjecterait
+    // le 2e invoice_number comme nouvelle cotation.
+    const localKeyDT_SCP = new Set(
+      p.cotations
+        .filter(c => parseFloat(c.total || 0) > 0)
+        .map(c => `${(c.date || '').slice(0, 10)}|${parseFloat(c.total || 0).toFixed(2)}`)
+    );
     const serverCots = remote.filter(r =>
       r.patient_id === patientId ||
       (r.invoice_number && localInvoices.has(r.invoice_number))
@@ -1501,15 +1511,25 @@ async function syncCotationsPatient(patientId) {
         console.warn('[syncCotations] cotation ignorée (maj seule):', actes.map(a=>a.code), sc.invoice_number);
         continue;
       }
+      // Filtre anti-doublon par (date + total) — voir commentaire localKeyDT_SCP
+      const _scTotalSCP = parseFloat(sc.total || 0);
+      const _scDate10SCP = (sc.date_soin || '').slice(0, 10);
+      const _scKeySCP = `${_scDate10SCP}|${_scTotalSCP.toFixed(2)}`;
+      if (_scTotalSCP > 0 && localKeyDT_SCP.has(_scKeySCP)) {
+        console.warn(`[syncCotations] doublon serveur ignoré (${sc.invoice_number}, ${_scKeySCP})`);
+        localInvoices.add(sc.invoice_number);
+        continue;
+      }
       p.cotations.push({
         date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
-        total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
+        total: _scTotalSCP, part_amo: parseFloat(sc.part_amo || 0),
         part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
         soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
         source: sc.source || 'sync_server', ngap_version: sc.ngap_version || null,
         dre_requise: !!sc.dre_requise, _synced: true,
       });
       localInvoices.add(sc.invoice_number);
+      if (_scTotalSCP > 0) localKeyDT_SCP.add(_scKeySCP);
     }
 
     // ── 3. Sauvegarder IDB + push carnet_patients ────────────────────────
@@ -2446,11 +2466,22 @@ async function syncPatientsFromServer() {
         const remoteCots   = Array.isArray(remoteDecoded.cotations) ? remoteDecoded.cotations : [];
 
         // Ajouter les cotations locales absentes du serveur (évite de perdre des saisies locales récentes)
+        // Dédup par invoice_number ET (date+total) pour éviter les doublons quand
+        // l'invoice_number diffère mais le contenu est identique (ancien doublon serveur).
         const remoteInvoices = new Set(remoteCots.map(c => c.invoice_number).filter(Boolean));
+        const remoteKeyDT = new Set(
+          remoteCots
+            .filter(c => parseFloat(c.total || 0) > 0)
+            .map(c => `${(c.date || '').slice(0, 10)}|${parseFloat(c.total || 0).toFixed(2)}`)
+        );
         for (const lc of localCots) {
-          if (lc.invoice_number && !remoteInvoices.has(lc.invoice_number)) {
-            remoteDecoded.cotations.push(lc);
-          }
+          if (!lc.invoice_number) continue;
+          if (remoteInvoices.has(lc.invoice_number)) continue;
+          // Filtre composite : si le serveur a déjà une cotation même date + même total,
+          // on ne réinjecte pas la version locale (sinon doublon)
+          const _lcKey = `${(lc.date || '').slice(0, 10)}|${parseFloat(lc.total || 0).toFixed(2)}`;
+          if (parseFloat(lc.total || 0) > 0 && remoteKeyDT.has(_lcKey)) continue;
+          remoteDecoded.cotations.push(lc);
         }
 
         const toStore = {
@@ -2471,14 +2502,27 @@ async function syncPatientsFromServer() {
         const remoteCots   = Array.isArray(remoteDecoded.cotations) ? remoteDecoded.cotations : [];
 
         const localInvoices = new Set(localCots.map(c => c.invoice_number).filter(Boolean));
+        // Index composite local (date + total) — voir commentaire dans la branche serveur-récent
+        const localKeyDT_SP = new Set(
+          localCots
+            .filter(c => parseFloat(c.total || 0) > 0)
+            .map(c => `${(c.date || '').slice(0, 10)}|${parseFloat(c.total || 0).toFixed(2)}`)
+        );
         let added = 0;
         for (const rc of remoteCots) {
           // Injecter les cotations distantes absentes localement
-          if (rc.invoice_number && !localInvoices.has(rc.invoice_number)) {
-            localDecoded.cotations.push({ ...rc, _synced: true });
-            localInvoices.add(rc.invoice_number);
-            added++;
+          if (!rc.invoice_number) continue;
+          if (localInvoices.has(rc.invoice_number)) continue;
+          // Filtre composite anti-doublon serveur
+          const _rcKey = `${(rc.date || '').slice(0, 10)}|${parseFloat(rc.total || 0).toFixed(2)}`;
+          if (parseFloat(rc.total || 0) > 0 && localKeyDT_SP.has(_rcKey)) {
+            console.warn(`[syncPatients] doublon serveur ignoré (${rc.invoice_number}, ${_rcKey})`);
+            continue;
           }
+          localDecoded.cotations.push({ ...rc, _synced: true });
+          localInvoices.add(rc.invoice_number);
+          if (parseFloat(rc.total || 0) > 0) localKeyDT_SP.add(_rcKey);
+          added++;
         }
 
         if (added > 0) {

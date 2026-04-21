@@ -69,10 +69,21 @@ async function syncOfflineQueue() {
                 const _p = { ...(_dec(_row._data)||{}), id: _row.id, nom: _row.nom, prenom: _row.prenom };
                 if (!Array.isArray(_p.cotations)) _p.cotations = [];
                 const _todayOQ = (payload.date_soin || new Date().toISOString().slice(0,10));
-                const _existOQ = _p.cotations.findIndex(c =>
-                  (c.invoice_number && c.invoice_number === result.invoice_number) ||
-                  (c.source === 'offline_queue' && (c.date||'').slice(0,10) === _todayOQ)
-                );
+                // Dédoublonnage strict :
+                // 1. Si invoice_number présent → match exact par invoice_number
+                // 2. Sinon → match par (source + date + total) pour différencier
+                //    plusieurs soins du même jour pour le même patient
+                //    (ex: insuline 9h vs insuline 18h, montants identiques mais
+                //    cotations distinctes). Sans le filtre `total`, le 2e soin
+                //    écraserait le 1er → perte de données.
+                const _resTotalOQ = parseFloat(result.total || 0);
+                const _existOQ = result.invoice_number
+                  ? _p.cotations.findIndex(c => c.invoice_number === result.invoice_number)
+                  : _p.cotations.findIndex(c =>
+                      c.source === 'offline_queue' &&
+                      (c.date || '').slice(0, 10) === _todayOQ &&
+                      Math.abs(parseFloat(c.total || 0) - _resTotalOQ) < 0.01
+                    );
                 const _cotOQ = {
                   date: payload.date_soin || new Date().toISOString(),
                   heure: payload.heure_soin || '',
