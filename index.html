@@ -583,6 +583,29 @@
       <div class="af"><label for="p-tel">Téléphone</label><input type="tel" id="p-tel" name="tel"></div>
     </div>
     <button class="btn bp" id="btn-save-pm" style="width:100%;justify-content:center">💾 Enregistrer</button>
+
+    <!-- ── Signature électronique infirmier(ère) ── -->
+    <div class="sep" style="margin-top:24px"><span class="sepl">✍️ Signature électronique</span></div>
+    <p style="font-size:12px;color:var(--m);margin-bottom:12px">
+      Votre signature sera <strong>auto-injectée</strong> dans toutes les factures et PDF générés par l'application (feuilles de soins, BSI, transmissions, consentements). Signez une seule fois ici — elle sera réutilisée automatiquement.
+    </p>
+    <div style="display:flex;gap:14px;align-items:center;padding:14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);margin-bottom:10px">
+      <div id="ide-sig-preview" style="width:120px;height:60px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;padding:4px">
+        <div style="color:var(--m);font-size:12px">Aucune signature enregistrée</div>
+      </div>
+      <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn bv bsm" id="btn-ide-sig" onclick="openIDESignatureModal()" style="font-size:12px">
+          ✍️ Créer ma signature
+        </button>
+        <button type="button" class="btn bs bsm" id="btn-ide-sig-delete" onclick="deleteIDESignature()" style="font-size:12px;display:none">
+          🗑️ Supprimer
+        </button>
+      </div>
+    </div>
+    <p style="font-size:10px;color:var(--m);opacity:.7;margin-bottom:0">
+      🔐 Chiffrée AES-256 · Stockée localement · Synchronisée entre vos appareils
+    </p>
+
     <div class="sep" style="margin-top:24px"><span class="sepl">Changer le mot de passe</span></div>
     <div class="msg e" id="ppe"></div><div class="msg o" id="ppo"></div>
     <div class="af"><label for="p-old">Mot de passe actuel</label><input type="password" id="p-old" name="old_password" placeholder="••••••••"></div>
@@ -2234,8 +2257,22 @@
       <div id="sig-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
         🛡️ <strong>Mode admin — données isolées</strong> · Vous voyez uniquement vos propres signatures de test. Les signatures des infirmières (chiffrées AES-256, stockées localement sur leur appareil) sont physiquement inaccessibles depuis votre session.
       </div>
+
+      <!-- ── Signature personnelle infirmier(ère) ── -->
+      <div class="card nurse-only" style="margin-bottom:14px">
+        <div class="ct">👤 Ma signature infirmier(ère)</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:10px">
+          Signature auto-injectée dans toutes les factures et PDF générés par l'application. Elle est également modifiable depuis votre <strong>profil</strong>.
+        </p>
+        <div id="ide-sig-card-body">
+          <div style="padding:14px 0;text-align:center">
+            <div style="font-size:13px;color:var(--m)">Chargement…</div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
-        <div class="ct">✍️ Signatures enregistrées</div>
+        <div class="ct">✍️ Signatures patients enregistrées</div>
         <div id="sig-list-body">
           <p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Aucune signature enregistrée pour le moment.<br><span style="font-size:11px;opacity:.6">Les signatures sont créées depuis une cotation NGAP.</span></p>
         </div>
@@ -2680,7 +2717,7 @@
 <script src="js/cabinet.js?v=3.8"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
 <script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js?v=3.8"></script>
-<script src="js/profil.js?v=3.8"></script>
+<script src="js/profil.js?v=3.9"></script>
 <script src="js/cotation.js?v=3.8"></script>
 <script src="js/contact.js?v=3.8"></script>
 <script src="js/geocode.js?v=3.8"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
