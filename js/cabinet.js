@@ -690,14 +690,22 @@ function cabinetToggleSyncWith(memberId, checked) {
 ════════════════════════════════════════════════ */
 
 /* ── Audit log cabinet ──────────────────────────────────────────────── */
+// v2 : envoie level:'info' + message descriptif pour éviter les logs
+// apparaissant en "error" avec tous les champs vides (pollution system_logs).
 async function _cabinetAuditLog(action, meta = {}) {
   try {
+    const safeAction = String(action || 'UNKNOWN').slice(0, 120);
+    const cabId      = APP.get('cabinet')?.id || null;
     await apiCall('/webhook/log', {
-      type: 'CABINET_ACTION',
-      cabinet_id: APP.get('cabinet')?.id,
-      user_id:    APP.user?.id,
-      action,
-      meta:       JSON.stringify(meta),
+      level:      'info',
+      source:     'frontend',
+      event:      'CABINET_ACTION',
+      type:       'CABINET_ACTION',
+      message:    `Cabinet ${safeAction}`,
+      action:     safeAction,
+      cabinet_id: cabId,
+      user_id:    APP.user?.id || null,
+      meta,
     });
   } catch {} // silencieux — ne pas bloquer le flux
 }
