@@ -928,6 +928,51 @@ async function _cotationPipeline() {
   const txt = gv('f-txt');
   if (!txt) { alert('Veuillez saisir une description.'); return; }
 
+  // ── Check consentement avant acte (médico-légal) ───────────────────────
+  // Hook vers consentements.js — détecte automatiquement les types requis
+  // à partir du texte libre. Si un consentement manque :
+  //   - mode normal : warning + possibilité de continuer (loggé)
+  //   - mode STRICT : blocage + redirection vers signature
+  try {
+    if (typeof consentCheckBeforeAct === 'function') {
+      // Résoudre l'ID patient depuis le carnet
+      const _patNom = (gv('f-pt') || '').trim();
+      let _patIdForCheck = null;
+      if (_patNom && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+        const _rows = await _idbGetAll(PATIENTS_STORE);
+        const _low = _patNom.toLowerCase();
+        const _match = _rows.find(r =>
+          ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_low) ||
+          ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_low)
+        );
+        if (_match) _patIdForCheck = _match.id;
+      }
+      if (_patIdForCheck) {
+        const _ck = await consentCheckBeforeAct(_patIdForCheck, txt);
+        if (_ck && !_ck.allowed && _ck.level === 'BLOCK') {
+          // Mode STRICT : bloquer et rediriger vers signature
+          if (typeof showToast === 'function')
+            showToast('error', 'Consentement requis',
+              `Manquant : ${(_ck.types_label || []).join(', ')}`);
+          if (typeof window.navigate === 'function') window.navigate('consentements');
+          setTimeout(() => { if (typeof consentSelectPatient === 'function') consentSelectPatient(_patIdForCheck); }, 300);
+          return;
+        }
+        if (_ck && !_ck.allowed === false && _ck.level === 'WARN') {
+          // Mode normal : avertissement non bloquant
+          if (typeof showToast === 'function')
+            showToast('warning', 'Consentement à compléter',
+              `${(_ck.types_label || []).join(', ')} — acte loggé pour traçabilité`);
+          if (typeof auditLog === 'function')
+            auditLog('ACT_WITHOUT_CONSENT', { patient_id: _patIdForCheck, types: _ck.types });
+        }
+      }
+    }
+  } catch (_consentCheckErr) {
+    console.warn('[cotation] consent check KO:', _consentCheckErr.message);
+    // Non bloquant — continue la cotation
+  }
+
   ld('btn-cot', true);
   $('res-cot').classList.remove('show');
   $('cerr').style.display = 'none';

@@ -436,8 +436,64 @@ function renderDashboard(arr) {
   // 🆕 Widget score de confiance global
   try { renderTrustWidget(arr); } catch (e) { console.warn('[trust widget]', e.message); }
 
+  // 🛡️ Widget Conformité cabinet (v3.9) — score 4 piliers + reminders
+  try { renderComplianceBadge(); } catch (e) { console.warn('[compliance widget]', e.message); }
+
   // Section cabinet — afficher si cabinet actif
   if (typeof loadDashCabinet === 'function') setTimeout(loadDashCabinet, 100);
+}
+
+/* ════════════════════════════════════════════════
+   🛡️ WIDGET CONFORMITÉ CABINET (v3.9)
+   ────────────────────────────────────────────────
+   Affiche sur l'accueil un résumé du score de conformité
+   (4 piliers : consentements · NGAP · BSI · traçabilité)
+   + le nombre d'actions requises + bouton d'accès rapide.
+   Non bloquant si compliance-engine.js n'est pas chargé.
+════════════════════════════════════════════════ */
+async function renderComplianceBadge() {
+  const el = document.getElementById('dash-compliance-widget');
+  if (!el || typeof computeCompliance !== 'function') return;
+
+  try {
+    const [comp, reminders] = await Promise.all([
+      computeCompliance(),
+      typeof consentBuildReminders === 'function' ? consentBuildReminders() : Promise.resolve([]),
+    ]);
+    const color = comp.global >= 90 ? '#00d4aa' : comp.global >= 70 ? '#f59e0b' : '#ef4444';
+    const statusLbl = comp.global >= 90 ? 'conforme' : comp.global >= 70 ? 'à surveiller' : 'à régulariser';
+    const hiCount   = reminders.filter(r => r.priority === 'HIGH').length;
+    const medCount  = reminders.filter(r => r.priority === 'MEDIUM').length;
+
+    el.innerHTML = `
+      <div class="card" style="display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding:14px 18px">
+        <div style="text-align:center;min-width:72px">
+          <div style="font-family:var(--fs);font-size:30px;font-weight:800;color:${color};line-height:1">${comp.global}</div>
+          <div style="font-size:10px;color:var(--m);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Conformité</div>
+        </div>
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:600">🛡️ Cabinet <span style="color:${color}">${statusLbl}</span></div>
+          <div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap;font-size:10px;color:var(--m);font-family:var(--fm)">
+            <span>Consent <strong style="color:var(--t)">${comp.breakdown.consent.score}%</strong></span>
+            <span>NGAP <strong style="color:var(--t)">${comp.breakdown.ngap.score}%</strong></span>
+            <span>BSI <strong style="color:var(--t)">${comp.breakdown.bsi.score}%</strong></span>
+            <span>Trace <strong style="color:var(--t)">${comp.breakdown.trace.score}%</strong></span>
+          </div>
+          ${reminders.length ? `
+            <div style="font-size:11px;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">
+              ${hiCount ? `<span style="color:#ef4444">🔴 ${hiCount} urgent${hiCount>1?'s':''}</span>` : ''}
+              ${medCount ? `<span style="color:#f59e0b">🟠 ${medCount} moyen${medCount>1?'s':''}</span>` : ''}
+            </div>` : '<div style="font-size:11px;color:#00d4aa;margin-top:6px">✅ Aucune action en attente</div>'}
+        </div>
+        <button class="btn bs bsm" style="flex-shrink:0" onclick="navTo('compliance',null)">
+          <span>🧠</span> Voir
+        </button>
+      </div>
+    `;
+    el.style.display = 'block';
+  } catch (e) {
+    console.warn('[compliance widget] render KO:', e.message);
+  }
 }
 
 /* ════════════════════════════════════════════════

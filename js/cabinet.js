@@ -314,15 +314,16 @@ function _renderCabinetDashboard(root, d) {
   }).join('');
 
   const whatItems = [
-    { key: 'planning',    icon: '📅', label: 'Planning & tournée', desc: 'Partagez votre planning du jour pour coordonner les visites' },
-    { key: 'patients',    icon: '👤', label: 'Patients communs', desc: 'Partagez la liste de vos patients (noms anonymisés)' },
-    { key: 'cotations',   icon: '🩺', label: 'Cotations NGAP & Historique des soins', desc: 'Synchronisez les cotations multi-IDE — visibles dans la vue Historique des soins de votre collègue' },
-    { key: 'bsi',         icon: '📋', label: 'BSI — Bilan de Soins Infirmiers', desc: 'Partagez le BSI entre IDE du cabinet — 1 patient = 1 BSI actif unique (règle CPAM)' },
-    { key: 'compte_rendu',icon: '📋', label: 'Compte-rendu de passage (partagés)', desc: 'Partage uniquement les CR marqués "partagés" ou avec alerte. Les CR privés restent strictement locaux (règle CR 2 niveaux)' },
-    { key: 'ordonnances', icon: '💊', label: 'Ordonnances', desc: 'Partagez les ordonnances actives pour éviter les doublons' },
-    { key: 'km',          icon: '🚗', label: 'Journal kilométrique', desc: 'Synchronisez les km pour les statistiques cabinet' },
-    { key: 'piluliers',   icon: '💊', label: 'Semainier / Pilulier', desc: 'Partagez les semainiers patients avec vos collègues — chiffré AES' },
-    { key: 'constantes',  icon: '📊', label: 'Constantes patients', desc: 'Partagez les mesures TA, glycémie, SpO2… entre IDEs — chiffré AES' },
+    { key: 'planning',      icon: '📅', label: 'Planning & tournée', desc: 'Partagez votre planning du jour pour coordonner les visites' },
+    { key: 'patients',      icon: '👤', label: 'Patients communs', desc: 'Partagez la liste de vos patients (noms anonymisés)' },
+    { key: 'cotations',     icon: '🩺', label: 'Cotations NGAP & Historique des soins', desc: 'Synchronisez les cotations multi-IDE — visibles dans la vue Historique des soins de votre collègue' },
+    { key: 'bsi',           icon: '📋', label: 'BSI — Bilan de Soins Infirmiers', desc: 'Partagez le BSI entre IDE du cabinet — 1 patient = 1 BSI actif unique (règle CPAM)' },
+    { key: 'consentements', icon: '🛡️', label: 'Consentements éclairés', desc: 'Protection médico-légale — partage automatique des consentements patients (hashes uniquement, jamais les signatures brutes)' },
+    { key: 'compte_rendu',  icon: '📋', label: 'Compte-rendu de passage (partagés)', desc: 'Partage uniquement les CR marqués "partagés" ou avec alerte. Les CR privés restent strictement locaux (règle CR 2 niveaux)' },
+    { key: 'ordonnances',   icon: '💊', label: 'Ordonnances', desc: 'Partagez les ordonnances actives pour éviter les doublons' },
+    { key: 'km',            icon: '🚗', label: 'Journal kilométrique', desc: 'Synchronisez les km pour les statistiques cabinet' },
+    { key: 'piluliers',     icon: '💊', label: 'Semainier / Pilulier', desc: 'Partagez les semainiers patients avec vos collègues — chiffré AES' },
+    { key: 'constantes',    icon: '📊', label: 'Constantes patients', desc: 'Partagez les mesures TA, glycémie, SpO2… entre IDEs — chiffré AES' },
   ];
 
   // Pré-population : si une clé what n'a jamais été définie → true par défaut
@@ -966,6 +967,45 @@ async function cabinetPushSync() {
       } catch (e) { console.warn('[cabinet push bsi]', e.message); }
     }
 
+    // 🛡️ Consentements éclairés — partage patient-lié (toutes IDE du cabinet)
+    // Règle : un consentement = (patient_id, type, version) → visible par toutes
+    // les IDE qui interviennent sur ce patient. Jamais la signature brute —
+    // uniquement le hash SHA-256 d'intégrité (RGPD).
+    if (prefs.what.consentements && typeof _consentGetAllRaw === 'function') {
+      try {
+        const allConsents = await _consentGetAllRaw();
+        // Ne pousser que les versions actives (non archivées) — cabinet
+        const active = (allConsents || []).filter(c => c.status !== 'archived');
+        if (active.length) {
+          // Payload strict : hashes uniquement, jamais de signature brute
+          const consentPayload = active.map(c => ({
+            cabinet_id:     cab.id,
+            patient_id:     c.patient_id,
+            type:           c.type,
+            type_label:     c.type_label || '',
+            version:        c.version || 1,
+            status:         c.status || 'pending',
+            signed_at:      c.signed_at || null,
+            signature_hash: c.signature_hash || '',
+            payload_hash:   c.payload_hash   || '',
+            validity_days:  c.validity_days  || 365,
+            expires_at:     c.expires_at     || null,
+            created_by:     c.created_by     || APP.user?.id || '',
+            created_by_nom: c.created_by_nom || '',
+            horodatage:     c.horodatage     || new Date().toISOString(),
+          }));
+          payload.data.consentements_shared = consentPayload;
+          console.info('[cabinet push] consentements_shared:', consentPayload.length, 'consentement(s)');
+          // Appel direct au endpoint dédié (plus robuste et atomique côté serveur)
+          try {
+            await apiCall('/webhook/cabinet-consent-push', { consents: consentPayload });
+          } catch (e) {
+            console.warn('[cabinet push consent endpoint]', e.message);
+          }
+        }
+      } catch (e) { console.warn('[cabinet push consentements]', e.message); }
+    }
+
     // 🆕 Compte-rendu de passage — uniquement les CR PARTAGÉS ou avec ALERTE
     // Règle stricte "CR 2 niveaux" : les CR privés ne quittent jamais l'IDE
     // qui les a créés. Seuls les CR marqués type='shared' ou alert=true partent.
@@ -1040,6 +1080,18 @@ async function cabinetPullSync() {
     if (typeof syncPatientsFromServer === 'function') {
       try { await syncPatientsFromServer(); } catch {}
     }
+
+    // ── Pull consentements cabinet (dédié, endpoint robuste) ──────────────
+    // Appelle le endpoint spécifique qui renvoie la dernière version par
+    // (patient_id, type). Merge géré côté consentements.js.
+    try {
+      if (typeof consentPullFromCabinet === 'function') {
+        const consentResult = await consentPullFromCabinet();
+        if (consentResult?.pulled) {
+          console.info('[cabinetPullSync] consentements reçus:', consentResult.pulled);
+        }
+      }
+    } catch (e) { console.warn('[cabinetPullSync consent]', e.message); }
 
     const d = await apiCall('/webhook/cabinet-sync-pull', {
       cabinet_id: cab.id,
