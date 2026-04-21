@@ -309,7 +309,8 @@ select option{background:var(--s)}
 .at{font-family:var(--fm);font-size:14px;font-weight:600;flex-shrink:0;min-width:64px;text-align:right;color:var(--t)}
 .al{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
 .aic{display:flex;flex-direction:column;gap:8px}
-.ai{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:var(--r);font-size:13px;line-height:1.5}
+.ai{display:block;padding:10px 14px;border-radius:var(--r);font-size:13px;line-height:1.5;word-wrap:break-word;overflow-wrap:break-word}
+.ai>*{vertical-align:baseline}
 .ai.er{background:var(--dd);border:1px solid rgba(255,95,109,.25);color:#ff9aa2}
 .ai.wa{background:var(--wd);border:1px solid rgba(255,181,71,.25);color:#ffc96b}
 .ai.in{background:var(--a2d);border:1px solid rgba(79,168,255,.25);color:#80c4ff}
