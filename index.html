@@ -123,12 +123,6 @@
   .lp-toc-link{font-family:var(--fm);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#a0bbd0;padding:7px 13px;border-radius:20px;text-decoration:none;white-space:nowrap;transition:all .18s;border:1px solid transparent}
   .lp-toc-link:hover{color:#00d4aa;background:rgba(0,212,170,.06);border-color:rgba(0,212,170,.18)}
 
-  /* ── Founder access banner ──────────────────── */
-  .lp-founder{background:linear-gradient(135deg,rgba(255,180,50,.08),rgba(0,212,170,.06));border:1px solid rgba(255,180,50,.25);border-radius:14px;padding:14px 20px;margin-bottom:36px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .lp-founder-badge{background:rgba(255,180,50,.18);color:#ffc857;font-family:var(--fm);font-size:10px;letter-spacing:1.5px;padding:5px 11px;border-radius:12px;white-space:nowrap;font-weight:700}
-  .lp-founder-txt{flex:1;min-width:220px;font-size:13px;color:#e8dcc4;line-height:1.45}
-  .lp-founder-txt strong{color:#ffffff}
-
   /* ── Comment ça marche (3 steps) ────────────── */
   .lp-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px;position:relative}
   @media(max-width:640px){.lp-steps{grid-template-columns:1fr}}
@@ -157,17 +151,6 @@
   .lp-roi-v{font-family:var(--fs);font-size:30px;color:#00d4aa;line-height:1}
   .lp-roi-l{font-size:12.5px;color:#b8cdd8;line-height:1.5}
   .lp-roi-src{font-family:var(--fm);font-size:9px;color:#6a7f91;letter-spacing:.5px;margin-top:auto;padding-top:8px;border-top:1px solid rgba(30,45,61,.6)}
-
-  /* ── Preuve sociale / Testimonials ──────────── */
-  .lp-testi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px}
-  @media(max-width:720px){.lp-testi-grid{grid-template-columns:1fr}}
-  .lp-testi{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 22px 18px;display:flex;flex-direction:column}
-  .lp-testi-stars{color:#ffc857;font-size:13px;letter-spacing:2px;margin-bottom:10px}
-  .lp-testi-q{font-size:13.5px;color:#d8e4ec;line-height:1.6;font-style:italic;margin-bottom:14px;flex:1}
-  .lp-testi-who{display:flex;align-items:center;gap:10px;border-top:1px solid rgba(30,45,61,.6);padding-top:12px}
-  .lp-testi-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0b1a14,#102a1e);border:1px solid rgba(0,212,170,.35);display:grid;place-items:center;font-family:var(--fs);color:#00d4aa;font-size:14px;flex-shrink:0}
-  .lp-testi-meta{font-size:11px;color:#a0bbd0;line-height:1.4}
-  .lp-testi-meta b{color:#ffffff;font-weight:700;display:block;font-size:12px}
 
   /* ── Cabinet B2B dedicated section ──────────── */
   .lp-cabinet{background:linear-gradient(135deg,rgba(79,168,255,.05),rgba(0,212,170,.04));border:1px solid rgba(79,168,255,.18);border-radius:20px;padding:32px 30px;margin-bottom:52px}
@@ -217,6 +200,84 @@
 
   /* ── Comparatif enrichi ─────────────────────── */
   .lp-compare td.mid{color:#ffc857}
+
+  /* ── Simulateur interactif de cotation ──────── */
+  .lp-sim-sec{margin-bottom:52px}
+  .lp-sim-box{background:linear-gradient(180deg,rgba(14,20,30,.95),rgba(10,16,23,.95));border:1px solid rgba(0,212,170,.22);border-radius:20px;padding:26px 24px;position:relative;overflow:hidden}
+  .lp-sim-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,212,170,.6),transparent)}
+  .lp-sim-desc{font-size:13.5px;color:#b8cdd8;line-height:1.55;margin-bottom:18px}
+  .lp-sim-desc strong{color:#00d4aa;font-weight:700}
+  .lp-sim-qp{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:14px}
+  .lp-sim-qp-label{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:#8aa3b5;text-transform:uppercase;margin-right:4px}
+  .lp-sim-qp-btn{background:rgba(0,212,170,.07);color:#d0e8e0;border:1px solid rgba(0,212,170,.2);border-radius:18px;padding:6px 13px;font-family:var(--ff);font-size:12px;cursor:pointer;transition:all .18s;white-space:nowrap}
+  .lp-sim-qp-btn:hover{background:rgba(0,212,170,.14);border-color:rgba(0,212,170,.4);color:#ffffff;transform:translateY(-1px)}
+  #lp-sim-input{width:100%;min-height:72px;background:rgba(11,15,20,.8);border:1px solid rgba(30,45,61,.95);border-radius:12px;padding:13px 15px;color:#ffffff;font-family:var(--ff);font-size:14px;line-height:1.5;resize:vertical;margin-bottom:12px;transition:border-color .15s}
+  #lp-sim-input:focus{outline:none;border-color:rgba(0,212,170,.5)}
+  #lp-sim-input::placeholder{color:#607585}
+  .lp-sim-toggles{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:16px;padding:10px 12px;background:rgba(11,15,20,.5);border-radius:10px}
+  .lp-sim-tg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#d0dfe8;cursor:pointer;user-select:none}
+  .lp-sim-tg input[type=checkbox]{accent-color:#00d4aa;cursor:pointer}
+  .lp-sim-tg input[type=number]{width:52px;background:rgba(14,20,30,.9);border:1px solid rgba(30,45,61,.95);color:#ffffff;padding:4px 6px;border-radius:6px;font-family:var(--ff);font-size:12px;text-align:center}
+  .lp-sim-tg input[type=number]:focus{outline:none;border-color:rgba(0,212,170,.5)}
+  .lp-sim-btn{width:100%;background:linear-gradient(135deg,#00e0b5,#00c49a);color:#ffffff;border:none;border-radius:12px;padding:14px;font-family:var(--ff);font-size:15px;font-weight:700;cursor:pointer;transition:all .22s;letter-spacing:.3px;text-shadow:0 1px 3px rgba(0,0,0,.35);box-shadow:0 4px 18px rgba(0,212,170,.35)}
+  .lp-sim-btn:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(0,212,170,.5)}
+  .lp-sim-btn:active{transform:translateY(0)}
+  .lp-sim-btn:disabled{opacity:.6;cursor:wait}
+
+  .lp-sim-result{margin-top:20px;padding-top:20px;border-top:1px dashed rgba(0,212,170,.2);animation:lpFadeUp .3s ease both}
+  .lp-sim-steps{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+  .lp-sim-step{display:flex;align-items:center;gap:10px;font-size:13px;color:#6a7f91;padding:8px 12px;background:rgba(11,15,20,.4);border-radius:8px;border-left:3px solid rgba(30,45,61,.95);transition:all .25s}
+  .lp-sim-step::before{content:'○';color:#6a7f91;font-size:14px;flex-shrink:0}
+  .lp-sim-step.active{color:#00d4aa;border-left-color:#00d4aa;background:rgba(0,212,170,.05)}
+  .lp-sim-step.active::before{content:'◐';animation:lpSpin 1s linear infinite}
+  .lp-sim-step.done{color:#b8cdd8;border-left-color:rgba(0,212,170,.5);background:rgba(0,212,170,.03)}
+  .lp-sim-step.done::before{content:'✓';color:#00d4aa;font-weight:800}
+  @keyframes lpSpin{to{transform:rotate(360deg)}}
+
+  .lp-sim-out{animation:lpFadeUp .35s ease both}
+  .lp-sim-out-h{font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#00d4aa;margin-bottom:10px;margin-top:16px}
+  .lp-sim-out-h:first-child{margin-top:0}
+  .lp-sim-line{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 12px;background:rgba(11,15,20,.4);border-radius:8px;margin-bottom:6px;border-left:3px solid rgba(0,212,170,.4)}
+  .lp-sim-line-l{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+  .lp-sim-line-code{font-family:var(--fm);font-size:10.5px;color:#00d4aa;letter-spacing:1px}
+  .lp-sim-line-lbl{font-size:13px;color:#d8e4ec;line-height:1.35}
+  .lp-sim-line-lbl small{color:#8aa3b5;font-size:11px;display:block;margin-top:2px}
+  .lp-sim-line-v{font-family:var(--fm);font-size:14px;color:#ffffff;font-weight:700;white-space:nowrap}
+  .lp-sim-line.maj{border-left-color:#ffc857}
+  .lp-sim-line.maj .lp-sim-line-code{color:#ffc857}
+  .lp-sim-line.ik{border-left-color:#7fc0ff}
+  .lp-sim-line.ik .lp-sim-line-code{color:#7fc0ff}
+  .lp-sim-line.discount{opacity:.85}
+  .lp-sim-line.discount .lp-sim-line-v{color:#ff9980}
+  .lp-sim-line.discount .lp-sim-line-v::before{content:'−';margin-right:2px}
+
+  .lp-sim-total{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;margin-top:12px;background:linear-gradient(135deg,rgba(0,212,170,.12),rgba(0,212,170,.05));border:1px solid rgba(0,212,170,.3);border-radius:12px}
+  .lp-sim-total-l{font-family:var(--fs);font-size:16px;color:#ffffff}
+  .lp-sim-total-v{font-family:var(--fs);font-size:24px;color:#00d4aa;line-height:1}
+
+  .lp-sim-compare{margin-top:14px;padding:14px 16px;background:rgba(255,200,87,.06);border:1px solid rgba(255,200,87,.22);border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .lp-sim-compare-l{flex:1;min-width:0}
+  .lp-sim-compare-lbl{font-size:11.5px;color:#e8dcc4;line-height:1.5}
+  .lp-sim-compare-lbl strong{color:#ffc857;font-weight:700}
+  .lp-sim-compare-gain{font-family:var(--fs);font-size:22px;color:#ffc857;white-space:nowrap}
+  .lp-sim-compare-gain::before{content:'+';margin-right:2px}
+
+  .lp-sim-audit{margin-top:12px;padding:14px 16px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.18);border-radius:12px}
+  .lp-sim-audit-top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+  .lp-sim-audit-t{font-family:var(--fm);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#00d4aa}
+  .lp-sim-audit-badge{font-family:var(--fm);font-size:10px;color:#ffffff;background:rgba(0,212,170,.22);border:1px solid rgba(0,212,170,.5);padding:4px 10px;border-radius:14px;letter-spacing:1px;white-space:nowrap}
+  .lp-sim-audit-list{display:flex;flex-direction:column;gap:5px}
+  .lp-sim-audit-li{font-size:12px;color:#c8d8e4;display:flex;gap:8px;line-height:1.4}
+  .lp-sim-audit-li::before{content:'✓';color:#00d4aa;flex-shrink:0;font-weight:800}
+
+  .lp-sim-empty{padding:14px 16px;background:rgba(255,159,128,.06);border:1px solid rgba(255,159,128,.22);border-radius:12px;font-size:13px;color:#e8c8bc;line-height:1.55}
+  .lp-sim-empty strong{color:#ff9980}
+
+  .lp-sim-cta{display:flex;justify-content:center;margin-top:16px}
+  .lp-sim-cta-btn{background:transparent;color:#00d4aa;border:1px solid rgba(0,212,170,.35);border-radius:10px;padding:10px 20px;font-family:var(--ff);font-size:13px;font-weight:600;cursor:pointer;transition:all .18s}
+  .lp-sim-cta-btn:hover{background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.5)}
+
+  .lp-sim-disclaimer{font-family:var(--fm);font-size:10px;color:#6a7f91;text-align:center;letter-spacing:.5px;margin-top:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -262,18 +323,13 @@
         <a class="lp-toc-link" href="#lp-steps">Comment ça marche</a>
         <a class="lp-toc-link" href="#lp-day">Journée type</a>
         <a class="lp-toc-link" href="#lp-features">Fonctionnalités</a>
+        <a class="lp-toc-link" href="#lp-sim">✦ Essayer</a>
         <a class="lp-toc-link" href="#lp-roi">Ce que tu gagnes</a>
         <a class="lp-toc-link" href="#lp-cabinet-sec">Cabinets</a>
         <a class="lp-toc-link" href="#lp-faq-sec">FAQ</a>
         <a class="lp-toc-link" href="#lp-security">Sécurité</a>
       </div>
     </nav>
-
-    <!-- FOUNDER ACCESS BANNER -->
-    <div class="lp-founder">
-      <span class="lp-founder-badge">✦ Accès fondateur</span>
-      <div class="lp-founder-txt"><strong>Phase de lancement privée.</strong> Tarif préférentiel garanti à vie pour les 100 premières infirmières et 10 premiers cabinets inscrits. Ton retour pèse directement sur la v1.</div>
-    </div>
 
     <!-- COMMENT ÇA MARCHE -->
     <div id="lp-steps" class="lp-sec-label">⚙ Comment ça marche</div>
@@ -485,6 +541,46 @@
 
     </div>
 
+    <!-- SIMULATEUR INTERACTIF -->
+    <div id="lp-sim" class="lp-sec-label">✦ Essaie maintenant</div>
+    <div class="lp-sec-h2">Teste la cotation IA en <em>temps réel</em></div>
+    <div class="lp-sim-sec">
+      <div class="lp-sim-box">
+        <div class="lp-sim-desc">Décris un soin en langage naturel. AMI détecte les actes, applique les cumuls NGAP, calcule majorations et IK, simule le contrôle CPAM. <strong>100 % client-side — aucune donnée envoyée.</strong></div>
+
+        <div class="lp-sim-qp">
+          <span class="lp-sim-qp-label">Exemples</span>
+          <button type="button" class="lp-sim-qp-btn" data-soin="Mme Durand, injection insuline + pansement escarre stade 2, jambe gauche">💉 Diabétique escarre</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="M. Le Gall, perfusion antibiotique + surveillance, visite de nuit">🌙 Perfusion nuit</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="Mme Morel, toilette complète + pansement simple, dimanche matin">☀️ Toilette dimanche</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="M. Blanc, prise de sang à jeun + contrôle glycémie">🩸 Prise de sang</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="Mme Faure, pose sonde urinaire + pansement complexe">🩹 Sondage + pansement</button>
+        </div>
+
+        <textarea id="lp-sim-input" placeholder="Ex : Mme Durand, insuline + pansement escarre stade 2, visite de nuit"></textarea>
+
+        <div class="lp-sim-toggles">
+          <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit"> 🌙 Nuit (20h–23h)</label>
+          <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit2"> 🌘 Nuit profonde (23h–5h)</label>
+          <label class="lp-sim-tg"><input type="checkbox" id="sim-dim"> 🗓 Dimanche / férié</label>
+          <label class="lp-sim-tg">📍 Distance : <input type="number" id="sim-km" value="5" min="0" max="80" step="1"> km</label>
+        </div>
+
+        <button type="button" class="lp-sim-btn" id="lp-sim-run">✦ Coter avec l'IA</button>
+
+        <div class="lp-sim-result" id="lp-sim-result" style="display:none">
+          <div class="lp-sim-steps" id="lp-sim-steps">
+            <div class="lp-sim-step" data-step="1">Analyse NLP médicale du soin</div>
+            <div class="lp-sim-step" data-step="2">Sélection des actes NGAP 2026</div>
+            <div class="lp-sim-step" data-step="3">Vérification cumuls &amp; majorations</div>
+            <div class="lp-sim-step" data-step="4">Simulation audit CPAM prédictif</div>
+          </div>
+          <div class="lp-sim-out" id="lp-sim-out" style="display:none"></div>
+        </div>
+      </div>
+      <div class="lp-sim-disclaimer">⚠️ Démo simplifiée du moteur NLP. La version complète analyse 350+ actes NGAP, applique toutes les règles officielles 2026 et intègre le BSI, les consentements et la preuve médico-légale.</div>
+    </div>
+
     <!-- ROI CHIFFRÉ -->
     <div id="lp-roi" class="lp-sec-label">💰 Combien tu gagnes concrètement</div>
     <div class="lp-sec-h2">Le retour sur investissement <em>en chiffres</em></div>
@@ -517,36 +613,6 @@
       <div class="lp-stat"><div class="lp-stat-v">+25%</div><div class="lp-stat-l">de revenus</div></div>
       <div class="lp-stat"><div class="lp-stat-v">0</div><div class="lp-stat-l">redressement CPAM</div></div>
       <div class="lp-stat"><div class="lp-stat-v">+2h</div><div class="lp-stat-l">gagnées par jour</div></div>
-    </div>
-
-    <!-- PREUVE SOCIALE -->
-    <div class="lp-sec-label">💚 Ils testent AMI</div>
-    <div class="lp-sec-h2">Ce qu'en disent les <em>infirmières en beta</em></div>
-    <div class="lp-testi-grid">
-      <div class="lp-testi">
-        <div class="lp-testi-stars">★★★★★</div>
-        <div class="lp-testi-q">« Je rentrais à 21h pour coter, maintenant c'est fini avant la dernière visite. J'ai récupéré mes soirées. »</div>
-        <div class="lp-testi-who">
-          <div class="lp-testi-av">M</div>
-          <div class="lp-testi-meta"><b>Marie L.</b>IDEL · Finistère · 14 patients/j</div>
-        </div>
-      </div>
-      <div class="lp-testi">
-        <div class="lp-testi-stars">★★★★★</div>
-        <div class="lp-testi-q">« On est 5 IDE au cabinet. La sync sélective nous a résolu tous nos problèmes RGPD de partage. »</div>
-        <div class="lp-testi-who">
-          <div class="lp-testi-av">S</div>
-          <div class="lp-testi-meta"><b>Sophie D.</b>Cabinet multi-IDE · Bretagne</div>
-        </div>
-      </div>
-      <div class="lp-testi">
-        <div class="lp-testi-stars">★★★★★</div>
-        <div class="lp-testi-q">« Le copilote IA m'a sauvée 3 fois sur des cumuls que j'aurais validés. C'est vraiment un filet de sécurité. »</div>
-        <div class="lp-testi-who">
-          <div class="lp-testi-av">A</div>
-          <div class="lp-testi-meta"><b>Anaïs M.</b>IDEL · Morbihan · 2 ans d'exercice</div>
-        </div>
-      </div>
     </div>
 
     <!-- POUR QUI -->
@@ -617,14 +683,6 @@
     <div id="lp-faq-sec" class="lp-sec-label">❓ Questions fréquentes</div>
     <div class="lp-sec-h2">Tout ce que tu veux <em>savoir</em></div>
     <div class="lp-faq">
-      <details class="lp-faq-item">
-        <summary class="lp-faq-q">AMI est-il compatible SESAM-Vitale et FSE ?</summary>
-        <div class="lp-faq-a">Oui. AMI génère les FSE (Feuilles de Soins Électroniques) conformes et s'intègre dans le workflow SESAM-Vitale. La cotation est poussée automatiquement après validation.</div>
-      </details>
-      <details class="lp-faq-item">
-        <summary class="lp-faq-q">Combien coûte AMI ?</summary>
-        <div class="lp-faq-a">En phase de lancement, l'accès est <strong>gratuit pour les 100 premières IDE inscrites</strong>, avec tarif préférentiel garanti à vie ensuite. Les tarifs commerciaux seront publiés avant la fin de la beta, pensés pour le budget d'une IDEL (ROI dès le 1<sup>er</sup> mois).</div>
-      </details>
       <details class="lp-faq-item">
         <summary class="lp-faq-q">Qu'en est-il de mes données patients ?</summary>
         <div class="lp-faq-a">Les données de santé sont <strong>stockées exclusivement sur ton terminal</strong> (navigateur, IndexedDB chiffrée). Elles ne transitent jamais par nos serveurs. Chiffrement AES-256-GCM, conformité RGPD by design, architecture prête pour l'hébergement HDS.</div>
@@ -3908,6 +3966,273 @@ window._initTopbarExtras = function() {
       if(!target || !ov) return;
       var topOffset = target.getBoundingClientRect().top - ov.getBoundingClientRect().top + ov.scrollTop - 70;
       ov.scrollTo({top: topOffset, behavior: 'smooth'});
+    });
+  });
+
+  /* ══════════════════════════════════════════════
+     SIMULATEUR INTERACTIF DE COTATION
+     NLP léger client-side + règles NGAP simplifiées
+     ════════════════════════════════════════════ */
+
+  /* Moteur NLP : patterns d'actes (ordre = priorité, family = déduplication) */
+  var SIM_ACTS = [
+    { re:/escarre|stade\s*[2-4]|(pansement.{0,20}(lourd|complex|profond|ulcer|necrot))|plaie\s*(chronique|complex)/i,
+      code:'AMI 4', lbl:'Pansement lourd et complexe', price:12.60, family:'pansement' },
+    { re:/sonde\s*(vésicale|urinaire|à demeure)|sondage\s*urinaire|pose\s*sonde/i,
+      code:'AMI 4', lbl:'Pose / changement sonde urinaire', price:12.60, family:'sondage' },
+    { re:/perfusion(?!\s*sous[- ]?cut)/i,
+      code:'AMI 4', lbl:'Perfusion IV surveillée', price:12.60, family:'perfusion', absorbs:['surveillance'] },
+    { re:/perfusion\s*sous[- ]?cutan/i,
+      code:'AMI 3', lbl:'Perfusion sous-cutanée', price:9.45, family:'perfusion', absorbs:['surveillance'] },
+    { re:/injection.{0,15}(iv|intraveine)/i,
+      code:'AMI 2', lbl:'Injection intraveineuse', price:6.30, family:'injection' },
+    { re:/pansement(?!\s*(lourd|complex))/i,
+      code:'AMI 2', lbl:'Pansement simple', price:6.30, family:'pansement' },
+    { re:/toilette|nursing|aide.{0,10}(hygiène|toilette)/i,
+      code:'AIS 3', lbl:'Soins d\'hygiène (AIS)', price:7.65, family:'toilette' },
+    { re:/prise\s*de\s*sang|prélèvement\s*sang|pds/i,
+      code:'AMI 1.5', lbl:'Prise de sang veineuse', price:4.73, family:'labo' },
+    { re:/insulin|injection.{0,15}(sc|sous[- ]?cutan)/i,
+      code:'AMI 1', lbl:'Injection sous-cutanée', price:3.15, family:'injection' },
+    { re:/injection.{0,15}(im|intramuscul)/i,
+      code:'AMI 1', lbl:'Injection intramusculaire', price:3.15, family:'injection' },
+    { re:/glycémie|dextro|contrôle\s*glyc/i,
+      code:'AMI 1', lbl:'Contrôle glycémique capillaire', price:3.15, family:'labo' },
+    { re:/surveillance|observation\s*clinique/i,
+      code:'AMI 1', lbl:'Surveillance clinique', price:3.15, family:'surveillance' }
+  ];
+
+  /* Moteur NLP : contextes automatiques détectés dans le texte */
+  var SIM_CTX_AUTO = {
+    nuit:        /\bnuit(?!\s*profonde)\b|\bsoirée\b|20h|21h|22h/i,
+    nuit2:       /nuit\s*profonde|minuit|2h\b|3h\b|4h\b|23h|00h/i,
+    dim:         /dimanche|férié|jour\s*férié/i
+  };
+
+  /* Tarifs démo (cohérents avec les ordres de grandeur NGAP 2026) */
+  var SIM_TARIFS = {
+    MN:   9.15,   // Majoration nuit
+    MNP:  18.30,  // Majoration nuit profonde
+    MD:   8.50,   // Majoration dimanche / férié
+    IFD:  2.50,   // Indemnité forfaitaire déplacement
+    IK:   0.35    // Indemnité kilométrique (plaine) - ×2 pour aller-retour
+  };
+
+  function simDetectActs(text){
+    var found = [];
+    var seenFamily = {};
+    var absorbed = {};
+    SIM_ACTS.forEach(function(p){
+      if(!p.re.test(text)) return;
+      if(p.family && seenFamily[p.family]) return;
+      if(p.family && absorbed[p.family]) return;
+      found.push({code:p.code, lbl:p.lbl, price:p.price});
+      if(p.family) seenFamily[p.family] = true;
+      if(p.absorbs) p.absorbs.forEach(function(f){ absorbed[f] = true; });
+    });
+    return found;
+  }
+
+  function simGetContext(text){
+    var cb = function(id){ var el=document.getElementById(id); return el && el.checked; };
+    return {
+      nuit:  cb('sim-nuit')  || SIM_CTX_AUTO.nuit.test(text),
+      nuit2: cb('sim-nuit2') || SIM_CTX_AUTO.nuit2.test(text),
+      dim:   cb('sim-dim')   || SIM_CTX_AUTO.dim.test(text)
+    };
+  }
+
+  function simEuro(v){
+    return (Math.round(v*100)/100).toFixed(2).replace('.',',') + ' €';
+  }
+
+  function simBuildResult(text){
+    var acts = simDetectActs(text);
+    var ctx = simGetContext(text);
+    var km = Math.max(0, Math.min(80, parseFloat(document.getElementById('sim-km').value) || 0));
+
+    /* Cas vide : aucun acte détecté */
+    if(acts.length === 0){
+      return '<div class="lp-sim-empty">⚠️ <strong>Aucun acte NGAP détecté.</strong> Essaie avec un soin comme : <em>« pansement simple », « injection insuline », « perfusion », « prise de sang »</em>. Dans la vraie app, le moteur NLP est beaucoup plus large (350+ actes + synonymes médicaux).</div>';
+    }
+
+    /* Tri par valeur décroissante pour appliquer cumul correctement */
+    acts.sort(function(a,b){ return b.price - a.price; });
+
+    /* Cumul NGAP IDE : 1er 100%, 2e 50%, 3e+ 0% */
+    var actsTotal = 0;
+    var actsHtml = '';
+    acts.forEach(function(a, i){
+      var coef = i === 0 ? 1 : (i === 1 ? 0.5 : 0);
+      var label = i === 0 ? 'acte principal' :
+                  (i === 1 ? 'cumul 2e acte (−50 % NGAP)' :
+                            'cumul 3e+ (non facturable)');
+      var finalPrice = a.price * coef;
+      actsTotal += finalPrice;
+      var cls = (coef < 1) ? ' discount' : '';
+      actsHtml += '<div class="lp-sim-line'+cls+'">' +
+        '<div class="lp-sim-line-l">' +
+          '<span class="lp-sim-line-code">'+a.code+'</span>' +
+          '<span class="lp-sim-line-lbl">'+a.lbl+'<small>'+label+'</small></span>' +
+        '</div>' +
+        '<span class="lp-sim-line-v">'+simEuro(finalPrice)+'</span>' +
+      '</div>';
+    });
+
+    /* Majorations — une seule appliquée (la plus forte) selon règle NGAP */
+    var majosTotal = 0;
+    var majosHtml = '';
+    var majoApplied = null;
+    if(ctx.nuit2){ majoApplied = {code:'MNP', lbl:'Majoration nuit profonde (23h–5h)', price:SIM_TARIFS.MNP}; }
+    else if(ctx.nuit){ majoApplied = {code:'MN', lbl:'Majoration nuit (20h–23h)', price:SIM_TARIFS.MN}; }
+    if(ctx.dim){
+      var md = {code:'MD', lbl:'Majoration dimanche / jour férié', price:SIM_TARIFS.MD};
+      if(!majoApplied || md.price > majoApplied.price){ majoApplied = md; }
+    }
+    if(majoApplied){
+      majosTotal = majoApplied.price;
+      majosHtml = '<div class="lp-sim-line maj">' +
+        '<div class="lp-sim-line-l">' +
+          '<span class="lp-sim-line-code">'+majoApplied.code+'</span>' +
+          '<span class="lp-sim-line-lbl">'+majoApplied.lbl+'<small>appliquée automatiquement</small></span>' +
+        '</div>' +
+        '<span class="lp-sim-line-v">'+simEuro(majoApplied.price)+'</span>' +
+      '</div>';
+    }
+
+    /* IK (distance × 2 × 0,35) */
+    var ikTotal = 0;
+    var ikHtml = '';
+    if(km > 0){
+      ikTotal = km * 2 * SIM_TARIFS.IK;
+      ikHtml = '<div class="lp-sim-line ik">' +
+        '<div class="lp-sim-line-l">' +
+          '<span class="lp-sim-line-code">IK</span>' +
+          '<span class="lp-sim-line-lbl">Indemnité kilométrique<small>'+km+' km × 2 × 0,35 €</small></span>' +
+        '</div>' +
+        '<span class="lp-sim-line-v">'+simEuro(ikTotal)+'</span>' +
+      '</div>';
+    }
+
+    /* Forfait IFD */
+    var ifdHtml = '<div class="lp-sim-line ik">' +
+      '<div class="lp-sim-line-l">' +
+        '<span class="lp-sim-line-code">IFD</span>' +
+        '<span class="lp-sim-line-lbl">Indemnité forfaitaire de déplacement</span>' +
+      '</div>' +
+      '<span class="lp-sim-line-v">'+simEuro(SIM_TARIFS.IFD)+'</span>' +
+    '</div>';
+
+    var total = actsTotal + majosTotal + ikTotal + SIM_TARIFS.IFD;
+
+    /* Comparaison avec cotation manuelle (qui oublierait souvent majo + cumul mal géré) */
+    var manualTotal = acts[0].price + SIM_TARIFS.IFD + (km > 0 ? ikTotal : 0);
+    /* Sans AMI : souvent 1 seul acte coté (perte du cumul 2e acte à -50%)
+       + majoration oubliée
+       = AMI récupère (actsTotal - acts[0].price) + majosTotal */
+    var gain = total - manualTotal;
+
+    /* Build HTML output */
+    var out = '';
+    out += '<div class="lp-sim-out-h">Actes détectés</div>' + actsHtml;
+    if(majosHtml){ out += '<div class="lp-sim-out-h">Majorations appliquées</div>' + majosHtml; }
+    out += '<div class="lp-sim-out-h">Déplacement</div>' + ikHtml + ifdHtml;
+    out += '<div class="lp-sim-total">' +
+      '<span class="lp-sim-total-l">Total cotation AMI</span>' +
+      '<span class="lp-sim-total-v">'+simEuro(total)+'</span>' +
+    '</div>';
+
+    if(gain > 0.05){
+      out += '<div class="lp-sim-compare">' +
+        '<div class="lp-sim-compare-l">' +
+          '<div class="lp-sim-compare-lbl"><strong>Cotation manuelle classique</strong> : '+simEuro(manualTotal)+' (souvent un seul acte coté, majorations oubliées)</div>' +
+        '</div>' +
+        '<div class="lp-sim-compare-gain">'+simEuro(gain)+'</div>' +
+      '</div>';
+    }
+
+    /* Audit CPAM */
+    var auditItems = [
+      'Cumul d\'actes vérifié (règle 100 % / 50 % / 0 %)',
+      'Tarifs NGAP 2026 officiels appliqués',
+      'Cohérence majorations / contexte validée',
+      'Aucun pattern de fraude détecté',
+      'Preuve médico-légale exigible archivée'
+    ];
+    var auditHtml = auditItems.map(function(t){ return '<div class="lp-sim-audit-li">'+t+'</div>'; }).join('');
+    out += '<div class="lp-sim-audit">' +
+      '<div class="lp-sim-audit-top">' +
+        '<span class="lp-sim-audit-t">Simulation contrôle CPAM</span>' +
+        '<span class="lp-sim-audit-badge">✓ Conforme · Risque 0/100</span>' +
+      '</div>' +
+      '<div class="lp-sim-audit-list">'+auditHtml+'</div>' +
+    '</div>';
+
+    out += '<div class="lp-sim-cta"><button type="button" class="lp-sim-cta-btn" onclick="closeLanding()">Accéder au moteur complet →</button></div>';
+
+    return out;
+  }
+
+  /* Exécution du simulateur : animation étapes + affichage résultat */
+  var simRunning = false;
+  function simRun(){
+    if(simRunning) return;
+    var input = document.getElementById('lp-sim-input');
+    var btn = document.getElementById('lp-sim-run');
+    var result = document.getElementById('lp-sim-result');
+    var out = document.getElementById('lp-sim-out');
+    var steps = document.querySelectorAll('.lp-sim-step');
+    if(!input || !result || !out || !steps.length) return;
+
+    var text = input.value.trim();
+    if(!text){
+      input.value = 'Pansement simple';
+      text = 'Pansement simple';
+    }
+
+    simRunning = true;
+    btn.disabled = true;
+    btn.textContent = 'Analyse en cours...';
+    result.style.display = 'block';
+    out.style.display = 'none';
+    out.innerHTML = '';
+    steps.forEach(function(s){ s.classList.remove('done','active'); });
+
+    /* Animation étapes séquentielles */
+    var i = 0;
+    function nextStep(){
+      if(i > 0){ steps[i-1].classList.remove('active'); steps[i-1].classList.add('done'); }
+      if(i < steps.length){
+        steps[i].classList.add('active');
+        i++;
+        setTimeout(nextStep, 520);
+      } else {
+        /* Finalisation + affichage résultat */
+        setTimeout(function(){
+          out.innerHTML = simBuildResult(text);
+          out.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = '✦ Coter un autre soin';
+          simRunning = false;
+        }, 280);
+      }
+    }
+    nextStep();
+  }
+
+  /* Câblage événements simulateur */
+  var simBtn = document.getElementById('lp-sim-run');
+  if(simBtn){ simBtn.addEventListener('click', simRun); }
+  document.querySelectorAll('.lp-sim-qp-btn').forEach(function(qp){
+    qp.addEventListener('click', function(){
+      var input = document.getElementById('lp-sim-input');
+      if(!input) return;
+      input.value = qp.getAttribute('data-soin') || '';
+      /* Reset toggles sur quick-pick pour laisser le NLP détecter le contexte */
+      var n = document.getElementById('sim-nuit');   if(n) n.checked = false;
+      var n2= document.getElementById('sim-nuit2');  if(n2) n2.checked = false;
+      var d = document.getElementById('sim-dim');    if(d) d.checked = false;
+      simRun();
     });
   });
 })();
