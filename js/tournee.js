@@ -1901,6 +1901,18 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
     if (!skipIDB) {
       try {
         if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          // Pré-construire les clés composites de fromMemory pour dédoublonnage robuste
+          // Format : "patient_id|YYYY-MM-DD|total" — utilisé quand invoice_number est null
+          // (ex: cotation tournée fraîchement créée par /ami-calcul qui ne retourne PAS
+          // d'invoice_number — celui-ci n'est généré qu'au PUSH /ami-save-cotation).
+          const _memKeys = new Set();
+          for (const m of fromMemory) {
+            const _mPid  = m.patient_id || m.id;
+            const _mDate = (m._cotation?._tournee_date || new Date().toISOString()).slice(0, 10);
+            const _mTot  = parseFloat(m._cotation?.total || 0).toFixed(2);
+            if (_mPid) _memKeys.add(`${_mPid}|${_mDate}|${_mTot}`);
+          }
+
           const rows = await _idbGetAll(PATIENTS_STORE);
           for (const row of rows) {
             const p = { id: row.id, ...((typeof _dec === 'function' ? _dec(row._data) : {}) || {}) };
@@ -1908,9 +1920,16 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
             for (const cot of p.cotations) {
               if (cot._synced) continue;
               if (cot.source === 'cotation_edit' || cot.source === 'ngap_edit') continue;
-              // Ne pas re-envoyer les cotations déjà envoyées depuis la mémoire (même invoice_number)
+              // Dédoublonnage 1 : invoice_number identique
               if (cot.invoice_number && fromMemory.some(m => m._cotation?.invoice_number === cot.invoice_number)) continue;
-              const cotDate = (cot.date || '').slice(0, 10);
+              // Dédoublonnage 2 : clé composite (patient_id + date + total) quand invoice_number absent
+              // Évite le doublon quand la cotation IDB et fromMemory pointent sur le même soin
+              // mais que l'invoice_number n'a pas encore été retourné par Supabase.
+              const _cotDate10 = (cot.date || '').slice(0, 10);
+              const _cotTot    = parseFloat(cot.total || 0).toFixed(2);
+              if (!cot.invoice_number && _memKeys.has(`${row.id}|${_cotDate10}|${_cotTot}`)) continue;
+
+              const cotDate = _cotDate10;
               const sevenDaysAgo = new Date(Date.now() - 7*24*3600*1000).toISOString().slice(0,10);
               if (cotDate < sevenDaysAgo) continue;
               if (parseFloat(cot.total || 0) <= 0) continue;
@@ -1997,18 +2016,77 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
 
     const result = await apiCall('/webhook/ami-save-cotation', { cotations });
     if (result?.ok) {
-      // Marquer comme synced en mémoire
-      fromMemory.forEach(p => { if (p._cotation) p._cotation._synced = true; });
-      // Marquer comme synced dans IDB
-      for (const item of fromIDB) {
+      // Récupérer les invoice_numbers retournés par le worker (alignés sur l'ordre cotations[])
+      // Format possible : { invoice_numbers: [...] } | { invoices: [...] } | { invoice_number: "..." }
+      const _retInvs = Array.isArray(result.invoice_numbers) ? result.invoice_numbers
+                     : Array.isArray(result.invoices)        ? result.invoices
+                     : (result.invoice_number ? [result.invoice_number] : []);
+
+      // ── 1. fromMemory : marquer mémoire + propager invoice_number à l'IDB ──
+      // CRITIQUE : sans cette propagation, la cotation IDB reste avec
+      // invoice_number=null + _synced=false → re-envoyée à la prochaine
+      // clôture (skipIDB=false) → DOUBLON garanti.
+      for (let i = 0; i < fromMemory.length; i++) {
+        const p   = fromMemory[i];
+        const inv = _retInvs[i] || p._cotation?.invoice_number || null;
+        if (p._cotation) {
+          p._cotation._synced = true;
+          if (inv && !p._cotation.invoice_number) p._cotation.invoice_number = inv;
+        }
+        // Mettre à jour l'IDB : invoice_number + _synced=true
+        try {
+          const pid = p.patient_id || p.id;
+          if (!pid) continue;
+          const rows = await _idbGetAll(PATIENTS_STORE);
+          const row  = rows.find(r => r.id === pid);
+          if (!row) continue;
+          const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
+          if (!Array.isArray(pat.cotations)) continue;
+          // Résolution : invoice_number connu, sinon (date + total) sur cotation non-synced
+          const _dKey = (p._cotation?._tournee_date || new Date().toISOString()).slice(0, 10);
+          const _tKey = parseFloat(p._cotation?.total || 0);
+          let cIdx = inv ? pat.cotations.findIndex(c => c.invoice_number === inv) : -1;
+          if (cIdx < 0) {
+            cIdx = pat.cotations.findIndex(c =>
+              (c.source === 'tournee' || c.source === 'tournee_live' || c.source === 'tournee_auto') &&
+              (c.date || '').slice(0, 10) === _dKey &&
+              Math.abs(parseFloat(c.total || 0) - _tKey) < 0.01 &&
+              !c._synced
+            );
+          }
+          if (cIdx >= 0) {
+            if (inv && !pat.cotations[cIdx].invoice_number) pat.cotations[cIdx].invoice_number = inv;
+            pat.cotations[cIdx]._synced = true;
+            pat.updated_at = new Date().toISOString();
+            const _tsM = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at };
+            await _idbPut(PATIENTS_STORE, _tsM);
+            if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsM).catch(() => {});
+          }
+        } catch (_) {}
+      }
+
+      // ── 2. fromIDB : marquer comme synced + propager invoice_number ──
+      for (let j = 0; j < fromIDB.length; j++) {
+        const item = fromIDB[j];
+        const inv  = _retInvs[fromMemory.length + j] || item._idb_cot?.invoice_number || null;
         try {
           const rows = await _idbGetAll(PATIENTS_STORE);
-          const row = rows.find(r => r.id === item._idb_patient_id);
+          const row  = rows.find(r => r.id === item._idb_patient_id);
           if (!row) continue;
           const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
           if (Array.isArray(pat.cotations)) {
-            const c = pat.cotations.find(c => c.date === item._idb_cot.date && c.total === item._idb_cot.total);
-            if (c) c._synced = true;
+            // Match prioritaire : invoice_number, sinon (date + total)
+            let c = inv ? pat.cotations.find(x => x.invoice_number === inv) : null;
+            if (!c) {
+              c = pat.cotations.find(x =>
+                x.date === item._idb_cot.date &&
+                Math.abs(parseFloat(x.total || 0) - parseFloat(item._idb_cot.total || 0)) < 0.01
+              );
+            }
+            if (c) {
+              if (inv && !c.invoice_number) c.invoice_number = inv;
+              c._synced = true;
+            }
           }
           pat.updated_at = new Date().toISOString();
           const _ts1 = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at };

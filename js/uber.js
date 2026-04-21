@@ -418,10 +418,20 @@ async function _autoCoterEtImporterPatient(p) {
     }
   } catch (_e) {}
 
-  /* ── Sync Supabase silencieux ── */
+  /* ── Sync Supabase silencieux ──
+     ⚠️ skipIDB: true OBLIGATOIRE :
+     La cotation vient d'être écrite en IDB juste au-dessus avec
+     `_synced: false` et `invoice_number: null` (l'API /ami-calcul renvoie
+     les actes mais PAS d'invoice_number — celui-ci sera généré par
+     /ami-save-cotation). Si on laisse _syncCotationsToSupabase relire l'IDB,
+     il trouvera la cotation fraîchement saved et l'enverra une 2e fois en
+     plus de fromMemory[p] → 2 INSERT dans Supabase → 2 invoice_numbers
+     différents → DOUBLON dans Historique des soins après pull au login.
+     Le rattrapage IDB (skipIDB=false) est fait à la clôture journée
+     (_stopDayInternal) — c'est suffisant comme filet de sécurité. */
   try {
     if (typeof _syncCotationsToSupabase === 'function') {
-      _syncCotationsToSupabase([p]).catch(() => {});
+      _syncCotationsToSupabase([p], { skipIDB: true }).catch(() => {});
     }
   } catch (_e) {}
 }

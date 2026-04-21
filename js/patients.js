@@ -2604,6 +2604,15 @@ async function syncCotationsFromServer() {
 
       // invoice_numbers déjà dans l'IDB — on ne touche pas à ces cotations
       const localInvoices = new Set(p.cotations.map(c => c.invoice_number).filter(Boolean));
+      // Index composite : "YYYY-MM-DD|total" — détecte les doublons quand l'invoice_number
+      // serveur diffère du local (ex: ancienne tournée envoyée 2× à Supabase avant le fix
+      // _syncCotationsToSupabase → 2 invoice_numbers serveur pour 1 cotation locale).
+      // Sans ce filtre, le pull réinjecterait le 2e invoice_number comme "nouvelle" cotation.
+      const localKeyDateTotal = new Set(
+        p.cotations
+          .filter(c => parseFloat(c.total || 0) > 0)
+          .map(c => `${(c.date || '').slice(0, 10)}|${parseFloat(c.total || 0).toFixed(2)}`)
+      );
 
       // ── Candidats serveur pour ce patient ───────────────────────────────────
       // Critère 1 : patient_id direct (cotations tournée)
@@ -2647,15 +2656,28 @@ async function syncCotationsFromServer() {
         // Guard : ignorer cotations sans acte technique (majorations seules)
         const _hasTechNS = actes.some(a => !_CODES_MAJ_NS.has((a.code||'').toUpperCase()));
         if (!_hasTechNS && actes.length > 0) continue;
+        // Filtre anti-doublon par (date + total) : si une cotation locale existe déjà
+        // pour le même jour avec le même montant, on considère que c'est un doublon
+        // serveur (ancienne tournée envoyée 2× avant le fix uber.js skipIDB:true).
+        // On marque l'invoice_number comme "vu" pour ne pas le re-tenter au prochain pull.
+        const _scTotal = parseFloat(sc.total || 0);
+        const _scDate10 = (sc.date_soin || '').slice(0, 10);
+        const _scKey = `${_scDate10}|${_scTotal.toFixed(2)}`;
+        if (_scTotal > 0 && localKeyDateTotal.has(_scKey)) {
+          console.warn(`[AMI] syncCotationsFromServer : doublon serveur ignoré (${sc.invoice_number}, ${_scKey})`);
+          localInvoices.add(sc.invoice_number); // évite re-scan
+          continue;
+        }
         p.cotations.push({
           date: sc.date_soin || null, heure: sc.heure_soin || '', actes,
-          total: parseFloat(sc.total || 0), part_amo: parseFloat(sc.part_amo || 0),
+          total: _scTotal, part_amo: parseFloat(sc.part_amo || 0),
           part_amc: parseFloat(sc.part_amc || 0), part_patient: parseFloat(sc.part_patient || 0),
           soin: (sc.notes || '').slice(0, 120), invoice_number: sc.invoice_number,
           source: sc.source || 'sync_server', ngap_version: sc.ngap_version || null,
           dre_requise: !!sc.dre_requise, _synced: true,
         });
         localInvoices.add(sc.invoice_number);
+        if (_scTotal > 0) localKeyDateTotal.add(_scKey);
         added++;
       }
 
