@@ -124,26 +124,22 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* Plein écran map */
 #dep-map.fullscreen{position:fixed;inset:0;height:100dvh !important;width:100vw !important;border-radius:0;border:none;z-index:9000;margin:0}
 
-/* ── FIX TRAITS BLANCS VERTICAUX SUR LES TUILES LEAFLET ──
-   Bug connu : le rendu subpixel crée des gaps de ~0.5px entre les tuiles
-   sur certains navigateurs/DPI. Fix : chevaucher légèrement les tuiles
-   (width: 256.5px) + optimisation du rendu d'image. */
-.leaflet-container .leaflet-tile-pane{will-change:transform;transform:translateZ(0)}
+/* ── FIX TRAITS BLANCS ENTRE LES TUILES LEAFLET (approche conservative v3) ──
+   IMPORTANT : Leaflet utilise translate3d(x,y,0) sur chaque tuile pour
+   positionner les tuiles ; il ne faut PAS écraser ce transform sinon
+   toutes les tuiles s'empilent à 0,0 et la carte casse.
+   On force seulement le pane en composition GPU + rendu net des images. */
+.leaflet-container .leaflet-tile-pane{
+  will-change:transform;
+  transform:translate3d(0,0,0);
+  -webkit-transform:translate3d(0,0,0);
+}
 .leaflet-tile{
-  /* Chevauchement d'un demi-pixel pour masquer les gaps subpixel */
-  width:256.5px !important;
-  height:256.5px !important;
-  /* Rendu d'image net, sans lissage entre tuiles */
+  /* Rendu net sans interpolation subpixel */
   image-rendering:-webkit-optimize-contrast;
-  image-rendering:crisp-edges;
-  /* Force la composition hardware */
+  /* Force la composition GPU sans écraser le transform de positionnement */
   backface-visibility:hidden;
   -webkit-backface-visibility:hidden;
-}
-/* Idem pour la carte Live et toute carte Leaflet */
-.leaflet-tile-container img{
-  width:256.5px !important;
-  height:256.5px !important;
 }
 /* Recherche adresse */
 .map-search{display:flex;gap:8px;margin-bottom:10px}
