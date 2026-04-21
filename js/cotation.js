@@ -168,8 +168,17 @@ function cotationRenderCabinetActes() {
     return;
   }
 
+  // Validation critique : l'ID utilisateur est requis pour attribuer les actes
+  // (sinon le serveur reçoit performed_by:'moi' = valeur invalide)
+  const meId = APP.user?.id;
+  if (!meId) {
+    list.innerHTML = `<div class="ai wa" style="font-size:12px">
+      ⚠️ Session utilisateur non initialisée. Reconnectez-vous pour activer le mode cabinet.
+    </div>`;
+    return;
+  }
+
   const actes = _cotDetectActes(texte);
-  const meId  = APP.user?.id || 'moi';
   const meLabel = ((APP.user?.prenom||'')+' '+(APP.user?.nom||'')).trim() || 'Moi';
 
   // Options IDE avec couleur
@@ -241,7 +250,8 @@ function cotationUpdateCabinetTotal() {
 
   const cab     = APP.get('cabinet');
   const members = cab?.members || [];
-  const meId    = APP.user?.id || 'moi';
+  const meId    = APP.user?.id;
+  if (!meId) return; // Session non initialisée → rien à afficher (Render a déjà affiché l'erreur)
   const meLabel = ((APP.user?.prenom||'')+' '+(APP.user?.nom||'')).trim() || 'Moi';
 
   // Calculer NGAP correct par IDE
@@ -320,7 +330,11 @@ function cotationOptimizeDistribution() {
   const cab = APP.get('cabinet');
   if (!cab?.members?.length) return;
 
-  const meId  = APP.user?.id || 'moi';
+  const meId  = APP.user?.id;
+  if (!meId) {
+    if (typeof showToast==='function') showToast('⚠️ Session utilisateur non initialisée — reconnectez-vous.', 'wa');
+    return;
+  }
   const allIDEs = [meId, ...cab.members.filter(m => m.id !== meId).map(m => m.id)];
   const nbIDEs  = allIDEs.length;
 
@@ -375,8 +389,33 @@ function _cotBuildCabinetPayload() {
   if (!list) return null;
   const selectors = list.querySelectorAll('select[id^="cot-cab-ide-"]');
   if (!selectors.length) return null;
+
+  // Validation : tous les performed_by doivent être des IDs valides
+  // (soit l'utilisateur courant, soit un membre du cabinet)
+  const cab      = APP.get('cabinet');
+  const meId     = APP.user?.id;
+  const validIDs = new Set([meId, ...(cab?.members || []).map(m => m.id)]);
+
   const actes = [];
-  selectors.forEach(sel => actes.push({ code: sel.dataset.acte, performed_by: sel.value }));
+  let invalidCount = 0;
+  selectors.forEach(sel => {
+    const performed_by = sel.value;
+    if (!validIDs.has(performed_by)) {
+      invalidCount++;
+      console.warn('[cotation] performed_by invalide:', performed_by, '— réattribué à moi');
+    }
+    actes.push({
+      code:         sel.dataset.acte,
+      group:        sel.dataset.group || 'acte', // acte / bsi / maj
+      label:        sel.closest('div')?.querySelector('div[style*="font-weight:600"]')?.textContent || sel.dataset.acte,
+      performed_by: validIDs.has(performed_by) ? performed_by : meId, // Fallback : moi si invalide
+    });
+  });
+
+  if (invalidCount > 0 && typeof showToast === 'function') {
+    showToast(`⚠️ ${invalidCount} acte(s) avec attribution invalide — réattribué(s) à vous`, 'wa');
+  }
+
   return actes;
 }
 
@@ -405,14 +444,14 @@ async function cotationCabinet(txt) {
 
     if (!actes?.length) {
       _clear(); ld('btn-cot', false);
-      return cotation(); // fallback solo
+      return _cotationSolo(); // fallback solo — PAS cotation() car récursion mode cabinet
     }
 
     // Vérifier si plusieurs IDEs distincts — sinon fallback solo
     const uniqIDEs = [...new Set(actes.map(a => a.performed_by))];
     if (uniqIDEs.length < 2) {
       _clear(); ld('btn-cot', false);
-      return cotation();
+      return _cotationSolo(); // fallback solo — PAS cotation() car récursion mode cabinet
     }
 
     const payload = {
@@ -441,6 +480,16 @@ async function cotationCabinet(txt) {
     $('cbody').innerHTML = renderCotCabinet(d);
     $('res-cot').classList.add('show');
 
+    // ── Persistance IDB de la part utilisateur courant ─────────────────────
+    // Extraire la cotation correspondant à l'IDE connecté (u.id) et l'appliquer
+    // dans son carnet patient (IDB), en respectant la règle upsert du solo.
+    try {
+      await _cotationCabinetPersistMyPart(d, txt);
+    } catch (_ePersist) {
+      console.warn('[cotation] Persistance IDB cabinet KO:', _ePersist.message);
+      // Non bloquant — la cotation serveur reste valide
+    }
+
     // Scroll vers résultat
     setTimeout(() => document.getElementById('res-cot')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100);
 
@@ -456,6 +505,144 @@ async function cotationCabinet(txt) {
 }
 
 /* ════════════════════════════════════════════════
+   PERSISTANCE IDB DE LA PART UTILISATEUR (mode cabinet)
+   ────────────────────────────────────────────────
+   Après une cotation cabinet, extraire la cotation correspondant à l'IDE
+   connecté et l'appliquer dans son carnet patient (IDB) en respectant
+   exactement la même règle upsert que le pipeline solo :
+
+     Patient existant + _editRef + index trouvé → Upsert (MAJ)
+     Patient existant + pas de _editRef         → Push (1ère cotation)
+     Patient existant + _editRef + pas d'index  → Rien (évite doublon)
+     Patient absent   + pas de _editRef         → Création fiche + cotation
+     Patient absent   + _editRef                → Rien (pas de fiche fantôme)
+
+   Cette fonction échoue en silence (try/catch externe) pour ne pas bloquer
+   la cotation cabinet si l'IDB est indisponible.
+════════════════════════════════════════════════ */
+
+async function _cotationCabinetPersistMyPart(d, txt) {
+  // Pré-conditions
+  if (typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') return;
+  if (typeof _dec !== 'function' || typeof _enc !== 'function') return;
+  if (typeof _idbPut !== 'function') return;
+
+  const cotations = d?.cotations || [];
+  if (!cotations.length) return;
+
+  const meId = APP.user?.id;
+  if (!meId) return;
+
+  // Trouver la part correspondant à l'utilisateur courant
+  const myCot = cotations.find(c => c.ide_id === meId || c.infirmiere_id === meId);
+  if (!myCot) return; // L'utilisateur n'a pas d'acte attribué (possible en cabinet)
+
+  // Guard : pas d'acte technique → ne pas polluer le carnet
+  const _CODES_MAJ = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+  const _actesTech = (myCot.actes || []).filter(a => !_CODES_MAJ.has((a.code||'').toUpperCase()));
+  const _editRef   = window._editingCotation;
+  if (!_actesTech.length && !_editRef) {
+    console.warn('[cotation] Cabinet IDB save ignoré — pas d\'acte technique pour moi:', (myCot.actes||[]).map(a=>a.code));
+    return;
+  }
+
+  const _patNom = (gv('f-pt') || '').trim();
+  if (!_patNom) return; // Pas de nom patient → on ne persiste pas
+
+  const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
+  const _invNum  = myCot.invoice_number || _editRef?.invoice_number || null;
+
+  // Recherche du patient dans l'IDB (même logique que le pipeline solo)
+  const _allRows = await _idbGetAll(PATIENTS_STORE);
+  const _nomLow  = _patNom.toLowerCase();
+  const _patRow  = _allRows.find(r =>
+    ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+    ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+  );
+
+  const _newCot = {
+    date:           _cotDate,
+    heure:          gv('f-hs') || '',
+    actes:          myCot.actes || [],
+    total:          parseFloat(myCot.total || 0),
+    part_amo:       parseFloat(myCot.part_amo || 0),
+    part_amc:       parseFloat(myCot.part_amc || 0),
+    part_patient:   parseFloat(myCot.part_patient || 0),
+    soin:           (txt || '').slice(0, 120),
+    invoice_number: _invNum,
+    source:         _editRef ? 'cabinet_edit' : 'cabinet_form',
+    cabinet_id:     APP.get('cabinet')?.id || null,
+    _synced:        true,
+  };
+
+  if (_patRow) {
+    // ── Patient existant → upsert strict ────────────────────────────────
+    const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+    if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
+
+    // Résolution index (mêmes priorités que le solo)
+    let _idx = -1;
+    if (typeof _editRef?.cotationIdx === 'number' && _editRef.cotationIdx >= 0)
+      _idx = _editRef.cotationIdx;
+    if (_idx < 0 && _invNum)
+      _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
+    if (_idx < 0 && _editRef?.invoice_number)
+      _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
+    if (_idx < 0 && _editRef && _cotDate) {
+      _idx = _pat.cotations.findIndex(c =>
+        (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
+      );
+    }
+
+    if (_idx >= 0) {
+      // Cotation existante → upsert
+      _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
+    } else if (!_editRef) {
+      // Pas de _editRef → 1ère cotation pour ce patient
+      _pat.cotations.push(_newCot);
+    }
+    // Si _editRef mais pas d'index → ne rien faire (évite doublons)
+
+    _pat.updated_at = new Date().toISOString();
+    const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+    await _idbPut(PATIENTS_STORE, _toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
+
+  } else if (!_editRef) {
+    // ── Patient absent + pas de correction → créer fiche + cotation ────
+    const _parts  = _patNom.trim().split(/\s+/);
+    const _prenom = _parts.slice(0, -1).join(' ') || _patNom;
+    const _nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
+    const _newPat = {
+      id:         'pat_' + Date.now(),
+      nom:        _nom,
+      prenom:     _prenom,
+      ddn:        gv('f-ddn') || '',
+      amo:        gv('f-amo') || '',
+      amc:        gv('f-amc') || '',
+      exo:        gv('f-exo') || '',
+      medecin:    gv('f-pr')  || '',
+      cotations:  [_newCot],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      source:     'cabinet_auto',
+    };
+    const _toStore = {
+      id:         _newPat.id,
+      nom:        _nom,
+      prenom:     _prenom,
+      _data:      _enc(_newPat),
+      updated_at: _newPat.updated_at,
+    };
+    await _idbPut(PATIENTS_STORE, _toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
+    if (typeof showToast === 'function')
+      showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
+  }
+  // Sinon (patient absent + _editRef) → rien (pas de fiche fantôme)
+}
+
+/* ════════════════════════════════════════════════
    RENDU RÉSULTAT CABINET — enrichi
 ════════════════════════════════════════════════ */
 
@@ -463,7 +650,7 @@ function renderCotCabinet(d) {
   const cotations = d.cotations || [];
   const cab       = APP.get('cabinet');
   const members   = cab?.members || [];
-  const meId      = APP.user?.id || 'moi';
+  const meId      = APP.user?.id || null; // null safe : ideId === null sera false pour tout vrai ID
   const meLabel   = ((APP.user?.prenom||'')+' '+(APP.user?.nom||'')).trim() || 'Moi';
 
   function getIDEName(ideId) {
@@ -699,9 +886,31 @@ async function cotation() {
   // ── Mode cabinet : pipeline multi-IDE ─────────────────────────────────────
   const cabinetCheckbox = $('cot-cabinet-mode');
   if (cabinetCheckbox?.checked && APP.get('cabinet')?.id) {
+    // Check doublon AVANT lancement cotation cabinet (même logique qu'en solo)
+    // Si une cotation existe déjà pour ce patient/date → modale Mettre à jour / Nouveau
+    const _canContinueCab = await _cotationCheckDoublon(
+      () => cotationCabinet(txt), // Mettre à jour → on relance en mode cabinet, _editingCotation posé
+      () => cotationCabinet(txt)  // Nouvelle cotation → _editingCotation null, cabinet
+    );
+    if (!_canContinueCab) return; // Attend le choix utilisateur
+
     await cotationCabinet(txt);
     return;
   }
+
+  // ── Sinon : pipeline solo (avec vérification doublon) ────────────────────
+  await _cotationSolo();
+}
+
+/**
+ * Pipeline solo = check doublon → pipeline IA.
+ * Extrait de cotation() pour être appelable en fallback depuis cotationCabinet()
+ * SANS re-déclencher la détection du mode cabinet (qui causerait une récursion infinie :
+ *   cotation() → cotationCabinet() → cotation() → cotationCabinet() → …).
+ */
+async function _cotationSolo() {
+  const txt = gv('f-txt');
+  if (!txt) { alert('Veuillez saisir une description.'); return; }
 
   // ── Vérification doublon AVANT l'appel IA ────────────────────────────────
   // Si une cotation existe déjà pour ce patient à cette date,
