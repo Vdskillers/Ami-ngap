@@ -1501,6 +1501,20 @@ function _toggleIdeAssignment(nurseId, nurseName, patientKey, checked) {
 }
 window._toggleIdeAssignment = _toggleIdeAssignment;
 
+/* ── Helper géodésique local (fallback si _haversine global indisponible) ── */
+if (typeof _haversine !== 'function') {
+  window._haversine = function(la1, lo1, la2, lo2) {
+    const R    = 6371;
+    const dLat = (la2 - la1) * Math.PI / 180;
+    const dLon = (lo2 - lo1) * Math.PI / 180;
+    const a    = Math.sin(dLat / 2) ** 2
+               + Math.cos(la1 * Math.PI / 180)
+               * Math.cos(la2 * Math.PI / 180)
+               * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+}
+
 /* ────────────────────────────────────────────────────────────────────
    _renderCabinetAssignmentPanel()
    Affiche dans #tur-cabinet-result chaque IDE avec ses patients
@@ -1527,6 +1541,40 @@ function _renderCabinetAssignmentPanel() {
 
   const COLORS = ['var(--a)', '#4fa8ff', 'var(--w)', '#ff6b6b', '#b0a8ff'];
 
+  // ── Helper : calcul km robuste d'un patient (fallback multi-champs) ──
+  // ── Helper : calcul km robuste d'un patient ──
+  const _ptKm = (p) => {
+    const d = parseFloat(p._legKm || p.distance_km || p.km || 0);
+    return isFinite(d) && d > 0 ? d : 0;
+  };
+
+  // Km total des patients assignés à un IDE + km retour au dernier point
+  const _ideKmTotal = (ideId, ps) => {
+    const assigned = ps.filter(p => {
+      const pk = String(p.patient_id || p.id || '');
+      return (APP._ideAssignments?.[pk] || []).some(a => a.id === ideId);
+    });
+    let total = assigned.reduce((s, p) => s + _ptKm(p), 0);
+    // Si 0 km total ET au moins 1 patient → fallback estimation géodésique
+    if (total === 0 && assigned.length >= 1) {
+      const sp = (typeof APP !== 'undefined' && APP.get) ? APP.get('startPoint') : null;
+      if (sp?.lat && sp?.lng) {
+        // Aller : start → 1er patient
+        const first = assigned[0];
+        if (first.lat && first.lng) total += _haversine(sp.lat, sp.lng, first.lat, first.lng);
+        // Enchaînements
+        for (let i = 1; i < assigned.length; i++) {
+          const a = assigned[i-1], b = assigned[i];
+          if (a.lat && a.lng && b.lat && b.lng) total += _haversine(a.lat, a.lng, b.lat, b.lng);
+        }
+        // Retour : dernier patient → start
+        const last = assigned[assigned.length - 1];
+        if (last.lat && last.lng) total += _haversine(last.lat, last.lng, sp.lat, sp.lng);
+      }
+    }
+    return Math.round(total * 10) / 10;
+  };
+
   result.innerHTML = members.map((m, idx) => {
     const c       = COLORS[idx % COLORS.length];
     const mid     = m.id || `ide_${idx}`;
@@ -1537,15 +1585,15 @@ function _renderCabinetAssignmentPanel() {
     const elemId  = `ide-stats-${mid.replace(/[^a-zA-Z0-9]/g,'_')}`;
 
     // Stats initiales pour cet IDE
-    let ca = 0, km = 0, nb = 0;
+    let ca = 0, nb = 0;
     patients.forEach(p => {
       const pk = String(p.patient_id || p.id || '');
       if ((APP._ideAssignments?.[pk] || []).some(a => a.id === mid)) {
         ca += parseFloat(p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
-        km += parseFloat(p._legKm || 0);
         nb++;
       }
     });
+    const km = _ideKmTotal(mid, patients);
 
     const patientsHTML = patients.map(p => {
       const pk     = String(p.patient_id || p.id || '');
@@ -1594,20 +1642,39 @@ window._renderCabinetAssignmentPanel = _renderCabinetAssignmentPanel;
 function _refreshCabinetStats() {
   const patients    = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || []) : [];
   const assignments = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+  const sp          = (typeof APP !== 'undefined' && APP.get) ? APP.get('startPoint') : null;
+
+  const _ptKm = (p) => {
+    const d = parseFloat(p._legKm || p.distance_km || p.km || 0);
+    return isFinite(d) && d > 0 ? d : 0;
+  };
 
   // Stats par IDE
   document.querySelectorAll('#tur-cabinet-result [data-ide-id]').forEach(statsEl => {
     const ideId = statsEl.dataset.ideId;
     if (!ideId) return;
-    let ca = 0, km = 0, nb = 0;
+    let ca = 0, nb = 0;
+    const assigned = [];
     patients.forEach(p => {
       const pk = String(p.patient_id || p.id || '');
       if ((assignments[pk] || []).some(a => a.id === ideId)) {
         ca += parseFloat(p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
-        km += parseFloat(p._legKm || 0);
         nb++;
+        assigned.push(p);
       }
     });
+    // Km : somme _legKm → si 0, fallback géodésique
+    let km = assigned.reduce((s, p) => s + _ptKm(p), 0);
+    if (km === 0 && assigned.length >= 1 && sp?.lat && sp?.lng && typeof _haversine === 'function') {
+      const first = assigned[0];
+      if (first.lat && first.lng) km += _haversine(sp.lat, sp.lng, first.lat, first.lng);
+      for (let i = 1; i < assigned.length; i++) {
+        const a = assigned[i-1], b = assigned[i];
+        if (a.lat && a.lng && b.lat && b.lng) km += _haversine(a.lat, a.lng, b.lat, b.lng);
+      }
+      const last = assigned[assigned.length - 1];
+      if (last.lat && last.lng) km += _haversine(last.lat, last.lng, sp.lat, sp.lng);
+    }
     const caEl = statsEl.querySelector('.ide-ca-val');
     const kmEl = statsEl.querySelector('.ide-km-val');
     const nbEl = statsEl.querySelector('.ide-nb-val');
@@ -4400,14 +4467,22 @@ async function optimiserTourneeCabinetCA() {
   result.innerHTML = '<div style="text-align:center;padding:20px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><p style="font-size:12px;color:var(--m)">Optimisation des revenus…</p></div>';
 
   try {
-    const patients = rawSrc.map(p => ({
-      ...p,
-      id:     p.id || p.patient_id || null,
-      nom:    p.nom || p._nomAff || '',
-      prenom: p.prenom || '',
-      total:  parseFloat(p.amount || p.total || p.montant || 0)
-                || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0),
-    }));
+    const patients = rawSrc.map(p => {
+      const amt = parseFloat(p.amount || p.total || p.montant || 0)
+                    || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
+      const km  = parseFloat(p._legKm || p.distance_km || p.km || 0);
+      return {
+        ...p,
+        id:          p.id || p.patient_id || null,
+        nom:         p.nom || p._nomAff || '',
+        prenom:      p.prenom || '',
+        total:       amt,
+        amount:      amt,
+        // Champ consommé par cabinetScoreDistribution — garantit un calcul correct
+        distance_km: km,
+        _legKm:      km,
+      };
+    });
 
     // Répartition initiale
     let assignments = typeof cabinetPlanDay === 'function'

@@ -1196,27 +1196,43 @@ function cabinetPlanDay(patients, members) {
 /**
  * cabinetScoreDistribution — score un planning cabinet (€/h, km, nb patients).
  * Utilisé pour comparer deux distributions.
+ *
+ * v2 : robuste aux différents noms de champs :
+ *   - revenu : amount | total | montant | p.actes via _cabinetEstimateRevenue
+ *   - km     : distance_km | _legKm | km
+ * Garantit qu'un patient avec amount ≥ 0.01€ contribue toujours au score.
  */
 function cabinetScoreDistribution(assignments) {
   if (!assignments.length) return { score: 0, total_revenue: 0, total_km: 0, details: [] };
   const details = assignments.map(a => {
     const patients = a.patients || [];
     const revenue  = patients.reduce((s, p) => {
+      // Ordre de priorité : champ déjà calculé → estimation depuis actes
+      const direct = parseFloat(p.amount || p.total || p.montant || 0);
+      if (direct > 0) return s + direct;
       const actes = Array.isArray(p.actes) ? p.actes : [];
-      return s + _cabinetEstimateRevenue(actes);
+      return s + (actes.length ? _cabinetEstimateRevenue(actes) : 0);
     }, 0);
-    const km = patients.reduce((s, p) => s + (p.distance_km || 0), 0);
+    const km = patients.reduce((s, p) => {
+      const d = parseFloat(p.distance_km || p._legKm || p.km || 0);
+      return s + (isFinite(d) ? d : 0);
+    }, 0);
     return { ide_id: a.ide_id, nb_patients: patients.length, revenue: Math.round(revenue * 100) / 100, km: Math.round(km * 10) / 10 };
   });
   const total_revenue = details.reduce((s, d) => s + d.revenue, 0);
   const total_km      = details.reduce((s, d) => s + d.km, 0);
-  // Pénaliser les déséquilibres (écart-type des revenus)
-  const mean = total_revenue / details.length;
-  const variance = details.reduce((s, d) => s + Math.pow(d.revenue - mean, 2), 0) / details.length;
-  const penalty  = Math.sqrt(variance) * 0.5;
-  const score    = Math.round((total_revenue - total_km * 0.2 - penalty) * 100) / 100;
+  // Pénaliser les déséquilibres (écart-type des revenus) + bonus répartition nb patients
+  const mean        = total_revenue / details.length;
+  const variance    = details.reduce((s, d) => s + Math.pow(d.revenue - mean, 2), 0) / details.length;
+  const penalty     = Math.sqrt(variance) * 0.5;
+  // Bonus pour la répartition du nb de patients (évite que toute la charge aille à un seul IDE)
+  const nbMean      = details.reduce((s, d) => s + d.nb_patients, 0) / details.length;
+  const nbVariance  = details.reduce((s, d) => s + Math.pow(d.nb_patients - nbMean, 2), 0) / details.length;
+  const nbPenalty   = Math.sqrt(nbVariance) * 2;   // 2€ par patient d'écart
+  const score       = Math.round((total_revenue - total_km * 0.2 - penalty - nbPenalty) * 100) / 100;
   return { score, total_revenue: Math.round(total_revenue * 100) / 100, total_km: Math.round(total_km * 10) / 10, details };
 }
+
 
 /**
  * cabinetOptimizeRevenue — améliore itérativement un planning cabinet
@@ -1236,20 +1252,25 @@ function cabinetOptimizeRevenue(assignments, members) {
     let improved = false;
     for (let i = 0; i < best.length; i++) {
       for (let j = 0; j < best.length; j++) {
-        if (i === j || !best[i].patients.length) continue;
-        // Essayer de déplacer le premier patient de l'IDE i vers l'IDE j
-        const candidate = best.map(a => ({ ...a, patients: [...a.patients] }));
-        const moved = candidate[i].patients.shift();
-        if (!moved) continue;
-        moved.performed_by = candidate[j].ide_id;
-        candidate[j].patients.push(moved);
-        const candidateScore = cabinetScoreDistribution(candidate).score;
-        if (candidateScore > bestScore) {
-          best = candidate;
-          bestScore = candidateScore;
-          improved = true;
+        if (i === j) continue;
+        // Tester le déplacement de CHAQUE patient de i vers j (pas juste le premier)
+        for (let pi = 0; pi < best[i].patients.length; pi++) {
+          const candidate = best.map(a => ({ ...a, patients: [...a.patients] }));
+          const [moved] = candidate[i].patients.splice(pi, 1);
+          if (!moved) continue;
+          moved.performed_by = candidate[j].ide_id;
+          candidate[j].patients.push(moved);
+          const candidateScore = cabinetScoreDistribution(candidate).score;
+          if (candidateScore > bestScore) {
+            best = candidate;
+            bestScore = candidateScore;
+            improved = true;
+            break;   // Un déplacement accepté → restart sur le nouveau best
+          }
         }
+        if (improved) break;
       }
+      if (improved) break;
     }
     if (!improved) break;
   }
