@@ -1607,10 +1607,58 @@ async function facturePatientMois(patientId) {
     _nb_seances:   cotationsMois.length,
   };
 
+  /* ── Construction du bloc signatures agrégées ──────────────────────
+     Une facture mensuelle regroupe N séances, dont certaines peuvent
+     être signées électroniquement. On agrège chaque signature existante
+     dans un bloc récapitulatif pour la valeur probante médico-légale. */
+  let sigAggregate = '';
+  if (typeof window.getSignature === 'function') {
+    const sigBlocs = [];
+    for (const cot of cotationsMois) {
+      if (!cot.invoice_number) continue;
+      try {
+        const png = await window.getSignature(cot.invoice_number);
+        if (!png) continue;
+        const dateStr = cot.date
+          ? new Date(cot.date).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' })
+          : '';
+        sigBlocs.push(`
+          <div style="display:flex;flex-direction:column;gap:4px;padding:10px;background:#fafbfd;border:1px solid #e0e7ef;border-radius:6px">
+            <div style="font-size:10px;color:#6b7a99;text-transform:uppercase;letter-spacing:.5px">
+              ${dateStr} · ${cot.invoice_number}
+            </div>
+            <img src="${png}" style="width:100%;max-height:60px;object-fit:contain;background:#fff;border-radius:4px">
+          </div>`);
+      } catch (_e) { /* signature inaccessible, on skip */ }
+    }
+    if (sigBlocs.length) {
+      sigAggregate = `
+        <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e0e7ef">
+          <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:12px">
+            Signatures patient — ${sigBlocs.length}/${cotationsMois.length} séance(s) signée(s)
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+            ${sigBlocs.join('')}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:8px">Signature infirmier(ère)</div>
+              <div style="height:70px;border:1px dashed #ccd5e0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">À signer</div>
+            </div>
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:8px">Attestation</div>
+              <div style="font-size:11px;color:#6b7a99;line-height:1.5">Signatures électroniques recueillies à l'issue de chaque séance · Stockage local sécurisé · RGPD-by-design.</div>
+            </div>
+          </div>
+        </div>`;
+      factureData._sig_html = sigAggregate;
+    }
+  }
+
   // Utiliser _doPrint si disponible (cotation.js chargé), sinon fallback autonome
   if (typeof _doPrint === 'function') {
     const u = (typeof S !== 'undefined') ? S?.user || {} : {};
-    _doPrint(factureData, u);
+    await _doPrint(factureData, u);
     return;
   }
 
@@ -1680,6 +1728,7 @@ async function facturePatientMois(patientId) {
   <div class="rc"><div class="rl">Part Patient</div><div class="rv">${fmt(part_patient)}</div></div>
 </div>
 ${factureData.dre_requise ? '<div style="margin-top:16px;padding:10px 14px;background:#e8f4ff;border-radius:6px;font-size:13px;color:#2563eb">📋 <strong>DRE requise</strong> — Demande de Remboursement Exceptionnel</div>' : ''}
+${sigAggregate || ''}
 <div class="footer">AMI NGAP · N° ${num} · Cotation NGAP métropole en vigueur · Généré le ${now.toLocaleDateString('fr-FR')}</div>
 </body></html>`;
 

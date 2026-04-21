@@ -1436,7 +1436,7 @@ async function _saveEditedCotation(d) {
         b) Imprimer sans ces infos
    3. Si complets → impression directe
 ════════════════════════════════════════════════ */
-function printInv(d) {
+async function printInv(d) {
   const u = S?.user || {};
   const missing = [];
   if (!u.adeli)     missing.push('N° ADELI');
@@ -1449,14 +1449,14 @@ function printInv(d) {
     _showProInfoModal(u, missing);
   } else {
     /* Tout est renseigné → imprimer directement */
-    _doPrint(d, u);
+    await _doPrint(d, u);
   }
 }
 
 /* Affiche la modale avec les champs manquants pré-remplis */
-function _showProInfoModal(u, missing) {
+async function _showProInfoModal(u, missing) {
   const modal = $('pro-info-modal');
-  if (!modal) { /* fallback si la modale n'existe pas dans le HTML */ _doPrint(_pendingPrintData, u); return; }
+  if (!modal) { /* fallback si la modale n'existe pas dans le HTML */ await _doPrint(_pendingPrintData, u); return; }
 
   /* Liste des champs manquants */
   const listEl = $('pro-info-missing-list');
@@ -1501,7 +1501,7 @@ function _showProInfoModal(u, missing) {
         ss.save(S.token, S.role, S.user);
 
         closeProInfoModal();
-        _doPrint(_pendingPrintData, S.user);
+        await _doPrint(_pendingPrintData, S.user);
       } catch (e) {
         const msg = $('pro-info-msg');
         if (msg) { msg.textContent = '❌ ' + e.message; msg.style.display = 'block'; }
@@ -1515,9 +1515,9 @@ function _showProInfoModal(u, missing) {
   /* Bouton "Imprimer sans ces informations" */
   const btnAnyway = $('btn-pi-print-anyway');
   if (btnAnyway) {
-    btnAnyway.onclick = () => {
+    btnAnyway.onclick = async () => {
       closeProInfoModal();
-      _doPrint(_pendingPrintData, u);
+      await _doPrint(_pendingPrintData, u);
     };
   }
 
@@ -1539,14 +1539,29 @@ function closeProInfoModal() {
    - N° RPPS (si présent)
    - Cabinet / Structure (si présent)
    - Date + N° facture
+   - Signature électronique patient (si disponible)
 ════════════════════════════════════════════════ */
-function _doPrint(d, u) {
+async function _doPrint(d, u) {
   if (!d) return;
   const ac  = d.actes || [];
   // Priorité au numéro généré par le serveur (séquentiel CPAM)
   // Fallback local uniquement si le worker n'a pas encore renvoyé le numéro
   const num = d.invoice_number || ('F' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6));
   const inf = ((u.prenom || '') + ' ' + (u.nom || '')).trim() || 'Infirmier(ère) libéral(e)';
+
+  /* ── Récupération signature électronique (si cotation signée) ──
+     Priorité :
+       1. d._sig_html pré-calculé par le monkey-patch signature.js
+       2. Appel direct à injectSignatureInPDF(invoice_number) — fallback robuste
+     Résultat : bloc HTML avec signature PNG base64 + zone infirmier. */
+  let sigHtml = d._sig_html || '';
+  if (!sigHtml && d.invoice_number && typeof window.injectSignatureInPDF === 'function') {
+    try {
+      sigHtml = await window.injectSignatureInPDF(d.invoice_number) || '';
+    } catch (_e) {
+      sigHtml = '';
+    }
+  }
 
   /* Bloc infos prescripteur (si disponible) */
   const prescBloc = d.prescripteur
@@ -1650,6 +1665,8 @@ ${missingWarning}
 </div>
 
 ${d.dre_requise ? '<div class="dre">📋 <strong>DRE requise</strong> — Demande de Remboursement Exceptionnel</div>' : ''}
+
+${sigHtml || ''}
 
 <div class="footer">
   AMI NGAP · N° facture : ${num} · Tarifs NGAP 2026 — AMI 3,15 € · BSA 13,00 € · BSB 18,20 € · BSC 28,70 € · IFD 2,75 € · MCI 5,00 € · MIE 3,15 € · Nuit 9,15 € · Nuit prof. 18,30 € · Dim./Fér. 8,50 € · Généré le ${new Date().toLocaleDateString('fr-FR')}
