@@ -2614,6 +2614,17 @@ window.liveAction=async function(action){
       })();
       const cotLocal = autoCotationLocale(_cotLocalDesc);
       const cotAffichee = (cot && cot.actes?.length) ? cot : cotLocal;
+      // ⚡ Propager l'heure RÉELLE (_done_at) dans _cotation._heure_reelle AVANT
+      // d'ouvrir la modale. Ainsi, si l'utilisatrice clique "Valider" plus tard
+      // (heures voire jours après le clic "Terminer"), _validateCotationLive
+      // préservera l'ancre d'origine au lieu de capturer l'heure du clic "Valider".
+      activeP._cotation = {
+        ...(activeP._cotation || {}),
+        actes:         cotAffichee.actes || [],
+        total:         parseFloat(cotAffichee.total || 0),
+        auto:          true,
+        _heure_reelle: activeP._done_at,
+      };
       // Afficher la modale de cotation
       showCotationModal(activeP, cotAffichee);
       // Avancer au patient suivant
@@ -3322,7 +3333,19 @@ function _renderCotModal(patient, cotationOriginal) {
 
   const actes = _cotModalState.actes;
   const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
-  const heure = patient.heure_soin || patient.heure_preferee || patient.heure || '';
+  // ⚡ Affichage de l'heure dans la modale. Priorité stricte à l'heure RÉELLE.
+  //   1. patient._done_at : ancre posée par markUberDone / liveAction au clic "Terminer"
+  //   2. patient._cotation._heure_reelle : taguée par autoFacturation / _autoCoterEtImporterPatient
+  //   3. patient._cotation.heure : heure IDB déjà posée par une validation précédente
+  //   4. patient.heure_soin / patient.heure_preferee : CONTRAINTE HORAIRE PLANIFIÉE —
+  //      gardée en dernier recours uniquement, avec un libellé différent.
+  const heureReelle = patient._done_at
+    || patient._cotation?._heure_reelle
+    || patient._cotation?.heure
+    || '';
+  const heurePlanifiee = patient.heure_soin || patient.heure_preferee || patient.heure || '';
+  const heureAffichee = heureReelle || heurePlanifiee;
+  const heureIsReelle = !!heureReelle;
   const desc  = (patient.description || patient.texte || 'Soin infirmier').slice(0, 100);
 
   /* Catalogue d'actes courants pour ajout rapide — Tarifs NGAP 2026 */
@@ -3360,7 +3383,13 @@ function _renderCotModal(patient, cotationOriginal) {
       <!-- Résumé patient -->
       <div style="padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:10px;margin-bottom:16px">
         <div style="font-size:13px;color:var(--t);font-weight:600">${desc}</div>
-        ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:3px;font-family:var(--fm)">🕐 Heure de soin : ${heure}</div>` : ''}
+        ${heureAffichee
+          ? `<div style="font-size:11px;color:var(--m);margin-top:3px;font-family:var(--fm)">
+              ${heureIsReelle
+                ? `🕐 Heure de fin de soin : <span style="color:var(--a);font-weight:600">${heureAffichee}</span>`
+                : `⏰ Heure planifiée : <span style="color:var(--m)">${heureAffichee}</span> <span style="opacity:.6;font-size:10px">· heure réelle posée à la validation</span>`}
+            </div>`
+          : ''}
       </div>
 
       <!-- Liste des actes modifiables -->
@@ -4014,8 +4043,11 @@ async function openCotationPatient(patientIndex) {
       total:          parseFloat(cotation.total || 0),
       validated:      true,
       auto:           true,
-      // ⚡ Tag d'heure réelle → _syncCotationsToSupabase enverra cette valeur
-      _heure_reelle:  patient._cotation?._heure_reelle
+      // ⚡ Tag d'heure réelle → _syncCotationsToSupabase enverra cette valeur.
+      // Priorité : ancre _done_at (clic Terminer) > _heure_reelle existant >
+      // heure IDB > fallback new Date().
+      _heure_reelle:  patient._done_at
+                       || patient._cotation?._heure_reelle
                        || patient._cotation?.heure
                        || new Date().toTimeString().slice(0, 5),
     };
