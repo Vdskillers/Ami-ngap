@@ -100,6 +100,53 @@
     flex-shrink: 0 !important;
   }
 
+  /* ── Badge "🛡️ MODE ADMIN SÉCURISÉ" ──────────────────────────
+     Pill cohérente avec #mobile-admin-name (rouge/rose admin).
+     Sur mobile étroit (<420px) on masque le texte et on ne garde
+     que l'icône bouclier centrée dans une pastille ronde, alignée
+     verticalement comme les autres éléments de #admin-header-controls. */
+  .admin-mode-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    background: rgba(255,95,109,.08) !important;
+    border: 1px solid rgba(255,95,109,.2) !important;
+    color: #FF7A85 !important;
+    font-family: var(--fm) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: .04em !important;
+    padding: 4px 10px !important;
+    border-radius: 20px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    line-height: 1.4 !important;
+  }
+  .admin-mode-badge .amb-ic {
+    font-size: 12px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+  .admin-mode-badge .amb-lbl {
+    display: inline !important;
+  }
+
+  /* Mobile étroit : ne garder que l'icône 🛡️ centrée dans une pastille */
+  @media (max-width: 420px) {
+    .admin-mode-badge {
+      padding: 4px 8px !important;
+      gap: 0 !important;
+    }
+    .admin-mode-badge .amb-lbl {
+      display: none !important;
+    }
+    .admin-mode-badge .amb-ic {
+      font-size: 13px !important;
+    }
+  }
+
   /* ── BOTTOM NAV ── */
   #bottom-nav {
     background: rgba(8,12,16,.97) !important;
