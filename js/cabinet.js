@@ -444,6 +444,14 @@ function _renderCabinetDashboard(root, d) {
         <div class="ai in">⚠️ Aucune synchronisation automatique sans votre accord</div>
       </div>
     </div>`;
+
+  // ✅ Affichage automatique de l'état de synchro après rendu
+  // Utilise le tracking local en priorité — visible sans avoir à cliquer
+  setTimeout(() => {
+    if (typeof cabinetSyncStatus === 'function') {
+      cabinetSyncStatus().catch(() => {});
+    }
+  }, 250);
 }
 
 /* ════════════════════════════════════════════════
@@ -710,6 +718,40 @@ async function _cabinetAuditLog(action, meta = {}) {
   } catch {} // silencieux — ne pas bloquer le flux
 }
 
+/* ════════════════════════════════════════════════
+   TRACKING LOCAL DES SYNCHRONISATIONS
+   ────────────────────────────────────────────────
+   Persiste localement la dernière date + détail de
+   chaque push (par destinataire) et pull (par émetteur).
+   Permet d'afficher "État de la synchro" même si le
+   backend ne remonte pas last_push/last_pull.
+   Clé isolée par userId — RGPD-friendly.
+════════════════════════════════════════════════ */
+function _cabinetTrackKey() {
+  const uid = APP.user?.id || 'anon';
+  return `ami_cabinet_synctrack_${String(uid).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+function _getCabinetTrack() {
+  try {
+    const raw = localStorage.getItem(_cabinetTrackKey());
+    const obj = raw ? JSON.parse(raw) : null;
+    return (obj && typeof obj === 'object') ? obj : { pushes: {}, pulls: {} };
+  } catch { return { pushes: {}, pulls: {} }; }
+}
+
+function _setCabinetTrack(type, peerId, meta = {}) {
+  if (!peerId) return;
+  try {
+    const track = _getCabinetTrack();
+    if (!track.pushes) track.pushes = {};
+    if (!track.pulls)  track.pulls  = {};
+    const bucket = type === 'push' ? track.pushes : track.pulls;
+    bucket[peerId] = { at: Date.now(), ...meta };
+    localStorage.setItem(_cabinetTrackKey(), JSON.stringify(track));
+  } catch {}
+}
+
 async function cabinetPushSync() {
   const cab   = APP.get('cabinet');
   if (!cab?.id) { _syncMsg('Vous n\'êtes pas dans un cabinet.', 'e'); return; }
@@ -901,8 +943,16 @@ async function cabinetPushSync() {
     const d = await apiCall('/webhook/cabinet-sync-push', payload);
     if (!d.ok) throw new Error(d.error || 'Erreur synchronisation');
 
+    // ✅ Tracking local : horodater le push pour chaque destinataire
+    // (permet à "État de la synchro" d'afficher les infos même si le backend
+    //  ne remonte pas last_push dans cabinet-sync-status)
+    const pushMeta = { what: whatKeys, targets: withIds.length };
+    withIds.forEach(tid => _setCabinetTrack('push', tid, pushMeta));
+
     _syncOk(`✅ Données envoyées à ${withIds.length} collègue(s) — ${whatKeys.join(', ')}`);
     _cabinetAuditLog('SYNC_PUSH', { what: whatKeys, targets: withIds.length });
+    // Rafraîchir l'état de synchro pour voir le nouvel horodatage
+    setTimeout(() => { if (typeof cabinetSyncStatus === 'function') cabinetSyncStatus().catch(() => {}); }, 300);
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
   } finally {
@@ -987,9 +1037,51 @@ async function cabinetPullSync() {
       // ── Journal km ───────────────────────────────────────────────────
       if (item.what.includes('km') && item.data?.km) {
         try {
+          // 1. Conserver la copie par collègue (utile pour stats cabinet)
           localStorage.setItem(`ami_cabinet_km_${item.sender_id}`, JSON.stringify(item.data.km));
-          applied++; details.push('🚗 km');
-        } catch {}
+
+          // 2. ⚠️ FIX : fusionner dans le journal km LOCAL pour affichage dans la vue
+          //    Sans ça, renderKmJournal() ne voit jamais les km des collègues
+          //    car il lit uniquement `ami_km_journal_<user_id>`
+          const incomingKm = Array.isArray(item.data.km) ? item.data.km : [];
+          if (incomingKm.length) {
+            const localKm = (typeof _loadKmJournal === 'function')
+              ? _loadKmJournal()
+              : (() => {
+                  try { return JSON.parse(localStorage.getItem(`ami_km_journal_${APP.user?.id}`) || '[]'); }
+                  catch { return []; }
+                })();
+
+            // Déduplication : priorité à l'id si présent, sinon signature date+patient+km
+            const existIds = new Set(localKm.map(e => e.id).filter(Boolean));
+            const existSig = new Set(localKm.map(e => `${e.date||''}|${e.patient_id||e.patient||''}|${e.distance||e.km||0}`));
+            let nbKm = 0;
+            for (const entry of incomingKm) {
+              if (entry.id && existIds.has(entry.id)) continue;
+              const sig = `${entry.date||''}|${entry.patient_id||entry.patient||''}|${entry.distance||entry.km||0}`;
+              if (existSig.has(sig)) continue;
+              localKm.push({ ...entry, _synced: true, _from_cabinet: item.sender_id });
+              existSig.add(sig);
+              if (entry.id) existIds.add(entry.id);
+              nbKm++;
+            }
+            if (nbKm > 0) {
+              // Trier par date puis sauvegarder
+              localKm.sort((a, b) => (a.date||'') < (b.date||'') ? -1 : 1);
+              if (typeof _saveKmJournal === 'function') {
+                _saveKmJournal(localKm);
+              } else {
+                try { localStorage.setItem(`ami_km_journal_${APP.user?.id}`, JSON.stringify(localKm)); } catch {}
+              }
+              // Rafraîchir la vue si visible
+              if (typeof renderKmJournal === 'function') { try { renderKmJournal(); } catch {} }
+              details.push(`🚗 ${nbKm} km`);
+            } else {
+              details.push('🚗 km (déjà à jour)');
+            }
+          }
+          applied++;
+        } catch (e) { console.warn('[cabinet pull km]', e.message); }
       }
 
       // ── Patients meta (GPS pour tournée) ────────────────────────────
@@ -1103,19 +1195,96 @@ async function cabinetPullSync() {
       }
 
       // ── Cotations ────────────────────────────────────────────────────
+      // ⚠️ FIX historique des soins :
+      //  En plus de l'envoi backend (/ami-save-cotation), on fusionne aussi
+      //  dans les fiches patients LOCALES pour que l'historique du destinataire
+      //  soit à jour. Respecte strictement la règle upsert :
+      //   • Patient existe localement → upsert de la cotation (clé invoice_number)
+      //   • Patient absent            → ignorer (jamais de fiche fantôme)
       if (item.what.includes('cotations') && Array.isArray(item.data?.cotations_summary)) {
         try {
-          const toSave = item.data.cotations_summary.map(c => ({
+          const summary = item.data.cotations_summary.filter(c => c && parseFloat(c.total || 0) > 0);
+
+          // ── A. Push backend (résolution cross-IDE côté serveur) ──────
+          const toSave = summary.map(c => ({
             invoice_number: c.invoice_number,
             date_soin:      c.date,
             total:          c.total,
             actes:          (c.actes_codes || []).map(code => ({ code })),
             source:         'cabinet_sync',
             patient_id:     c.patient_id || null,
-          })).filter(c => c.total > 0);
+          }));
           if (toSave.length) {
-            await apiCall('/webhook/ami-save-cotation', { cotations: toSave });
-            applied++; details.push(`🩺 ${toSave.length} cotation(s)`);
+            try { await apiCall('/webhook/ami-save-cotation', { cotations: toSave }); } catch {}
+          }
+
+          // ── B. Merge dans les fiches patients locales (historique) ──
+          let nbCot = 0;
+          if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined' && summary.length) {
+            const localRows = await _idbGetAll(PATIENTS_STORE).catch(() => []);
+            const byId = new Map(localRows.map(r => [r.id, r]));
+
+            // Grouper les cotations par patient_id
+            const byPatient = new Map();
+            summary.forEach(c => {
+              if (!c.patient_id) return;
+              if (!byPatient.has(c.patient_id)) byPatient.set(c.patient_id, []);
+              byPatient.get(c.patient_id).push(c);
+            });
+
+            for (const [pid, cots] of byPatient.entries()) {
+              const row = byId.get(pid);
+              if (!row) continue; // ✅ Règle : patient absent → ignorer (pas de fiche fantôme)
+              const decoded = (typeof _dec === 'function') ? (_dec(row._data) || {}) : (row._data || {});
+              if (!Array.isArray(decoded.cotations)) decoded.cotations = [];
+
+              // Index pour upsert par invoice_number
+              const idxByInv = new Map();
+              decoded.cotations.forEach((c, i) => {
+                if (c && c.invoice_number) idxByInv.set(c.invoice_number, i);
+              });
+
+              let changed = false;
+              for (const c of cots) {
+                if (!c.invoice_number) continue;
+                const existingIdx = idxByInv.get(c.invoice_number);
+                const cotEntry = {
+                  invoice_number: c.invoice_number,
+                  date:           c.date,
+                  date_soin:      c.date,
+                  total:          c.total,
+                  actes:          (c.actes_codes || []).map(code => ({ code })),
+                  source:         'cabinet_sync',
+                  _from_cabinet:  item.sender_id,
+                  _synced_at:     new Date().toISOString(),
+                };
+                if (existingIdx !== undefined) {
+                  // Upsert : préserver les champs locaux non présents dans le summary
+                  decoded.cotations[existingIdx] = { ...decoded.cotations[existingIdx], ...cotEntry };
+                } else {
+                  decoded.cotations.push(cotEntry);
+                  idxByInv.set(c.invoice_number, decoded.cotations.length - 1);
+                }
+                changed = true;
+                nbCot++;
+              }
+
+              if (changed) {
+                decoded.updated_at = new Date().toISOString();
+                const encoded = (typeof _enc === 'function') ? _enc(decoded) : decoded;
+                await _idbPut(PATIENTS_STORE, {
+                  ...row,
+                  _data:         encoded,
+                  updated_at:    decoded.updated_at,
+                  infirmiere_id: row.infirmiere_id || APP.user?.id,
+                }).catch(() => {});
+              }
+            }
+          }
+
+          if (nbCot > 0 || toSave.length > 0) {
+            applied++;
+            details.push(`🩺 ${nbCot || toSave.length} cotation(s)`);
           }
         } catch (e) { console.warn('[cabinet pull cotations]', e.message); }
       }
@@ -1191,6 +1360,20 @@ async function cabinetPullSync() {
 
     console.info('[cabinetPullSync] items reçus:', items.length, '| applied:', applied, '| details:', details);
     _cabinetAuditLog('SYNC_PULL', { received: items.length, applied });
+
+    // ✅ Tracking local : horodater le pull par émetteur
+    // Permet à "État de la synchro" d'afficher les infos de réception
+    // même si le backend ne remonte pas last_pull
+    items.forEach(it => {
+      if (it.sender_id) {
+        _setCabinetTrack('pull', it.sender_id, {
+          items_received: 1,
+          applied:        applied > 0 ? 1 : 0,
+          what:           it.what || [],
+        });
+      }
+    });
+
     if (applied > 0) {
       _syncOk(`✅ Import depuis ${items.length} collègue(s) — ${details.join(', ')}`);
       showToast('success', 'Données importées', details.join(', '));
@@ -1199,6 +1382,14 @@ async function cabinetPullSync() {
         try { await loadPatients(); } catch {}
       }
       if (typeof syncCotationsFromServer === 'function') syncCotationsFromServer().catch(() => {});
+      // Rafraîchir la vue détail patient si ouverte (historique des soins)
+      try {
+        const openPid = document.querySelector('[data-patient-open]')?.getAttribute('data-patient-open')
+                     || (typeof APP !== 'undefined' && APP._currentPatientId) || null;
+        if (openPid && typeof openPatient === 'function') { openPatient(openPid); }
+      } catch {}
+      // Rafraîchir le journal km si visible
+      if (typeof renderKmJournal === 'function') { try { renderKmJournal(); } catch {} }
       // Fallback reload si carnet vide après import
       setTimeout(() => {
         const list = document.getElementById('patients-list');
@@ -1212,6 +1403,8 @@ async function cabinetPullSync() {
       const whatReceived = items.map(i => i.what?.join(', ') || '(vide)').join(' | ');
       _syncOk(`ℹ️ Reçu ${items.length} paquet(s) [${whatReceived}] mais rien à importer — données déjà présentes ou types non cochés.`);
     }
+    // Rafraîchir l'état de synchro pour voir la nouvelle réception
+    setTimeout(() => { if (typeof cabinetSyncStatus === 'function') cabinetSyncStatus().catch(() => {}); }, 300);
   } catch (e) {
     _syncMsg('❌ ' + e.message, 'e');
   } finally {
@@ -1223,52 +1416,115 @@ async function cabinetSyncStatus() {
   const cab = APP.get('cabinet');
   if (!cab?.id) { _syncMsg('Vous n\'êtes pas dans un cabinet.', 'e'); return; }
 
+  const result = document.getElementById('sync-status-result');
+  if (!result) return;
+
+  // Spinner pendant la récupération
+  result.innerHTML = `<div style="text-align:center;padding:16px"><div class="spin" style="width:22px;height:22px;margin:0 auto"></div><div style="font-size:11px;color:var(--m);margin-top:8px;font-family:var(--fm)">Récupération de l'état…</div></div>`;
+
+  // Lecture tracking local (toujours dispo, même si backend KO)
+  const localTrack = _getCabinetTrack();
+
+  let members = [];
+  let backendOk = false;
   try {
     const d = await apiCall('/webhook/cabinet-sync-status', { cabinet_id: cab.id });
-    const result = document.getElementById('sync-status-result');
-    if (!result) return;
-
-    if (!d.ok) throw new Error(d.error || 'Erreur');
-
-    const members = d.members || [];
-    result.innerHTML = `
-      <div class="ct" style="font-size:12px;margin-bottom:10px">État de synchronisation du cabinet</div>
-      ${members.map(m => {
-        const isSelf      = m.id === APP.user?.id;
-        const pushColor   = m.last_push ? '#00d4aa' : '#555';
-        const pullColor   = m.last_pull_ok ? '#00d4aa' : m.last_pull ? '#f59e0b' : '#555';
-        const pushLabel   = m.last_push ? new Date(m.last_push).toLocaleString('fr-FR') : 'Jamais envoyé';
-        const pushWhat    = m.last_push_what && m.last_push_what.length ? m.last_push_what.join(', ') : '';
-        const pullLabel   = m.last_pull ? new Date(m.last_pull).toLocaleString('fr-FR') : 'Jamais reçu';
-        const pullBadge   = m.last_pull
-          ? (m.last_pull_ok
-            ? '<span style="color:#00d4aa;font-size:10px">✅ ' + m.last_pull_items + ' élément(s) reçu(s)</span>'
-            : '<span style="color:#f59e0b;font-size:10px">⚠️ 0 élément reçu</span>')
-          : '<span style="color:#888;font-size:10px">En attente</span>';
-        return '<div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px">'
-          + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-          + '<div style="font-weight:600;font-size:13px">' + m.prenom + ' ' + m.nom + '</div>'
-          + (isSelf ? '<span style="font-size:10px;color:var(--a);font-family:var(--fm)">(moi)</span>' : '')
-          + '<span style="font-size:10px;color:var(--m);font-family:var(--fm);margin-left:auto">'
-          + (m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre') + '</span>'
-          + '</div>'
-          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;font-family:var(--fm)">'
-          + '<div style="padding:8px;background:var(--dd);border-radius:6px;border-left:3px solid ' + pushColor + '">'
-          + '<div style="color:var(--m);margin-bottom:3px">⬆️ Dernier envoi</div>'
-          + '<div style="color:var(--t);font-weight:600">' + pushLabel + '</div>'
-          + (pushWhat ? '<div style="color:var(--m);margin-top:2px;font-size:10px">' + pushWhat + '</div>' : '')
-          + '</div>'
-          + '<div style="padding:8px;background:var(--dd);border-radius:6px;border-left:3px solid ' + pullColor + '">'
-          + '<div style="color:var(--m);margin-bottom:3px">⬇️ Dernière réception</div>'
-          + '<div style="color:var(--t);font-weight:600">' + pullLabel + '</div>'
-          + '<div style="margin-top:3px">' + pullBadge + '</div>'
-          + '</div>'
-          + '</div>'
-          + '</div>';
-      }).join('')}`;
+    if (d.ok) {
+      members   = d.members || [];
+      backendOk = true;
+    }
   } catch (e) {
-    _syncMsg('❌ ' + e.message, 'e');
+    console.warn('[cabinetSyncStatus] backend KO:', e.message);
   }
+
+  // Fallback : si backend KO ou liste vide, on reconstitue depuis APP.cabinet.members
+  if (!members.length) {
+    const cabMembers = (APP.get('cabinet')?.members) || [];
+    members = cabMembers.map(m => ({
+      id: m.id, nom: m.nom, prenom: m.prenom, role: m.role,
+      last_push: null, last_push_what: null,
+      last_pull: null, last_pull_ok: false, last_pull_items: 0,
+    }));
+  }
+
+  // ── Enrichissement avec le tracking local ─────────────────────────
+  // Pour chaque membre, si le backend ne renvoie pas last_push/last_pull,
+  // on utilise les données stockées localement (plus fiables que "Jamais")
+  const myId = APP.user?.id;
+  const enriched = members.map(m => {
+    const isSelf   = m.id === myId;
+    // Ligne "moi" : je vois MES propres envois (vers tous) et MES propres réceptions (depuis tous)
+    // Ligne autre : je vois MES envois vers lui (track push) et MES réceptions depuis lui (track pull)
+    const pushLocal = isSelf
+      ? _latestTrack(localTrack.pushes) // dernier envoi global
+      : localTrack.pushes?.[m.id] || null;
+    const pullLocal = isSelf
+      ? _latestTrack(localTrack.pulls)  // dernière réception globale
+      : localTrack.pulls?.[m.id]  || null;
+
+    return {
+      ...m,
+      last_push:       m.last_push       || (pushLocal ? new Date(pushLocal.at).toISOString() : null),
+      last_push_what:  m.last_push_what  || (pushLocal?.what || null),
+      last_pull:       m.last_pull       || (pullLocal ? new Date(pullLocal.at).toISOString() : null),
+      last_pull_ok:    m.last_pull_ok    || !!(pullLocal?.applied),
+      last_pull_items: m.last_pull_items || (pullLocal?.items_received || 0),
+      _source:         (m.last_push || m.last_pull) ? 'backend' : (pushLocal || pullLocal ? 'local' : 'none'),
+    };
+  });
+
+  const headerNote = !backendOk
+    ? `<div class="ai in" style="font-size:11px;margin-bottom:10px;padding:8px 10px">ℹ️ État reconstruit depuis votre historique local (backend indisponible).</div>`
+    : enriched.some(m => m._source === 'local')
+      ? `<div style="font-size:10px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">ⓘ Infos complétées depuis votre suivi local</div>`
+      : '';
+
+  result.innerHTML = `
+    <div class="ct" style="font-size:12px;margin-bottom:10px">État de synchronisation du cabinet</div>
+    ${headerNote}
+    ${enriched.map(m => {
+      const isSelf      = m.id === myId;
+      const pushColor   = m.last_push ? '#00d4aa' : '#555';
+      const pullColor   = m.last_pull_ok ? '#00d4aa' : m.last_pull ? '#f59e0b' : '#555';
+      const pushLabel   = m.last_push ? new Date(m.last_push).toLocaleString('fr-FR') : 'Jamais envoyé';
+      const pushWhat    = m.last_push_what && m.last_push_what.length ? m.last_push_what.join(', ') : '';
+      const pullLabel   = m.last_pull ? new Date(m.last_pull).toLocaleString('fr-FR') : 'Jamais reçu';
+      const pullBadge   = m.last_pull
+        ? (m.last_pull_ok
+          ? '<span style="color:#00d4aa;font-size:10px">✅ ' + (m.last_pull_items || 1) + ' élément(s) reçu(s)</span>'
+          : '<span style="color:#f59e0b;font-size:10px">⚠️ 0 élément importé</span>')
+        : '<span style="color:#888;font-size:10px">En attente</span>';
+      return '<div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+        + '<div style="font-weight:600;font-size:13px">' + (m.prenom||'') + ' ' + (m.nom||'') + '</div>'
+        + (isSelf ? '<span style="font-size:10px;color:var(--a);font-family:var(--fm)">(moi)</span>' : '')
+        + '<span style="font-size:10px;color:var(--m);font-family:var(--fm);margin-left:auto">'
+        + (m.role === 'titulaire' ? '👑 Titulaire' : '👤 Membre') + '</span>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;font-family:var(--fm)">'
+        + '<div style="padding:8px;background:var(--dd);border-radius:6px;border-left:3px solid ' + pushColor + '">'
+        + '<div style="color:var(--m);margin-bottom:3px">⬆️ Dernier envoi</div>'
+        + '<div style="color:var(--t);font-weight:600">' + pushLabel + '</div>'
+        + (pushWhat ? '<div style="color:var(--m);margin-top:2px;font-size:10px">' + pushWhat + '</div>' : '')
+        + '</div>'
+        + '<div style="padding:8px;background:var(--dd);border-radius:6px;border-left:3px solid ' + pullColor + '">'
+        + '<div style="color:var(--m);margin-bottom:3px">⬇️ Dernière réception</div>'
+        + '<div style="color:var(--t);font-weight:600">' + pullLabel + '</div>'
+        + '<div style="margin-top:3px">' + pullBadge + '</div>'
+        + '</div>'
+        + '</div>'
+        + '</div>';
+    }).join('')}`;
+}
+
+/* ── Helper : trouve l'entrée de tracking la plus récente d'un bucket ── */
+function _latestTrack(bucket) {
+  if (!bucket || typeof bucket !== 'object') return null;
+  let latest = null;
+  for (const v of Object.values(bucket)) {
+    if (v && v.at && (!latest || v.at > latest.at)) latest = v;
+  }
+  return latest;
 }
 
 /* ── Helpers UI ─── */
