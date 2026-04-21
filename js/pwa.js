@@ -98,12 +98,14 @@ window.addEventListener('appinstalled', () => {
 });
 
 /* ── 4. INDEXEDDB — stockage offline robuste ──── */
-const IDB_NAME    = 'ami-offline';
-const IDB_VERSION = 1;
+// Préfixe PWA_ pour éviter collision avec `IDB_NAME` déclaré dans ai-tournee.js
+// (chargé avant pwa.js dans index.html). Convention cohérente avec SEC_IDB_NAME de security.js.
+const PWA_IDB_NAME    = 'ami-offline';
+const PWA_IDB_VERSION = 1;
 
 function _openIDB() {
   return new Promise((res, rej) => {
-    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    const req = indexedDB.open(PWA_IDB_NAME, PWA_IDB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('patients'))
