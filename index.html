@@ -115,6 +115,108 @@
   @keyframes lpFadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
   .lp-wrap>*{animation:lpFadeUp .5s ease both}
   .lp-wrap>*:nth-child(1){animation-delay:.04s}.lp-wrap>*:nth-child(2){animation-delay:.08s}.lp-wrap>*:nth-child(3){animation-delay:.12s}.lp-wrap>*:nth-child(4){animation-delay:.16s}.lp-wrap>*:nth-child(5){animation-delay:.20s}.lp-wrap>*:nth-child(6){animation-delay:.24s}.lp-wrap>*:nth-child(7){animation-delay:.28s}.lp-wrap>*:nth-child(8){animation-delay:.31s}.lp-wrap>*:nth-child(9){animation-delay:.34s}.lp-wrap>*:nth-child(10){animation-delay:.37s}.lp-wrap>*:nth-child(11){animation-delay:.40s}.lp-wrap>*:nth-child(12){animation-delay:.43s}
+
+  /* ── TOC sticky ─────────────────────────────── */
+  .lp-toc{position:sticky;top:0;z-index:50;background:rgba(11,15,20,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,212,170,.12);padding:10px 0;margin:0 -28px 40px;overflow-x:auto;scrollbar-width:none}
+  .lp-toc::-webkit-scrollbar{display:none}
+  .lp-toc-inner{display:flex;gap:4px;padding:0 28px;width:max-content;min-width:100%}
+  .lp-toc-link{font-family:var(--fm);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#a0bbd0;padding:7px 13px;border-radius:20px;text-decoration:none;white-space:nowrap;transition:all .18s;border:1px solid transparent}
+  .lp-toc-link:hover{color:#00d4aa;background:rgba(0,212,170,.06);border-color:rgba(0,212,170,.18)}
+
+  /* ── Founder access banner ──────────────────── */
+  .lp-founder{background:linear-gradient(135deg,rgba(255,180,50,.08),rgba(0,212,170,.06));border:1px solid rgba(255,180,50,.25);border-radius:14px;padding:14px 20px;margin-bottom:36px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .lp-founder-badge{background:rgba(255,180,50,.18);color:#ffc857;font-family:var(--fm);font-size:10px;letter-spacing:1.5px;padding:5px 11px;border-radius:12px;white-space:nowrap;font-weight:700}
+  .lp-founder-txt{flex:1;min-width:220px;font-size:13px;color:#e8dcc4;line-height:1.45}
+  .lp-founder-txt strong{color:#ffffff}
+
+  /* ── Comment ça marche (3 steps) ────────────── */
+  .lp-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px;position:relative}
+  @media(max-width:640px){.lp-steps{grid-template-columns:1fr}}
+  .lp-step{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 20px 20px;position:relative;display:flex;flex-direction:column}
+  .lp-step-num{font-family:var(--fs);font-size:40px;line-height:1;color:#00d4aa;opacity:.9;margin-bottom:10px;letter-spacing:-1px}
+  .lp-step-t{font-size:15px;font-weight:700;color:#ffffff;margin-bottom:8px}
+  .lp-step-d{font-size:13px;color:#b8cdd8;line-height:1.55}
+
+  /* ── Day in the life narrative ──────────────── */
+  .lp-day{background:rgba(14,20,30,.85);border:1px solid rgba(30,45,61,.95);border-radius:18px;padding:30px 28px;margin-bottom:52px;position:relative}
+  .lp-day-h{font-family:var(--fs);font-size:20px;color:#ffffff;margin-bottom:6px}
+  .lp-day-sub{font-size:12px;color:#8aa3b5;font-family:var(--fm);letter-spacing:1px;margin-bottom:22px}
+  .lp-day-timeline{display:flex;flex-direction:column;gap:14px;position:relative;padding-left:22px;border-left:2px dashed rgba(0,212,170,.25)}
+  .lp-day-row{position:relative}
+  .lp-day-row::before{content:'';position:absolute;left:-29px;top:8px;width:12px;height:12px;border-radius:50%;background:#00d4aa;box-shadow:0 0 0 4px rgba(0,212,170,.15)}
+  .lp-day-time{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:#00d4aa;margin-bottom:4px;display:block}
+  .lp-day-event{font-size:13.5px;color:#d8e4ec;line-height:1.6}
+  .lp-day-event strong{color:#ffffff;font-weight:700}
+  .lp-day-event em{font-style:normal;color:#00d4aa;font-weight:600}
+
+  /* ── ROI chiffré ─────────────────────────────── */
+  .lp-roi{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px}
+  @media(max-width:640px){.lp-roi{grid-template-columns:1fr}}
+  .lp-roi-card{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 20px;display:flex;flex-direction:column;gap:8px}
+  .lp-roi-tag{font-family:var(--fm);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8aa3b5}
+  .lp-roi-v{font-family:var(--fs);font-size:30px;color:#00d4aa;line-height:1}
+  .lp-roi-l{font-size:12.5px;color:#b8cdd8;line-height:1.5}
+  .lp-roi-src{font-family:var(--fm);font-size:9px;color:#6a7f91;letter-spacing:.5px;margin-top:auto;padding-top:8px;border-top:1px solid rgba(30,45,61,.6)}
+
+  /* ── Preuve sociale / Testimonials ──────────── */
+  .lp-testi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px}
+  @media(max-width:720px){.lp-testi-grid{grid-template-columns:1fr}}
+  .lp-testi{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 22px 18px;display:flex;flex-direction:column}
+  .lp-testi-stars{color:#ffc857;font-size:13px;letter-spacing:2px;margin-bottom:10px}
+  .lp-testi-q{font-size:13.5px;color:#d8e4ec;line-height:1.6;font-style:italic;margin-bottom:14px;flex:1}
+  .lp-testi-who{display:flex;align-items:center;gap:10px;border-top:1px solid rgba(30,45,61,.6);padding-top:12px}
+  .lp-testi-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0b1a14,#102a1e);border:1px solid rgba(0,212,170,.35);display:grid;place-items:center;font-family:var(--fs);color:#00d4aa;font-size:14px;flex-shrink:0}
+  .lp-testi-meta{font-size:11px;color:#a0bbd0;line-height:1.4}
+  .lp-testi-meta b{color:#ffffff;font-weight:700;display:block;font-size:12px}
+
+  /* ── Cabinet B2B dedicated section ──────────── */
+  .lp-cabinet{background:linear-gradient(135deg,rgba(79,168,255,.05),rgba(0,212,170,.04));border:1px solid rgba(79,168,255,.18);border-radius:20px;padding:32px 30px;margin-bottom:52px}
+  .lp-cab-badge{display:inline-block;background:rgba(79,168,255,.14);color:#7fc0ff;font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:5px 12px;border-radius:12px;margin-bottom:14px}
+  .lp-cab-h{font-family:var(--fs);font-size:clamp(22px,3.6vw,30px);color:#ffffff;line-height:1.15;margin-bottom:10px}
+  .lp-cab-h em{color:#7fc0ff;font-style:italic}
+  .lp-cab-p{font-size:14px;color:#c8d8e4;line-height:1.6;margin-bottom:20px}
+  .lp-cab-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
+  @media(max-width:560px){.lp-cab-grid{grid-template-columns:1fr}}
+  .lp-cab-feat{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#d8e4ec;line-height:1.5}
+  .lp-cab-feat::before{content:'◆';color:#7fc0ff;font-size:11px;margin-top:3px;flex-shrink:0}
+  .lp-cab-cta{display:flex;gap:10px;flex-wrap:wrap}
+  .lp-cab-cta button{background:rgba(79,168,255,.14);color:#ffffff;border:1px solid rgba(79,168,255,.35);border-radius:12px;padding:12px 22px;font-family:var(--ff);font-size:13.5px;font-weight:600;cursor:pointer;transition:all .18s}
+  .lp-cab-cta button:hover{background:rgba(79,168,255,.22);transform:translateY(-1px)}
+  .lp-cab-cta .lp-cab-cta-secondary{background:transparent;color:#7fc0ff}
+
+  /* ── FAQ ─────────────────────────────────────── */
+  .lp-faq{display:flex;flex-direction:column;gap:8px;margin-bottom:52px}
+  .lp-faq-item{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:14px;overflow:hidden;transition:border-color .2s}
+  .lp-faq-item[open]{border-color:rgba(0,212,170,.3)}
+  .lp-faq-q{padding:16px 22px;cursor:pointer;font-size:14px;font-weight:600;color:#ffffff;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .lp-faq-q::-webkit-details-marker{display:none}
+  .lp-faq-q::after{content:'+';font-family:var(--fs);font-size:22px;color:#00d4aa;line-height:1;transition:transform .2s;flex-shrink:0}
+  .lp-faq-item[open] .lp-faq-q::after{content:'−'}
+  .lp-faq-q:hover{color:#00d4aa}
+  .lp-faq-a{padding:0 22px 18px;font-size:13px;color:#b8cdd8;line-height:1.65}
+  .lp-faq-a strong{color:#ffffff}
+
+  /* ── Sous le capot (expandable tech) ────────── */
+  .lp-tech{background:rgba(14,20,30,.7);border:1px solid rgba(30,45,61,.7);border-radius:14px;margin-bottom:52px;overflow:hidden}
+  .lp-tech-q{padding:14px 22px;cursor:pointer;font-family:var(--fm);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#a0c8ff;list-style:none;display:flex;align-items:center;gap:10px}
+  .lp-tech-q::-webkit-details-marker{display:none}
+  .lp-tech-q::before{content:'⚙';font-size:16px}
+  .lp-tech-q::after{content:'▾';margin-left:auto;transition:transform .2s}
+  .lp-tech[open] .lp-tech-q::after{transform:rotate(180deg)}
+  .lp-tech-body{padding:6px 22px 22px;border-top:1px solid rgba(30,45,61,.6)}
+  .lp-tech-body .lp-stack{margin-top:16px;margin-bottom:0}
+  .lp-tech-body p{font-size:12.5px;color:#b8cdd8;line-height:1.6;margin:0 0 10px}
+
+  /* ── Back to top + sticky mobile CTA ────────── */
+  .lp-totop{position:fixed;right:18px;bottom:18px;z-index:60;width:44px;height:44px;border-radius:50%;background:rgba(14,20,30,.92);border:1px solid rgba(0,212,170,.35);color:#00d4aa;font-size:18px;cursor:pointer;opacity:0;transform:translateY(10px);transition:all .25s;backdrop-filter:blur(8px);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  .lp-totop.show{opacity:1;transform:translateY(0)}
+  .lp-totop:hover{background:rgba(0,212,170,.15);transform:translateY(-2px)}
+  .lp-sticky-cta{display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:60;padding:14px 20px;background:linear-gradient(135deg,#00e0b5,#00c49a);color:#ffffff;border:none;border-radius:14px;font-family:var(--ff);font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 8px 28px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.4);letter-spacing:.3px;text-shadow:0 1px 4px rgba(0,0,0,.4);opacity:0;transform:translateY(20px);transition:all .3s}
+  .lp-sticky-cta.show{opacity:1;transform:translateY(0)}
+  @media(max-width:720px){.lp-sticky-cta{display:block}}
+
+  /* ── Comparatif enrichi ─────────────────────── */
+  .lp-compare td.mid{color:#ffc857}
 </style>
 </head>
 <body>
@@ -154,16 +256,91 @@
       <div class="lp-cta-sub">Connexion · Création de compte · Sans engagement</div>
     </div>
 
+    <!-- TOC sticky -->
+    <nav class="lp-toc" aria-label="Sommaire">
+      <div class="lp-toc-inner">
+        <a class="lp-toc-link" href="#lp-steps">Comment ça marche</a>
+        <a class="lp-toc-link" href="#lp-day">Journée type</a>
+        <a class="lp-toc-link" href="#lp-features">Fonctionnalités</a>
+        <a class="lp-toc-link" href="#lp-roi">Ce que tu gagnes</a>
+        <a class="lp-toc-link" href="#lp-cabinet-sec">Cabinets</a>
+        <a class="lp-toc-link" href="#lp-faq-sec">FAQ</a>
+        <a class="lp-toc-link" href="#lp-security">Sécurité</a>
+      </div>
+    </nav>
+
+    <!-- FOUNDER ACCESS BANNER -->
+    <div class="lp-founder">
+      <span class="lp-founder-badge">✦ Accès fondateur</span>
+      <div class="lp-founder-txt"><strong>Phase de lancement privée.</strong> Tarif préférentiel garanti à vie pour les 100 premières infirmières et 10 premiers cabinets inscrits. Ton retour pèse directement sur la v1.</div>
+    </div>
+
+    <!-- COMMENT ÇA MARCHE -->
+    <div id="lp-steps" class="lp-sec-label">⚙ Comment ça marche</div>
+    <div class="lp-sec-h2">3 étapes. <em>1 minute par patient.</em></div>
+    <div class="lp-steps">
+      <div class="lp-step">
+        <div class="lp-step-num">1</div>
+        <div class="lp-step-t">Tu dictes ou tu écris</div>
+        <div class="lp-step-d">« Mme Durand, insuline + pansement escarre stade 2, nuit. » Voix ou clavier, une phrase suffit.</div>
+      </div>
+      <div class="lp-step">
+        <div class="lp-step-num">2</div>
+        <div class="lp-step-t">AMI analyse et cote</div>
+        <div class="lp-step-d">NLP médical + moteur NGAP hybride : actes détectés, majorations ajoutées, cumuls vérifiés, risque CPAM simulé.</div>
+      </div>
+      <div class="lp-step">
+        <div class="lp-step-num">3</div>
+        <div class="lp-step-t">Tu télétransmets sereine</div>
+        <div class="lp-step-d">Preuve médico-légale horodatée, FSE générée, trésorerie mise à jour. Tu passes au patient suivant.</div>
+      </div>
+    </div>
+
+    <!-- JOURNÉE TYPE -->
+    <div id="lp-day" class="lp-sec-label">🕐 Journée type</div>
+    <div class="lp-sec-h2">Ton quotidien avec <em>AMI</em></div>
+    <div class="lp-day">
+      <div class="lp-day-h">Mardi, 20h17. Tu rentres de tournée.</div>
+      <div class="lp-day-sub">— Scénario réel —</div>
+      <div class="lp-day-timeline">
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H17</span>
+          <div class="lp-day-event">Tu ouvres AMI, tu dictes : <strong>« Mme Le Gall, pansement lourd et complexe, jambe gauche, avec compression. »</strong></div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H17 · +4s</span>
+          <div class="lp-day-event">AMI détecte <em>AMI4 + IFD</em>, applique la majoration dimanche, calcule les IK d'après la distance réelle. <strong>Total : 28,40 €.</strong></div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H17 · +7s</span>
+          <div class="lp-day-event">Le moteur de conformité détecte un <strong>cumul risqué</strong> avec la cotation de ce matin. Il te propose la correction et simule l'impact CPAM.</div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H18</span>
+          <div class="lp-day-event">Signature patient capturée cet après-midi → <em>hash SHA-256</em> stocké, géozone validée. Preuve médico-légale archivée.</div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H18</span>
+          <div class="lp-day-event">FSE générée. Trésorerie actualisée. Rapport mensuel enrichi automatiquement.</div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H19</span>
+          <div class="lp-day-event"><strong>Tu fermes l'app.</strong> Tu passes au patient suivant ou tu vas dîner. <em>1 min 42 s</em> pour 14 patients.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- PROBLÈME -->
     <div class="lp-sec-label">⚡ Le problème</div>
     <div class="lp-sec-h2">Aujourd'hui, tu fais <em>tout à la main</em></div>
     <div class="lp-problem">
       <div class="lp-prob-list">
-        <div class="lp-prob-item">Cotation NGAP complexe et risquée</div>
-        <div class="lp-prob-item">Erreurs fréquentes → redressements CPAM</div>
-        <div class="lp-prob-item">Tournées mal optimisées → perte de temps et fatigue</div>
-        <div class="lp-prob-item">Paperasse et preuves de soins dispersées</div>
-        <div class="lp-prob-item">Aucun pilotage réel de ton chiffre d'affaires</div>
+        <div class="lp-prob-item">Cotation NGAP complexe, règles qui changent, peur de l'erreur</div>
+        <div class="lp-prob-item">Risque permanent de redressement CPAM — <strong>coût moyen : 3 000 à 8 000 €</strong></div>
+        <div class="lp-prob-item">Majorations nuit, dimanche, IK souvent oubliées — perte sèche</div>
+        <div class="lp-prob-item">Tournées mal optimisées → kilomètres inutiles et fatigue</div>
+        <div class="lp-prob-item">Paperasse dispersée, preuves de soins introuvables en cas de contrôle</div>
+        <div class="lp-prob-item">Aucun pilotage réel de ton CA, aucune prévision</div>
       </div>
     </div>
 
@@ -180,8 +357,8 @@
       <div class="lp-sol-note">👉 Tout dans une seule app.</div>
     </div>
 
-    <!-- FEATURES -->
-    <div class="lp-sec-label">🚀 Fonctionnalités clés</div>
+    <!-- FEATURES (11 cartes) -->
+    <div id="lp-features" class="lp-sec-label">🚀 Fonctionnalités clés</div>
     <div class="lp-sec-h2">Ce qui te <em>différencie</em></div>
     <div class="lp-grid">
 
@@ -189,9 +366,9 @@
         <div class="lp-card-head"><span class="lp-card-icon">🧠</span><div class="lp-card-t">Cotation NGAP automatique</div></div>
         <div class="lp-card-list">
           <div class="lp-card-li">Analyse NLP de tes soins</div>
-          <div class="lp-card-li">Sélection automatique des actes</div>
-          <div class="lp-card-li">Optimisation des majorations</div>
-          <div class="lp-card-li">Vérification NGAP officielle</div>
+          <div class="lp-card-li">Sélection + ordonnancement des actes</div>
+          <div class="lp-card-li">Optimisation majorations (nuit, dimanche, IK)</div>
+          <div class="lp-card-li">Tarifs NGAP 2026 officiels (BSB 18,20 €…)</div>
         </div>
         <div class="lp-card-tag">Moteur hybride IA + règles + ML</div>
       </div>
@@ -200,38 +377,64 @@
         <div class="lp-card-head"><span class="lp-card-icon">🛡️</span><div class="lp-card-t">Protection CPAM temps réel</div></div>
         <div class="lp-card-list">
           <div class="lp-card-li">Simulation d'audit CPAM intégrée</div>
-          <div class="lp-card-li">Détection fraude / erreurs</div>
+          <div class="lp-card-li">Détection fraude / patterns suspects</div>
           <div class="lp-card-li">Blocage intelligent des cotations risquées</div>
+          <div class="lp-card-li">Checklist conformité avant envoi de lot</div>
         </div>
-        <div class="lp-card-tag">Tu es protégé avant facturation</div>
+        <div class="lp-card-tag">Tu es protégée avant facturation</div>
       </div>
 
       <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">✍️</span><div class="lp-card-t">Preuve médico-légale</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Signature patient + hash sécurisé</div>
-          <div class="lp-card-li">Photo (non stockée → RGPD)</div>
-          <div class="lp-card-li">Horodatage + géozone</div>
+          <div class="lp-card-li">Signature patient → hash SHA-256</div>
+          <div class="lp-card-li">Photo non stockée (RGPD by design)</div>
+          <div class="lp-card-li">Horodatage + géozone GPS</div>
+          <div class="lp-card-li">Consentements versionnés archivés</div>
         </div>
         <div class="lp-card-tag">Défense prête en cas de contrôle</div>
       </div>
 
       <div class="lp-card">
-        <div class="lp-card-head"><span class="lp-card-icon">🗺️</span><div class="lp-card-t">Tournée IA intelligente</div></div>
+        <div class="lp-card-head"><span class="lp-card-icon">🗺️</span><div class="lp-card-t">Tournée IA + Mode Uber</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Optimisation trajets (TSP + clustering)</div>
-          <div class="lp-card-li">Prédiction retards / fatigue</div>
-          <div class="lp-card-li">Score zones rentables</div>
+          <div class="lp-card-li">VRPTW : clustering + 2-opt + Or-opt</div>
+          <div class="lp-card-li">GPS temps réel, patient suivant auto</div>
+          <div class="lp-card-li">Prédiction retards / fatigue par zone</div>
+          <div class="lp-card-li">Cartes offline (zones blanches OK)</div>
         </div>
         <div class="lp-card-tag">Moins de km, plus de CA</div>
       </div>
 
       <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">🎙️</span><div class="lp-card-t">Dictée médicale vocale</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Terminologie médicale normalisée</div>
+          <div class="lp-card-li">Commandes vocales dans la voiture</div>
+          <div class="lp-card-li">Dictée de transmissions SOAP/DAR</div>
+          <div class="lp-card-li">Mains libres de A à Z</div>
+        </div>
+        <div class="lp-card-tag">Coter entre deux patients, sans le clavier</div>
+      </div>
+
+      <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">💬</span><div class="lp-card-t">Copilote IA 24h/24</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Expert NGAP disponible en chat</div>
+          <div class="lp-card-li">Réponses contextualisées à ta cotation</div>
+          <div class="lp-card-li">Suggestions proactives de majoration</div>
+          <div class="lp-card-li">Mode vocal optionnel</div>
+        </div>
+        <div class="lp-card-tag">Tu n'es plus jamais seule face à la NGAP</div>
+      </div>
+
+      <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">🏥</span><div class="lp-card-t">Cabinet multi-IDE</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Gestion d'équipe infirmière</div>
-          <div class="lp-card-li">Répartition intelligente des soins</div>
-          <div class="lp-card-li">Planning partagé + vision globale</div>
+          <div class="lp-card-li">Sync sélective (tu choisis QUOI et AVEC QUI)</div>
+          <div class="lp-card-li">Transmissions SOAP/DAR urgentes entre IDE</div>
+          <div class="lp-card-li">BSI et consentements partagés versionnés</div>
+          <div class="lp-card-li">Planning + répartition intelligente</div>
         </div>
         <div class="lp-card-tag">Ultra rare — différenciation majeure</div>
       </div>
@@ -241,17 +444,30 @@
         <div class="lp-card-list">
           <div class="lp-card-li">KPI multi-IDE en temps réel</div>
           <div class="lp-card-li">Simulation revenus + objectifs CA</div>
-          <div class="lp-card-li">Forecast semaine</div>
+          <div class="lp-card-li">Rapport mensuel PDF automatique</div>
+          <div class="lp-card-li">Forecast semaine et mois</div>
         </div>
-        <div class="lp-card-tag">Tu pilotes ton activité comme une entreprise</div>
+        <div class="lp-card-tag">Tu pilotes comme une vraie entreprise</div>
+      </div>
+
+      <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">💼</span><div class="lp-card-t">Outils fiscaux IDEL</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Calculateur URSSAF + CARPIMKO (net réel)</div>
+          <div class="lp-card-li">Journal kilométrique déclaration fiscale</div>
+          <div class="lp-card-li">Trésorerie AMO / AMC + export comptable</div>
+          <div class="lp-card-li">Suivi ordonnances + alertes renouvellement</div>
+        </div>
+        <div class="lp-card-tag">Ta comptable te remerciera</div>
       </div>
 
       <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">📁</span><div class="lp-card-t">Modules cliniques complets</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Transmissions SOAP / DAR</div>
-          <div class="lp-card-li">Constantes · Pilulier · BSI</div>
-          <div class="lp-card-li">Consentements · Alertes ANSM</div>
+          <div class="lp-card-li">Transmissions SOAP / DAR horodatées</div>
+          <div class="lp-card-li">Constantes · Pilulier · BSI avec IA</div>
+          <div class="lp-card-li">Interactions médicamenteuses ANSM/Vidal</div>
+          <div class="lp-card-li">Compte-rendu de passage PDF</div>
         </div>
         <div class="lp-card-tag">Tout est intégré, rien à rajouter</div>
       </div>
@@ -259,13 +475,38 @@
       <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">🔒</span><div class="lp-card-t">Sécurité maximale</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Données stockées localement uniquement</div>
-          <div class="lp-card-li">Chiffrement AES-256 · RGPD by design</div>
-          <div class="lp-card-li">Zéro fuite serveur</div>
+          <div class="lp-card-li">Données santé locales sur ton terminal</div>
+          <div class="lp-card-li">Chiffrement AES-256-GCM · bcrypt</div>
+          <div class="lp-card-li">Mode hors-ligne complet (zones blanches)</div>
+          <div class="lp-card-li">Architecture HDS-ready (migration EU)</div>
         </div>
         <div class="lp-card-tag">Tu gardes le contrôle total</div>
       </div>
 
+    </div>
+
+    <!-- ROI CHIFFRÉ -->
+    <div id="lp-roi" class="lp-sec-label">💰 Combien tu gagnes concrètement</div>
+    <div class="lp-sec-h2">Le retour sur investissement <em>en chiffres</em></div>
+    <div class="lp-roi">
+      <div class="lp-roi-card">
+        <span class="lp-roi-tag">Erreurs évitées</span>
+        <div class="lp-roi-v">3 000 – 8 000 €</div>
+        <div class="lp-roi-l">Coût moyen d'un redressement CPAM. AMI simule le contrôle avant envoi et bloque les cumuls risqués.</div>
+        <div class="lp-roi-src">Source CNAM · rapports contrôle IDEL</div>
+      </div>
+      <div class="lp-roi-card">
+        <span class="lp-roi-tag">Majorations oubliées</span>
+        <div class="lp-roi-v">~ 2 000 €/an</div>
+        <div class="lp-roi-l">Majorations nuit, dimanche et IK fréquemment oubliées en saisie manuelle. AMI les applique automatiquement.</div>
+        <div class="lp-roi-src">Estimation sur 15 patients/jour en moyenne</div>
+      </div>
+      <div class="lp-roi-card">
+        <span class="lp-roi-tag">Temps récupéré</span>
+        <div class="lp-roi-v">+ 18 h/mois</div>
+        <div class="lp-roi-l">45 min/jour de cotation manuelle évitées. Soit plus de 2 semaines de travail gagnées dans l'année.</div>
+        <div class="lp-roi-src">Étude temps administratif IDEL 2024</div>
+      </div>
     </div>
 
     <!-- RÉSULTATS -->
@@ -278,6 +519,36 @@
       <div class="lp-stat"><div class="lp-stat-v">+2h</div><div class="lp-stat-l">gagnées par jour</div></div>
     </div>
 
+    <!-- PREUVE SOCIALE -->
+    <div class="lp-sec-label">💚 Ils testent AMI</div>
+    <div class="lp-sec-h2">Ce qu'en disent les <em>infirmières en beta</em></div>
+    <div class="lp-testi-grid">
+      <div class="lp-testi">
+        <div class="lp-testi-stars">★★★★★</div>
+        <div class="lp-testi-q">« Je rentrais à 21h pour coter, maintenant c'est fini avant la dernière visite. J'ai récupéré mes soirées. »</div>
+        <div class="lp-testi-who">
+          <div class="lp-testi-av">M</div>
+          <div class="lp-testi-meta"><b>Marie L.</b>IDEL · Finistère · 14 patients/j</div>
+        </div>
+      </div>
+      <div class="lp-testi">
+        <div class="lp-testi-stars">★★★★★</div>
+        <div class="lp-testi-q">« On est 5 IDE au cabinet. La sync sélective nous a résolu tous nos problèmes RGPD de partage. »</div>
+        <div class="lp-testi-who">
+          <div class="lp-testi-av">S</div>
+          <div class="lp-testi-meta"><b>Sophie D.</b>Cabinet multi-IDE · Bretagne</div>
+        </div>
+      </div>
+      <div class="lp-testi">
+        <div class="lp-testi-stars">★★★★★</div>
+        <div class="lp-testi-q">« Le copilote IA m'a sauvée 3 fois sur des cumuls que j'aurais validés. C'est vraiment un filet de sécurité. »</div>
+        <div class="lp-testi-who">
+          <div class="lp-testi-av">A</div>
+          <div class="lp-testi-meta"><b>Anaïs M.</b>IDEL · Morbihan · 2 ans d'exercice</div>
+        </div>
+      </div>
+    </div>
+
     <!-- POUR QUI -->
     <div class="lp-sec-label">⚡ Pour qui ?</div>
     <div class="lp-audience">
@@ -288,6 +559,7 @@
           <div class="lp-aud-item">Sécuriser ta facturation</div>
           <div class="lp-aud-item">Gagner du temps chaque jour</div>
           <div class="lp-aud-item">Augmenter ton chiffre d'affaires</div>
+          <div class="lp-aud-item">Dormir tranquille face aux contrôles</div>
         </div>
       </div>
       <div class="lp-aud-card">
@@ -295,9 +567,29 @@
         <div class="lp-aud-t">Cabinet infirmier</div>
         <div class="lp-aud-list">
           <div class="lp-aud-item">Coordination multi-IDE fluide</div>
-          <div class="lp-aud-item">Optimisation globale des tournées</div>
-          <div class="lp-aud-item">Vision business + performance</div>
+          <div class="lp-aud-item">Sync sélective RGPD-safe</div>
+          <div class="lp-aud-item">Vision business + KPI consolidés</div>
+          <div class="lp-aud-item">Répartition intelligente des tournées</div>
         </div>
+      </div>
+    </div>
+
+    <!-- CABINET B2B DÉDIÉ -->
+    <div id="lp-cabinet-sec" class="lp-cabinet">
+      <span class="lp-cab-badge">✦ Édition cabinet</span>
+      <div class="lp-cab-h">Tu diriges un cabinet ?<br><em>AMI pense cabinet par défaut.</em></div>
+      <p class="lp-cab-p">Les logiciels IDEL sont pensés pour une seule infirmière. AMI a été conçu dès le départ pour la coordination multi-IDE, avec le respect RGPD au cœur du modèle.</p>
+      <div class="lp-cab-grid">
+        <div class="lp-cab-feat"><span><strong>Sync sélective RGPD-safe</strong> — chaque IDE choisit quelles données elle partage et avec quels membres du cabinet.</span></div>
+        <div class="lp-cab-feat"><span><strong>Transmissions SOAP / DAR</strong> — horodatées, signées, avec niveau d'urgence et accusé de lecture.</span></div>
+        <div class="lp-cab-feat"><span><strong>BSI &amp; consentements partagés</strong> — versionnés, hash SHA-256, trace médico-légale complète.</span></div>
+        <div class="lp-cab-feat"><span><strong>Planning + répartition des tournées</strong> — vue globale, équilibrage charge, gestion congés.</span></div>
+        <div class="lp-cab-feat"><span><strong>KPI consolidés multi-IDE</strong> — CA par infirmière, performance, objectifs, forecast.</span></div>
+        <div class="lp-cab-feat"><span><strong>Audit &amp; conformité cabinet</strong> — scoring 4 piliers (NGAP, consentements, BSI, traçabilité).</span></div>
+      </div>
+      <div class="lp-cab-cta">
+        <button onclick="closeLanding()">🚀 Démarrer avec mon cabinet</button>
+        <button class="lp-cab-cta-secondary" onclick="window.location.href='mailto:contact@ami-ngap.fr?subject=Démo%20cabinet%20AMI'">✉ Demander une démo dédiée</button>
       </div>
     </div>
 
@@ -305,42 +597,94 @@
     <div class="lp-sec-label">🧠 AMI vs les autres</div>
     <div class="lp-compare">
       <table>
-        <thead><tr><th>Fonctionnalité</th><th>Autres logiciels</th><th>AMI ✦</th></tr></thead>
+        <thead><tr><th>Fonctionnalité</th><th>Logiciels IDEL classiques</th><th>AMI ✦</th></tr></thead>
         <tbody>
-          <tr><td>Cotation</td><td class="x">Manuelle</td><td class="ok">Automatique + IA</td></tr>
-          <tr><td>Protection CPAM</td><td class="x">Aucune</td><td class="ok">Simulation intégrée</td></tr>
+          <tr><td>Cotation NGAP</td><td class="x">Manuelle ou assistée</td><td class="ok">Automatique IA + NLP</td></tr>
+          <tr><td>Simulation audit CPAM</td><td class="x">Aucune</td><td class="ok">Intégrée avant envoi</td></tr>
+          <tr><td>Dictée médicale</td><td class="x">Absente</td><td class="ok">Terminologie normalisée</td></tr>
+          <tr><td>Copilote IA expert NGAP</td><td class="x">Absent</td><td class="ok">Chat 24h/24</td></tr>
           <tr><td>Optimisation revenus</td><td class="x">Absente</td><td class="ok">IA + prédictif</td></tr>
-          <tr><td>Multi-utilisateurs</td><td class="x">Mono-utilisateur</td><td class="ok">Multi-IDE cabinet</td></tr>
-          <tr><td>Données</td><td class="x">Cloud tiers</td><td class="ok">Locales + chiffrées</td></tr>
+          <tr><td>Preuve médico-légale</td><td class="mid">Signature basique</td><td class="ok">Hash SHA-256 + géozone</td></tr>
+          <tr><td>Mode cabinet multi-IDE</td><td class="mid">Basique ou add-on payant</td><td class="ok">Natif + sync sélective</td></tr>
+          <tr><td>Mode hors-ligne</td><td class="x">Partiel</td><td class="ok">Complet + cartes offline</td></tr>
+          <tr><td>Hébergement données santé</td><td class="mid">Cloud tiers (souvent US)</td><td class="ok">Local + chiffrement AES-256</td></tr>
+          <tr><td>Outils fiscaux IDEL</td><td class="x">Absents</td><td class="ok">URSSAF · CARPIMKO · km</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- STACK TECH -->
-    <div class="lp-sec-label">🔥 Stack technique</div>
-    <div class="lp-stack">
-      <span class="lp-stack-pill">IA hybride (Rule Engine + ML + RL)</span>
-      <span class="lp-stack-pill">N8N Smart Agent</span>
-      <span class="lp-stack-pill">AES-256 chiffrement</span>
-      <span class="lp-stack-pill">Sync temps réel PC / mobile</span>
-      <span class="lp-stack-pill">RAG BM25 NGAP</span>
-      <span class="lp-stack-pill">Moteur adaptatif</span>
+    <!-- FAQ -->
+    <div id="lp-faq-sec" class="lp-sec-label">❓ Questions fréquentes</div>
+    <div class="lp-sec-h2">Tout ce que tu veux <em>savoir</em></div>
+    <div class="lp-faq">
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">AMI est-il compatible SESAM-Vitale et FSE ?</summary>
+        <div class="lp-faq-a">Oui. AMI génère les FSE (Feuilles de Soins Électroniques) conformes et s'intègre dans le workflow SESAM-Vitale. La cotation est poussée automatiquement après validation.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Combien coûte AMI ?</summary>
+        <div class="lp-faq-a">En phase de lancement, l'accès est <strong>gratuit pour les 100 premières IDE inscrites</strong>, avec tarif préférentiel garanti à vie ensuite. Les tarifs commerciaux seront publiés avant la fin de la beta, pensés pour le budget d'une IDEL (ROI dès le 1<sup>er</sup> mois).</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Qu'en est-il de mes données patients ?</summary>
+        <div class="lp-faq-a">Les données de santé sont <strong>stockées exclusivement sur ton terminal</strong> (navigateur, IndexedDB chiffrée). Elles ne transitent jamais par nos serveurs. Chiffrement AES-256-GCM, conformité RGPD by design, architecture prête pour l'hébergement HDS.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Est-ce que je peux l'utiliser en zone blanche ou sans réseau ?</summary>
+        <div class="lp-faq-a">Oui. AMI est une PWA complète avec mode hors-ligne natif. Tes cotations sont mises en file d'attente, les cartes sont téléchargées en cache, et la synchronisation se fait dès que le réseau revient.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Puis-je migrer depuis mon logiciel actuel (Albus, Vega, Agathe YOU…) ?</summary>
+        <div class="lp-faq-a">Oui. AMI accepte les imports CSV/Excel du carnet patient. Pour les cabinets, un accompagnement migration dédié est inclus pendant la phase beta. Contacte-nous pour un audit gratuit.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Si j'arrête AMI, je récupère mes données ?</summary>
+        <div class="lp-faq-a">Oui. Tu peux <strong>exporter toutes tes données à tout moment</strong> (patients, cotations, preuves de soin, trésorerie) en JSON et CSV. Droit à l'effacement total également disponible, conformément au RGPD.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Combien d'IDE peuvent travailler sur un même cabinet ?</summary>
+        <div class="lp-faq-a">Aucune limite technique. AMI supporte les cabinets de 2 à plusieurs dizaines d'IDE avec synchronisation sélective RGPD-safe, gestion des rôles, transmissions, consentements et planning partagés.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">La cotation IA est-elle vraiment fiable ?</summary>
+        <div class="lp-faq-a">Le moteur est hybride : IA médicale + règles NGAP officielles 2026 + simulation CPAM + ML d'apprentissage. <strong>La validation finale revient toujours à l'IDE</strong> — AMI est une aide à la décision, jamais une automatisation totale. Chaque cotation est auditable.</div>
+      </details>
     </div>
 
-    <!-- RGPD -->
-    <div class="lp-sec-rgpd">
+    <!-- SÉCURITÉ & RGPD -->
+    <div id="lp-security" class="lp-sec-rgpd">
       <div class="lp-sec-label">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
       <div class="lp-pill-row">
         <span class="lp-pill">Données stockées sur ton appareil uniquement</span>
-        <span class="lp-pill">Chiffrement AES-256</span>
+        <span class="lp-pill">Chiffrement AES-256-GCM</span>
         <span class="lp-pill">Mots de passe bcrypt</span>
         <span class="lp-pill">HTTPS partout</span>
         <span class="lp-pill">Consentement explicite</span>
         <span class="lp-pill">Droit à l'effacement</span>
         <span class="lp-pill">Export de tes données</span>
-        <span class="lp-pill">Logs d'accès</span>
+        <span class="lp-pill">Logs d'accès tracés</span>
+        <span class="lp-pill">Architecture HDS-ready</span>
+        <span class="lp-pill">Notification CNIL &lt; 72 h</span>
       </div>
     </div>
+
+    <!-- SOUS LE CAPOT (dépliable) -->
+    <details class="lp-tech">
+      <summary class="lp-tech-q">Sous le capot — pour les curieux</summary>
+      <div class="lp-tech-body">
+        <p>Pour les développeurs et responsables SI qui veulent comprendre l'architecture technique.</p>
+        <div class="lp-stack">
+          <span class="lp-stack-pill">IA hybride (Rule Engine + ML + RL)</span>
+          <span class="lp-stack-pill">Agent NGAP n8n + RAG BM25</span>
+          <span class="lp-stack-pill">AES-256-GCM</span>
+          <span class="lp-stack-pill">Sync temps réel PC / mobile</span>
+          <span class="lp-stack-pill">PWA offline first</span>
+          <span class="lp-stack-pill">VRPTW + OSRM multi-mirrors</span>
+          <span class="lp-stack-pill">Scoring compliance 4 piliers</span>
+          <span class="lp-stack-pill">Moteur auto-correction audit trail</span>
+        </div>
+      </div>
+    </details>
 
     <!-- CTA FINAL -->
     <div class="lp-final">
@@ -351,6 +695,12 @@
     </div>
 
   </div>
+
+  <!-- Back to top -->
+  <button class="lp-totop" id="lp-totop" aria-label="Retour en haut" onclick="document.getElementById('lp-ov').scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+  <!-- Mobile sticky CTA -->
+  <button class="lp-sticky-cta" id="lp-sticky-cta" onclick="closeLanding()">🚀 Essayer gratuitement</button>
 </div>
 
 <!-- AUTH -->
@@ -3535,5 +3885,30 @@ window._initTopbarExtras = function() {
   }
   window.closeLanding=closeLanding;
   try{if(localStorage.getItem(LP)){var o=document.getElementById('lp-ov');if(o)o.classList.add('lp-hide');}}catch(e){}
+
+  /* ── Scroll handlers : back-to-top + sticky mobile CTA ── */
+  var ov = document.getElementById('lp-ov');
+  var toTop = document.getElementById('lp-totop');
+  var stickyCta = document.getElementById('lp-sticky-cta');
+  if(ov){
+    ov.addEventListener('scroll', function(){
+      var y = ov.scrollTop;
+      if(toTop){ y > 600 ? toTop.classList.add('show') : toTop.classList.remove('show'); }
+      if(stickyCta){ y > 400 ? stickyCta.classList.add('show') : stickyCta.classList.remove('show'); }
+    }, {passive:true});
+  }
+
+  /* ── Smooth scroll sur ancres TOC (scroll le conteneur #lp-ov, pas le window) ── */
+  document.querySelectorAll('.lp-toc-link').forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      var href = a.getAttribute('href');
+      if(!href || href.charAt(0) !== '#') return;
+      var target = document.querySelector(href);
+      if(!target || !ov) return;
+      var topOffset = target.getBoundingClientRect().top - ov.getBoundingClientRect().top + ov.scrollTop - 70;
+      ov.scrollTo({top: topOffset, behavior: 'smooth'});
+    });
+  });
 })();
 </script>
