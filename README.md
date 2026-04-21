@@ -801,5 +801,5 @@ admin:  ['view_users_list', 'view_stats', 'view_logs',
 | `AI_Agent_AMI_v10.json` | Workflow N8N principal — 51 nœuds | v10 |
 | `AMI_Cotation_Preuve_Update_v1.json` | Workflow N8N — UPDATE preuve_soin post-signature (8 nœuds) | **v1** |
 | `AMI_ML_Nightly_v1.json` | Workflow N8N — Cron 2h : retrain SGD + rapport staffing (9 nœuds) | **v1** |
-| `README.md` | Documentation technique (ce fichier) | **v10.1** |
+| `README.md` | Documentation technique (ce fichier) | **v10.0** |
 | `GUIDE_INFIRMIERES.md` | Guide pratique & FAQ (chargé dynamiquement) | **v2.1** |
