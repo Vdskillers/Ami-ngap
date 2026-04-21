@@ -452,6 +452,16 @@ async function renderComplianceBadge() {
   const el = document.getElementById('dash-compliance-widget');
   if (!el || typeof computeCompliance !== 'function') return;
 
+  // 🛡️ Guard cabinet — le widget de conformité n'a de sens que si on est dans un cabinet.
+  // Hors cabinet : on masque le widget et on vide son contenu (évite l'affichage fantôme
+  // « Cabinet à surveiller · Consent 100% · NGAP 100% · BSI 100% · Trace 0% »).
+  const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+  if (!cab?.id) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
   try {
     const [comp, reminders] = await Promise.all([
       computeCompliance(),
