@@ -1190,23 +1190,114 @@ async function renderAuditCPAM() {
   `;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   _loadAuditCotations(depuisYYYYMMDD)
+   ───────────────────────────────────────────────────────────────
+   Charge les cotations pour l'audit en suivant l'ordre :
+   1. API /webhook/ami-historique (réponse format { data: [...] })
+   2. Fallback IDB : agrège p.cotations de tous les patients locaux
+      Indispensable car :
+      - Une cotation faite via /webhook/ami-calcul puis Tournée IA
+        n'apparaît dans /webhook/ami-historique qu'après PUSH par
+        /webhook/ami-save-cotation. Les cotations encore _synced:false
+        ne sont donc pas remontées par l'API.
+      - Mode hors-ligne : aucune réponse API → IDB est la seule source.
+      - Cotations admin : jamais sync vers Supabase, IDB only.
+
+   Format normalisé en sortie (même clés que les règles audit
+   attendent : actes[], date_soin, total, patient_id, patient_nom,
+   prescripteur, medecin, km, source, invoice_number).
+═══════════════════════════════════════════════════════════════ */
+async function _loadAuditCotations(depuisYYYYMMDD) {
+  let cotations = [];
+
+  // 1. Tentative API
+  try {
+    if (typeof apiCall === 'function') {
+      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis: depuisYYYYMMDD });
+      // ⚠️ La route renvoie { data: [...] } (cohérent avec patients.js l.1484, l.2617)
+      // Avant ce fix, audit-cpam.js lisait `res?.cotations` qui n'existe pas
+      // → cotations toujours vide → "Aucune cotation trouvée".
+      const apiList = Array.isArray(res?.data)         ? res.data
+                    : Array.isArray(res?.cotations)    ? res.cotations
+                    : Array.isArray(res)               ? res
+                    : [];
+      // Normaliser actes (peuvent arriver en JSON string depuis le worker)
+      cotations = apiList.map(c => {
+        let actes = c.actes;
+        if (typeof actes === 'string') {
+          try { actes = JSON.parse(actes); } catch { actes = []; }
+        }
+        return { ...c, actes: Array.isArray(actes) ? actes : [] };
+      });
+    }
+  } catch (_e) { /* silencieux — fallback IDB ci-dessous */ }
+
+  // 2. Fallback / complément IDB
+  // On agrège systématiquement (pas seulement quand l'API renvoie 0) pour
+  // capturer les cotations _synced:false encore en attente de push.
+  // Dédoublonnage par invoice_number, sinon par (date+total) — même règle
+  // que dans syncCotationsFromServer.
+  try {
+    if (typeof getAllPatients === 'function') {
+      const seenInv = new Set(cotations.map(c => c.invoice_number).filter(Boolean));
+      const seenKey = new Set(
+        cotations
+          .filter(c => parseFloat(c.total || 0) > 0)
+          .map(c => `${(c.date_soin || c.date || '').slice(0,10)}|${parseFloat(c.total||0).toFixed(2)}`)
+      );
+      const patients = await getAllPatients();
+      const cutoff = new Date(depuisYYYYMMDD).getTime();
+      for (const p of patients) {
+        if (!Array.isArray(p.cotations)) continue;
+        for (const c of p.cotations) {
+          if (!c) continue;
+          const dateISO = c.date || c.date_soin || '';
+          const dateMs  = new Date(dateISO).getTime();
+          if (isNaN(dateMs) || dateMs < cutoff) continue;
+          // Dédoublonnage avec ce qui vient déjà de l'API
+          if (c.invoice_number && seenInv.has(c.invoice_number)) continue;
+          const _kk = `${dateISO.slice(0,10)}|${parseFloat(c.total||0).toFixed(2)}`;
+          if (parseFloat(c.total||0) > 0 && seenKey.has(_kk)) continue;
+          // Normalisation au format API attendu par les règles
+          cotations.push({
+            actes:           Array.isArray(c.actes) ? c.actes : [],
+            total:           parseFloat(c.total || 0),
+            date_soin:       dateISO.slice(0, 10),
+            date:            dateISO,
+            heure_soin:      c.heure || null,
+            patient_id:      p.id,
+            patient_nom:     `${p.prenom||''} ${p.nom||''}`.trim(),
+            invoice_number:  c.invoice_number || null,
+            source:          c.source || 'idb_local',
+            soin:            c.soin || '',
+            prescripteur:    c.prescripteur || p.medecin || null,
+            medecin:         c.medecin || p.medecin || null,
+            km:              parseFloat(c.km || 0),
+            dre_requise:     !!c.dre_requise,
+            _from_idb:       true,
+          });
+          if (c.invoice_number) seenInv.add(c.invoice_number);
+          if (parseFloat(c.total||0) > 0) seenKey.add(_kk);
+        }
+      }
+    }
+  } catch (_eIDB) { console.warn('[audit] fallback IDB KO:', _eIDB?.message); }
+
+  return cotations;
+}
+
 async function auditLancer() {
   const resultEl = document.getElementById('audit-result');
   if (!resultEl) return;
 
   resultEl.innerHTML = `<div style="text-align:center;padding:32px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><div style="font-size:13px;color:var(--m)">Analyse de votre historique…</div></div>`;
 
-  // Charger les cotations depuis l'API
+  // Charger les cotations depuis l'API + fallback IDB
   const mois = parseInt(document.getElementById('audit-periode')?.value || '6');
   const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
 
-  let cotations = [];
-  try {
-    if (typeof apiCall === 'function') {
-      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
-      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
-    }
-  } catch (_) {}
+  const cotations = await _loadAuditCotations(depuis);
 
   if (!cotations.length) {
     resultEl.innerHTML = `<div class="ai in">Aucune cotation trouvée sur la période. Cotez des soins pour générer un rapport d'audit.</div>`;
@@ -1320,10 +1411,7 @@ async function auditModeControleCPAM() {
   const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
   let cotations = [], patients = [];
   try {
-    if (typeof apiCall === 'function') {
-      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
-      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
-    }
+    cotations = await _loadAuditCotations(depuis);
     if (typeof getAllPatients === 'function') patients = await getAllPatients();
   } catch (_) {}
 
@@ -1601,35 +1689,14 @@ function auditShowHistoriqueConformite() {
    ────────────────────────────────────────────────
    Au chargement de l'app, si le mois en cours n'a
    pas de snapshot, invite l'IDE à faire un contrôle.
-   Le toast est affiché **une seule fois par mois et
-   par session** — deux gardes empilées :
-     1) flag module _auditMonthlyReminderShown → évite
-        les duplicatas liés aux re-renders SPA
-     2) sessionStorage clé `ami_audit_reminder_<mois>`
-        → survit aux navigations inter-onglet d'une
-        même session tant qu'il n'y a pas de reload
 ═══════════════════════════════════════════════ */
-let _auditMonthlyReminderShown = false;
-
 function auditCheckMonthlyReminder() {
-  // Garde 1 — déjà notifié dans cette session JS
-  if (_auditMonthlyReminderShown) return;
-
   if (!window.BSI_ENGINE) return;
   const history = window.BSI_ENGINE.getTrustHistory();
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const hasThisMonth = history.some(h => h.month === monthKey);
   if (hasThisMonth) return; // déjà fait ce mois-ci
-
-  // Garde 2 — sessionStorage par mois (survit aux re-renders)
-  try {
-    const skey = 'ami_audit_reminder_' + monthKey;
-    if (sessionStorage.getItem(skey)) { _auditMonthlyReminderShown = true; return; }
-    sessionStorage.setItem(skey, '1');
-  } catch (_) {}
-
-  _auditMonthlyReminderShown = true;
 
   // Rappel : on lance l'audit en fond automatiquement le 1er jour disponible du mois
   // pour alimenter l'historique de conformité (preuve juridique).
