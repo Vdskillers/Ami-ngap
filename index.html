@@ -753,7 +753,7 @@
       <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
       <div class="ni" data-v="compliance"><span class="nic">🧠</span> Conformité cabinet</div>
     </div>
-    <div class="sl" style="margin-top:auto">
+    <div class="sl" style="margin-top:8px">
       <div class="slbl">Système</div>
       <div class="ni nurse-only" data-v="ngap-ref"><span class="nic">📚</span> Référentiel NGAP</div>
       <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
@@ -1675,11 +1675,12 @@
             <th>Actes</th>
             <th>Total</th>
             <th>Statut</th>
+            <th>IDE(s)</th>
             <th>Alertes</th>
             <th></th>
             <th></th>
           </tr></thead>
-          <tbody id="htb"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
+          <tbody id="htb"><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -2860,7 +2861,7 @@ async function hist() {
   const stats = document.getElementById('hstats');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
 
   const q       = (document.getElementById('hq')?.value || '').toLowerCase().trim();
   const period  = document.getElementById('hp')?.value || '';
@@ -2891,7 +2892,7 @@ async function hist() {
     }
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
       if (stats) stats.innerHTML = '';
       return;
     }
@@ -2960,6 +2961,39 @@ async function hist() {
         : `<span class="pt-status active"><span class="pt-status-dot active"></span><span style="font-size:11px">Conforme</span></span>`;
 
       const _rowId = `hist-row-${r.id}`;
+
+      // ── Colonne IDE(s) — multi-source : _assignedIdes[] > performed_by_list[] > infirmiere_nom/prenom > APP.user ──
+      let _ideLabels = [];
+      if (Array.isArray(r._assignedIdes) && r._assignedIdes.length) {
+        // Futur : tableau d'IDs → résoudre via cabinet.members
+        const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+        const memberMap = {};
+        (cab?.members || []).forEach(m => {
+          const id = m.id || m.infirmiere_id;
+          if (id) memberMap[id] = `${m.prenom||''} ${m.nom||''}`.trim() || id;
+        });
+        _ideLabels = r._assignedIdes.map(id => memberMap[id] || id);
+      } else if (Array.isArray(r.performed_by_list) && r.performed_by_list.length) {
+        _ideLabels = r.performed_by_list.map(x => String(x));
+      } else if (r.infirmiere_prenom || r.infirmiere_nom) {
+        _ideLabels = [`${r.infirmiere_prenom||''} ${r.infirmiere_nom||''}`.trim()];
+      } else if (typeof APP !== 'undefined' && APP.user) {
+        // Fallback : l'utilisateur connecté (cotation créée par lui-même)
+        _ideLabels = [`${APP.user.prenom||''} ${APP.user.nom||''}`.trim() || 'Moi'];
+      }
+
+      const _ideColors = ['var(--a)', '#4fa8ff', '#ff9f43', '#ff6b6b', '#a29bfe'];
+      const idesHtml = _ideLabels.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:140px">${_ideLabels.map((lbl, i) => {
+            const c = _ideColors[i % _ideColors.length];
+            const initials = lbl.split(/\s+/).map(w => w[0]||'').join('').slice(0,2).toUpperCase();
+            return `<span title="${lbl.replace(/"/g,'&quot;')}" style="display:inline-flex;align-items:center;gap:3px;background:rgba(0,212,170,.08);border:1px solid ${c};border-radius:10px;padding:1px 6px;font-size:10px;font-family:var(--fm);color:${c};white-space:nowrap">
+              <span style="width:5px;height:5px;border-radius:50%;background:${c};flex-shrink:0"></span>
+              ${initials}
+            </span>`;
+          }).join('')}</div>`
+        : `<span style="font-size:10px;color:var(--m)">—</span>`;
+
       return `<tr id="${_rowId}">
         <td>
           <div style="display:flex;align-items:center;gap:10px">
@@ -2975,6 +3009,7 @@ async function hist() {
         <td style="max-width:160px">${actesHtml}</td>
         <td class="pt-ca" style="white-space:nowrap">${parseFloat(r.total||0).toFixed(2)}&nbsp;€</td>
         <td>${statutHtml}</td>
+        <td>${idesHtml}</td>
         <td>${alertsHtml}</td>
         <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
           data-hist-id="${r.id}"
@@ -2990,7 +3025,7 @@ async function hist() {
     }).join('');
 
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
   }
 }
 
@@ -3040,7 +3075,7 @@ async function resetAllHist() {
   if (!confirm(`Confirmer la suppression définitive de toutes les cotations de ${periodLabel} ?`)) return;
 
   const tbody = document.getElementById('htb');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
 
   try {
     // ── Suppression en masse — un seul appel Supabase, plus fiable que N appels séquentiels ──
