@@ -588,7 +588,13 @@ async function _cotationCabinetPersistMyPart(d, txt) {
       _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
     if (_idx < 0 && _editRef?.invoice_number)
       _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
-    if (_idx < 0 && _editRef && _cotDate) {
+    // ⚠️ Fallback par date : UNIQUEMENT si _editRef est un vrai mode édition
+    // (cotationIdx ou invoice_number fourni). Si l'utilisateur a cliqué
+    // "✨ Nouvelle cotation" dans la modale doublon, _editRef = { _userChose: true }
+    // SANS cotationIdx/invoice_number → le fallback par date trouverait l'ancienne
+    // cotation et ferait un upsert silencieux au lieu de respecter le choix utilisateur.
+    const _isForceNew = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+    if (_idx < 0 && _editRef && _cotDate && !_isForceNew) {
       _idx = _pat.cotations.findIndex(c =>
         (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
       );
@@ -597,11 +603,11 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     if (_idx >= 0) {
       // Cotation existante → upsert
       _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-    } else if (!_editRef) {
-      // Pas de _editRef → 1ère cotation pour ce patient
+    } else if (!_editRef || _isForceNew) {
+      // Pas de _editRef OU choix explicite "Nouvelle cotation" → push
       _pat.cotations.push(_newCot);
     }
-    // Si _editRef mais pas d'index → ne rien faire (évite doublons)
+    // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite doublons)
 
     _pat.updated_at = new Date().toISOString();
     const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
@@ -1203,8 +1209,13 @@ async function _cotationPipeline() {
           // 3. Par invoice_number original du ref (cas correction post-tournée / planning)
           if (_idx < 0 && _editRef?.invoice_number)
             _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
-          // 4. Par date YYYY-MM-DD (fallback robuste : couvre les dates ISO complètes vs courtes)
-          if (_idx < 0 && _editRef && _cotDate) {
+          // 4. Par date YYYY-MM-DD — UNIQUEMENT pour vrai mode édition.
+          //    Si l'utilisateur a cliqué "✨ Nouvelle cotation" dans la modale doublon,
+          //    _editRef vaut { _userChose: true } SANS cotationIdx/invoice_number → on
+          //    skip ce fallback pour respecter le choix utilisateur (sinon upsert
+          //    silencieux de l'ancienne cotation au lieu de créer une nouvelle).
+          const _isForceNewSolo = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+          if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo) {
             _idx = _pat.cotations.findIndex(c =>
               (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
             );
@@ -1213,11 +1224,11 @@ async function _cotationPipeline() {
           if (_idx >= 0) {
             // Cotation existante trouvée → mettre à jour (upsert)
             _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-          } else if (!_editRef) {
-            // Aucun index ET pas en mode édition → première cotation pour ce patient
+          } else if (!_editRef || _isForceNewSolo) {
+            // Pas en mode édition OU choix explicite "Nouvelle cotation" → push
             _pat.cotations.push(_newCot);
           }
-          // Si _editRef mais pas d'index → ne rien faire (évite les doublons)
+          // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite les doublons)
 
           _pat.updated_at = new Date().toISOString();
           const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };

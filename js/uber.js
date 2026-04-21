@@ -351,12 +351,22 @@ async function _autoCoterEtImporterPatient(p) {
         return;
       }
 
-      // Upsert : chercher une cotation existante pour ce patient aujourd'hui
-      const _todayStr = todayStr; // YYYY-MM-DD
-      const _existUberIdx = pat.cotations.findIndex(c =>
-        (c.source === 'tournee_live' || c.source === 'tournee' || c.source === 'tournee_auto') &&
-        (c.date || '').slice(0, 10) === _todayStr
-      );
+      // Upsert : chercher une cotation existante pour ce patient
+      // ⚠️ Dédup par FENÊTRE TEMPORELLE (6h), PAS par date UTC.
+      // Pourquoi : une cotation faite à 1h du matin France stocke "2026-04-20"
+      // (UTC) au lieu de "2026-04-21" (local). Comparer par UTC date confond
+      // les tournées de fin de soirée et début de matinée. Une fenêtre 6h
+      // capture les double-clics accidentels sur "Terminé" (cas légitime
+      // d'upsert) mais autorise une vraie nouvelle tournée le même jour
+      // (matin + soir, ou jours différents proches).
+      const _DEDUP_WINDOW_MS = 6 * 3600 * 1000;
+      const _nowMs = _now.getTime();
+      const _existUberIdx = pat.cotations.findIndex(c => {
+        if (c.source !== 'tournee_live' && c.source !== 'tournee' && c.source !== 'tournee_auto') return false;
+        const _cMs = new Date(c.date || 0).getTime();
+        if (isNaN(_cMs) || _cMs <= 0) return false;
+        return Math.abs(_nowMs - _cMs) < _DEDUP_WINDOW_MS;
+      });
       // ⚡ Préserver l'heure de la cotation existante si on upsert, sinon heure réelle.
       // Évite qu'un double-clic accidentel sur "Terminer" décale l'horodatage.
       const _heureUber = (_existUberIdx >= 0 && pat.cotations[_existUberIdx].heure)
@@ -378,7 +388,7 @@ async function _autoCoterEtImporterPatient(p) {
       if (_existUberIdx >= 0) {
         pat.cotations[_existUberIdx] = _cotEntryUber; // mise à jour
       } else {
-        pat.cotations.push(_cotEntryUber); // première cotation du jour
+        pat.cotations.push(_cotEntryUber); // nouvelle cotation
       }
       pat.updated_at = today;
 

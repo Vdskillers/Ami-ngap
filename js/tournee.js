@@ -3850,15 +3850,25 @@ function _validateCotationLive() {
       const today     = new Date().toISOString().slice(0, 10);
       const soinLabel = (patient.description || patient.texte || '').slice(0, 120);
       // Chercher la cotation existante par invoice_number (plus fiable),
-      // puis par source tournee + date du jour (fallback)
+      // puis par fenêtre temporelle 6h sur source tournée (fallback)
       let existingIdx = existingInvoice
         ? p.cotations.findIndex(c => c.invoice_number === existingInvoice)
         : -1;
       if (existingIdx < 0) {
-        existingIdx = p.cotations.findIndex(c =>
-          (c.source === 'tournee' || c.source === 'tournee_auto' || c.source === 'tournee_live') &&
-          (c.date || '').slice(0, 10) === today
-        );
+        // ⚠️ Fallback : fenêtre temporelle 6h, PAS comparaison de date UTC.
+        // Une cotation faite à 1h du matin France stocke "2026-04-20" (UTC)
+        // au lieu de "2026-04-21" (local) → confusion entre tournées de fin
+        // de soirée et début de matinée. La fenêtre temporelle gère bien
+        // les deux cas : double-clic accidentel (upsert dans 6h) vs vraie
+        // nouvelle tournée le même jour ou le lendemain (push neuf).
+        const _DEDUP_WINDOW_MS_VL = 6 * 3600 * 1000;
+        const _nowMsVL = Date.now();
+        existingIdx = p.cotations.findIndex(c => {
+          if (c.source !== 'tournee' && c.source !== 'tournee_auto' && c.source !== 'tournee_live') return false;
+          const _cMs = new Date(c.date || 0).getTime();
+          if (isNaN(_cMs) || _cMs <= 0) return false;
+          return Math.abs(_nowMsVL - _cMs) < _DEDUP_WINDOW_MS_VL;
+        });
       }
       // Garder la cotation uniquement si elle contient au moins un acte technique (pas juste une majoration)
       const _CODES_MAJ = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
