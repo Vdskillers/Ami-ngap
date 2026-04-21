@@ -745,6 +745,7 @@
       <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
       <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
       <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
+      <div class="ni" data-v="compliance"><span class="nic">🧠</span> Conformité cabinet</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
       <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
       <div class="ni nurse-only" data-v="outils-simulation"><span class="nic">⚡</span> Simulateur majoration</div>
@@ -1728,6 +1729,9 @@
         <!-- ── 🆕 Widget Score de confiance (trust score) ── -->
         <div id="dash-trust-widget" style="display:none;margin:4px 0 16px"></div>
 
+        <!-- ── 🛡️ Widget Conformité cabinet (v3.9) ── -->
+        <div id="dash-compliance-widget" style="display:none;margin:4px 0 16px"></div>
+
         <!-- ── KPIs ── -->
         <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin:20px 0 24px"></div>
 
@@ -2704,6 +2708,14 @@
       <div id="audit-cpam-root"></div>
     </section>
 
+    <!-- ══════════════════════════════════════════
+         CONFORMITÉ CABINET — scoring + auto-correction + risque prédictif
+    ══════════════════════════════════════════ -->
+    <section class="view" id="view-compliance">
+      <div id="admin-compliance-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le moteur de conformité. Le score et les actions sont calculés depuis votre compte de démo. En production, chaque infirmière voit uniquement son propre cabinet.</div>
+      <div id="compliance-root"></div>
+    </section>
+
   </main>
 </div>
 
@@ -2717,11 +2729,11 @@
 
 <!-- Modules fonctionnels -->
 <script src="js/auth.js?v=3.8"></script>
-<script src="js/cabinet.js?v=3.8"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
+<script src="js/cabinet.js?v=3.9"></script><!-- Mode cabinet multi-IDE + sync sélective + 🛡️ consentements partagés -->
 <script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js?v=3.8"></script>
 <script src="js/profil.js?v=3.9"></script>
-<script src="js/cotation.js?v=3.8"></script>
+<script src="js/cotation.js?v=3.9"></script><!-- ⚡ v3.9 : hook check consentement avant acte -->
 <script src="js/contact.js?v=3.8"></script>
 <script src="js/geocode.js?v=3.8"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
 <script src="js/navigation.js?v=3.8"></script><!-- computeGeoScore + openNavigation -->
@@ -2766,7 +2778,8 @@
 <script src="js/pilulier.js?v=3.8"></script>
 <script src="js/bsi-engine.js?v=3.9"></script><!-- 🆕 Moteurs BSI : suggestion, cohérence, impact €, risque CPAM, score confiance -->
 <script src="js/bsi.js?v=3.9"></script>
-<script src="js/consentements.js?v=3.8"></script>
+<script src="js/consentements.js?v=3.9"></script><!-- 🛡️ v2.0 : cabinet sync + versionning + hash SHA-256 + check avant acte -->
+<script src="js/compliance-engine.js?v=3.9"></script><!-- 🧠 Scoring 4 piliers + auto-correction + risque prédictif + ranking patients -->
 <script src="js/alertes-medicaments.js?v=3.8"></script>
 <script src="js/audit-cpam.js?v=3.9"></script>
 
