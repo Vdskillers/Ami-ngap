@@ -508,6 +508,30 @@ async function renderComplianceDashboard() {
   const wrap = document.getElementById('compliance-root');
   if (!wrap) return;
 
+  // 🛡️ Guard cabinet — la vue « Conformité cabinet » n'a de sens que si on est dans un cabinet.
+  // Hors cabinet : on affiche un état vide explicite avec CTA (pas de score fantôme).
+  const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+  if (!cab?.id) {
+    wrap.innerHTML = `
+      <h1 class="pt">Conformité <em>cabinet</em></h1>
+      <p class="ps">Score global · Auto-correction · Risque futur · Patients prioritaires</p>
+      <div class="card" style="text-align:center;padding:40px 20px">
+        <div style="font-size:48px;margin-bottom:12px">🏥</div>
+        <div style="font-size:15px;font-weight:600;color:var(--t);margin-bottom:6px">
+          Aucun cabinet actif
+        </div>
+        <div style="font-size:13px;color:var(--m);max-width:520px;margin:0 auto 20px;line-height:1.55">
+          Le tableau de conformité agrège les scores consentements, NGAP, BSI et traçabilité
+          à l'échelle d'un cabinet. Rejoignez ou créez un cabinet pour activer le suivi.
+        </div>
+        <button class="btn bp bsm" onclick="navTo('cabinet',null)">
+          <span>🏥</span> Rejoindre ou créer un cabinet
+        </button>
+      </div>
+    `;
+    return;
+  }
+
   wrap.innerHTML = `<div class="card"><div class="sk" style="height:140px"></div></div>`;
 
   const [comp, actions, risk, ranking, sim] = await Promise.all([
