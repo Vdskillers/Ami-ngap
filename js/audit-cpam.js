@@ -1200,38 +1200,13 @@ async function auditLancer() {
   const mois = parseInt(document.getElementById('audit-periode')?.value || '6');
   const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
 
-  // Map mois → period accepté par le worker (year couvre tout, on filtre côté client ensuite)
-  const periodParam = mois <= 1 ? 'month'
-                    : mois <= 3 ? '3month'
-                    : 'year';
-
   let cotations = [];
   try {
     if (typeof apiCall === 'function') {
-      const res = await apiCall('/webhook/ami-historique', { period: periodParam });
-      // ⚡ Fix : le worker répond { ok:true, data:[...], count:N } — accepter data, cotations, ou array
-      const raw = Array.isArray(res?.data)      ? res.data
-                : Array.isArray(res?.cotations) ? res.cotations
-                : Array.isArray(res)            ? res
-                : [];
-      // Filtre côté client sur la période exacte (ex: 6 mois)
-      // + normaliser actes (string JSON Supabase → tableau) pour que toutes les règles d'audit fonctionnent
-      cotations = raw
-        .filter(c => {
-          const d = (c.date_soin || c.date || '').slice(0, 10);
-          return d && d >= depuis;
-        })
-        .map(c => {
-          let actes = c.actes;
-          if (typeof actes === 'string') {
-            try { actes = JSON.parse(actes || '[]'); } catch { actes = []; }
-          }
-          return { ...c, actes: Array.isArray(actes) ? actes : [] };
-        });
+      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
+      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
     }
-  } catch (e) {
-    console.warn('[AMI][audit] ami-historique KO:', e.message);
-  }
+  } catch (_) {}
 
   if (!cotations.length) {
     resultEl.innerHTML = `<div class="ai in">Aucune cotation trouvée sur la période. Cotez des soins pour générer un rapport d'audit.</div>`;
@@ -1343,36 +1318,14 @@ async function auditModeControleCPAM() {
   // ── Charger cotations + patients + BSI ─────────────
   const mois = 6;
   const depuis = new Date(Date.now() - mois * 30 * 86400000).toISOString().slice(0,10);
-  // Map mois → period accepté par le worker (year couvre tout, on filtre côté client ensuite)
-  const periodParam = mois <= 1 ? 'month' : mois <= 3 ? '3month' : 'year';
   let cotations = [], patients = [];
   try {
     if (typeof apiCall === 'function') {
-      const res = await apiCall('/webhook/ami-historique', { period: periodParam });
-      // ⚡ Fix : le worker répond { ok:true, data:[...], count:N } — accepter data, cotations, ou array
-      const raw = Array.isArray(res?.data)      ? res.data
-                : Array.isArray(res?.cotations) ? res.cotations
-                : Array.isArray(res)            ? res
-                : [];
-      // Filtre côté client sur la période exacte (6 mois)
-      // + normaliser actes (string JSON Supabase → tableau) pour que toutes les règles d'audit fonctionnent
-      cotations = raw
-        .filter(c => {
-          const d = (c.date_soin || c.date || '').slice(0, 10);
-          return d && d >= depuis;
-        })
-        .map(c => {
-          let actes = c.actes;
-          if (typeof actes === 'string') {
-            try { actes = JSON.parse(actes || '[]'); } catch { actes = []; }
-          }
-          return { ...c, actes: Array.isArray(actes) ? actes : [] };
-        });
+      const res = await apiCall('/webhook/ami-historique', { limit: 500, depuis });
+      cotations = Array.isArray(res?.cotations) ? res.cotations : Array.isArray(res) ? res : [];
     }
     if (typeof getAllPatients === 'function') patients = await getAllPatients();
-  } catch (e) {
-    console.warn('[AMI][audit-controle] ami-historique KO:', e.message);
-  }
+  } catch (_) {}
 
   if (!cotations.length) {
     resultEl.innerHTML = `<div class="ai in">Aucune cotation trouvée. Cotez des soins pour générer un rapport de contrôle.</div>`;
@@ -1648,14 +1601,35 @@ function auditShowHistoriqueConformite() {
    ────────────────────────────────────────────────
    Au chargement de l'app, si le mois en cours n'a
    pas de snapshot, invite l'IDE à faire un contrôle.
+   Le toast est affiché **une seule fois par mois et
+   par session** — deux gardes empilées :
+     1) flag module _auditMonthlyReminderShown → évite
+        les duplicatas liés aux re-renders SPA
+     2) sessionStorage clé `ami_audit_reminder_<mois>`
+        → survit aux navigations inter-onglet d'une
+        même session tant qu'il n'y a pas de reload
 ═══════════════════════════════════════════════ */
+let _auditMonthlyReminderShown = false;
+
 function auditCheckMonthlyReminder() {
+  // Garde 1 — déjà notifié dans cette session JS
+  if (_auditMonthlyReminderShown) return;
+
   if (!window.BSI_ENGINE) return;
   const history = window.BSI_ENGINE.getTrustHistory();
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const hasThisMonth = history.some(h => h.month === monthKey);
   if (hasThisMonth) return; // déjà fait ce mois-ci
+
+  // Garde 2 — sessionStorage par mois (survit aux re-renders)
+  try {
+    const skey = 'ami_audit_reminder_' + monthKey;
+    if (sessionStorage.getItem(skey)) { _auditMonthlyReminderShown = true; return; }
+    sessionStorage.setItem(skey, '1');
+  } catch (_) {}
+
+  _auditMonthlyReminderShown = true;
 
   // Rappel : on lance l'audit en fond automatiquement le 1er jour disponible du mois
   // pour alimenter l'historique de conformité (preuve juridique).
