@@ -3800,19 +3800,32 @@ async function _openCotationComplete() {
     if (typeof cotClearPatient === 'function') cotClearPatient();
 
     // ── Date et heure du soin d'origine ──────────────────────────────────────
-    // Conserve toujours la date/heure du patient, jamais l'heure courante.
-    // _userEdited = true bloque l'écrasement par extras.js / cotation.js.
+    // Date : conserver celle de la cotation existante (édition) ou celle du patient,
+    //        sinon aujourd'hui.
+    // Heure : RÈGLE CRITIQUE — ne jamais utiliser patient.heure_soin / patient.heure_preferee
+    //         qui sont des CONTRAINTES HORAIRES planifiées (🕐 Tournée), pas l'horodatage
+    //         effectif du soin. Utiliser uniquement :
+    //           - l'heure d'une cotation DÉJÀ validée (patient._cotation.heure) si on édite
+    //           - sinon l'heure COURANTE pour une nouvelle cotation
     const fDs = document.getElementById('f-ds');
     const fHs = document.getElementById('f-hs');
     if (fDs) {
-      // Priorité : date de la cotation existante > date du patient > aujourd'hui
       const dateSoin = (patient._cotation?.date || patient.date || patient.date_soin || '').slice(0, 10);
       fDs.value = dateSoin || new Date().toISOString().slice(0, 10);
     }
     if (fHs) {
-      // Priorité : heure de la cotation existante > heure_soin du patient > vide
-      fHs.value = (patient._cotation?.heure || patient.heure_soin || patient.heure_preferee || patient.heure || '').trim().slice(0, 5);
-      fHs._userEdited = true; // bloque tout écrasement ultérieur
+      const _heureCotation = (patient._cotation?.heure || '').trim().slice(0, 5);
+      if (_heureCotation && /^\d{1,2}:\d{2}$/.test(_heureCotation)) {
+        // Édition d'une cotation validée — conserver son heure réelle d'origine
+        fHs.value = _heureCotation;
+        fHs._userEdited = true;
+      } else {
+        // Nouvelle cotation — heure courante (jamais la contrainte horaire planifiée)
+        const _now = new Date();
+        fHs.value = String(_now.getHours()).padStart(2,'0') + ':' + String(_now.getMinutes()).padStart(2,'0');
+        // _userEdited = false → autorise l'actualisation par cotation.js au clic "Coter"
+        fHs._userEdited = false;
+      }
     }
 
     const badge     = document.getElementById('cot-patient-badge');
