@@ -1,11 +1,11 @@
-/* sw.js — AMI NGAP Service Worker v3.7
+/* sw.js — AMI NGAP Service Worker v3.8
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
-   ✅ v3.7 — bump version pour forcer rechargement des fichiers corrigés
+   ✅ v3.8 — purge totale du cache après rollback domaine personnalisé
 */
 
-const CACHE_VERSION = 'ami-v3.7';
+const CACHE_VERSION = 'ami-v3.8';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
