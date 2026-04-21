@@ -1,20 +1,30 @@
 /* ════════════════════════════════════════════════
-   signature.js — AMI NGAP
+   signature.js — AMI NGAP  (v3.9 — preuve médico-légale)
    ────────────────────────────────────────────────
-   Signature électronique patient
+   Signature électronique patient + preuve opposable
    ✅ Canvas tactile + souris + stylet
-   ✅ Stockage local chiffré (IDB)
+   ✅ Stockage local chiffré (IDB isolé par userId)
    ✅ Export PNG embarqué dans la facture
    ✅ Historique signatures par cotation
    ✅ Conformité : horodatage + IP + user-agent
+
+   🛡️ PREUVE MÉDICO-LÉGALE (v3.9)
+   ✅ Hash SHA-256 signature (PNG + timestamp + invoice + patient_id + actes)
+   ✅ Photo de présence → hashée → SUPPRIMÉE immédiatement (RGPD)
+   ✅ Géozone floue — lat/lng arrondis à 2 décimales (~1km)
+   ✅ Horodatage ISO 8601
+   ✅ Signature serveur HMAC-SHA256 (/webhook/proof-certify)
+   ✅ Upgrade preuve_soin côté cotation (FORTE + hash)
    ────────────────────────────────────────────────
    Fonctions :
-   - openSignatureModal(invoiceId)  — ouvre le pad
+   - openSignatureModal(invoiceId, context?)  — ouvre le pad
+     context = { patient_id, actes, ide_id }  (facultatif)
+   - captureProofPhoto()            — photo → hash → delete (jamais stockée)
    - clearSignature()               — efface le pad
-   - saveSignature(invoiceId)       — sauvegarde + ferme
+   - saveSignature()                — sauvegarde + preuve + ferme
    - getSignature(invoiceId)        — récupère PNG base64
    - deleteSignature(invoiceId)     — supprime (RGPD)
-   - injectSignatureInPDF(d, u)     — ajoute à la facture
+   - injectSignatureInPDF(invoiceId) — ajoute signature + preuve au PDF
 ════════════════════════════════════════════════ */
 
 const SIG_STORE = 'ami_signatures';
@@ -22,6 +32,147 @@ let _sigCanvas = null, _sigCtx = null, _sigDrawing = false;
 let _currentInvoiceId = null, _sigDB = null;
 let _sigDBUserId = null;        // Garde la trace du user actif pour la DB signatures
 let _sigDBOpeningPromise = null; // Verrou contre les ouvertures simultanées
+
+/* ════════════════════════════════════════════════
+   PREUVE MÉDICO-LÉGALE — État courant
+   ────────────────────────────────────────────────
+   Gardé en mémoire le temps du modal uniquement.
+   Structure minimale : signature canvas + hash photo (photo NON stockée)
+   + horodatage + géozone floue (département/ville — pas de GPS précis).
+   Ces données alimentent saveSignature() pour produire un hash opposable.
+════════════════════════════════════════════════ */
+let _currentProofContext = null; // { invoice, patient_id, actes, ide_id }
+let _currentPhotoHash    = null; // Hash SHA-256 d'une éventuelle photo de présence
+let _currentGeozone      = null; // { zone, approx_lat, approx_lng } — précision ~1km
+
+/* ── Helpers crypto partagés pour la preuve médico-légale ── */
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* Hash canonique d'une preuve :
+   SHA256(signature_png + date + invoice + patient_id + actes)
+   → empreinte unique, toute modification invalide le hash.
+   Le PNG n'est utilisé qu'en entrée du hash, jamais transmis. */
+async function _computeProofHash({ png, timestamp, invoice, patient_id, actes }) {
+  const payload = [
+    png || '',
+    timestamp || '',
+    invoice || '',
+    patient_id || '',
+    Array.isArray(actes) ? actes.join(',') : String(actes || ''),
+  ].join('|');
+  return _sha256Hex(payload);
+}
+
+/* ════════════════════════════════════════════════
+   GÉOZONE — Localisation floue (RGPD compatible)
+   ────────────────────────────────────────────────
+   On NE stocke PAS de GPS précis. Lat/lng arrondis à 2 décimales
+   (~1 km de précision) = zone approximative, suffisant pour prouver
+   "j'étais dans cette zone au moment du soin" sans tracer la personne.
+════════════════════════════════════════════════ */
+function _getGeozone() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    const timer = setTimeout(() => resolve(null), 2500);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timer);
+        // Arrondi à 2 décimales = ~1km de précision (RGPD floue)
+        const approx_lat = Math.round(pos.coords.latitude  * 100) / 100;
+        const approx_lng = Math.round(pos.coords.longitude * 100) / 100;
+        resolve({
+          zone:       'zone_' + approx_lat.toFixed(2) + '_' + approx_lng.toFixed(2),
+          approx_lat, approx_lng,
+          precision:  '~1km',
+        });
+      },
+      () => { clearTimeout(timer); resolve(null); },
+      { enableHighAccuracy: false, timeout: 2000, maximumAge: 60000 }
+    );
+  });
+}
+
+/* ════════════════════════════════════════════════
+   PHOTO → HASH → SUPPRESSION IMMÉDIATE
+   ────────────────────────────────────────────────
+   ⚠️ RGPD : une photo est une donnée sensible (biométrique + santé).
+   On NE stocke JAMAIS la photo. On calcule son hash SHA-256 puis
+   on supprime toute référence à l'image. Seul le hash reste —
+   opposable juridiquement mais vide d'information personnelle.
+════════════════════════════════════════════════ */
+async function captureProofPhoto() {
+  return new Promise((resolve) => {
+    // Input caché type=file avec capture caméra
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      document.body.removeChild(input);
+      if (!file) return resolve(null);
+      try {
+        // Lire en ArrayBuffer pour hasher sans stocker
+        const buf = await file.arrayBuffer();
+        const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+        const hash = Array.from(new Uint8Array(hashBuf))
+          .map(b => b.toString(16).padStart(2, '0')).join('');
+        // ✅ Suppression immédiate : plus aucune référence à l'image
+        _currentPhotoHash = hash;
+        const btn = document.getElementById('sig-photo-btn');
+        if (btn) {
+          btn.textContent = '✅ Preuve photo enregistrée';
+          btn.style.background = 'rgba(0,212,170,.15)';
+          btn.style.color = 'var(--a)';
+          btn.disabled = true;
+        }
+        if (typeof showToast === 'function') showToast('📸 Hash photo calculé — image non stockée (RGPD).', 'ok');
+        resolve(hash);
+      } catch (e) {
+        console.warn('[Signature] captureProofPhoto:', e);
+        resolve(null);
+      }
+    };
+
+    input.click();
+  });
+}
+
+/* ════════════════════════════════════════════════
+   CERTIFICATION SERVEUR — Signature HMAC-SHA256
+   ────────────────────────────────────────────────
+   Envoie au worker le payload de preuve (sans le PNG — uniquement son hash).
+   Le serveur renvoie une signature HMAC qui prouve :
+     1. l'intégrité du payload (toute modification invalide la signature)
+     2. l'origine (seul le serveur AMI peut produire cette signature)
+     3. l'horodatage (le serveur ajoute son propre timestamp signé)
+   → niveau juridique supérieur à une simple image/hash local.
+════════════════════════════════════════════════ */
+async function _certifyProofOnServer(payload) {
+  if (typeof S === 'undefined' || !S?.token) return null;
+  try {
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    const res = await wpost('/webhook/proof-certify', { payload });
+    if (res?.ok && res?.server_signature) {
+      return {
+        server_signature: res.server_signature,
+        algorithm:        res.algorithm || 'HMAC-SHA256',
+        cert_timestamp:   res.cert_timestamp,
+        cert_id:          res.cert_id,
+      };
+    }
+  } catch (e) {
+    console.warn('[Signature] _certifyProofOnServer KO :', e.message || e);
+  }
+  return null;
+}
 
 /* ── Retourne le nom de la base IndexedDB signatures isolée par user ──
    Chaque infirmière a sa propre base : ami_sig_db_<userId>.
@@ -270,9 +421,22 @@ async function _syncSignatureNow(invoiceId, png, signedAt) {
 
 /* ════════════════════════════════════════════════
    MODAL SIGNATURE
+   ────────────────────────────────────────────────
+   openSignatureModal(invoiceId, context?)
+   context = { patient_id, actes, ide_id } — utilisé pour construire
+   le hash de preuve médico-légale. Optionnel — sans contexte,
+   seule l'empreinte PNG+timestamp+invoice est hashée.
 ════════════════════════════════════════════════ */
-function openSignatureModal(invoiceId) {
+function openSignatureModal(invoiceId, context) {
   _currentInvoiceId = invoiceId || 'sig_' + Date.now();
+  _currentProofContext = context && typeof context === 'object' ? {
+    patient_id: context.patient_id || '',
+    actes:      Array.isArray(context.actes) ? context.actes : (context.actes ? [context.actes] : []),
+    ide_id:     context.ide_id     || '',
+  } : null;
+  // Reset état preuve du tour précédent
+  _currentPhotoHash = null;
+  _currentGeozone   = null;
 
   let modal = document.getElementById('sig-modal');
   if (!modal) {
@@ -281,10 +445,10 @@ function openSignatureModal(invoiceId) {
     modal.style.cssText = `
       position:fixed;inset:0;z-index:1500;display:flex;align-items:center;
       justify-content:center;background:rgba(11,15,20,.92);
-      backdrop-filter:blur(12px);padding:20px`;
+      backdrop-filter:blur(12px);padding:20px;overflow-y:auto`;
     modal.innerHTML = `
       <div style="background:var(--c);border:1px solid var(--b);border-radius:20px;
-        padding:28px;width:100%;max-width:520px;box-shadow:0 0 60px rgba(0,0,0,.6)">
+        padding:28px;width:100%;max-width:520px;box-shadow:0 0 60px rgba(0,0,0,.6);margin:auto">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <div style="font-family:var(--fs);font-size:20px">✍️ Signature patient</div>
           <button onclick="closeSignatureModal()" style="background:var(--s);border:1px solid var(--b);
@@ -305,12 +469,44 @@ function openSignatureModal(invoiceId) {
         </div>
         <div id="sig-info" style="font-family:var(--fm);font-size:10px;color:var(--m);
           margin-top:8px;text-align:right"></div>
+
+        <!-- ── Preuve médico-légale renforcée (optionnel) ── -->
+        <div style="margin-top:14px;padding:12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r)">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">
+            🛡️ Preuve médico-légale
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+            <button type="button" id="sig-photo-btn" class="btn bs bsm" onclick="captureProofPhoto()"
+              style="font-size:11px;padding:6px 10px">
+              📸 Ajouter preuve présence
+            </button>
+            <span style="font-size:10px;color:var(--m);font-family:var(--fm);flex:1;min-width:180px">
+              Photo hashée puis <strong>supprimée</strong> immédiatement · RGPD
+            </span>
+          </div>
+          <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;font-size:10px;font-family:var(--fm);color:var(--m)">
+            <span>✔ Hash signature</span>
+            <span>✔ Horodatage</span>
+            <span>✔ Géozone floue (~1km)</span>
+            <span>✔ Signature serveur</span>
+          </div>
+        </div>
+
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
           <button class="btn bp" onclick="saveSignature()" style="flex:1">💾 Valider la signature</button>
           <button class="btn bs bsm" onclick="clearSignature()">🗑️ Effacer</button>
         </div>
       </div>`;
     document.body.appendChild(modal);
+  } else {
+    // Reset état bouton photo si modal réutilisé
+    const pbtn = document.getElementById('sig-photo-btn');
+    if (pbtn) {
+      pbtn.textContent = '📸 Ajouter preuve présence';
+      pbtn.disabled = false;
+      pbtn.style.background = '';
+      pbtn.style.color = '';
+    }
   }
 
   modal.style.display = 'flex';
@@ -319,6 +515,9 @@ function openSignatureModal(invoiceId) {
   // Afficher l'horodatage
   const info = document.getElementById('sig-info');
   if (info) info.textContent = new Date().toLocaleString('fr-FR') + ' · Facture ' + (_currentInvoiceId || '—');
+
+  // Préparer la géozone en arrière-plan (non bloquant — résultat utilisé à saveSignature)
+  _getGeozone().then(z => { _currentGeozone = z; }).catch(() => {});
 }
 
 function closeSignatureModal() {
@@ -393,7 +592,21 @@ function clearSignature() {
 }
 
 /* ════════════════════════════════════════════════
-   SAUVEGARDE & RÉCUPÉRATION
+   SAUVEGARDE & RÉCUPÉRATION — avec preuve médico-légale
+   ────────────────────────────────────────────────
+   Flow UX invisible (≤2 secondes) :
+     1. Patient signe → Valider
+     2. En arrière-plan :
+        - hash signature (SHA-256 du PNG + contexte)
+        - géozone floue (lat/lng ~1km)
+        - certification serveur (HMAC-SHA256 signé)
+        - mise à jour preuve_soin côté cotation
+     3. Badges ✔ Preuve certifiée / Horodatée / Sécurisée
+   ────────────────────────────────────────────────
+   ⚠️ Le PNG reste en local (chiffré). Le SERVEUR ne reçoit que :
+     - encrypted_data (PNG AES-256-GCM, coffre opaque)
+     - hash opaque + métadonnées (type, timestamp, zone)
+     - jamais d'image brute, jamais de photo
 ════════════════════════════════════════════════ */
 async function saveSignature() {
   if (!_sigCanvas) { closeSignatureModal(); return; }
@@ -405,21 +618,80 @@ async function saveSignature() {
     if (!confirm('Aucune signature tracée. Valider quand même ?')) return;
   }
 
-  const png = _sigCanvas.toDataURL('image/png');
-  const signedAt = new Date().toISOString();
+  const png       = _sigCanvas.toDataURL('image/png');
+  const signedAt  = new Date().toISOString();
+  const ctx       = _currentProofContext || {};
+
+  // ── 1) Hash local de la preuve (empreinte opposable) ──
+  let signatureHash = '';
+  try {
+    signatureHash = await _computeProofHash({
+      png,
+      timestamp:  signedAt,
+      invoice:    _currentInvoiceId,
+      patient_id: ctx.patient_id || '',
+      actes:      ctx.actes || [],
+    });
+  } catch (_) {}
+
+  // ── 2) Géozone floue (facultatif — silencieux si refus) ──
+  if (!_currentGeozone) {
+    try { _currentGeozone = await _getGeozone(); } catch (_) {}
+  }
+
+  // ── 3) Certification serveur (HMAC-SHA256) — async, non bloquante ──
+  const proofPayload = {
+    invoice:        _currentInvoiceId,
+    patient_id:     ctx.patient_id || '',
+    ide_id:         (typeof S !== 'undefined') ? (S?.user?.id || '') : '',
+    actes:          ctx.actes || [],
+    timestamp:      signedAt,
+    signature_hash: signatureHash,
+    photo_hash:     _currentPhotoHash || null,
+    zone:           _currentGeozone?.zone || null,
+  };
+  let serverCert = null;
+  try { serverCert = await _certifyProofOnServer(proofPayload); } catch (_) {}
+
+  // ── 4) Stockage local : PNG + toutes les preuves ──
   await _sigPut({
     invoice_id:  _currentInvoiceId,
     png,
     signed_at:   signedAt,
     user_agent:  navigator.userAgent.slice(0, 100),
+    // Preuve médico-légale
+    signature_hash: signatureHash,
+    photo_hash:     _currentPhotoHash || null,
+    geozone:        _currentGeozone || null,
+    server_cert:    serverCert || null,  // { server_signature, algorithm, cert_id, cert_timestamp }
+    proof_payload:  proofPayload,
+    proof_version:  1,
   });
 
-  // Sync immédiate vers le serveur (chiffrée)
+  // ── 5) Sync PNG chiffré vers serveur (cadre existant) ──
   _syncSignatureNow(_currentInvoiceId, png, signedAt).catch(() => {});
+
+  // ── 6) Upgrade preuve_soin côté cotation (route existante) ──
+  try {
+    const wpost = typeof window.wpost === 'function' ? window.wpost
+      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+    if (typeof S !== 'undefined' && S?.token && signatureHash) {
+      wpost('/webhook/cotation-preuve-update', {
+        invoice_number: _currentInvoiceId,
+        preuve_soin: {
+          type:           'signature_patient',
+          force_probante: 'FORTE',
+          hash_preuve:    signatureHash,
+          timestamp:      signedAt,
+          certifie_ide:   !!serverCert,
+        }
+      }).catch(() => {});
+    }
+  } catch (_) {}
 
   closeSignatureModal();
 
-  // Feedback visuel sur le bouton d'impression si présent
+  // ── Feedback visuel sur le bouton d'impression si présent ──
   const sigBtn = document.querySelector(`[data-sig="${_currentInvoiceId}"]`);
   if (sigBtn) {
     sigBtn.textContent = '✅ Signé';
@@ -427,7 +699,17 @@ async function saveSignature() {
     sigBtn.style.color = 'var(--a)';
   }
 
-  if (typeof showToast === 'function') showToast('✍️ Signature enregistrée.', 'ok');
+  // ── Reset état preuve ──
+  _currentPhotoHash    = null;
+  _currentGeozone      = null;
+  _currentProofContext = null;
+
+  if (typeof showToast === 'function') {
+    const msg = serverCert
+      ? '✍️ Signature enregistrée · Preuve certifiée ✔'
+      : '✍️ Signature enregistrée.';
+    showToast(msg, 'ok');
+  }
 }
 
 async function getSignature(invoiceId) {
@@ -448,11 +730,28 @@ async function deleteSignature(invoiceId) {
 }
 
 /* ════════════════════════════════════════════════
-   INJECTION DANS LA FACTURE PDF
+   INJECTION DANS LA FACTURE PDF — avec preuve médico-légale
 ════════════════════════════════════════════════ */
 async function injectSignatureInPDF(invoiceId) {
-  const png = await getSignature(invoiceId);
-  if (!png) return '';
+  const row = await _sigGet(invoiceId);
+  if (!row?.png) return '';
+  const png = row.png;
+
+  // ── Bloc preuve (affiché uniquement si données présentes) ──
+  const hash      = row.signature_hash || '';
+  const hashShort = hash ? hash.slice(0, 16).toUpperCase() + '…' : '';
+  const signedTs  = row.signed_at ? new Date(row.signed_at).toLocaleString('fr-FR') : new Date().toLocaleString('fr-FR');
+  const zone      = row.geozone?.zone || '';
+  const certified = !!(row.server_cert && row.server_cert.server_signature);
+  const hasPhoto  = !!row.photo_hash;
+
+  const proofLine = [
+    certified ? '✔ Preuve certifiée' : null,
+    '✔ Horodatée ' + signedTs,
+    hashShort ? 'Empreinte ' + hashShort : null,
+    zone ? 'Zone floue' : null,
+    hasPhoto ? 'Preuve présence (hash)' : null,
+  ].filter(Boolean).join(' · ');
 
   return `
     <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e0e7ef">
@@ -466,9 +765,12 @@ async function injectSignatureInPDF(invoiceId) {
         <div>
           <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:8px">Signature patient — accord soins</div>
           <img src="${png}" style="width:100%;max-height:80px;border:1px solid #e0e7ef;border-radius:6px;object-fit:contain;background:#fff">
-          <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signé électroniquement · ${new Date().toLocaleDateString('fr-FR')}</div>
+          <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signé électroniquement · ${signedTs}</div>
         </div>
       </div>
+      ${proofLine ? `<div style="margin-top:10px;padding:8px 10px;background:#f3f7fa;border-left:3px solid #00a884;border-radius:4px;font-size:9px;color:#445566;font-family:ui-monospace,Menlo,monospace;line-height:1.5">
+        🛡️ ${proofLine}
+      </div>` : ''}
     </div>`;
 }
 
@@ -482,6 +784,7 @@ window.deleteSignature     = deleteSignature;
 window.injectSignatureInPDF = injectSignatureInPDF;
 window.syncSignaturesToServer   = syncSignaturesToServer;
 window.syncSignaturesFromServer = syncSignaturesFromServer;
+window.captureProofPhoto   = captureProofPhoto;
 
 /* ── Patch printInv pour injecter la signature automatiquement ── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -546,13 +849,32 @@ async function loadSignatureList() {
       const date = _dateRaw ? new Date(_dateRaw).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
       const invoiceId = sig.invoice_id || '—';
       const _previewSrc = sig.png || sig.data_url || null;
+
+      // ── Badges preuve médico-légale ──
+      const certified = !!(sig.server_cert && sig.server_cert.server_signature);
+      const hasHash   = !!sig.signature_hash;
+      const hasPhoto  = !!sig.photo_hash;
+      const hasZone   = !!(sig.geozone && sig.geozone.zone);
+      const badges = [
+        certified ? '<span style="display:inline-block;padding:2px 6px;background:rgba(0,212,170,.15);color:var(--a);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">✔ Certifiée</span>' : '',
+        hasHash   ? '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">Hash</span>' : '',
+        hasPhoto  ? '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">📸 Preuve</span>' : '',
+        hasZone   ? '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">📍 Zone</span>' : '',
+      ].filter(Boolean).join('');
+
+      const hashLine = hasHash
+        ? `<div style="font-size:9px;color:var(--m);font-family:var(--fm);margin-top:2px;opacity:.7">${sig.signature_hash.slice(0,16).toUpperCase()}…</div>`
+        : '';
+
       return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b)">
         <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
           ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
         </div>
-        <div style="flex:1">
+        <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:500;font-family:var(--fm)">${invoiceId}</div>
           <div style="font-size:11px;color:var(--m)">${date}</div>
+          ${badges ? `<div style="margin-top:4px">${badges}</div>` : ''}
+          ${hashLine}
         </div>
         <button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px">🗑️</button>
       </div>`;
