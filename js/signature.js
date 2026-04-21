@@ -1037,19 +1037,19 @@ async function loadSignatureList() {
       if (ideSig && ideSig.png) {
         const ideDate = ideSig.signed_at ? new Date(ideSig.signed_at).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
         ideEl.innerHTML = `
-          <div style="display:flex;align-items:center;gap:14px;padding:8px 0">
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 0;flex-wrap:wrap">
             <div style="width:96px;height:56px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
               <img src="${ideSig.png}" style="width:100%;height:100%;object-fit:contain">
             </div>
-            <div style="flex:1;min-width:0">
+            <div style="flex:1 1 160px;min-width:140px">
               <div style="font-size:13px;font-weight:500">Signature enregistrée</div>
               <div style="font-size:11px;color:var(--m)">Auto-injectée dans les PDF · ${ideDate}</div>
-              <div style="margin-top:4px">
-                <span style="display:inline-block;padding:2px 6px;background:rgba(0,212,170,.15);color:var(--a);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">👤 Infirmier(ère)</span>
+              <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
+                <span style="display:inline-block;padding:2px 6px;background:rgba(0,212,170,.15);color:var(--a);border-radius:4px;font-size:9px;font-family:var(--fm)">👤 Infirmier(ère)</span>
                 <span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm)">AES-256</span>
               </div>
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0">
               <button class="btn bv bsm" onclick="openIDESignatureModal()" style="font-size:11px;padding:6px 10px">✏️ Modifier</button>
               <button class="btn bs bsm" onclick="deleteIDESignature()" style="font-size:11px;padding:6px 10px">🗑️</button>
             </div>
@@ -1098,17 +1098,17 @@ async function loadSignatureList() {
         ? `<div style="font-size:9px;color:var(--m);font-family:var(--fm);margin-top:2px;opacity:.7">${sig.signature_hash.slice(0,16).toUpperCase()}…</div>`
         : '';
 
-      return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b)">
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b);flex-wrap:wrap">
         <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
           ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
         </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;font-family:var(--fm)">${invoiceId}</div>
+        <div style="flex:1 1 140px;min-width:120px">
+          <div style="font-size:13px;font-weight:500;font-family:var(--fm);word-break:break-all">${invoiceId}</div>
           <div style="font-size:11px;color:var(--m)">${date}</div>
-          ${badges ? `<div style="margin-top:4px">${badges}</div>` : ''}
+          ${badges ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${badges}</div>` : ''}
           ${hashLine}
         </div>
-        <button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px">🗑️</button>
+        <button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px;flex-shrink:0">🗑️</button>
       </div>`;
     }).join('');
   } catch(e) {
