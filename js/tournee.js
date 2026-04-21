@@ -1346,8 +1346,11 @@ async function optimiserTournee(){
     _showOptimProgress(`⚡ Optimisation VRPTW en cours… ${_tfInfo.label}`);
 
     let route = await optimizeTour(rawPatients, startPoint, startTimeMin, optimMode);
-    _showOptimProgress('🔁 Optimisation 2-opt…');
-    route = twoOpt(route);
+    _showOptimProgress('🔁 Optimisation géométrique (2-opt + Or-opt si ≥20)…');
+    // refineRouteGeometry : 2-opt seul si <20 patients, pipeline complet au-delà
+    route = (typeof refineRouteGeometry === 'function')
+      ? refineRouteGeometry(route)
+      : twoOpt(route); // fallback défensif
     route = applyPassageConstraints(route);
 
     /* Enrichir CA patient par patient */
@@ -2092,6 +2095,21 @@ function _processImportData(content, source) {
       <span style="font-size:11px;color:var(--m);margin-left:8px">Recommandé pour optimiser la tournée</span>
     </div>` : ''}`;
   result.classList.add('show');
+
+  /* ── WARMUP CACHE OSRM (tâche de fond, non bloquant) ──────────
+     Pré-charge la matrice des temps de trajet dès l'import.
+     Le calcul de la tournée sera INSTANTANÉ quand l'infirmière
+     cliquera sur "Optimiser" (cache déjà chaud). */
+  if (typeof warmupTravelCache === 'function') {
+    const geocoded = patients.filter(p => p.lat && p.lng);
+    if (geocoded.length >= 2) {
+      const startPt = (typeof _getStartPoint === 'function')
+        ? _getStartPoint()
+        : (APP.get('userPos') || geocoded[0]);
+      // fire-and-forget : ne bloque pas le flow d'import
+      warmupTravelCache(geocoded, startPt).catch(() => {});
+    }
+  }
 }
 
 /* ============================================================
@@ -2549,6 +2567,21 @@ window.startDay=async function(){
       time:    p.heure_soin ? (function(h){ const [hh,mm]=(h||'').split(':').map(Number); const t=new Date(); t.setHours(hh||0,mm||0,0,0); return t.getTime(); })(p.heure_soin) : null,
       amount:  parseFloat(p.total || p.montant || p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30),
     })));
+  }
+
+  /* ── WARMUP CACHE OSRM (tâche de fond, non bloquant) ─────────
+     Pré-charge la matrice des temps de trajet dès le démarrage.
+     Quand l'infirmière cliquera sur "Optimiser la tournée",
+     le calcul sera INSTANTANÉ (cache L1/L2 déjà chaud). */
+  if (typeof warmupTravelCache === 'function') {
+    const geocoded = patients.filter(p => p.lat && p.lng);
+    if (geocoded.length >= 2) {
+      const startPt = (typeof _getStartPoint === 'function')
+        ? _getStartPoint()
+        : (APP.get('userPos') || geocoded[0]);
+      // fire-and-forget : ne bloque jamais le démarrage de journée
+      warmupTravelCache(geocoded, startPt).catch(() => {});
+    }
   }
 
   /* ── Démarrer le moteur IA temps réel ── */
