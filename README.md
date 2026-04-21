@@ -1,4 +1,4 @@
-# AMI — Documentation Architecture v10.1
+# AMI — Documentation Architecture v10.0
 
 > **Application web progressive (PWA) pour infirmières libérales.**
 > Cotation NGAP automatique, tournée optimisée, carnet patients chiffré, signatures électroniques, **mode cabinet multi-IDE**, moteur hybride Smart Engine IA, planning hebdomadaire, modules cliniques avancés (transmissions, constantes, pilulier, BSI, consentements, alertes médicamenteuses, simulateur audit CPAM, compte-rendu de passage).
