@@ -583,29 +583,6 @@
       <div class="af"><label for="p-tel">Téléphone</label><input type="tel" id="p-tel" name="tel"></div>
     </div>
     <button class="btn bp" id="btn-save-pm" style="width:100%;justify-content:center">💾 Enregistrer</button>
-
-    <!-- ── Signature électronique infirmier(ère) ── -->
-    <div class="sep" style="margin-top:24px"><span class="sepl">✍️ Signature électronique</span></div>
-    <p style="font-size:12px;color:var(--m);margin-bottom:12px">
-      Votre signature sera <strong>auto-injectée</strong> dans toutes les factures et PDF générés par l'application (feuilles de soins, BSI, transmissions, consentements). Signez une seule fois ici — elle sera réutilisée automatiquement.
-    </p>
-    <div style="display:flex;gap:14px;align-items:center;padding:14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);margin-bottom:10px">
-      <div id="ide-sig-preview" style="width:120px;height:60px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;padding:4px">
-        <div style="color:var(--m);font-size:12px">Aucune signature enregistrée</div>
-      </div>
-      <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="btn bv bsm" id="btn-ide-sig" onclick="openIDESignatureModal()" style="font-size:12px">
-          ✍️ Créer ma signature
-        </button>
-        <button type="button" class="btn bs bsm" id="btn-ide-sig-delete" onclick="deleteIDESignature()" style="font-size:12px;display:none">
-          🗑️ Supprimer
-        </button>
-      </div>
-    </div>
-    <p style="font-size:10px;color:var(--m);opacity:.7;margin-bottom:0">
-      🔐 Chiffrée AES-256 · Stockée localement · Synchronisée entre vos appareils
-    </p>
-
     <div class="sep" style="margin-top:24px"><span class="sepl">Changer le mot de passe</span></div>
     <div class="msg e" id="ppe"></div><div class="msg o" id="ppo"></div>
     <div class="af"><label for="p-old">Mot de passe actuel</label><input type="password" id="p-old" name="old_password" placeholder="••••••••"></div>
@@ -737,13 +714,13 @@
       <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
       <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques <span class="ni-alert-badge red" id="nav-dash-badge" style="display:none"></span></div>
-      <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
-      <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
-      <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
-      <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
-      <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
-      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
       <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
+      <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
+      <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
+      <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
+      <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
+      <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
+      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
       <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
       <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
@@ -1008,12 +985,11 @@
         </div>
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn bp" id="btn-tur" onclick="(async()=>{if(!APP.importedData?.patients?.length&&!APP.importedData?.entries?.length){const _pd=window.APP?._planningData;if(_pd?.patients?.length||_pd?.entries?.length){APP.importedData=_pd;}else if(typeof loadTourneeData==='function'){const _td=loadTourneeData();if(_td?.patients?.length||_td?.entries?.length)APP.importedData=_td;}}if(typeof optimiserTournee==='function')optimiserTournee();})()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));APP.set('startPoint',sp);try{localStorage.setItem('ami_start_point',JSON.stringify(sp));}catch(_){}if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
           <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
         </div>
-
 
         <!-- ══ PANEL CABINET MULTI-IDE ══ -->
         <div id="tur-cabinet-panel" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(0,212,170,.25);border-radius:10px;background:rgba(0,212,170,.04)">
@@ -1328,101 +1304,60 @@
             } catch (_eHav) { console.warn('[AMI] Haversine KO:', _eHav.message); }
           }
 
-          // Écrire le journal kilométrique — une entrée par IDE si assignations existent,
-          // sinon une entrée globale (mode solo).
+          // Écrire le journal kilométrique même si kmTotal = 0 :
+          // l'infirmière a toujours fait des km même sans données GPS.
+          // Une entrée avec km=0 permet la correction manuelle dans le journal.
           {
             let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
             if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
+            const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+            let journal = [];
+            try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
 
-            const _ideAssign = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
-            const _hasIdeAssign = Object.values(_ideAssign).some(arr => arr?.length > 0);
-            const _uberPats = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || snapshot) : snapshot;
-            const _needsManual = kmTotal === 0;
-            const _hasGpsKm = parseFloat(APP.get('tourneeKmJour') || 0) > 0
-                            || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
-            const _isEstimate = !_hasGpsKm;
-            const motifSuffix = _needsManual ? ' (km à compléter)' : (_isEstimate ? ' (estimé)' : '');
+            // Éviter un doublon si une entrée auto existe déjà pour aujourd'hui
+            const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
+            if (!_alreadyToday) {
+              const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
+                || snapshot.length;
+              // _isEstimate : vrai si km calculé par haversine ou absent (pas de GPS)
+              const _hasGpsKm  = parseFloat(APP.get('tourneeKmJour') || 0) > 0
+                               || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
+              const _isEstimate = !_hasGpsKm;
+              // Si aucune donnée GPS ni haversine → km=0 avec flag _requiresManualUpdate
+              // pour que l'infirmière complète manuellement dans le journal.
+              const _needsManual = kmTotal === 0;
+              const motifSuffix = _needsManual
+                ? ' (km à compléter)'
+                : (_isEstimate ? ' (estimé)' : '');
 
-            if (_hasIdeAssign) {
-              // ── Mode cabinet multi-IDE : une entrée par IDE ──────────────────
-              // Construire la map IDE → { label, patients, km }
-              const _ideMap = {};
-              _uberPats.forEach(p => {
-                const pk   = String(p.patient_id || p.id || '');
-                const pNom = ((p.nom||'') + ' ' + (p.prenom||'')).trim()
-                           || p.description || p.label || 'Patient';
-                const pKm  = parseFloat(p._legKm || 0);
-                (_ideAssign[pk] || []).forEach(a => {
-                  if (!_ideMap[a.id]) _ideMap[a.id] = { label: a.label, patients: [], km: 0 };
-                  _ideMap[a.id].patients.push(pNom);
-                  _ideMap[a.id].km += pKm;
-                });
+              // ── Noms des IDEs depuis les assignations de la Tournée IA ──
+              const _ideAssign = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+              const _ideSet = new Set();
+              Object.values(_ideAssign).forEach(arr => {
+                (arr || []).forEach(a => { if (a.label) _ideSet.add(a.label); });
               });
-
-              // Écrire une entrée dans le journal de chaque IDE (clé par uid)
-              Object.entries(_ideMap).forEach(([ideId, ideData]) => {
-                // Le journal est clé-user, chaque IDE gère le sien.
-                // On écrit dans la clé de l'utilisateur courant si on ne connaît pas leur uid.
-                // Pour le cabinet, on écrit dans la clé de l'utilisateur qui clôture (admin/titulaire)
-                const _kmKeyIde = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
-                let _journalIde = [];
-                try { _journalIde = JSON.parse(localStorage.getItem(_kmKeyIde) || '[]'); } catch {}
-
-                const _alreadyIde = _journalIde.some(e =>
-                  e._source === 'tournee_auto' && e.date === todayStr && e._ide_id === ideId
-                );
-                if (!_alreadyIde) {
-                  const patientsLabel = ideData.patients.slice(0, 5).join(', ')
-                    + (ideData.patients.length > 5 ? ` +${ideData.patients.length - 5} autres` : '');
-                  const ideKm = ideData.km > 0 ? ideData.km : (kmTotal / Math.max(Object.keys(_ideMap).length, 1));
-                  _journalIde.push({
-                    id:      Date.now() + Math.floor(Math.random() * 1000),
-                    date:    todayStr,
-                    depart:  'Cabinet',
-                    arrivee: `Patients : ${patientsLabel}`,
-                    km:      Math.round(ideKm * 10) / 10,
-                    motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${ideData.patients.length} patient(s) · IDE : ${ideData.label}${motifSuffix}`,
-                    _source: 'tournee_auto',
-                    _ide_id: ideId,
-                    _ide_label: ideData.label,
-                    _patients:  ideData.patients,
-                    _requiresManualUpdate: _needsManual,
-                  });
-                  localStorage.setItem(_kmKeyIde, JSON.stringify(_journalIde));
-                  if (typeof _syncKmToServer === 'function') _syncKmToServer(_journalIde).catch(() => {});
-                }
-              });
-
-            } else {
-              // ── Mode solo : une entrée globale (comportement original) ──────
-              const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
-              let journal = [];
-              try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
-
-              const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
-              if (!_alreadyToday) {
-                const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
-                  || snapshot.length;
-                let _me = '';
-                if (typeof S !== 'undefined' && S?.user) {
-                  _me = (`${S.user.prenom||''} ${S.user.nom||''}`).trim() || S.user.email || '';
-                }
-                const _ideSuffix = _me ? ` · IDE : ${_me}` : '';
-                journal.push({
-                  id:      Date.now(),
-                  date:    todayStr,
-                  depart:  'Cabinet',
-                  arrivee: 'Tournée patients',
-                  km:      kmTotal,
-                  motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_ideSuffix}${motifSuffix}`,
-                  _source: 'tournee_auto',
-                  _requiresManualUpdate: _needsManual,
-                });
-                localStorage.setItem(KM_KEY, JSON.stringify(journal));
-                if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
+              // Fallback : infirmière connectée si aucune assignation définie
+              if (!_ideSet.size && typeof S !== 'undefined' && S?.user) {
+                const _me = (`${S.user.prenom||''} ${S.user.nom||''}`).trim() || S.user.email || '';
+                if (_me) _ideSet.add(_me);
               }
-            }
+              const _ideNames = [..._ideSet].filter(Boolean);
+              const _ideSuffix = _ideNames.length ? ` · IDEs : ${_ideNames.join(', ')}` : '';
 
+              journal.push({
+                id:      Date.now(),
+                date:    todayStr,
+                depart:  'Cabinet',
+                arrivee: 'Tournée patients',
+                km:      kmTotal,
+                motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_ideSuffix}${motifSuffix}`,
+                _source: 'tournee_auto',
+                _ides:   _ideNames,
+                _requiresManualUpdate: _needsManual,
+              });
+              localStorage.setItem(KM_KEY, JSON.stringify(journal));
+              if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
+            }
             APP.set('tourneeKmJour', 0);
             APP.set('_lastVisitedPos', null);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
@@ -2257,22 +2192,8 @@
       <div id="sig-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
         🛡️ <strong>Mode admin — données isolées</strong> · Vous voyez uniquement vos propres signatures de test. Les signatures des infirmières (chiffrées AES-256, stockées localement sur leur appareil) sont physiquement inaccessibles depuis votre session.
       </div>
-
-      <!-- ── Signature personnelle infirmier(ère) ── -->
-      <div class="card nurse-only" style="margin-bottom:14px">
-        <div class="ct">👤 Ma signature infirmier(ère)</div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:10px">
-          Signature auto-injectée dans toutes les factures et PDF générés par l'application. Elle est également modifiable depuis votre <strong>profil</strong>.
-        </p>
-        <div id="ide-sig-card-body">
-          <div style="padding:14px 0;text-align:center">
-            <div style="font-size:13px;color:var(--m)">Chargement…</div>
-          </div>
-        </div>
-      </div>
-
       <div class="card">
-        <div class="ct">✍️ Signatures patients enregistrées</div>
+        <div class="ct">✍️ Signatures enregistrées</div>
         <div id="sig-list-body">
           <p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Aucune signature enregistrée pour le moment.<br><span style="font-size:11px;opacity:.6">Les signatures sont créées depuis une cotation NGAP.</span></p>
         </div>
@@ -2283,22 +2204,6 @@
           <div class="ai in">🔐 Les signatures sont chiffrées (AES-256-GCM) et stockées uniquement sur cet appareil via IndexedDB.</div>
           <div class="ai in">✍️ La signature est proposée après chaque cotation — le patient signe directement sur l'écran tactile.</div>
           <div class="ai su">✅ Conforme HDS · Signature horodatée · Intégrée automatiquement au PDF de la facture.</div>
-        </div>
-      </div>
-
-      <!-- ── Preuve médico-légale ── -->
-      <div class="card nurse-only" style="margin-top:14px">
-        <div class="ct">🛡️ Preuve médico-légale renforcée</div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:10px">
-          Chaque signature génère une preuve opposable en cas de contrôle CPAM ou litige.
-          Aucune donnée personnelle n'est transmise — uniquement des empreintes cryptographiques.
-        </p>
-        <div class="aic">
-          <div class="ai in"><strong>✔ Hash signature</strong> — SHA-256 du tracé + date + acte + patient. Toute modification invalide le hash.</div>
-          <div class="ai in"><strong>✔ Photo (optionnelle)</strong> — hashée puis <strong>supprimée immédiatement</strong>. Seule l'empreinte reste — zéro donnée biométrique stockée.</div>
-          <div class="ai in"><strong>✔ Horodatage ISO 8601</strong> — prouve quand le soin a eu lieu.</div>
-          <div class="ai in"><strong>✔ Géozone floue (~1km)</strong> — lat/lng arrondis : prouve la zone sans tracer précisément.</div>
-          <div class="ai su"><strong>✔ Signature serveur HMAC-SHA256</strong> — impossible à antidater ou falsifier. Niveau légal renforcé.</div>
         </div>
       </div>
     </section>
@@ -2710,61 +2615,61 @@
 ════════════════════════════════════ -->
 
 <!-- Utilitaires de base (doit être en premier) -->
-<script src="js/utils.js?v=3.8"></script>
+<script src="js/utils.js"></script>
 
 <!-- Modules fonctionnels -->
-<script src="js/auth.js?v=3.8"></script>
-<script src="js/cabinet.js?v=3.8"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
-<script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
-<script src="js/admin.js?v=3.8"></script>
-<script src="js/profil.js?v=3.9"></script>
-<script src="js/cotation.js?v=3.8"></script>
-<script src="js/contact.js?v=3.8"></script>
-<script src="js/geocode.js?v=3.8"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
-<script src="js/navigation.js?v=3.8"></script><!-- computeGeoScore + openNavigation -->
-<script src="js/patients.js?v=3.8"></script>
-<script src="js/tresorerie.js?v=3.8"></script>
-<script src="js/offline-queue.js?v=3.8"></script>
-<script src="js/voice.js?v=3.8"></script>
-<script src="js/dashboard.js?v=3.8"></script>
+<script src="js/auth.js"></script>
+<script src="js/cabinet.js"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
+<script src="js/security.js"></script><!-- RGPD + AES + PIN + Consentement -->
+<script src="js/admin.js"></script>
+<script src="js/profil.js"></script>
+<script src="js/cotation.js"></script>
+<script src="js/contact.js"></script>
+<script src="js/geocode.js"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
+<script src="js/navigation.js"></script><!-- computeGeoScore + openNavigation -->
+<script src="js/patients.js"></script>
+<script src="js/tresorerie.js"></script>
+<script src="js/offline-queue.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/dashboard.js"></script>
 
 <!-- Interface & Navigation -->
-<script src="js/ui.js?v=3.8"></script>
+<script src="js/ui.js"></script>
 
 <!-- Leaflet (doit être chargé AVANT map.js et uber.js) -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Modules dépendant de Leaflet -->
-<script src="js/map.js?v=3.8"></script>
-<script src="js/uber.js?v=3.8"></script>
+<script src="js/map.js"></script>
+<script src="js/uber.js"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
-<script src="js/ai-tournee.js?v=3.8"></script>
-<script src="js/ai-assistant.js?v=3.8"></script>
-<script src="js/pwa.js?v=3.8"></script>
+<script src="js/ai-tournee.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/pwa.js"></script>
 
 <!-- Tournée — dépend de tout ce qui précède -->
-<script src="js/tournee.js?v=3.8"></script>
+<script src="js/tournee.js"></script>
 
 <!-- Extras — fonctions complémentaires de ami-ngap.html -->
-<script src="js/extras.js?v=3.8"></script>
+<script src="js/extras.js"></script>
 
 <!-- Onboarding — intros contextuelles par section (première visite) -->
-<script src="js/onboarding.js?v=3.8"></script>
+<script src="js/onboarding.js"></script>
 
 <!-- Nouveaux modules SaaS médical -->
-<script src="js/signature.js?v=3.9"></script>
-<script src="js/copilote.js?v=3.8"></script>
-<script src="js/rapport.js?v=3.8"></script>
+<script src="js/signature.js"></script>
+<script src="js/copilote.js"></script>
+<script src="js/rapport.js"></script>
 
 <!-- Modules cliniques AMI v2 -->
-<script src="js/transmissions.js?v=3.8"></script>
-<script src="js/constantes.js?v=3.8"></script>
-<script src="js/pilulier.js?v=3.8"></script>
-<script src="js/bsi.js?v=3.8"></script>
-<script src="js/consentements.js?v=3.8"></script>
-<script src="js/alertes-medicaments.js?v=3.8"></script>
-<script src="js/audit-cpam.js?v=3.8"></script>
+<script src="js/transmissions.js"></script>
+<script src="js/constantes.js"></script>
+<script src="js/pilulier.js"></script>
+<script src="js/bsi.js"></script>
+<script src="js/consentements.js"></script>
+<script src="js/alertes-medicaments.js"></script>
+<script src="js/audit-cpam.js"></script>
 
 <script>
 /* ══ Bannières admin — modules cliniques v2 ══
@@ -3253,7 +3158,7 @@ document.addEventListener('click', function(e) {
 })();
 </script>
 
-<script src="js/infirmiere-tools.js?v=3.8"></script>
+<script src="js/infirmiere-tools.js"></script>
 
 <!-- ══ TOAST CONTAINER ══ -->
 <div id="toast-container"></div>
