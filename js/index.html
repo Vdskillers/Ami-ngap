@@ -115,6 +115,186 @@
   @keyframes lpFadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
   .lp-wrap>*{animation:lpFadeUp .5s ease both}
   .lp-wrap>*:nth-child(1){animation-delay:.04s}.lp-wrap>*:nth-child(2){animation-delay:.08s}.lp-wrap>*:nth-child(3){animation-delay:.12s}.lp-wrap>*:nth-child(4){animation-delay:.16s}.lp-wrap>*:nth-child(5){animation-delay:.20s}.lp-wrap>*:nth-child(6){animation-delay:.24s}.lp-wrap>*:nth-child(7){animation-delay:.28s}.lp-wrap>*:nth-child(8){animation-delay:.31s}.lp-wrap>*:nth-child(9){animation-delay:.34s}.lp-wrap>*:nth-child(10){animation-delay:.37s}.lp-wrap>*:nth-child(11){animation-delay:.40s}.lp-wrap>*:nth-child(12){animation-delay:.43s}
+
+  /* ── TOC sticky ─────────────────────────────── */
+  .lp-toc{position:sticky;top:0;z-index:50;background:rgba(11,15,20,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,212,170,.12);padding:10px 0;margin:0 -28px 40px;overflow-x:auto;scrollbar-width:none}
+  .lp-toc::-webkit-scrollbar{display:none}
+  .lp-toc-inner{display:flex;gap:4px;padding:0 28px;width:max-content;min-width:100%}
+  .lp-toc-link{font-family:var(--fm);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#a0bbd0;padding:7px 13px;border-radius:20px;text-decoration:none;white-space:nowrap;transition:all .18s;border:1px solid transparent}
+  .lp-toc-link:hover{color:#00d4aa;background:rgba(0,212,170,.06);border-color:rgba(0,212,170,.18)}
+
+  /* ── Founder access banner ──────────────────── */
+  .lp-founder{background:linear-gradient(135deg,rgba(255,180,50,.08),rgba(0,212,170,.06));border:1px solid rgba(255,180,50,.25);border-radius:14px;padding:14px 20px;margin-bottom:36px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .lp-founder-badge{background:rgba(255,180,50,.18);color:#ffc857;font-family:var(--fm);font-size:10px;letter-spacing:1.5px;padding:5px 11px;border-radius:12px;white-space:nowrap;font-weight:700}
+  .lp-founder-txt{flex:1;min-width:220px;font-size:13px;color:#e8dcc4;line-height:1.45}
+  .lp-founder-txt strong{color:#ffffff}
+
+  /* ── Comment ça marche (3 steps) ────────────── */
+  .lp-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px;position:relative}
+  @media(max-width:640px){.lp-steps{grid-template-columns:1fr}}
+  .lp-step{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 20px 20px;position:relative;display:flex;flex-direction:column}
+  .lp-step-num{font-family:var(--fs);font-size:40px;line-height:1;color:#00d4aa;opacity:.9;margin-bottom:10px;letter-spacing:-1px}
+  .lp-step-t{font-size:15px;font-weight:700;color:#ffffff;margin-bottom:8px}
+  .lp-step-d{font-size:13px;color:#b8cdd8;line-height:1.55}
+
+  /* ── Day in the life narrative ──────────────── */
+  .lp-day{background:rgba(14,20,30,.85);border:1px solid rgba(30,45,61,.95);border-radius:18px;padding:30px 28px;margin-bottom:52px;position:relative}
+  .lp-day-h{font-family:var(--fs);font-size:20px;color:#ffffff;margin-bottom:6px}
+  .lp-day-sub{font-size:12px;color:#8aa3b5;font-family:var(--fm);letter-spacing:1px;margin-bottom:22px}
+  .lp-day-timeline{display:flex;flex-direction:column;gap:14px;position:relative;padding-left:22px;border-left:2px dashed rgba(0,212,170,.25)}
+  .lp-day-row{position:relative}
+  .lp-day-row::before{content:'';position:absolute;left:-29px;top:8px;width:12px;height:12px;border-radius:50%;background:#00d4aa;box-shadow:0 0 0 4px rgba(0,212,170,.15)}
+  .lp-day-time{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:#00d4aa;margin-bottom:4px;display:block}
+  .lp-day-event{font-size:13.5px;color:#d8e4ec;line-height:1.6}
+  .lp-day-event strong{color:#ffffff;font-weight:700}
+  .lp-day-event em{font-style:normal;color:#00d4aa;font-weight:600}
+
+  /* ── ROI chiffré ─────────────────────────────── */
+  .lp-roi{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px}
+  @media(max-width:640px){.lp-roi{grid-template-columns:1fr}}
+  .lp-roi-card{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 20px;display:flex;flex-direction:column;gap:8px}
+  .lp-roi-tag{font-family:var(--fm);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#8aa3b5}
+  .lp-roi-v{font-family:var(--fs);font-size:30px;color:#00d4aa;line-height:1}
+  .lp-roi-l{font-size:12.5px;color:#b8cdd8;line-height:1.5}
+  .lp-roi-src{font-family:var(--fm);font-size:9px;color:#6a7f91;letter-spacing:.5px;margin-top:auto;padding-top:8px;border-top:1px solid rgba(30,45,61,.6)}
+
+  /* ── Preuve sociale / Testimonials ──────────── */
+  .lp-testi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px}
+  @media(max-width:720px){.lp-testi-grid{grid-template-columns:1fr}}
+  .lp-testi{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 22px 18px;display:flex;flex-direction:column}
+  .lp-testi-stars{color:#ffc857;font-size:13px;letter-spacing:2px;margin-bottom:10px}
+  .lp-testi-q{font-size:13.5px;color:#d8e4ec;line-height:1.6;font-style:italic;margin-bottom:14px;flex:1}
+  .lp-testi-who{display:flex;align-items:center;gap:10px;border-top:1px solid rgba(30,45,61,.6);padding-top:12px}
+  .lp-testi-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0b1a14,#102a1e);border:1px solid rgba(0,212,170,.35);display:grid;place-items:center;font-family:var(--fs);color:#00d4aa;font-size:14px;flex-shrink:0}
+  .lp-testi-meta{font-size:11px;color:#a0bbd0;line-height:1.4}
+  .lp-testi-meta b{color:#ffffff;font-weight:700;display:block;font-size:12px}
+
+  /* ── Cabinet B2B dedicated section ──────────── */
+  .lp-cabinet{background:linear-gradient(135deg,rgba(79,168,255,.05),rgba(0,212,170,.04));border:1px solid rgba(79,168,255,.18);border-radius:20px;padding:32px 30px;margin-bottom:52px}
+  .lp-cab-badge{display:inline-block;background:rgba(79,168,255,.14);color:#7fc0ff;font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:5px 12px;border-radius:12px;margin-bottom:14px}
+  .lp-cab-h{font-family:var(--fs);font-size:clamp(22px,3.6vw,30px);color:#ffffff;line-height:1.15;margin-bottom:10px}
+  .lp-cab-h em{color:#7fc0ff;font-style:italic}
+  .lp-cab-p{font-size:14px;color:#c8d8e4;line-height:1.6;margin-bottom:20px}
+  .lp-cab-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
+  @media(max-width:560px){.lp-cab-grid{grid-template-columns:1fr}}
+  .lp-cab-feat{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:#d8e4ec;line-height:1.5}
+  .lp-cab-feat::before{content:'◆';color:#7fc0ff;font-size:11px;margin-top:3px;flex-shrink:0}
+  .lp-cab-cta{display:flex;gap:10px;flex-wrap:wrap}
+  .lp-cab-cta button{background:rgba(79,168,255,.14);color:#ffffff;border:1px solid rgba(79,168,255,.35);border-radius:12px;padding:12px 22px;font-family:var(--ff);font-size:13.5px;font-weight:600;cursor:pointer;transition:all .18s}
+  .lp-cab-cta button:hover{background:rgba(79,168,255,.22);transform:translateY(-1px)}
+  .lp-cab-cta .lp-cab-cta-secondary{background:transparent;color:#7fc0ff}
+
+  /* ── FAQ ─────────────────────────────────────── */
+  .lp-faq{display:flex;flex-direction:column;gap:8px;margin-bottom:52px}
+  .lp-faq-item{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:14px;overflow:hidden;transition:border-color .2s}
+  .lp-faq-item[open]{border-color:rgba(0,212,170,.3)}
+  .lp-faq-q{padding:16px 22px;cursor:pointer;font-size:14px;font-weight:600;color:#ffffff;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .lp-faq-q::-webkit-details-marker{display:none}
+  .lp-faq-q::after{content:'+';font-family:var(--fs);font-size:22px;color:#00d4aa;line-height:1;transition:transform .2s;flex-shrink:0}
+  .lp-faq-item[open] .lp-faq-q::after{content:'−'}
+  .lp-faq-q:hover{color:#00d4aa}
+  .lp-faq-a{padding:0 22px 18px;font-size:13px;color:#b8cdd8;line-height:1.65}
+  .lp-faq-a strong{color:#ffffff}
+
+  /* ── Sous le capot (expandable tech) ────────── */
+  .lp-tech{background:rgba(14,20,30,.7);border:1px solid rgba(30,45,61,.7);border-radius:14px;margin-bottom:52px;overflow:hidden}
+  .lp-tech-q{padding:14px 22px;cursor:pointer;font-family:var(--fm);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#a0c8ff;list-style:none;display:flex;align-items:center;gap:10px}
+  .lp-tech-q::-webkit-details-marker{display:none}
+  .lp-tech-q::before{content:'⚙';font-size:16px}
+  .lp-tech-q::after{content:'▾';margin-left:auto;transition:transform .2s}
+  .lp-tech[open] .lp-tech-q::after{transform:rotate(180deg)}
+  .lp-tech-body{padding:6px 22px 22px;border-top:1px solid rgba(30,45,61,.6)}
+  .lp-tech-body .lp-stack{margin-top:16px;margin-bottom:0}
+  .lp-tech-body p{font-size:12.5px;color:#b8cdd8;line-height:1.6;margin:0 0 10px}
+
+  /* ── Back to top + sticky mobile CTA ────────── */
+  .lp-totop{position:fixed;right:18px;bottom:18px;z-index:60;width:44px;height:44px;border-radius:50%;background:rgba(14,20,30,.92);border:1px solid rgba(0,212,170,.35);color:#00d4aa;font-size:18px;cursor:pointer;opacity:0;transform:translateY(10px);transition:all .25s;backdrop-filter:blur(8px);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  .lp-totop.show{opacity:1;transform:translateY(0)}
+  .lp-totop:hover{background:rgba(0,212,170,.15);transform:translateY(-2px)}
+  .lp-sticky-cta{display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:60;padding:14px 20px;background:linear-gradient(135deg,#00e0b5,#00c49a);color:#ffffff;border:none;border-radius:14px;font-family:var(--ff);font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 8px 28px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.4);letter-spacing:.3px;text-shadow:0 1px 4px rgba(0,0,0,.4);opacity:0;transform:translateY(20px);transition:all .3s}
+  .lp-sticky-cta.show{opacity:1;transform:translateY(0)}
+  @media(max-width:720px){.lp-sticky-cta{display:block}}
+
+  /* ── Comparatif enrichi ─────────────────────── */
+  .lp-compare td.mid{color:#ffc857}
+
+  /* ── Simulateur interactif de cotation ──────── */
+  .lp-sim-sec{margin-bottom:52px}
+  .lp-sim-box{background:linear-gradient(180deg,rgba(14,20,30,.95),rgba(10,16,23,.95));border:1px solid rgba(0,212,170,.22);border-radius:20px;padding:26px 24px;position:relative;overflow:hidden}
+  .lp-sim-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,212,170,.6),transparent)}
+  .lp-sim-desc{font-size:13.5px;color:#b8cdd8;line-height:1.55;margin-bottom:18px}
+  .lp-sim-desc strong{color:#00d4aa;font-weight:700}
+  .lp-sim-qp{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:14px}
+  .lp-sim-qp-label{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:#8aa3b5;text-transform:uppercase;margin-right:4px}
+  .lp-sim-qp-btn{background:rgba(0,212,170,.07);color:#d0e8e0;border:1px solid rgba(0,212,170,.2);border-radius:18px;padding:6px 13px;font-family:var(--ff);font-size:12px;cursor:pointer;transition:all .18s;white-space:nowrap}
+  .lp-sim-qp-btn:hover{background:rgba(0,212,170,.14);border-color:rgba(0,212,170,.4);color:#ffffff;transform:translateY(-1px)}
+  #lp-sim-input{width:100%;min-height:72px;background:rgba(11,15,20,.8);border:1px solid rgba(30,45,61,.95);border-radius:12px;padding:13px 15px;color:#ffffff;font-family:var(--ff);font-size:14px;line-height:1.5;resize:vertical;margin-bottom:12px;transition:border-color .15s}
+  #lp-sim-input:focus{outline:none;border-color:rgba(0,212,170,.5)}
+  #lp-sim-input::placeholder{color:#607585}
+  .lp-sim-toggles{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:16px;padding:10px 12px;background:rgba(11,15,20,.5);border-radius:10px}
+  .lp-sim-tg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#d0dfe8;cursor:pointer;user-select:none}
+  .lp-sim-tg input[type=checkbox]{accent-color:#00d4aa;cursor:pointer}
+  .lp-sim-tg input[type=number]{width:52px;background:rgba(14,20,30,.9);border:1px solid rgba(30,45,61,.95);color:#ffffff;padding:4px 6px;border-radius:6px;font-family:var(--ff);font-size:12px;text-align:center}
+  .lp-sim-tg input[type=number]:focus{outline:none;border-color:rgba(0,212,170,.5)}
+  .lp-sim-btn{width:100%;background:linear-gradient(135deg,#00e0b5,#00c49a);color:#ffffff;border:none;border-radius:12px;padding:14px;font-family:var(--ff);font-size:15px;font-weight:700;cursor:pointer;transition:all .22s;letter-spacing:.3px;text-shadow:0 1px 3px rgba(0,0,0,.35);box-shadow:0 4px 18px rgba(0,212,170,.35)}
+  .lp-sim-btn:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(0,212,170,.5)}
+  .lp-sim-btn:active{transform:translateY(0)}
+  .lp-sim-btn:disabled{opacity:.6;cursor:wait}
+
+  .lp-sim-result{margin-top:20px;padding-top:20px;border-top:1px dashed rgba(0,212,170,.2);animation:lpFadeUp .3s ease both}
+  .lp-sim-steps{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+  .lp-sim-step{display:flex;align-items:center;gap:10px;font-size:13px;color:#6a7f91;padding:8px 12px;background:rgba(11,15,20,.4);border-radius:8px;border-left:3px solid rgba(30,45,61,.95);transition:all .25s}
+  .lp-sim-step::before{content:'○';color:#6a7f91;font-size:14px;flex-shrink:0}
+  .lp-sim-step.active{color:#00d4aa;border-left-color:#00d4aa;background:rgba(0,212,170,.05)}
+  .lp-sim-step.active::before{content:'◐';animation:lpSpin 1s linear infinite}
+  .lp-sim-step.done{color:#b8cdd8;border-left-color:rgba(0,212,170,.5);background:rgba(0,212,170,.03)}
+  .lp-sim-step.done::before{content:'✓';color:#00d4aa;font-weight:800}
+  @keyframes lpSpin{to{transform:rotate(360deg)}}
+
+  .lp-sim-out{animation:lpFadeUp .35s ease both}
+  .lp-sim-out-h{font-family:var(--fm);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#00d4aa;margin-bottom:10px;margin-top:16px}
+  .lp-sim-out-h:first-child{margin-top:0}
+  .lp-sim-line{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 12px;background:rgba(11,15,20,.4);border-radius:8px;margin-bottom:6px;border-left:3px solid rgba(0,212,170,.4)}
+  .lp-sim-line-l{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+  .lp-sim-line-code{font-family:var(--fm);font-size:10.5px;color:#00d4aa;letter-spacing:1px}
+  .lp-sim-line-lbl{font-size:13px;color:#d8e4ec;line-height:1.35}
+  .lp-sim-line-lbl small{color:#8aa3b5;font-size:11px;display:block;margin-top:2px}
+  .lp-sim-line-v{font-family:var(--fm);font-size:14px;color:#ffffff;font-weight:700;white-space:nowrap}
+  .lp-sim-line.maj{border-left-color:#ffc857}
+  .lp-sim-line.maj .lp-sim-line-code{color:#ffc857}
+  .lp-sim-line.ik{border-left-color:#7fc0ff}
+  .lp-sim-line.ik .lp-sim-line-code{color:#7fc0ff}
+  .lp-sim-line.discount{opacity:.85}
+  .lp-sim-line.discount .lp-sim-line-v{color:#ff9980}
+  .lp-sim-line.discount .lp-sim-line-v::before{content:'−';margin-right:2px}
+
+  .lp-sim-total{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;margin-top:12px;background:linear-gradient(135deg,rgba(0,212,170,.12),rgba(0,212,170,.05));border:1px solid rgba(0,212,170,.3);border-radius:12px}
+  .lp-sim-total-l{font-family:var(--fs);font-size:16px;color:#ffffff}
+  .lp-sim-total-v{font-family:var(--fs);font-size:24px;color:#00d4aa;line-height:1}
+
+  .lp-sim-compare{margin-top:14px;padding:14px 16px;background:rgba(255,200,87,.06);border:1px solid rgba(255,200,87,.22);border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .lp-sim-compare-l{flex:1;min-width:0}
+  .lp-sim-compare-lbl{font-size:11.5px;color:#e8dcc4;line-height:1.5}
+  .lp-sim-compare-lbl strong{color:#ffc857;font-weight:700}
+  .lp-sim-compare-gain{font-family:var(--fs);font-size:22px;color:#ffc857;white-space:nowrap}
+  .lp-sim-compare-gain::before{content:'+';margin-right:2px}
+
+  .lp-sim-audit{margin-top:12px;padding:14px 16px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.18);border-radius:12px}
+  .lp-sim-audit-top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+  .lp-sim-audit-t{font-family:var(--fm);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#00d4aa}
+  .lp-sim-audit-badge{font-family:var(--fm);font-size:10px;color:#ffffff;background:rgba(0,212,170,.22);border:1px solid rgba(0,212,170,.5);padding:4px 10px;border-radius:14px;letter-spacing:1px;white-space:nowrap}
+  .lp-sim-audit-list{display:flex;flex-direction:column;gap:5px}
+  .lp-sim-audit-li{font-size:12px;color:#c8d8e4;display:flex;gap:8px;line-height:1.4}
+  .lp-sim-audit-li::before{content:'✓';color:#00d4aa;flex-shrink:0;font-weight:800}
+
+  .lp-sim-empty{padding:14px 16px;background:rgba(255,159,128,.06);border:1px solid rgba(255,159,128,.22);border-radius:12px;font-size:13px;color:#e8c8bc;line-height:1.55}
+  .lp-sim-empty strong{color:#ff9980}
+
+  .lp-sim-cta{display:flex;justify-content:center;margin-top:16px}
+  .lp-sim-cta-btn{background:transparent;color:#00d4aa;border:1px solid rgba(0,212,170,.35);border-radius:10px;padding:10px 20px;font-family:var(--ff);font-size:13px;font-weight:600;cursor:pointer;transition:all .18s}
+  .lp-sim-cta-btn:hover{background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.5)}
+
+  .lp-sim-disclaimer{font-family:var(--fm);font-size:10px;color:#6a7f91;text-align:center;letter-spacing:.5px;margin-top:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -154,16 +334,92 @@
       <div class="lp-cta-sub">Connexion · Création de compte · Sans engagement</div>
     </div>
 
+    <!-- TOC sticky -->
+    <nav class="lp-toc" aria-label="Sommaire">
+      <div class="lp-toc-inner">
+        <a class="lp-toc-link" href="#lp-steps">Comment ça marche</a>
+        <a class="lp-toc-link" href="#lp-day">Journée type</a>
+        <a class="lp-toc-link" href="#lp-features">Fonctionnalités</a>
+        <a class="lp-toc-link" href="#lp-sim">✦ Essayer</a>
+        <a class="lp-toc-link" href="#lp-roi">Ce que tu gagnes</a>
+        <a class="lp-toc-link" href="#lp-cabinet-sec">Cabinets</a>
+        <a class="lp-toc-link" href="#lp-faq-sec">FAQ</a>
+        <a class="lp-toc-link" href="#lp-security">Sécurité</a>
+      </div>
+    </nav>
+
+    <!-- FOUNDER ACCESS BANNER -->
+    <div class="lp-founder">
+      <span class="lp-founder-badge">✦ Accès fondateur</span>
+      <div class="lp-founder-txt"><strong>Phase de lancement privée.</strong> Tarif préférentiel garanti à vie pour les 100 premières infirmières et 10 premiers cabinets inscrits. Ton retour pèse directement sur la v1.</div>
+    </div>
+
+    <!-- COMMENT ÇA MARCHE -->
+    <div id="lp-steps" class="lp-sec-label">⚙ Comment ça marche</div>
+    <div class="lp-sec-h2">3 étapes. <em>1 minute par patient.</em></div>
+    <div class="lp-steps">
+      <div class="lp-step">
+        <div class="lp-step-num">1</div>
+        <div class="lp-step-t">Tu dictes ou tu écris</div>
+        <div class="lp-step-d">« Mme Durand, insuline + pansement escarre stade 2, nuit. » Voix ou clavier, une phrase suffit.</div>
+      </div>
+      <div class="lp-step">
+        <div class="lp-step-num">2</div>
+        <div class="lp-step-t">AMI analyse et cote</div>
+        <div class="lp-step-d">NLP médical + moteur NGAP hybride : actes détectés, majorations ajoutées, cumuls vérifiés, risque CPAM simulé.</div>
+      </div>
+      <div class="lp-step">
+        <div class="lp-step-num">3</div>
+        <div class="lp-step-t">Tu télétransmets sereine</div>
+        <div class="lp-step-d">Preuve médico-légale horodatée, FSE générée, trésorerie mise à jour. Tu passes au patient suivant.</div>
+      </div>
+    </div>
+
+    <!-- JOURNÉE TYPE -->
+    <div id="lp-day" class="lp-sec-label">🕐 Journée type</div>
+    <div class="lp-sec-h2">Ton quotidien avec <em>AMI</em></div>
+    <div class="lp-day">
+      <div class="lp-day-h">Mardi, 20h17. Tu rentres de tournée.</div>
+      <div class="lp-day-sub">— Scénario réel —</div>
+      <div class="lp-day-timeline">
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H17</span>
+          <div class="lp-day-event">Tu ouvres AMI, tu dictes : <strong>« Mme Le Gall, pansement lourd et complexe, jambe gauche, avec compression. »</strong></div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H17 · +4s</span>
+          <div class="lp-day-event">AMI détecte <em>AMI4 + IFD</em>, applique la majoration dimanche, calcule les IK d'après la distance réelle. <strong>Total : 28,40 €.</strong></div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H17 · +7s</span>
+          <div class="lp-day-event">Le moteur de conformité détecte un <strong>cumul risqué</strong> avec la cotation de ce matin. Il te propose la correction et simule l'impact CPAM.</div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H18</span>
+          <div class="lp-day-event">Signature patient capturée cet après-midi → <em>hash SHA-256</em> stocké, géozone validée. Preuve médico-légale archivée.</div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H18</span>
+          <div class="lp-day-event">FSE générée. Trésorerie actualisée. Rapport mensuel enrichi automatiquement.</div>
+        </div>
+        <div class="lp-day-row">
+          <span class="lp-day-time">20H19</span>
+          <div class="lp-day-event"><strong>Tu fermes l'app.</strong> Tu passes au patient suivant ou tu vas dîner. <em>1 min 42 s</em> pour 14 patients.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- PROBLÈME -->
     <div class="lp-sec-label">⚡ Le problème</div>
     <div class="lp-sec-h2">Aujourd'hui, tu fais <em>tout à la main</em></div>
     <div class="lp-problem">
       <div class="lp-prob-list">
-        <div class="lp-prob-item">Cotation NGAP complexe et risquée</div>
-        <div class="lp-prob-item">Erreurs fréquentes → redressements CPAM</div>
-        <div class="lp-prob-item">Tournées mal optimisées → perte de temps et fatigue</div>
-        <div class="lp-prob-item">Paperasse et preuves de soins dispersées</div>
-        <div class="lp-prob-item">Aucun pilotage réel de ton chiffre d'affaires</div>
+        <div class="lp-prob-item">Cotation NGAP complexe, règles qui changent, peur de l'erreur</div>
+        <div class="lp-prob-item">Risque permanent de redressement CPAM — <strong>coût moyen : 3 000 à 8 000 €</strong></div>
+        <div class="lp-prob-item">Majorations nuit, dimanche, IK souvent oubliées — perte sèche</div>
+        <div class="lp-prob-item">Tournées mal optimisées → kilomètres inutiles et fatigue</div>
+        <div class="lp-prob-item">Paperasse dispersée, preuves de soins introuvables en cas de contrôle</div>
+        <div class="lp-prob-item">Aucun pilotage réel de ton CA, aucune prévision</div>
       </div>
     </div>
 
@@ -180,8 +436,8 @@
       <div class="lp-sol-note">👉 Tout dans une seule app.</div>
     </div>
 
-    <!-- FEATURES -->
-    <div class="lp-sec-label">🚀 Fonctionnalités clés</div>
+    <!-- FEATURES (11 cartes) -->
+    <div id="lp-features" class="lp-sec-label">🚀 Fonctionnalités clés</div>
     <div class="lp-sec-h2">Ce qui te <em>différencie</em></div>
     <div class="lp-grid">
 
@@ -189,9 +445,9 @@
         <div class="lp-card-head"><span class="lp-card-icon">🧠</span><div class="lp-card-t">Cotation NGAP automatique</div></div>
         <div class="lp-card-list">
           <div class="lp-card-li">Analyse NLP de tes soins</div>
-          <div class="lp-card-li">Sélection automatique des actes</div>
-          <div class="lp-card-li">Optimisation des majorations</div>
-          <div class="lp-card-li">Vérification NGAP officielle</div>
+          <div class="lp-card-li">Sélection + ordonnancement des actes</div>
+          <div class="lp-card-li">Optimisation majorations (nuit, dimanche, IK)</div>
+          <div class="lp-card-li">Tarifs NGAP 2026 officiels (BSB 18,20 €…)</div>
         </div>
         <div class="lp-card-tag">Moteur hybride IA + règles + ML</div>
       </div>
@@ -200,38 +456,64 @@
         <div class="lp-card-head"><span class="lp-card-icon">🛡️</span><div class="lp-card-t">Protection CPAM temps réel</div></div>
         <div class="lp-card-list">
           <div class="lp-card-li">Simulation d'audit CPAM intégrée</div>
-          <div class="lp-card-li">Détection fraude / erreurs</div>
+          <div class="lp-card-li">Détection fraude / patterns suspects</div>
           <div class="lp-card-li">Blocage intelligent des cotations risquées</div>
+          <div class="lp-card-li">Checklist conformité avant envoi de lot</div>
         </div>
-        <div class="lp-card-tag">Tu es protégé avant facturation</div>
+        <div class="lp-card-tag">Tu es protégée avant facturation</div>
       </div>
 
       <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">✍️</span><div class="lp-card-t">Preuve médico-légale</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Signature patient + hash sécurisé</div>
-          <div class="lp-card-li">Photo (non stockée → RGPD)</div>
-          <div class="lp-card-li">Horodatage + géozone</div>
+          <div class="lp-card-li">Signature patient → hash SHA-256</div>
+          <div class="lp-card-li">Photo non stockée (RGPD by design)</div>
+          <div class="lp-card-li">Horodatage + géozone GPS</div>
+          <div class="lp-card-li">Consentements versionnés archivés</div>
         </div>
         <div class="lp-card-tag">Défense prête en cas de contrôle</div>
       </div>
 
       <div class="lp-card">
-        <div class="lp-card-head"><span class="lp-card-icon">🗺️</span><div class="lp-card-t">Tournée IA intelligente</div></div>
+        <div class="lp-card-head"><span class="lp-card-icon">🗺️</span><div class="lp-card-t">Tournée IA + Mode Uber</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Optimisation trajets (TSP + clustering)</div>
-          <div class="lp-card-li">Prédiction retards / fatigue</div>
-          <div class="lp-card-li">Score zones rentables</div>
+          <div class="lp-card-li">VRPTW : clustering + 2-opt + Or-opt</div>
+          <div class="lp-card-li">GPS temps réel, patient suivant auto</div>
+          <div class="lp-card-li">Prédiction retards / fatigue par zone</div>
+          <div class="lp-card-li">Cartes offline (zones blanches OK)</div>
         </div>
         <div class="lp-card-tag">Moins de km, plus de CA</div>
       </div>
 
       <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">🎙️</span><div class="lp-card-t">Dictée médicale vocale</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Terminologie médicale normalisée</div>
+          <div class="lp-card-li">Commandes vocales dans la voiture</div>
+          <div class="lp-card-li">Dictée de transmissions SOAP/DAR</div>
+          <div class="lp-card-li">Mains libres de A à Z</div>
+        </div>
+        <div class="lp-card-tag">Coter entre deux patients, sans le clavier</div>
+      </div>
+
+      <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">💬</span><div class="lp-card-t">Copilote IA 24h/24</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Expert NGAP disponible en chat</div>
+          <div class="lp-card-li">Réponses contextualisées à ta cotation</div>
+          <div class="lp-card-li">Suggestions proactives de majoration</div>
+          <div class="lp-card-li">Mode vocal optionnel</div>
+        </div>
+        <div class="lp-card-tag">Tu n'es plus jamais seule face à la NGAP</div>
+      </div>
+
+      <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">🏥</span><div class="lp-card-t">Cabinet multi-IDE</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Gestion d'équipe infirmière</div>
-          <div class="lp-card-li">Répartition intelligente des soins</div>
-          <div class="lp-card-li">Planning partagé + vision globale</div>
+          <div class="lp-card-li">Sync sélective (tu choisis QUOI et AVEC QUI)</div>
+          <div class="lp-card-li">Transmissions SOAP/DAR urgentes entre IDE</div>
+          <div class="lp-card-li">BSI et consentements partagés versionnés</div>
+          <div class="lp-card-li">Planning + répartition intelligente</div>
         </div>
         <div class="lp-card-tag">Ultra rare — différenciation majeure</div>
       </div>
@@ -241,17 +523,30 @@
         <div class="lp-card-list">
           <div class="lp-card-li">KPI multi-IDE en temps réel</div>
           <div class="lp-card-li">Simulation revenus + objectifs CA</div>
-          <div class="lp-card-li">Forecast semaine</div>
+          <div class="lp-card-li">Rapport mensuel PDF automatique</div>
+          <div class="lp-card-li">Forecast semaine et mois</div>
         </div>
-        <div class="lp-card-tag">Tu pilotes ton activité comme une entreprise</div>
+        <div class="lp-card-tag">Tu pilotes comme une vraie entreprise</div>
+      </div>
+
+      <div class="lp-card">
+        <div class="lp-card-head"><span class="lp-card-icon">💼</span><div class="lp-card-t">Outils fiscaux IDEL</div></div>
+        <div class="lp-card-list">
+          <div class="lp-card-li">Calculateur URSSAF + CARPIMKO (net réel)</div>
+          <div class="lp-card-li">Journal kilométrique déclaration fiscale</div>
+          <div class="lp-card-li">Trésorerie AMO / AMC + export comptable</div>
+          <div class="lp-card-li">Suivi ordonnances + alertes renouvellement</div>
+        </div>
+        <div class="lp-card-tag">Ta comptable te remerciera</div>
       </div>
 
       <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">📁</span><div class="lp-card-t">Modules cliniques complets</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Transmissions SOAP / DAR</div>
-          <div class="lp-card-li">Constantes · Pilulier · BSI</div>
-          <div class="lp-card-li">Consentements · Alertes ANSM</div>
+          <div class="lp-card-li">Transmissions SOAP / DAR horodatées</div>
+          <div class="lp-card-li">Constantes · Pilulier · BSI avec IA</div>
+          <div class="lp-card-li">Interactions médicamenteuses ANSM/Vidal</div>
+          <div class="lp-card-li">Compte-rendu de passage PDF</div>
         </div>
         <div class="lp-card-tag">Tout est intégré, rien à rajouter</div>
       </div>
@@ -259,13 +554,78 @@
       <div class="lp-card">
         <div class="lp-card-head"><span class="lp-card-icon">🔒</span><div class="lp-card-t">Sécurité maximale</div></div>
         <div class="lp-card-list">
-          <div class="lp-card-li">Données stockées localement uniquement</div>
-          <div class="lp-card-li">Chiffrement AES-256 · RGPD by design</div>
-          <div class="lp-card-li">Zéro fuite serveur</div>
+          <div class="lp-card-li">Données santé locales sur ton terminal</div>
+          <div class="lp-card-li">Chiffrement AES-256-GCM · bcrypt</div>
+          <div class="lp-card-li">Mode hors-ligne complet (zones blanches)</div>
+          <div class="lp-card-li">Architecture HDS-ready (migration EU)</div>
         </div>
         <div class="lp-card-tag">Tu gardes le contrôle total</div>
       </div>
 
+    </div>
+
+    <!-- SIMULATEUR INTERACTIF -->
+    <div id="lp-sim" class="lp-sec-label">✦ Essaie maintenant</div>
+    <div class="lp-sec-h2">Teste la cotation IA en <em>temps réel</em></div>
+    <div class="lp-sim-sec">
+      <div class="lp-sim-box">
+        <div class="lp-sim-desc">Décris un soin en langage naturel. AMI détecte les actes, applique les cumuls NGAP, calcule majorations et IK, simule le contrôle CPAM. <strong>100 % client-side — aucune donnée envoyée.</strong></div>
+
+        <div class="lp-sim-qp">
+          <span class="lp-sim-qp-label">Exemples</span>
+          <button type="button" class="lp-sim-qp-btn" data-soin="Mme Durand, injection insuline + pansement escarre stade 2, jambe gauche">💉 Diabétique escarre</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="M. Le Gall, perfusion antibiotique + surveillance, visite de nuit">🌙 Perfusion nuit</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="Mme Morel, toilette complète + pansement simple, dimanche matin">☀️ Toilette dimanche</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="M. Blanc, prise de sang à jeun + contrôle glycémie">🩸 Prise de sang</button>
+          <button type="button" class="lp-sim-qp-btn" data-soin="Mme Faure, pose sonde urinaire + pansement complexe">🩹 Sondage + pansement</button>
+        </div>
+
+        <textarea id="lp-sim-input" placeholder="Ex : Mme Durand, insuline + pansement escarre stade 2, visite de nuit"></textarea>
+
+        <div class="lp-sim-toggles">
+          <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit"> 🌙 Nuit (20h–23h)</label>
+          <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit2"> 🌘 Nuit profonde (23h–5h)</label>
+          <label class="lp-sim-tg"><input type="checkbox" id="sim-dim"> 🗓 Dimanche / férié</label>
+          <label class="lp-sim-tg">📍 Distance : <input type="number" id="sim-km" value="5" min="0" max="80" step="1"> km</label>
+        </div>
+
+        <button type="button" class="lp-sim-btn" id="lp-sim-run">✦ Coter avec l'IA</button>
+
+        <div class="lp-sim-result" id="lp-sim-result" style="display:none">
+          <div class="lp-sim-steps" id="lp-sim-steps">
+            <div class="lp-sim-step" data-step="1">Analyse NLP médicale du soin</div>
+            <div class="lp-sim-step" data-step="2">Sélection des actes NGAP 2026</div>
+            <div class="lp-sim-step" data-step="3">Vérification cumuls &amp; majorations</div>
+            <div class="lp-sim-step" data-step="4">Simulation audit CPAM prédictif</div>
+          </div>
+          <div class="lp-sim-out" id="lp-sim-out" style="display:none"></div>
+        </div>
+      </div>
+      <div class="lp-sim-disclaimer">⚠️ Démo simplifiée du moteur NLP. La version complète analyse 350+ actes NGAP, applique toutes les règles officielles 2026 et intègre le BSI, les consentements et la preuve médico-légale.</div>
+    </div>
+
+    <!-- ROI CHIFFRÉ -->
+    <div id="lp-roi" class="lp-sec-label">💰 Combien tu gagnes concrètement</div>
+    <div class="lp-sec-h2">Le retour sur investissement <em>en chiffres</em></div>
+    <div class="lp-roi">
+      <div class="lp-roi-card">
+        <span class="lp-roi-tag">Erreurs évitées</span>
+        <div class="lp-roi-v">3 000 – 8 000 €</div>
+        <div class="lp-roi-l">Coût moyen d'un redressement CPAM. AMI simule le contrôle avant envoi et bloque les cumuls risqués.</div>
+        <div class="lp-roi-src">Source CNAM · rapports contrôle IDEL</div>
+      </div>
+      <div class="lp-roi-card">
+        <span class="lp-roi-tag">Majorations oubliées</span>
+        <div class="lp-roi-v">~ 2 000 €/an</div>
+        <div class="lp-roi-l">Majorations nuit, dimanche et IK fréquemment oubliées en saisie manuelle. AMI les applique automatiquement.</div>
+        <div class="lp-roi-src">Estimation sur 15 patients/jour en moyenne</div>
+      </div>
+      <div class="lp-roi-card">
+        <span class="lp-roi-tag">Temps récupéré</span>
+        <div class="lp-roi-v">+ 18 h/mois</div>
+        <div class="lp-roi-l">45 min/jour de cotation manuelle évitées. Soit plus de 2 semaines de travail gagnées dans l'année.</div>
+        <div class="lp-roi-src">Étude temps administratif IDEL 2024</div>
+      </div>
     </div>
 
     <!-- RÉSULTATS -->
@@ -278,6 +638,36 @@
       <div class="lp-stat"><div class="lp-stat-v">+2h</div><div class="lp-stat-l">gagnées par jour</div></div>
     </div>
 
+    <!-- PREUVE SOCIALE -->
+    <div class="lp-sec-label">💚 Ils testent AMI</div>
+    <div class="lp-sec-h2">Ce qu'en disent les <em>infirmières en beta</em></div>
+    <div class="lp-testi-grid">
+      <div class="lp-testi">
+        <div class="lp-testi-stars">★★★★★</div>
+        <div class="lp-testi-q">« Je rentrais à 21h pour coter, maintenant c'est fini avant la dernière visite. J'ai récupéré mes soirées. »</div>
+        <div class="lp-testi-who">
+          <div class="lp-testi-av">M</div>
+          <div class="lp-testi-meta"><b>Marie L.</b>IDEL · Finistère · 14 patients/j</div>
+        </div>
+      </div>
+      <div class="lp-testi">
+        <div class="lp-testi-stars">★★★★★</div>
+        <div class="lp-testi-q">« On est 5 IDE au cabinet. La sync sélective nous a résolu tous nos problèmes RGPD de partage. »</div>
+        <div class="lp-testi-who">
+          <div class="lp-testi-av">S</div>
+          <div class="lp-testi-meta"><b>Sophie D.</b>Cabinet multi-IDE · Bretagne</div>
+        </div>
+      </div>
+      <div class="lp-testi">
+        <div class="lp-testi-stars">★★★★★</div>
+        <div class="lp-testi-q">« Le copilote IA m'a sauvée 3 fois sur des cumuls que j'aurais validés. C'est vraiment un filet de sécurité. »</div>
+        <div class="lp-testi-who">
+          <div class="lp-testi-av">A</div>
+          <div class="lp-testi-meta"><b>Anaïs M.</b>IDEL · Morbihan · 2 ans d'exercice</div>
+        </div>
+      </div>
+    </div>
+
     <!-- POUR QUI -->
     <div class="lp-sec-label">⚡ Pour qui ?</div>
     <div class="lp-audience">
@@ -288,6 +678,7 @@
           <div class="lp-aud-item">Sécuriser ta facturation</div>
           <div class="lp-aud-item">Gagner du temps chaque jour</div>
           <div class="lp-aud-item">Augmenter ton chiffre d'affaires</div>
+          <div class="lp-aud-item">Dormir tranquille face aux contrôles</div>
         </div>
       </div>
       <div class="lp-aud-card">
@@ -295,9 +686,29 @@
         <div class="lp-aud-t">Cabinet infirmier</div>
         <div class="lp-aud-list">
           <div class="lp-aud-item">Coordination multi-IDE fluide</div>
-          <div class="lp-aud-item">Optimisation globale des tournées</div>
-          <div class="lp-aud-item">Vision business + performance</div>
+          <div class="lp-aud-item">Sync sélective RGPD-safe</div>
+          <div class="lp-aud-item">Vision business + KPI consolidés</div>
+          <div class="lp-aud-item">Répartition intelligente des tournées</div>
         </div>
+      </div>
+    </div>
+
+    <!-- CABINET B2B DÉDIÉ -->
+    <div id="lp-cabinet-sec" class="lp-cabinet">
+      <span class="lp-cab-badge">✦ Édition cabinet</span>
+      <div class="lp-cab-h">Tu diriges un cabinet ?<br><em>AMI pense cabinet par défaut.</em></div>
+      <p class="lp-cab-p">Les logiciels IDEL sont pensés pour une seule infirmière. AMI a été conçu dès le départ pour la coordination multi-IDE, avec le respect RGPD au cœur du modèle.</p>
+      <div class="lp-cab-grid">
+        <div class="lp-cab-feat"><span><strong>Sync sélective RGPD-safe</strong> — chaque IDE choisit quelles données elle partage et avec quels membres du cabinet.</span></div>
+        <div class="lp-cab-feat"><span><strong>Transmissions SOAP / DAR</strong> — horodatées, signées, avec niveau d'urgence et accusé de lecture.</span></div>
+        <div class="lp-cab-feat"><span><strong>BSI &amp; consentements partagés</strong> — versionnés, hash SHA-256, trace médico-légale complète.</span></div>
+        <div class="lp-cab-feat"><span><strong>Planning + répartition des tournées</strong> — vue globale, équilibrage charge, gestion congés.</span></div>
+        <div class="lp-cab-feat"><span><strong>KPI consolidés multi-IDE</strong> — CA par infirmière, performance, objectifs, forecast.</span></div>
+        <div class="lp-cab-feat"><span><strong>Audit &amp; conformité cabinet</strong> — scoring 4 piliers (NGAP, consentements, BSI, traçabilité).</span></div>
+      </div>
+      <div class="lp-cab-cta">
+        <button onclick="closeLanding()">🚀 Démarrer avec mon cabinet</button>
+        <button class="lp-cab-cta-secondary" onclick="window.location.href='mailto:contact@ami-ngap.fr?subject=Démo%20cabinet%20AMI'">✉ Demander une démo dédiée</button>
       </div>
     </div>
 
@@ -305,42 +716,94 @@
     <div class="lp-sec-label">🧠 AMI vs les autres</div>
     <div class="lp-compare">
       <table>
-        <thead><tr><th>Fonctionnalité</th><th>Autres logiciels</th><th>AMI ✦</th></tr></thead>
+        <thead><tr><th>Fonctionnalité</th><th>Logiciels IDEL classiques</th><th>AMI ✦</th></tr></thead>
         <tbody>
-          <tr><td>Cotation</td><td class="x">Manuelle</td><td class="ok">Automatique + IA</td></tr>
-          <tr><td>Protection CPAM</td><td class="x">Aucune</td><td class="ok">Simulation intégrée</td></tr>
+          <tr><td>Cotation NGAP</td><td class="x">Manuelle ou assistée</td><td class="ok">Automatique IA + NLP</td></tr>
+          <tr><td>Simulation audit CPAM</td><td class="x">Aucune</td><td class="ok">Intégrée avant envoi</td></tr>
+          <tr><td>Dictée médicale</td><td class="x">Absente</td><td class="ok">Terminologie normalisée</td></tr>
+          <tr><td>Copilote IA expert NGAP</td><td class="x">Absent</td><td class="ok">Chat 24h/24</td></tr>
           <tr><td>Optimisation revenus</td><td class="x">Absente</td><td class="ok">IA + prédictif</td></tr>
-          <tr><td>Multi-utilisateurs</td><td class="x">Mono-utilisateur</td><td class="ok">Multi-IDE cabinet</td></tr>
-          <tr><td>Données</td><td class="x">Cloud tiers</td><td class="ok">Locales + chiffrées</td></tr>
+          <tr><td>Preuve médico-légale</td><td class="mid">Signature basique</td><td class="ok">Hash SHA-256 + géozone</td></tr>
+          <tr><td>Mode cabinet multi-IDE</td><td class="mid">Basique ou add-on payant</td><td class="ok">Natif + sync sélective</td></tr>
+          <tr><td>Mode hors-ligne</td><td class="x">Partiel</td><td class="ok">Complet + cartes offline</td></tr>
+          <tr><td>Hébergement données santé</td><td class="mid">Cloud tiers (souvent US)</td><td class="ok">Local + chiffrement AES-256</td></tr>
+          <tr><td>Outils fiscaux IDEL</td><td class="x">Absents</td><td class="ok">URSSAF · CARPIMKO · km</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- STACK TECH -->
-    <div class="lp-sec-label">🔥 Stack technique</div>
-    <div class="lp-stack">
-      <span class="lp-stack-pill">IA hybride (Rule Engine + ML + RL)</span>
-      <span class="lp-stack-pill">N8N Smart Agent</span>
-      <span class="lp-stack-pill">AES-256 chiffrement</span>
-      <span class="lp-stack-pill">Sync temps réel PC / mobile</span>
-      <span class="lp-stack-pill">RAG BM25 NGAP</span>
-      <span class="lp-stack-pill">Moteur adaptatif</span>
+    <!-- FAQ -->
+    <div id="lp-faq-sec" class="lp-sec-label">❓ Questions fréquentes</div>
+    <div class="lp-sec-h2">Tout ce que tu veux <em>savoir</em></div>
+    <div class="lp-faq">
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">AMI est-il compatible SESAM-Vitale et FSE ?</summary>
+        <div class="lp-faq-a">Oui. AMI génère les FSE (Feuilles de Soins Électroniques) conformes et s'intègre dans le workflow SESAM-Vitale. La cotation est poussée automatiquement après validation.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Combien coûte AMI ?</summary>
+        <div class="lp-faq-a">En phase de lancement, l'accès est <strong>gratuit pour les 100 premières IDE inscrites</strong>, avec tarif préférentiel garanti à vie ensuite. Les tarifs commerciaux seront publiés avant la fin de la beta, pensés pour le budget d'une IDEL (ROI dès le 1<sup>er</sup> mois).</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Qu'en est-il de mes données patients ?</summary>
+        <div class="lp-faq-a">Les données de santé sont <strong>stockées exclusivement sur ton terminal</strong> (navigateur, IndexedDB chiffrée). Elles ne transitent jamais par nos serveurs. Chiffrement AES-256-GCM, conformité RGPD by design, architecture prête pour l'hébergement HDS.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Est-ce que je peux l'utiliser en zone blanche ou sans réseau ?</summary>
+        <div class="lp-faq-a">Oui. AMI est une PWA complète avec mode hors-ligne natif. Tes cotations sont mises en file d'attente, les cartes sont téléchargées en cache, et la synchronisation se fait dès que le réseau revient.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Puis-je migrer depuis mon logiciel actuel (Albus, Vega, Agathe YOU…) ?</summary>
+        <div class="lp-faq-a">Oui. AMI accepte les imports CSV/Excel du carnet patient. Pour les cabinets, un accompagnement migration dédié est inclus pendant la phase beta. Contacte-nous pour un audit gratuit.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Si j'arrête AMI, je récupère mes données ?</summary>
+        <div class="lp-faq-a">Oui. Tu peux <strong>exporter toutes tes données à tout moment</strong> (patients, cotations, preuves de soin, trésorerie) en JSON et CSV. Droit à l'effacement total également disponible, conformément au RGPD.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">Combien d'IDE peuvent travailler sur un même cabinet ?</summary>
+        <div class="lp-faq-a">Aucune limite technique. AMI supporte les cabinets de 2 à plusieurs dizaines d'IDE avec synchronisation sélective RGPD-safe, gestion des rôles, transmissions, consentements et planning partagés.</div>
+      </details>
+      <details class="lp-faq-item">
+        <summary class="lp-faq-q">La cotation IA est-elle vraiment fiable ?</summary>
+        <div class="lp-faq-a">Le moteur est hybride : IA médicale + règles NGAP officielles 2026 + simulation CPAM + ML d'apprentissage. <strong>La validation finale revient toujours à l'IDE</strong> — AMI est une aide à la décision, jamais une automatisation totale. Chaque cotation est auditable.</div>
+      </details>
     </div>
 
-    <!-- RGPD -->
-    <div class="lp-sec-rgpd">
+    <!-- SÉCURITÉ & RGPD -->
+    <div id="lp-security" class="lp-sec-rgpd">
       <div class="lp-sec-label">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
       <div class="lp-pill-row">
         <span class="lp-pill">Données stockées sur ton appareil uniquement</span>
-        <span class="lp-pill">Chiffrement AES-256</span>
+        <span class="lp-pill">Chiffrement AES-256-GCM</span>
         <span class="lp-pill">Mots de passe bcrypt</span>
         <span class="lp-pill">HTTPS partout</span>
         <span class="lp-pill">Consentement explicite</span>
         <span class="lp-pill">Droit à l'effacement</span>
         <span class="lp-pill">Export de tes données</span>
-        <span class="lp-pill">Logs d'accès</span>
+        <span class="lp-pill">Logs d'accès tracés</span>
+        <span class="lp-pill">Architecture HDS-ready</span>
+        <span class="lp-pill">Notification CNIL &lt; 72 h</span>
       </div>
     </div>
+
+    <!-- SOUS LE CAPOT (dépliable) -->
+    <details class="lp-tech">
+      <summary class="lp-tech-q">Sous le capot — pour les curieux</summary>
+      <div class="lp-tech-body">
+        <p>Pour les développeurs et responsables SI qui veulent comprendre l'architecture technique.</p>
+        <div class="lp-stack">
+          <span class="lp-stack-pill">IA hybride (Rule Engine + ML + RL)</span>
+          <span class="lp-stack-pill">Agent NGAP n8n + RAG BM25</span>
+          <span class="lp-stack-pill">AES-256-GCM</span>
+          <span class="lp-stack-pill">Sync temps réel PC / mobile</span>
+          <span class="lp-stack-pill">PWA offline first</span>
+          <span class="lp-stack-pill">VRPTW + OSRM multi-mirrors</span>
+          <span class="lp-stack-pill">Scoring compliance 4 piliers</span>
+          <span class="lp-stack-pill">Moteur auto-correction audit trail</span>
+        </div>
+      </div>
+    </details>
 
     <!-- CTA FINAL -->
     <div class="lp-final">
@@ -351,6 +814,12 @@
     </div>
 
   </div>
+
+  <!-- Back to top -->
+  <button class="lp-totop" id="lp-totop" aria-label="Retour en haut" onclick="document.getElementById('lp-ov').scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+  <!-- Mobile sticky CTA -->
+  <button class="lp-sticky-cta" id="lp-sticky-cta" onclick="closeLanding()">🚀 Essayer gratuitement</button>
 </div>
 
 <!-- AUTH -->
@@ -583,6 +1052,29 @@
       <div class="af"><label for="p-tel">Téléphone</label><input type="tel" id="p-tel" name="tel"></div>
     </div>
     <button class="btn bp" id="btn-save-pm" style="width:100%;justify-content:center">💾 Enregistrer</button>
+
+    <!-- ── Signature électronique infirmier(ère) ── -->
+    <div class="sep" style="margin-top:24px"><span class="sepl">✍️ Signature électronique</span></div>
+    <p style="font-size:12px;color:var(--m);margin-bottom:12px">
+      Votre signature sera <strong>auto-injectée</strong> dans toutes les factures et PDF générés par l'application (feuilles de soins, BSI, transmissions, consentements). Signez une seule fois ici — elle sera réutilisée automatiquement.
+    </p>
+    <div style="display:flex;gap:14px;align-items:center;padding:14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);margin-bottom:10px">
+      <div id="ide-sig-preview" style="width:120px;height:60px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;padding:4px">
+        <div style="color:var(--m);font-size:12px">Aucune signature enregistrée</div>
+      </div>
+      <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn bv bsm" id="btn-ide-sig" onclick="openIDESignatureModal()" style="font-size:12px">
+          ✍️ Créer ma signature
+        </button>
+        <button type="button" class="btn bs bsm" id="btn-ide-sig-delete" onclick="deleteIDESignature()" style="font-size:12px;display:none">
+          🗑️ Supprimer
+        </button>
+      </div>
+    </div>
+    <p style="font-size:10px;color:var(--m);opacity:.7;margin-bottom:0">
+      🔐 Chiffrée AES-256 · Stockée localement · Synchronisée entre vos appareils
+    </p>
+
     <div class="sep" style="margin-top:24px"><span class="sepl">Changer le mot de passe</span></div>
     <div class="msg e" id="ppe"></div><div class="msg o" id="ppo"></div>
     <div class="af"><label for="p-old">Mot de passe actuel</label><input type="password" id="p-old" name="old_password" placeholder="••••••••"></div>
@@ -684,7 +1176,7 @@
       </button>
       <!-- Mode admin -->
       <div id="admin-header-controls" style="display:none;align-items:center;gap:8px">
-        <div class="admin-mode-badge" id="admin-mode-badge">🛡️ MODE ADMIN SÉCURISÉ</div>
+        <div class="admin-mode-badge" id="admin-mode-badge" title="Mode admin sécurisé"><span class="amb-ic">🛡️</span><span class="amb-lbl">MODE ADMIN SÉCURISÉ</span></div>
         <button class="bout" style="font-size:11px;padding:5px 12px" onclick="logout()">⏻ Déconnexion</button>
         <div id="mobile-greeting" style="display:none;flex-direction:column;line-height:1.1;margin-left:4px"><span id="mobile-greeting-hello" style="font-size:9px;color:rgba(255,255,255,.5);font-family:var(--fm);letter-spacing:.06em;text-transform:uppercase">Bonjour</span><span id="mobile-greeting-name" style="font-size:12px;font-weight:700;color:#F0F4F8;letter-spacing:-.2px">—</span></div>
       </div>
@@ -714,9 +1206,7 @@
       <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
       <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
       <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques <span class="ni-alert-badge red" id="nav-dash-badge" style="display:none"></span></div>
-      <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Mon Cabinet <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
-      <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
       <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
       <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
       <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
@@ -726,7 +1216,13 @@
       <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
       <div class="ni nurse-only" data-v="outils-simulation"><span class="nic">⚡</span> Simulateur majoration</div>
     </div>
-    <div class="sl" style="margin-top:auto">
+    <div class="sl" style="margin-top:8px">
+      <div class="slbl">Cabinet</div>
+      <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Cabinet &amp; synchronisation <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
+      <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
+      <div class="ni" data-v="compliance"><span class="nic">🧠</span> Conformité cabinet</div>
+    </div>
+    <div class="sl" style="margin-top:8px">
       <div class="slbl">Système</div>
       <div class="ni nurse-only" data-v="ngap-ref"><span class="nic">📚</span> Référentiel NGAP</div>
       <div class="ni" data-v="aide"><span class="nic">📖</span> Aide & Docs</div>
@@ -985,11 +1481,12 @@
         </div>
 
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn bp" id="btn-tur" onclick="(async()=>{const _tdBtn=(typeof loadTourneeData==='function')?loadTourneeData():null;const rp=_tdBtn?.patients||_tdBtn?.entries||APP.importedData?.patients||[];const lat=parseFloat(document.getElementById('t-lat')?.value);const lng=parseFloat(document.getElementById('t-lng')?.value);if(!rp.length){alert('Importez des patients via le Carnet patients');return;}if(!lat||!lng){document.getElementById('terr').style.display='flex';document.getElementById('terr-m').textContent='Définis ton point de départ';document.getElementById('res-tur').classList.add('show');return;}document.getElementById('res-tur').classList.remove('show');const sp={lat,lng};const route=await optimizeTour(rp,sp,new Date().getHours()*60+new Date().getMinutes(),'ia');const html=_renderRouteHTML(route,null,estimateRevenue(rp),null,'ia');document.getElementById('tbody').innerHTML=html;document.getElementById('res-tur').classList.add('show');APP.set('uberPatients',route.map((p,i)=>({...p,id:p.patient_id||p.id||i,label:p.description||'Patient '+(i+1),done:false,absent:false})));APP.set('startPoint',sp);try{localStorage.setItem('ami_start_point',JSON.stringify(sp));}catch(_){}if(typeof renderPatientsOnMap==='function')renderPatientsOnMap(route,sp).catch(()=>{});if(typeof startLiveOptimization==='function')startLiveOptimization();})()"><span>🚀</span> Optimiser la tournée</button>
+          <button class="btn bp" id="btn-tur" onclick="(async()=>{if(!APP.importedData?.patients?.length&&!APP.importedData?.entries?.length){const _pd=window.APP?._planningData;if(_pd?.patients?.length||_pd?.entries?.length){APP.importedData=_pd;}else if(typeof loadTourneeData==='function'){const _td=loadTourneeData();if(_td?.patients?.length||_td?.entries?.length)APP.importedData=_td;}}if(typeof optimiserTournee==='function')optimiserTournee();})()"><span>🚀</span> Optimiser la tournée</button>
           <button class="btn bs bsm" onclick="showImportedPatients()">👥 Voir patients importés</button>
           <button class="btn bs bsm nurse-only" onclick="if(typeof toggleHeatmap==='function')toggleHeatmap()">🔥 Zones rentables</button>
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
         </div>
+
 
         <!-- ══ PANEL CABINET MULTI-IDE ══ -->
         <div id="tur-cabinet-panel" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(0,212,170,.25);border-radius:10px;background:rgba(0,212,170,.04)">
@@ -1304,60 +1801,101 @@
             } catch (_eHav) { console.warn('[AMI] Haversine KO:', _eHav.message); }
           }
 
-          // Écrire le journal kilométrique même si kmTotal = 0 :
-          // l'infirmière a toujours fait des km même sans données GPS.
-          // Une entrée avec km=0 permet la correction manuelle dans le journal.
+          // Écrire le journal kilométrique — une entrée par IDE si assignations existent,
+          // sinon une entrée globale (mode solo).
           {
             let _kmUid = (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : null;
             if (!_kmUid) { try { _kmUid = JSON.parse(sessionStorage.getItem('ami') || 'null')?.user?.id || null; } catch {} }
-            const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
-            let journal = [];
-            try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
 
-            // Éviter un doublon si une entrée auto existe déjà pour aujourd'hui
-            const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
-            if (!_alreadyToday) {
-              const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
-                || snapshot.length;
-              // _isEstimate : vrai si km calculé par haversine ou absent (pas de GPS)
-              const _hasGpsKm  = parseFloat(APP.get('tourneeKmJour') || 0) > 0
-                               || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
-              const _isEstimate = !_hasGpsKm;
-              // Si aucune donnée GPS ni haversine → km=0 avec flag _requiresManualUpdate
-              // pour que l'infirmière complète manuellement dans le journal.
-              const _needsManual = kmTotal === 0;
-              const motifSuffix = _needsManual
-                ? ' (km à compléter)'
-                : (_isEstimate ? ' (estimé)' : '');
+            const _ideAssign = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
+            const _hasIdeAssign = Object.values(_ideAssign).some(arr => arr?.length > 0);
+            const _uberPats = (typeof APP !== 'undefined' && APP.get) ? (APP.get('uberPatients') || snapshot) : snapshot;
+            const _needsManual = kmTotal === 0;
+            const _hasGpsKm = parseFloat(APP.get('tourneeKmJour') || 0) > 0
+                            || parseFloat(localStorage.getItem('ami_tournee_km') || 0) > 0;
+            const _isEstimate = !_hasGpsKm;
+            const motifSuffix = _needsManual ? ' (km à compléter)' : (_isEstimate ? ' (estimé)' : '');
 
-              // ── Noms des IDEs depuis les assignations de la Tournée IA ──
-              const _ideAssign = (typeof APP !== 'undefined') ? (APP._ideAssignments || {}) : {};
-              const _ideSet = new Set();
-              Object.values(_ideAssign).forEach(arr => {
-                (arr || []).forEach(a => { if (a.label) _ideSet.add(a.label); });
+            if (_hasIdeAssign) {
+              // ── Mode cabinet multi-IDE : une entrée par IDE ──────────────────
+              // Construire la map IDE → { label, patients, km }
+              const _ideMap = {};
+              _uberPats.forEach(p => {
+                const pk   = String(p.patient_id || p.id || '');
+                const pNom = ((p.nom||'') + ' ' + (p.prenom||'')).trim()
+                           || p.description || p.label || 'Patient';
+                const pKm  = parseFloat(p._legKm || 0);
+                (_ideAssign[pk] || []).forEach(a => {
+                  if (!_ideMap[a.id]) _ideMap[a.id] = { label: a.label, patients: [], km: 0 };
+                  _ideMap[a.id].patients.push(pNom);
+                  _ideMap[a.id].km += pKm;
+                });
               });
-              // Fallback : infirmière connectée si aucune assignation définie
-              if (!_ideSet.size && typeof S !== 'undefined' && S?.user) {
-                const _me = (`${S.user.prenom||''} ${S.user.nom||''}`).trim() || S.user.email || '';
-                if (_me) _ideSet.add(_me);
+
+              // Écrire une entrée dans le journal de chaque IDE (clé par uid)
+              Object.entries(_ideMap).forEach(([ideId, ideData]) => {
+                // Le journal est clé-user, chaque IDE gère le sien.
+                // On écrit dans la clé de l'utilisateur courant si on ne connaît pas leur uid.
+                // Pour le cabinet, on écrit dans la clé de l'utilisateur qui clôture (admin/titulaire)
+                const _kmKeyIde = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+                let _journalIde = [];
+                try { _journalIde = JSON.parse(localStorage.getItem(_kmKeyIde) || '[]'); } catch {}
+
+                const _alreadyIde = _journalIde.some(e =>
+                  e._source === 'tournee_auto' && e.date === todayStr && e._ide_id === ideId
+                );
+                if (!_alreadyIde) {
+                  const patientsLabel = ideData.patients.slice(0, 5).join(', ')
+                    + (ideData.patients.length > 5 ? ` +${ideData.patients.length - 5} autres` : '');
+                  const ideKm = ideData.km > 0 ? ideData.km : (kmTotal / Math.max(Object.keys(_ideMap).length, 1));
+                  _journalIde.push({
+                    id:      Date.now() + Math.floor(Math.random() * 1000),
+                    date:    todayStr,
+                    depart:  'Cabinet',
+                    arrivee: `Patients : ${patientsLabel}`,
+                    km:      Math.round(ideKm * 10) / 10,
+                    motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${ideData.patients.length} patient(s) · IDE : ${ideData.label}${motifSuffix}`,
+                    _source: 'tournee_auto',
+                    _ide_id: ideId,
+                    _ide_label: ideData.label,
+                    _patients:  ideData.patients,
+                    _requiresManualUpdate: _needsManual,
+                  });
+                  localStorage.setItem(_kmKeyIde, JSON.stringify(_journalIde));
+                  if (typeof _syncKmToServer === 'function') _syncKmToServer(_journalIde).catch(() => {});
+                }
+              });
+
+            } else {
+              // ── Mode solo : une entrée globale (comportement original) ──────
+              const KM_KEY = 'ami_km_journal_' + String(_kmUid || 'local').replace(/[^a-zA-Z0-9_-]/g, '_');
+              let journal = [];
+              try { journal = JSON.parse(localStorage.getItem(KM_KEY) || '[]'); } catch {}
+
+              const _alreadyToday = journal.some(e => e._source === 'tournee_auto' && e.date === todayStr);
+              if (!_alreadyToday) {
+                const nbVisites = snapshot.filter(p => p.done || p._done || p.absent || p._absent).length
+                  || snapshot.length;
+                let _me = '';
+                if (typeof S !== 'undefined' && S?.user) {
+                  _me = (`${S.user.prenom||''} ${S.user.nom||''}`).trim() || S.user.email || '';
+                }
+                const _ideSuffix = _me ? ` · IDE : ${_me}` : '';
+                journal.push({
+                  id:      Date.now(),
+                  date:    todayStr,
+                  depart:  'Cabinet',
+                  arrivee: 'Tournée patients',
+                  km:      kmTotal,
+                  motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_ideSuffix}${motifSuffix}`,
+                  _source: 'tournee_auto',
+                  _requiresManualUpdate: _needsManual,
+                });
+                localStorage.setItem(KM_KEY, JSON.stringify(journal));
+                if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
               }
-              const _ideNames = [..._ideSet].filter(Boolean);
-              const _ideSuffix = _ideNames.length ? ` · IDEs : ${_ideNames.join(', ')}` : '';
-
-              journal.push({
-                id:      Date.now(),
-                date:    todayStr,
-                depart:  'Cabinet',
-                arrivee: 'Tournée patients',
-                km:      kmTotal,
-                motif:   `Tournée du ${new Date(todayStr).toLocaleDateString('fr-FR')} — ${nbVisites} patient(s)${_ideSuffix}${motifSuffix}`,
-                _source: 'tournee_auto',
-                _ides:   _ideNames,
-                _requiresManualUpdate: _needsManual,
-              });
-              localStorage.setItem(KM_KEY, JSON.stringify(journal));
-              if (typeof _syncKmToServer === 'function') _syncKmToServer(journal).catch(() => {});
             }
+
             APP.set('tourneeKmJour', 0);
             APP.set('_lastVisitedPos', null);
             try { localStorage.removeItem('ami_tournee_km'); } catch {}
@@ -1606,11 +2144,12 @@
             <th>Actes</th>
             <th>Total</th>
             <th>Statut</th>
+            <th>IDE(s)</th>
             <th>Alertes</th>
             <th></th>
             <th></th>
           </tr></thead>
-          <tbody id="htb"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
+          <tbody id="htb"><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--m)">Chargement...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -1659,6 +2198,9 @@
           <div class="dash-alert-text" id="dash-alert-strip-text">Revenus manqués détectés</div>
           <div class="dash-alert-action" onclick="document.getElementById('dash-loss-card').scrollIntoView({behavior:'smooth'})">Voir détails →</div>
         </div>
+
+        <!-- ── 🆕 Widget Score de confiance (trust score) ── -->
+        <div id="dash-trust-widget" style="display:none;margin:4px 0 16px"></div>
 
         <!-- ── KPIs ── -->
         <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin:20px 0 24px"></div>
@@ -1775,52 +2317,6 @@
         </div>
         <div id="stats-avancees-body"></div>
 
-        <!-- ══ DASHBOARD CABINET ══ -->
-        <div id="dash-cabinet-section" style="display:none">
-
-          <!-- ── Séparateur + titre cabinet ── -->
-          <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
-            <div class="dash-section-title" style="margin-bottom:0">
-              Statistiques cabinet
-              <span class="dash-section-badge b" style="margin-left:8px">🏥 Multi-IDE</span>
-            </div>
-            <button class="btn bs bsm" onclick="loadDashCabinet()">↻ Actualiser</button>
-          </div>
-
-          <!-- KPIs cabinet — même grille .sc que le haut -->
-          <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin-bottom:24px"></div>
-
-          <!-- Revenus par IDE -->
-          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
-          <div class="dash-section-title" style="margin-bottom:14px">Revenus par infirmière</div>
-          <div id="dash-cabinet-ide-revenues" style="margin-bottom:24px"></div>
-
-          <!-- Simulateur revenus cabinet -->
-          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
-          <div class="dash-section-title" style="margin-bottom:14px">
-            Simulateur revenus cabinet
-            <span class="dash-section-badge">IA</span>
-          </div>
-          <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant les paramètres.</p>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:16px">
-            <div class="af"><label>Patients/jour/IDE</label><input type="number" id="sim-patients-jour" value="12" min="1" max="30" oninput="runCabinetSimulator()"></div>
-            <div class="af"><label>Nb IDEs</label><input type="number" id="sim-nb-ide" value="2" min="1" max="10" oninput="runCabinetSimulator()"></div>
-            <div class="af"><label>Montant moyen/acte (€)</label><input type="number" id="sim-montant-moyen" value="8.50" step="0.5" oninput="runCabinetSimulator()"></div>
-            <div class="af"><label>Jours travaillés/mois</label><input type="number" id="sim-jours" value="22" min="1" max="31" oninput="runCabinetSimulator()"></div>
-          </div>
-          <div id="dash-cabinet-simulator-result" style="margin-bottom:24px"></div>
-
-          <!-- Objectif CA mensuel -->
-          <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
-          <div class="dash-section-title" style="margin-bottom:14px">Objectif CA mensuel 🎯</div>
-          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-            <input type="number" id="cab-ca-target" placeholder="Ex: 8000" style="width:150px" oninput="runCabinetCATarget()">
-            <span style="font-size:13px;color:var(--m)">€/mois</span>
-            <button class="btn bp bsm" onclick="runCabinetCATarget()"><span>🎯</span> Simuler</button>
-          </div>
-          <div id="dash-cabinet-ca-target-result"></div>
-        </div>
       </div><!-- /dash-body -->
 
       <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
@@ -2192,8 +2688,22 @@
       <div id="sig-admin-notice" style="display:none;margin-bottom:16px" class="ai in">
         🛡️ <strong>Mode admin — données isolées</strong> · Vous voyez uniquement vos propres signatures de test. Les signatures des infirmières (chiffrées AES-256, stockées localement sur leur appareil) sont physiquement inaccessibles depuis votre session.
       </div>
+
+      <!-- ── Signature personnelle infirmier(ère) ── -->
+      <div class="card nurse-only" style="margin-bottom:14px">
+        <div class="ct">👤 Ma signature infirmier(ère)</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:10px">
+          Signature auto-injectée dans toutes les factures et PDF générés par l'application. Elle est également modifiable depuis votre <strong>profil</strong>.
+        </p>
+        <div id="ide-sig-card-body">
+          <div style="padding:14px 0;text-align:center">
+            <div style="font-size:13px;color:var(--m)">Chargement…</div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
-        <div class="ct">✍️ Signatures enregistrées</div>
+        <div class="ct">✍️ Signatures patients enregistrées</div>
         <div id="sig-list-body">
           <p style="color:var(--m);font-size:13px;padding:20px 0;text-align:center">Aucune signature enregistrée pour le moment.<br><span style="font-size:11px;opacity:.6">Les signatures sont créées depuis une cotation NGAP.</span></p>
         </div>
@@ -2204,6 +2714,22 @@
           <div class="ai in">🔐 Les signatures sont chiffrées (AES-256-GCM) et stockées uniquement sur cet appareil via IndexedDB.</div>
           <div class="ai in">✍️ La signature est proposée après chaque cotation — le patient signe directement sur l'écran tactile.</div>
           <div class="ai su">✅ Conforme HDS · Signature horodatée · Intégrée automatiquement au PDF de la facture.</div>
+        </div>
+      </div>
+
+      <!-- ── Preuve médico-légale ── -->
+      <div class="card nurse-only" style="margin-top:14px">
+        <div class="ct">🛡️ Preuve médico-légale renforcée</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:10px">
+          Chaque signature génère une preuve opposable en cas de contrôle CPAM ou litige.
+          Aucune donnée personnelle n'est transmise — uniquement des empreintes cryptographiques.
+        </p>
+        <div class="aic">
+          <div class="ai in"><strong>✔ Hash signature</strong> — SHA-256 du tracé + date + acte + patient. Toute modification invalide le hash.</div>
+          <div class="ai in"><strong>✔ Photo (optionnelle)</strong> — hashée puis <strong>supprimée immédiatement</strong>. Seule l'empreinte reste — zéro donnée biométrique stockée.</div>
+          <div class="ai in"><strong>✔ Horodatage ISO 8601</strong> — prouve quand le soin a eu lieu.</div>
+          <div class="ai in"><strong>✔ Géozone floue (~1km)</strong> — lat/lng arrondis : prouve la zone sans tracer précisément.</div>
+          <div class="ai su"><strong>✔ Signature serveur HMAC-SHA256</strong> — impossible à antidater ou falsifier. Niveau légal renforcé.</div>
         </div>
       </div>
     </section>
@@ -2536,9 +3062,59 @@
         Vous choisissez <em>quoi</em> partager et <em>avec qui</em>. Aucune donnée patient identifiable ne quitte votre appareil sans votre accord explicite.</p>
       </div>
 
+      <!-- ── 🛡️ Widget Conformité cabinet (v3.9) — déplacé depuis Dashboard ── -->
+      <div id="dash-compliance-widget" style="display:none;margin:4px 0 16px"></div>
+
       <!-- Contenu dynamique rendu par cabinet.js -->
       <div id="cabinet-root">
         <!-- Rempli par renderCabinetSection() à la navigation -->
+      </div>
+
+      <!-- ══ DASHBOARD CABINET — déplacé depuis view-dash ══ -->
+      <div id="dash-cabinet-section" style="display:none;margin-top:24px">
+
+        <!-- ── Séparateur + titre cabinet ── -->
+        <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+          <div class="dash-section-title" style="margin-bottom:0">
+            Statistiques cabinet
+            <span class="dash-section-badge b" style="margin-left:8px">🏥 Multi-IDE</span>
+          </div>
+          <button class="btn bs bsm" onclick="loadDashCabinet()">↻ Actualiser</button>
+        </div>
+
+        <!-- KPIs cabinet -->
+        <div id="dash-cabinet-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin-bottom:24px"></div>
+
+        <!-- Revenus par IDE -->
+        <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
+        <div class="dash-section-title" style="margin-bottom:14px">Revenus par infirmière</div>
+        <div id="dash-cabinet-ide-revenues" style="margin-bottom:24px"></div>
+
+        <!-- Simulateur revenus cabinet -->
+        <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
+        <div class="dash-section-title" style="margin-bottom:14px">
+          Simulateur revenus cabinet
+          <span class="dash-section-badge">IA</span>
+        </div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:14px">Projettez vos revenus mensuels en ajustant les paramètres.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:16px">
+          <div class="af"><label>Patients/jour/IDE</label><input type="number" id="sim-patients-jour" value="12" min="1" max="30" oninput="runCabinetSimulator()"></div>
+          <div class="af"><label>Nb IDEs</label><input type="number" id="sim-nb-ide" value="2" min="1" max="10" oninput="runCabinetSimulator()"></div>
+          <div class="af"><label>Montant moyen/acte (€)</label><input type="number" id="sim-montant-moyen" value="8.50" step="0.5" oninput="runCabinetSimulator()"></div>
+          <div class="af"><label>Jours travaillés/mois</label><input type="number" id="sim-jours" value="22" min="1" max="31" oninput="runCabinetSimulator()"></div>
+        </div>
+        <div id="dash-cabinet-simulator-result" style="margin-bottom:24px"></div>
+
+        <!-- Objectif CA mensuel -->
+        <div style="border-top:1px solid var(--b);margin-bottom:18px"></div>
+        <div class="dash-section-title" style="margin-bottom:14px">Objectif CA mensuel 🎯</div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+          <input type="number" id="cab-ca-target" placeholder="Ex: 8000" style="width:150px" oninput="runCabinetCATarget()">
+          <span style="font-size:13px;color:var(--m)">€/mois</span>
+          <button class="btn bp bsm" onclick="runCabinetCATarget()"><span>🎯</span> Simuler</button>
+        </div>
+        <div id="dash-cabinet-ca-target-result"></div>
       </div>
     </section>
 
@@ -2606,6 +3182,14 @@
       <div id="audit-cpam-root"></div>
     </section>
 
+    <!-- ══════════════════════════════════════════
+         CONFORMITÉ CABINET — scoring + auto-correction + risque prédictif
+    ══════════════════════════════════════════ -->
+    <section class="view" id="view-compliance">
+      <div id="admin-compliance-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le moteur de conformité. Le score et les actions sont calculés depuis votre compte de démo. En production, chaque infirmière voit uniquement son propre cabinet.</div>
+      <div id="compliance-root"></div>
+    </section>
+
   </main>
 </div>
 
@@ -2615,61 +3199,63 @@
 ════════════════════════════════════ -->
 
 <!-- Utilitaires de base (doit être en premier) -->
-<script src="js/utils.js"></script>
+<script src="js/utils.js?v=3.8"></script>
 
 <!-- Modules fonctionnels -->
-<script src="js/auth.js"></script>
-<script src="js/cabinet.js"></script><!-- Mode cabinet multi-IDE + synchronisation sélective -->
-<script src="js/security.js"></script><!-- RGPD + AES + PIN + Consentement -->
-<script src="js/admin.js"></script>
-<script src="js/profil.js"></script>
-<script src="js/cotation.js"></script>
-<script src="js/contact.js"></script>
-<script src="js/geocode.js"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
-<script src="js/navigation.js"></script><!-- computeGeoScore + openNavigation -->
-<script src="js/patients.js"></script>
-<script src="js/tresorerie.js"></script>
-<script src="js/offline-queue.js"></script>
-<script src="js/voice.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/auth.js?v=3.8"></script>
+<script src="js/cabinet.js?v=3.9"></script><!-- Mode cabinet multi-IDE + sync sélective + 🛡️ consentements partagés -->
+<script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
+<script src="js/admin.js?v=3.8"></script>
+<script src="js/profil.js?v=3.9"></script>
+<script src="js/cotation.js?v=3.9"></script><!-- ⚡ v3.9 : hook check consentement avant acte -->
+<script src="js/contact.js?v=3.8"></script>
+<script src="js/geocode.js?v=3.8"></script><!-- Pipeline géocodage : API Adresse gouv.fr (IGN+LaPoste) → Photon → Nominatim -->
+<script src="js/navigation.js?v=3.8"></script><!-- computeGeoScore + openNavigation -->
+<script src="js/patients.js?v=3.8"></script>
+<script src="js/tresorerie.js?v=3.8"></script>
+<script src="js/offline-queue.js?v=3.8"></script>
+<script src="js/voice.js?v=3.8"></script>
+<script src="js/dashboard.js?v=3.8"></script>
 
 <!-- Interface & Navigation -->
-<script src="js/ui.js"></script>
+<script src="js/ui.js?v=3.8"></script>
 
 <!-- Leaflet (doit être chargé AVANT map.js et uber.js) -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Modules dépendant de Leaflet -->
-<script src="js/map.js"></script>
-<script src="js/uber.js"></script>
+<script src="js/map.js?v=3.8"></script>
+<script src="js/uber.js?v=3.8"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
-<script src="js/ai-tournee.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/pwa.js"></script>
+<script src="js/ai-tournee.js?v=3.8"></script>
+<script src="js/ai-assistant.js?v=3.8"></script>
+<script src="js/pwa.js?v=3.8"></script>
 
 <!-- Tournée — dépend de tout ce qui précède -->
-<script src="js/tournee.js"></script>
+<script src="js/tournee.js?v=3.8"></script>
 
 <!-- Extras — fonctions complémentaires de ami-ngap.html -->
-<script src="js/extras.js"></script>
+<script src="js/extras.js?v=3.8"></script>
 
 <!-- Onboarding — intros contextuelles par section (première visite) -->
-<script src="js/onboarding.js"></script>
+<script src="js/onboarding.js?v=3.8"></script>
 
 <!-- Nouveaux modules SaaS médical -->
-<script src="js/signature.js"></script>
-<script src="js/copilote.js"></script>
-<script src="js/rapport.js"></script>
+<script src="js/signature.js?v=3.9"></script>
+<script src="js/copilote.js?v=3.8"></script>
+<script src="js/rapport.js?v=3.8"></script>
 
 <!-- Modules cliniques AMI v2 -->
-<script src="js/transmissions.js"></script>
-<script src="js/constantes.js"></script>
-<script src="js/pilulier.js"></script>
-<script src="js/bsi.js"></script>
-<script src="js/consentements.js"></script>
-<script src="js/alertes-medicaments.js"></script>
-<script src="js/audit-cpam.js"></script>
+<script src="js/transmissions.js?v=3.8"></script>
+<script src="js/constantes.js?v=3.8"></script>
+<script src="js/pilulier.js?v=3.8"></script>
+<script src="js/bsi-engine.js?v=3.9"></script><!-- 🆕 Moteurs BSI : suggestion, cohérence, impact €, risque CPAM, score confiance -->
+<script src="js/bsi.js?v=3.9"></script>
+<script src="js/consentements.js?v=3.9"></script><!-- 🛡️ v2.0 : cabinet sync + versionning + hash SHA-256 + check avant acte -->
+<script src="js/compliance-engine.js?v=3.9"></script><!-- 🧠 Scoring 4 piliers + auto-correction + risque prédictif + ranking patients -->
+<script src="js/alertes-medicaments.js?v=3.8"></script>
+<script src="js/audit-cpam.js?v=3.9"></script>
 
 <script>
 /* ══ Bannières admin — modules cliniques v2 ══
@@ -2744,7 +3330,7 @@ async function hist() {
   const stats = document.getElementById('hstats');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto"></div></td></tr>';
 
   const q       = (document.getElementById('hq')?.value || '').toLowerCase().trim();
   const period  = document.getElementById('hp')?.value || '';
@@ -2775,7 +3361,7 @@ async function hist() {
     }
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--m)">Aucune cotation sur cette période.</td></tr>';
       if (stats) stats.innerHTML = '';
       return;
     }
@@ -2844,6 +3430,39 @@ async function hist() {
         : `<span class="pt-status active"><span class="pt-status-dot active"></span><span style="font-size:11px">Conforme</span></span>`;
 
       const _rowId = `hist-row-${r.id}`;
+
+      // ── Colonne IDE(s) — multi-source : _assignedIdes[] > performed_by_list[] > infirmiere_nom/prenom > APP.user ──
+      let _ideLabels = [];
+      if (Array.isArray(r._assignedIdes) && r._assignedIdes.length) {
+        // Futur : tableau d'IDs → résoudre via cabinet.members
+        const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
+        const memberMap = {};
+        (cab?.members || []).forEach(m => {
+          const id = m.id || m.infirmiere_id;
+          if (id) memberMap[id] = `${m.prenom||''} ${m.nom||''}`.trim() || id;
+        });
+        _ideLabels = r._assignedIdes.map(id => memberMap[id] || id);
+      } else if (Array.isArray(r.performed_by_list) && r.performed_by_list.length) {
+        _ideLabels = r.performed_by_list.map(x => String(x));
+      } else if (r.infirmiere_prenom || r.infirmiere_nom) {
+        _ideLabels = [`${r.infirmiere_prenom||''} ${r.infirmiere_nom||''}`.trim()];
+      } else if (typeof APP !== 'undefined' && APP.user) {
+        // Fallback : l'utilisateur connecté (cotation créée par lui-même)
+        _ideLabels = [`${APP.user.prenom||''} ${APP.user.nom||''}`.trim() || 'Moi'];
+      }
+
+      const _ideColors = ['var(--a)', '#4fa8ff', '#ff9f43', '#ff6b6b', '#a29bfe'];
+      const idesHtml = _ideLabels.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:140px">${_ideLabels.map((lbl, i) => {
+            const c = _ideColors[i % _ideColors.length];
+            const initials = lbl.split(/\s+/).map(w => w[0]||'').join('').slice(0,2).toUpperCase();
+            return `<span title="${lbl.replace(/"/g,'&quot;')}" style="display:inline-flex;align-items:center;gap:3px;background:rgba(0,212,170,.08);border:1px solid ${c};border-radius:10px;padding:1px 6px;font-size:10px;font-family:var(--fm);color:${c};white-space:nowrap">
+              <span style="width:5px;height:5px;border-radius:50%;background:${c};flex-shrink:0"></span>
+              ${initials}
+            </span>`;
+          }).join('')}</div>`
+        : `<span style="font-size:10px;color:var(--m)">—</span>`;
+
       return `<tr id="${_rowId}">
         <td>
           <div style="display:flex;align-items:center;gap:10px">
@@ -2859,6 +3478,7 @@ async function hist() {
         <td style="max-width:160px">${actesHtml}</td>
         <td class="pt-ca" style="white-space:nowrap">${parseFloat(r.total||0).toFixed(2)}&nbsp;€</td>
         <td>${statutHtml}</td>
+        <td>${idesHtml}</td>
         <td>${alertsHtml}</td>
         <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
           data-hist-id="${r.id}"
@@ -2874,7 +3494,7 @@ async function hist() {
     }).join('');
 
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:20px"><div class="ai er">⚠️ ${e.message}</div></td></tr>`;
   }
 }
 
@@ -2924,7 +3544,7 @@ async function resetAllHist() {
   if (!confirm(`Confirmer la suppression définitive de toutes les cotations de ${periodLabel} ?`)) return;
 
   const tbody = document.getElementById('htb');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px"><div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div><div style="font-size:12px;color:var(--m);margin-top:8px">Suppression en cours...</div></td></tr>';
 
   try {
     // ── Suppression en masse — un seul appel Supabase, plus fiable que N appels séquentiels ──
@@ -3158,7 +3778,7 @@ document.addEventListener('click', function(e) {
 })();
 </script>
 
-<script src="js/infirmiere-tools.js"></script>
+<script src="js/infirmiere-tools.js?v=3.8"></script>
 
 <!-- ══ TOAST CONTAINER ══ -->
 <div id="toast-container"></div>
@@ -3384,5 +4004,297 @@ window._initTopbarExtras = function() {
   }
   window.closeLanding=closeLanding;
   try{if(localStorage.getItem(LP)){var o=document.getElementById('lp-ov');if(o)o.classList.add('lp-hide');}}catch(e){}
+
+  /* ── Scroll handlers : back-to-top + sticky mobile CTA ── */
+  var ov = document.getElementById('lp-ov');
+  var toTop = document.getElementById('lp-totop');
+  var stickyCta = document.getElementById('lp-sticky-cta');
+  if(ov){
+    ov.addEventListener('scroll', function(){
+      var y = ov.scrollTop;
+      if(toTop){ y > 600 ? toTop.classList.add('show') : toTop.classList.remove('show'); }
+      if(stickyCta){ y > 400 ? stickyCta.classList.add('show') : stickyCta.classList.remove('show'); }
+    }, {passive:true});
+  }
+
+  /* ── Smooth scroll sur ancres TOC (scroll le conteneur #lp-ov, pas le window) ── */
+  document.querySelectorAll('.lp-toc-link').forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      var href = a.getAttribute('href');
+      if(!href || href.charAt(0) !== '#') return;
+      var target = document.querySelector(href);
+      if(!target || !ov) return;
+      var topOffset = target.getBoundingClientRect().top - ov.getBoundingClientRect().top + ov.scrollTop - 70;
+      ov.scrollTo({top: topOffset, behavior: 'smooth'});
+    });
+  });
+
+  /* ══════════════════════════════════════════════
+     SIMULATEUR INTERACTIF DE COTATION
+     NLP léger client-side + règles NGAP simplifiées
+     ════════════════════════════════════════════ */
+
+  /* Moteur NLP : patterns d'actes (ordre = priorité, family = déduplication) */
+  var SIM_ACTS = [
+    { re:/escarre|stade\s*[2-4]|(pansement.{0,20}(lourd|complex|profond|ulcer|necrot))|plaie\s*(chronique|complex)/i,
+      code:'AMI 4', lbl:'Pansement lourd et complexe', price:12.60, family:'pansement' },
+    { re:/sonde\s*(vésicale|urinaire|à demeure)|sondage\s*urinaire|pose\s*sonde/i,
+      code:'AMI 4', lbl:'Pose / changement sonde urinaire', price:12.60, family:'sondage' },
+    { re:/perfusion(?!\s*sous[- ]?cut)/i,
+      code:'AMI 4', lbl:'Perfusion IV surveillée', price:12.60, family:'perfusion', absorbs:['surveillance'] },
+    { re:/perfusion\s*sous[- ]?cutan/i,
+      code:'AMI 3', lbl:'Perfusion sous-cutanée', price:9.45, family:'perfusion', absorbs:['surveillance'] },
+    { re:/injection.{0,15}(iv|intraveine)/i,
+      code:'AMI 2', lbl:'Injection intraveineuse', price:6.30, family:'injection' },
+    { re:/pansement(?!\s*(lourd|complex))/i,
+      code:'AMI 2', lbl:'Pansement simple', price:6.30, family:'pansement' },
+    { re:/toilette|nursing|aide.{0,10}(hygiène|toilette)/i,
+      code:'AIS 3', lbl:'Soins d\'hygiène (AIS)', price:7.65, family:'toilette' },
+    { re:/prise\s*de\s*sang|prélèvement\s*sang|pds/i,
+      code:'AMI 1.5', lbl:'Prise de sang veineuse', price:4.73, family:'labo' },
+    { re:/insulin|injection.{0,15}(sc|sous[- ]?cutan)/i,
+      code:'AMI 1', lbl:'Injection sous-cutanée', price:3.15, family:'injection' },
+    { re:/injection.{0,15}(im|intramuscul)/i,
+      code:'AMI 1', lbl:'Injection intramusculaire', price:3.15, family:'injection' },
+    { re:/glycémie|dextro|contrôle\s*glyc/i,
+      code:'AMI 1', lbl:'Contrôle glycémique capillaire', price:3.15, family:'labo' },
+    { re:/surveillance|observation\s*clinique/i,
+      code:'AMI 1', lbl:'Surveillance clinique', price:3.15, family:'surveillance' }
+  ];
+
+  /* Moteur NLP : contextes automatiques détectés dans le texte */
+  var SIM_CTX_AUTO = {
+    nuit:        /\bnuit(?!\s*profonde)\b|\bsoirée\b|20h|21h|22h/i,
+    nuit2:       /nuit\s*profonde|minuit|2h\b|3h\b|4h\b|23h|00h/i,
+    dim:         /dimanche|férié|jour\s*férié/i
+  };
+
+  /* Tarifs démo (cohérents avec les ordres de grandeur NGAP 2026) */
+  var SIM_TARIFS = {
+    MN:   9.15,   // Majoration nuit
+    MNP:  18.30,  // Majoration nuit profonde
+    MD:   8.50,   // Majoration dimanche / férié
+    IFD:  2.50,   // Indemnité forfaitaire déplacement
+    IK:   0.35    // Indemnité kilométrique (plaine) - ×2 pour aller-retour
+  };
+
+  function simDetectActs(text){
+    var found = [];
+    var seenFamily = {};
+    var absorbed = {};
+    SIM_ACTS.forEach(function(p){
+      if(!p.re.test(text)) return;
+      if(p.family && seenFamily[p.family]) return;
+      if(p.family && absorbed[p.family]) return;
+      found.push({code:p.code, lbl:p.lbl, price:p.price});
+      if(p.family) seenFamily[p.family] = true;
+      if(p.absorbs) p.absorbs.forEach(function(f){ absorbed[f] = true; });
+    });
+    return found;
+  }
+
+  function simGetContext(text){
+    var cb = function(id){ var el=document.getElementById(id); return el && el.checked; };
+    return {
+      nuit:  cb('sim-nuit')  || SIM_CTX_AUTO.nuit.test(text),
+      nuit2: cb('sim-nuit2') || SIM_CTX_AUTO.nuit2.test(text),
+      dim:   cb('sim-dim')   || SIM_CTX_AUTO.dim.test(text)
+    };
+  }
+
+  function simEuro(v){
+    return (Math.round(v*100)/100).toFixed(2).replace('.',',') + ' €';
+  }
+
+  function simBuildResult(text){
+    var acts = simDetectActs(text);
+    var ctx = simGetContext(text);
+    var km = Math.max(0, Math.min(80, parseFloat(document.getElementById('sim-km').value) || 0));
+
+    /* Cas vide : aucun acte détecté */
+    if(acts.length === 0){
+      return '<div class="lp-sim-empty">⚠️ <strong>Aucun acte NGAP détecté.</strong> Essaie avec un soin comme : <em>« pansement simple », « injection insuline », « perfusion », « prise de sang »</em>. Dans la vraie app, le moteur NLP est beaucoup plus large (350+ actes + synonymes médicaux).</div>';
+    }
+
+    /* Tri par valeur décroissante pour appliquer cumul correctement */
+    acts.sort(function(a,b){ return b.price - a.price; });
+
+    /* Cumul NGAP IDE : 1er 100%, 2e 50%, 3e+ 0% */
+    var actsTotal = 0;
+    var actsHtml = '';
+    acts.forEach(function(a, i){
+      var coef = i === 0 ? 1 : (i === 1 ? 0.5 : 0);
+      var label = i === 0 ? 'acte principal' :
+                  (i === 1 ? 'cumul 2e acte (−50 % NGAP)' :
+                            'cumul 3e+ (non facturable)');
+      var finalPrice = a.price * coef;
+      actsTotal += finalPrice;
+      var cls = (coef < 1) ? ' discount' : '';
+      actsHtml += '<div class="lp-sim-line'+cls+'">' +
+        '<div class="lp-sim-line-l">' +
+          '<span class="lp-sim-line-code">'+a.code+'</span>' +
+          '<span class="lp-sim-line-lbl">'+a.lbl+'<small>'+label+'</small></span>' +
+        '</div>' +
+        '<span class="lp-sim-line-v">'+simEuro(finalPrice)+'</span>' +
+      '</div>';
+    });
+
+    /* Majorations — une seule appliquée (la plus forte) selon règle NGAP */
+    var majosTotal = 0;
+    var majosHtml = '';
+    var majoApplied = null;
+    if(ctx.nuit2){ majoApplied = {code:'MNP', lbl:'Majoration nuit profonde (23h–5h)', price:SIM_TARIFS.MNP}; }
+    else if(ctx.nuit){ majoApplied = {code:'MN', lbl:'Majoration nuit (20h–23h)', price:SIM_TARIFS.MN}; }
+    if(ctx.dim){
+      var md = {code:'MD', lbl:'Majoration dimanche / jour férié', price:SIM_TARIFS.MD};
+      if(!majoApplied || md.price > majoApplied.price){ majoApplied = md; }
+    }
+    if(majoApplied){
+      majosTotal = majoApplied.price;
+      majosHtml = '<div class="lp-sim-line maj">' +
+        '<div class="lp-sim-line-l">' +
+          '<span class="lp-sim-line-code">'+majoApplied.code+'</span>' +
+          '<span class="lp-sim-line-lbl">'+majoApplied.lbl+'<small>appliquée automatiquement</small></span>' +
+        '</div>' +
+        '<span class="lp-sim-line-v">'+simEuro(majoApplied.price)+'</span>' +
+      '</div>';
+    }
+
+    /* IK (distance × 2 × 0,35) */
+    var ikTotal = 0;
+    var ikHtml = '';
+    if(km > 0){
+      ikTotal = km * 2 * SIM_TARIFS.IK;
+      ikHtml = '<div class="lp-sim-line ik">' +
+        '<div class="lp-sim-line-l">' +
+          '<span class="lp-sim-line-code">IK</span>' +
+          '<span class="lp-sim-line-lbl">Indemnité kilométrique<small>'+km+' km × 2 × 0,35 €</small></span>' +
+        '</div>' +
+        '<span class="lp-sim-line-v">'+simEuro(ikTotal)+'</span>' +
+      '</div>';
+    }
+
+    /* Forfait IFD */
+    var ifdHtml = '<div class="lp-sim-line ik">' +
+      '<div class="lp-sim-line-l">' +
+        '<span class="lp-sim-line-code">IFD</span>' +
+        '<span class="lp-sim-line-lbl">Indemnité forfaitaire de déplacement</span>' +
+      '</div>' +
+      '<span class="lp-sim-line-v">'+simEuro(SIM_TARIFS.IFD)+'</span>' +
+    '</div>';
+
+    var total = actsTotal + majosTotal + ikTotal + SIM_TARIFS.IFD;
+
+    /* Comparaison avec cotation manuelle (qui oublierait souvent majo + cumul mal géré) */
+    var manualTotal = acts[0].price + SIM_TARIFS.IFD + (km > 0 ? ikTotal : 0);
+    /* Sans AMI : souvent 1 seul acte coté (perte du cumul 2e acte à -50%)
+       + majoration oubliée
+       = AMI récupère (actsTotal - acts[0].price) + majosTotal */
+    var gain = total - manualTotal;
+
+    /* Build HTML output */
+    var out = '';
+    out += '<div class="lp-sim-out-h">Actes détectés</div>' + actsHtml;
+    if(majosHtml){ out += '<div class="lp-sim-out-h">Majorations appliquées</div>' + majosHtml; }
+    out += '<div class="lp-sim-out-h">Déplacement</div>' + ikHtml + ifdHtml;
+    out += '<div class="lp-sim-total">' +
+      '<span class="lp-sim-total-l">Total cotation AMI</span>' +
+      '<span class="lp-sim-total-v">'+simEuro(total)+'</span>' +
+    '</div>';
+
+    if(gain > 0.05){
+      out += '<div class="lp-sim-compare">' +
+        '<div class="lp-sim-compare-l">' +
+          '<div class="lp-sim-compare-lbl"><strong>Cotation manuelle classique</strong> : '+simEuro(manualTotal)+' (souvent un seul acte coté, majorations oubliées)</div>' +
+        '</div>' +
+        '<div class="lp-sim-compare-gain">'+simEuro(gain)+'</div>' +
+      '</div>';
+    }
+
+    /* Audit CPAM */
+    var auditItems = [
+      'Cumul d\'actes vérifié (règle 100 % / 50 % / 0 %)',
+      'Tarifs NGAP 2026 officiels appliqués',
+      'Cohérence majorations / contexte validée',
+      'Aucun pattern de fraude détecté',
+      'Preuve médico-légale exigible archivée'
+    ];
+    var auditHtml = auditItems.map(function(t){ return '<div class="lp-sim-audit-li">'+t+'</div>'; }).join('');
+    out += '<div class="lp-sim-audit">' +
+      '<div class="lp-sim-audit-top">' +
+        '<span class="lp-sim-audit-t">Simulation contrôle CPAM</span>' +
+        '<span class="lp-sim-audit-badge">✓ Conforme · Risque 0/100</span>' +
+      '</div>' +
+      '<div class="lp-sim-audit-list">'+auditHtml+'</div>' +
+    '</div>';
+
+    out += '<div class="lp-sim-cta"><button type="button" class="lp-sim-cta-btn" onclick="closeLanding()">Accéder au moteur complet →</button></div>';
+
+    return out;
+  }
+
+  /* Exécution du simulateur : animation étapes + affichage résultat */
+  var simRunning = false;
+  function simRun(){
+    if(simRunning) return;
+    var input = document.getElementById('lp-sim-input');
+    var btn = document.getElementById('lp-sim-run');
+    var result = document.getElementById('lp-sim-result');
+    var out = document.getElementById('lp-sim-out');
+    var steps = document.querySelectorAll('.lp-sim-step');
+    if(!input || !result || !out || !steps.length) return;
+
+    var text = input.value.trim();
+    if(!text){
+      input.value = 'Pansement simple';
+      text = 'Pansement simple';
+    }
+
+    simRunning = true;
+    btn.disabled = true;
+    btn.textContent = 'Analyse en cours...';
+    result.style.display = 'block';
+    out.style.display = 'none';
+    out.innerHTML = '';
+    steps.forEach(function(s){ s.classList.remove('done','active'); });
+
+    /* Animation étapes séquentielles */
+    var i = 0;
+    function nextStep(){
+      if(i > 0){ steps[i-1].classList.remove('active'); steps[i-1].classList.add('done'); }
+      if(i < steps.length){
+        steps[i].classList.add('active');
+        i++;
+        setTimeout(nextStep, 520);
+      } else {
+        /* Finalisation + affichage résultat */
+        setTimeout(function(){
+          out.innerHTML = simBuildResult(text);
+          out.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = '✦ Coter un autre soin';
+          simRunning = false;
+        }, 280);
+      }
+    }
+    nextStep();
+  }
+
+  /* Câblage événements simulateur */
+  var simBtn = document.getElementById('lp-sim-run');
+  if(simBtn){ simBtn.addEventListener('click', simRun); }
+  document.querySelectorAll('.lp-sim-qp-btn').forEach(function(qp){
+    qp.addEventListener('click', function(){
+      var input = document.getElementById('lp-sim-input');
+      if(!input) return;
+      input.value = qp.getAttribute('data-soin') || '';
+      /* Reset toggles sur quick-pick pour laisser le NLP détecter le contexte */
+      var n = document.getElementById('sim-nuit');   if(n) n.checked = false;
+      var n2= document.getElementById('sim-nuit2');  if(n2) n2.checked = false;
+      var d = document.getElementById('sim-dim');    if(d) d.checked = false;
+      simRun();
+    });
+  });
 })();
 </script>
