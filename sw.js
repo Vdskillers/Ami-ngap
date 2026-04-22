@@ -1,11 +1,12 @@
-/* sw.js — AMI NGAP Service Worker v3.8
+/* sw.js — AMI NGAP Service Worker v3.8-TEST (SANDBOX)
+   ⚠️ VERSION SANDBOX — NE PAS DIFFUSER
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
-   ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
+   ✅ Chemins relatifs pour GitHub Pages /Ami-ngaptest/
    ✅ Cache uniquement GET
-   ✅ v3.8 — purge totale du cache après rollback domaine personnalisé
+   ✅ Préfixe cache isolé (amitest-) pour ne pas entrer en conflit avec la PWA prod
 */
 
-const CACHE_VERSION = 'ami-v3.8';
+const CACHE_VERSION = 'amitest-v3.9';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
@@ -49,7 +50,12 @@ self.addEventListener('activate', function(e) {
     caches.keys().then(function(keys) {
       return Promise.all(
         keys.filter(function(k) {
-          return k.startsWith('ami-') && k !== CACHE_STATIC && k !== CACHE_TILES;
+          // Catch les anciens caches "ami-*" ET "amitest-*" (sandbox)
+          // qui ne correspondent plus au CACHE_VERSION courant.
+          // Sans cette suppression, caches.match() pouvait encore renvoyer
+          // l'ancien index.html depuis un ancien cache "amitest-v3.8-static".
+          var isAmi = k.startsWith('ami-') || k.startsWith('amitest-');
+          return isAmi && k !== CACHE_STATIC && k !== CACHE_TILES;
         }).map(function(k) { return caches.delete(k); })
       );
     }).then(function() { return self.clients.claim(); })
@@ -81,9 +87,38 @@ self.addEventListener('fetch', function(e) {
     return;
   }
 
-  /* Assets app (HTML, CSS, JS) → cache-first avec fallback réseau */
+  /* HTML (index.html, racine) → NETWORK-FIRST.
+     CRITIQUE : sans ça, après chaque déploiement, le SW continue de servir
+     l'ancien HTML caché et l'utilisateur ne voit JAMAIS les mises à jour
+     (même avec Ctrl+Shift+R, car le SW intercepte avant le réseau).
+     Network-first → essaie le réseau d'abord ; fallback cache si offline. */
+  if (req.mode === 'navigate' ||
+      url.pathname === '/' ||
+      url.pathname.endsWith('/') ||
+      url.pathname.endsWith('.html')) {
+    e.respondWith(networkFirst(req, CACHE_STATIC));
+    return;
+  }
+
+  /* Assets app (CSS, JS, fonts locaux) → cache-first avec fallback réseau */
   e.respondWith(cacheFirst(req, CACHE_STATIC));
 });
+
+async function networkFirst(req, cacheName) {
+  try {
+    var fresh = await fetch(req);
+    if (fresh.ok) {
+      var cache = await caches.open(cacheName);
+      cache.put(req, fresh.clone());
+    }
+    return fresh;
+  } catch(err) {
+    // Offline → fallback cache
+    var cached = await caches.match(req);
+    if (cached) return cached;
+    return new Response('Hors ligne', { status: 503 });
+  }
+}
 
 async function cacheFirst(req, cacheName) {
   var cached = await caches.match(req);
