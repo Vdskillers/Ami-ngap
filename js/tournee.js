@@ -3245,12 +3245,6 @@ function renderLivePatientList() {
       <span>📋 Patients de la journée (${displayPatients.length})</span>
       <button class="btn bs bsm" onclick="removeAllImportedPatients()" style="font-size:11px;padding:4px 10px">🗑️ Tout supprimer</button>
     </div>
-    <div style="display:flex;gap:8px;margin:10px 0 14px;flex-wrap:wrap">
-      <span class="dreb" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:#22c55e">✅ ${done} fait(s)</span>
-      <span class="dreb" style="background:rgba(255,95,109,.08);border-color:rgba(255,95,109,.2);color:var(--d)">❌ ${absent} absent(s)</span>
-      <span class="dreb">⏳ ${reste} restant(s)</span>
-      ${caRealise > 0 ? `<span class="dreb" style="background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.25);color:var(--a)">💶 ${caRealise.toFixed(2)} € réalisés</span>` : ''}
-    </div>
     ${displayPatients.map((p, i) => {
       const k = String(p.patient_id || p.id || '');
       const isNext = !p._done && !p._absent && k === nextKey;
