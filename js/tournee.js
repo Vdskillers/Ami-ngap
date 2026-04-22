@@ -2915,7 +2915,14 @@ window.startDay=async function(){
      sinon fallback ordre importedData (ordre d'import brut).
      Sans ça, après optimisation de la tournée, l'UI affichait brièvement
      le mauvais patient en tête (ordre d'import) avant que
-     renderLivePatientList ne remette l'ordre optimisé. */
+     renderLivePatientList ne remette l'ordre optimisé.
+
+     ⚠️ ORDRE CRITIQUE : on DIFFÈRE l'APP.set('nextPatient', firstP) après
+     renderLivePatientList() (plus bas) car les deux écrivent dans le même
+     élément #uber-next-patient. Si on set nextPatient ici, _renderNextPatient
+     écrirait la card → puis renderLivePatientList l'écraserait avec la liste
+     → l'utilisateur verrait la liste pendant ~5s avant que le throttle GPS
+     ne remette la card. D'où le délai signalé au démarrage. */
   const _uberForFirst = APP.get('uberPatients') || [];
   const _ordered = _uberForFirst.length ? _uberForFirst : patients;
   const firstP = _ordered[0];
@@ -2923,8 +2930,7 @@ window.startDay=async function(){
     LIVE_PATIENT_ID = firstP.patient_id || firstP.id || null;
     $('live-patient-name').textContent = firstP.description||firstP.texte||firstP.label||'Premier patient';
     $('live-info').textContent = `Soin 1/${_ordered.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
-    // Publier nextPatient dans le store pour que renderLivePatientList le mette en tête
-    if (typeof APP.set === 'function') APP.set('nextPatient', firstP);
+    // ⚠️ APP.set('nextPatient', firstP) déplacé après renderLivePatientList — voir bloc final
   }
 
   /* ── Synchroniser uberPatients depuis importedData si pas déjà peuplé ── */
@@ -2959,8 +2965,16 @@ window.startDay=async function(){
   /* ── Démarrer le moteur IA temps réel ── */
   if(typeof startLiveOptimization==='function') startLiveOptimization();
 
-  // Afficher la liste des patients
-  renderLivePatientList();
+  /* ⚡ Afficher le prochain patient en publiant nextPatient dans le store.
+     Le listener APP.on('nextPatient') déclenche _renderNextPatient (uber.js)
+     qui met à jour le header + appelle renderLivePatientList (seule source
+     de vérité visuelle pour #uber-next-patient). */
+  if (firstP && typeof APP.set === 'function') {
+    APP.set('nextPatient', firstP);
+  } else {
+    // Si pas de firstP (cas limite), déclencher quand même le rendu initial
+    renderLivePatientList();
+  }
 
   // Tenter appel API, mais ne pas bloquer si indisponible
   liveStatusCore().catch(()=>{});
@@ -3276,8 +3290,13 @@ function renderLivePatientList() {
           ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
           ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
           ${((APP._ideAssignments||{})[k]||[]).length ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a2);margin-top:2px">🎯 ${(APP._ideAssignments[k]).map(a=>a.label).join(' · ')}</div>` : ''}
+          ${isNext ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn bp bsm" onclick="markUberDone()" style="font-size:11px;padding:4px 10px"><span>✅</span> Terminé</button>
+            <button class="btn bs bsm" onclick="markUberAbsent()" style="font-size:11px;padding:4px 10px"><span>❌</span> Absent</button>
+            ${p.lat ? `<button class="btn bv bsm" onclick="openNavigation(APP.get('nextPatient'))" style="font-size:11px;padding:4px 10px"><span>🗺️</span> Naviguer</button>` : ''}
+          </div>` : ''}
         </div>
-        ${(p.lat && p.lng) || p.adresse || p.addressFull ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat,lng:p.lng,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Naviguer vers ce patient">🗺️</button>` : ''}
+        ${!isNext && ((p.lat && p.lng) || p.adresse || p.addressFull) ? `<button class="btn bv bsm" onclick="openNavigation(${JSON.stringify({lat:p.lat,lng:p.lng,address:p.adresse||p.addressFull||p.address||'',addressFull:p.addressFull||p.adresse||'',adresse:p.adresse||p.addressFull||'',geoScore:p.geoScore||0}).replace(/"/g,'&quot;')})" style="font-size:11px;padding:4px 8px;flex-shrink:0" title="Naviguer vers ce patient">🗺️</button>` : ''}
         <button class="btn bs bsm" onclick="removeImportedPatient(${safeIdx})" style="font-size:11px;padding:3px 8px;flex-shrink:0;color:var(--d);border-color:rgba(255,95,109,.2);background:rgba(255,95,109,.05)" title="Supprimer ce patient">✕</button>
       </div>`;
     }).join('')}

@@ -146,10 +146,9 @@ async function selectBestPatient() {
 
 /* ── Rendu carte prochain patient ────────────── */
 function _renderNextPatient() {
-  const el = $('uber-next-patient');
   const p = APP.get('nextPatient');
 
-  // ⚡ Synchroniser aussi le header "Mode Uber Médical" (#live-patient-name / #live-info)
+  // ⚡ Synchroniser le header "Mode Uber Médical" (#live-patient-name / #live-info)
   // qui était auparavant figé sur window._liveIndex et ne suivait pas nextPatient.
   // Ça garantit que le soin affiché en haut correspond au VRAI prochain patient,
   // pas au patient d'index 0 de IMPORTED_DATA.
@@ -180,32 +179,18 @@ function _renderNextPatient() {
     if (liveInfo) liveInfo.textContent = 'Tous les patients ont été pris en charge';
   }
 
-  if (!el) return;
-  if (!p) { el.innerHTML = '<div class="ai su">✅ Tous les patients ont été vus !</div>'; return; }
-  const userPos = APP.get('userPos');
-  const rawDist = userPos && p.lat ? _dist(userPos, p) * 111 : null;
-  /* Afficher la distance seulement si GPS actif et distance plausible (<150km) */
-  const dist = (rawDist !== null && rawDist < 150) ? rawDist.toFixed(1) + ' km' : (userPos ? rawDist.toFixed(1) + ' km' : '—');
-  const nomAff = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient';
-  // ⚡ Description du soin ENRICHIE (Diabète brut → acte NGAP détaillé)
-  const soinAff = (typeof _enrichSoinLabel === 'function')
-    ? _enrichSoinLabel({
-        actes_recurrents: p.actes_recurrents || '',
-        pathologies:      p.pathologies || '',
-        description:      p.description || p.texte || p.acte || '',
-      }, 160)
-    : (p.description || p.texte || p.acte || '');
-  el.innerHTML = `
-    <div style="font-size:15px;font-weight:600;margin-bottom:4px">${nomAff}</div>
-    ${soinAff && soinAff !== nomAff ? `<div style="font-size:12px;color:var(--a);margin-bottom:6px">💊 ${soinAff}</div>` : ''}
-    <div style="font-size:12px;color:var(--m);margin-bottom:10px">
-      ${p.heure_soin ? '⏰ '+p.heure_soin : ''} ${p.urgence ? '🚨 URGENT' : ''}${dist !== '—' ? ' · 📍 ~'+dist : ''}
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn bp bsm" onclick="markUberDone()"><span>✅</span> Terminé</button>
-      <button class="btn bs bsm" onclick="markUberAbsent()"><span>❌</span> Absent</button>
-      ${p.lat ? `<button class="btn bv bsm" onclick="openNavigation(APP.get('nextPatient'))"><span>🗺️</span> Naviguer</button>` : ''}
-    </div>`;
+  /* ⚡ #uber-next-patient est désormais géré EXCLUSIVEMENT par renderLivePatientList
+     (dans tournee.js) qui affiche la liste complète AVEC les boutons Terminé/Absent/
+     Naviguer directement sur le patient marqué "Prochain patient".
+     Avant, _renderNextPatient écrivait la card seule dans #uber-next-patient et
+     renderLivePatientList écrivait la liste dans le même élément : les deux se
+     battaient, l'ordre d'exécution déterminait ce que l'utilisateur voyait
+     (avec un délai de ~5s avant que la card réapparaisse via recomputeRoute).
+     La liste unique résout ce conflit + donne une UX cohérente (on voit les
+     boutons d'action sur le prochain patient ET tous les autres patients). */
+  if (typeof renderLivePatientList === 'function') {
+    renderLivePatientList();
+  }
 }
 
 /* ── Marker live position infirmière ─────────── */
@@ -557,8 +542,14 @@ async function markUberDone() {
   /* Déclencher cotation + import + km pour ce patient (non bloquant) */
   _autoCoterEtImporterPatient(p).catch(e => console.warn('[AMI] markUberDone async KO:', e));
 
+  /* ⚡ Depuis le refactor liste unique : renderLivePatientList est la seule fonction
+     qui écrit dans #uber-next-patient. selectBestPatient() publie le nouveau
+     nextPatient dans le store, ce qui déclenche synchroniquement
+     _renderNextPatient (listener APP.on('nextPatient')) qui appelle à son tour
+     renderLivePatientList. Résultat : UN seul rafraîchissement de la liste,
+     avec les boutons Terminé/Absent/Naviguer désormais sur le NOUVEAU prochain
+     patient — instantanément, sans délai. */
   selectBestPatient();
-  _updateUberProgress();
   if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
 
   /* Toast si tous les patients sont terminés */
@@ -571,8 +562,9 @@ async function markUberDone() {
 function markUberAbsent() {
   const p = APP.get('nextPatient'); if (!p) return;
   p.absent = true;
+  // ⚡ Même flow que markUberDone : selectBestPatient → nextPatient → _renderNextPatient
+  //    → renderLivePatientList (seule source de vérité visuelle)
   selectBestPatient();
-  _updateUberProgress();
   if (typeof _updateLiveCADisplay === 'function') _updateLiveCADisplay();
 }
 
