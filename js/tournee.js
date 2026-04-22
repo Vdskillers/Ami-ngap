@@ -2398,35 +2398,319 @@ function importCalendar() {
   result.classList.add('show');
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   PARSERS CALENDRIERS — support multi-format grand public
+   ──────────────────────────────────────────────────────────────────
+   Formats pris en charge :
+     • ICS / iCalendar  (Google Calendar, Apple Calendar, Outlook,
+                         Thunderbird, Nextcloud, ProtonCalendar,
+                         Fantastical, Zimbra, Yahoo Calendar)
+     • CSV              (Outlook.com, Google Calendar CSV export,
+                         Excel, LibreOffice, Doctolib export)
+     • JSON             (APIs, exports custom)
+     • Texte libre      (copier-coller tableau, plannings Word/PDF,
+                         WhatsApp, SMS)
+   Chaque ligne produit un "patient" avec les champs canoniques
+   exploitables par Carnet patients + Tournée IA.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Décompose une adresse brute en { street, zip, city, adresse }
+   Heuristique : CP français = 5 chiffres. La rue est ce qui précède le CP,
+   la ville est ce qui suit. Sans CP, split sur la virgule. */
+function _parseAdresseImport(raw) {
+  if (!raw || !String(raw).trim()) return { street: '', zip: '', city: '', adresse: '' };
+  const s = String(raw).replace(/\s+/g, ' ').trim();
+  // CP français (5 chiffres, pas précédés d'un autre chiffre)
+  const cpMatch = s.match(/(?:^|[\s,;])(\d{5})(?=[\s,;]|$)/);
+  let street = '', zip = '', city = '';
+  if (cpMatch) {
+    zip = cpMatch[1];
+    const idx = s.indexOf(cpMatch[0]);
+    street = s.slice(0, idx).replace(/[,;\s]+$/, '').trim();
+    city   = s.slice(idx + cpMatch[0].length)
+              .replace(/^[,;\s]+/, '')
+              .replace(/,?\s*France\s*$/i, '')
+              .trim();
+  } else {
+    // Pas de CP : heuristique "rue…, ville"
+    const commaParts = s.split(',').map(x => x.trim()).filter(Boolean);
+    if (commaParts.length >= 2) {
+      street = commaParts[0];
+      city   = commaParts.slice(1).join(', ').replace(/,?\s*France\s*$/i, '').trim();
+    } else {
+      street = s.trim();
+    }
+  }
+  const adresse = [street, [zip, city].filter(Boolean).join(' '), 'France']
+    .map(x => (x || '').trim()).filter(Boolean).join(', ');
+  return { street, zip, city, adresse };
+}
+
+/* Extrait { nom, prenom } depuis un intitulé style SUMMARY ou Subject.
+   Supprime les civilités (M., Mme, Dr, Monsieur, Madame, Mlle, M seul, etc.),
+   détecte le mot en MAJUSCULES comme nom de famille, et prend le premier
+   mot non-civilité comme prénom. */
+function _extractNomPrenom(label) {
+  if (!label) return { nom: '', prenom: '' };
+  const CIV = /^(M\.|Mme|Mlle|Mll|Mr|Dr\.|Dr|Monsieur|Madame|Mademoiselle|Docteur|M)\s+/i;
+  let clean = String(label).trim();
+  // Supprimer jusqu'à 2 civilités successives ("Mme Dr DUPONT")
+  for (let k = 0; k < 2 && CIV.test(clean); k++) clean = clean.replace(CIV, '').trim();
+  // Couper sur séparateur type "NOM Prénom - Soin" → ne garder que "NOM Prénom"
+  const sepIdx = clean.search(/\s[-—–]\s|\s:\s/);
+  if (sepIdx > 0) clean = clean.slice(0, sepIdx).trim();
+  const parts = clean.split(/[\s,]+/).filter(Boolean);
+  if (!parts.length) return { nom: '', prenom: '' };
+  if (parts.length === 1) return { nom: parts[0], prenom: '' };
+  // Détecter un mot en MAJUSCULES (longueur ≥ 2 pour exclure les initiales)
+  const upIdx = parts.findIndex(w => w.length > 1 && w === w.toUpperCase() && /[A-ZÀ-Ý]/.test(w));
+  if (upIdx >= 0) {
+    const nom    = parts[upIdx];
+    const others = parts.filter((_, j) => j !== upIdx);
+    return { nom, prenom: others[0] || '' };
+  }
+  // Pas de MAJUSCULES : convention FR "Prénom Nom"
+  return { prenom: parts[0], nom: parts.slice(1).join(' ') };
+}
+
+/* Parser ICS/iCalendar — compatible RFC 5545.
+   Gère :
+   - Le dépliage des lignes ("line unfolding" : suite par espace/tab)
+   - Les paramètres ICS (TZID=..., VALUE=...)
+   - L'échappement RFC (\n, \,, \;, \\)
+   - Les VEVENT avec SUMMARY, LOCATION, DTSTART, DESCRIPTION, ATTENDEE, UID */
+function _parseICS(content) {
+  if (!/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(content)) return null;
+  // 1. Line unfolding — RFC 5545 : une ligne commençant par espace ou tab continue la précédente
+  const lines = content.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n');
+
+  const unescapeIcs = (v) => String(v || '')
+    .replace(/\\n/gi, '\n').replace(/\\,/g, ',')
+    .replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+
+  const parseIcsDate = (raw) => {
+    if (!raw) return { date: '', heure: '' };
+    // Format possible : 20260422T083000Z, 20260422T083000, 20260422 (all day)
+    const m = raw.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
+    if (!m) return { date: '', heure: '' };
+    const date  = `${m[1]}-${m[2]}-${m[3]}`;
+    const heure = m[4] ? `${m[4]}:${m[5]}` : '';
+    return { date, heure };
+  };
+
+  const events = [];
+  let current = null;
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line) continue;
+    if (/^BEGIN:VEVENT$/i.test(line)) { current = {}; continue; }
+    if (/^END:VEVENT$/i.test(line))   { if (current) events.push(current); current = null; continue; }
+    if (!current) continue;
+    // Format : KEY[;PARAM=VAL]:VALUE
+    const idx = line.indexOf(':');
+    if (idx < 0) continue;
+    const rawKey = line.slice(0, idx);
+    const value  = line.slice(idx + 1);
+    const key    = rawKey.split(';')[0].toUpperCase();
+    current[key] = value;
+  }
+
+  // Conversion VEVENT → patient
+  return events.map((ev, i) => {
+    const summary = unescapeIcs(ev.SUMMARY || '');
+    const desc    = unescapeIcs(ev.DESCRIPTION || '');
+    const loc     = unescapeIcs(ev.LOCATION || '');
+    const { date, heure } = parseIcsDate(ev.DTSTART || '');
+    const parsedAdr = _parseAdresseImport(loc);
+    const { nom, prenom } = _extractNomPrenom(summary);
+    return {
+      id:          ev.UID || ('imp_ics_' + i),
+      nom,
+      prenom,
+      description: summary || desc,
+      texte:       summary,
+      summary,
+      notes:       desc,
+      date_soin:   date,
+      heure_soin:  heure,
+      street:      parsedAdr.street,
+      zip:         parsedAdr.zip,
+      city:        parsedAdr.city,
+      adresse:     parsedAdr.adresse || loc,
+      _source:     'ics',
+    };
+  });
+}
+
+/* Parser CSV — compatible Outlook.com, Google Calendar CSV, Excel.
+   Détecte automatiquement les colonnes par nom (Subject/Summary/Title, Location,
+   Start Date, Start Time, Description…). Supporte guillemets + virgules
+   échappées. */
+function _parseCSV(content) {
+  const firstLine = content.split(/\r?\n/)[0] || '';
+  // Détection de séparateur : ; (Excel FR), , (Outlook/Google), \t (TSV)
+  const sep = firstLine.includes(';') && !firstLine.includes(',')
+    ? ';'
+    : firstLine.includes('\t') ? '\t' : ',';
+
+  // Parseur CSV robuste (gère les guillemets et les retours ligne dans les champs)
+  const parseLine = (line) => {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else { inQ = !inQ; }
+      } else if (ch === sep && !inQ) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  };
+
+  const rows = content.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim().length);
+  if (rows.length < 2) return null;
+  const header = parseLine(rows[0]).map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
+
+  // Cartographie des colonnes standard → clé canonique
+  const findCol = (aliases) => header.findIndex(h => aliases.some(a => h === a || h.includes(a)));
+  const colIdx = {
+    subject:  findCol(['subject', 'summary', 'title', 'sujet', 'titre', 'objet', 'nom']),
+    start:    findCol(['start date', 'start_date', 'date début', 'date debut', 'start']),
+    stime:    findCol(['start time', 'start_time', 'heure début', 'heure debut', 'time']),
+    location: findCol(['location', 'lieu', 'adresse', 'address']),
+    descr:    findCol(['description', 'notes', 'note', 'commentaire', 'body']),
+    attendee: findCol(['attendees', 'attendee', 'participant', 'required attendees']),
+  };
+  // Heuristique : si aucune colonne standard détectée → ce n'est pas un CSV calendrier
+  if (colIdx.subject < 0 && colIdx.location < 0 && colIdx.descr < 0) return null;
+
+  const norm = (v) => String(v || '').trim().replace(/^"|"$/g, '');
+  const parseCsvDate = (d) => {
+    if (!d) return '';
+    // ISO YYYY-MM-DD
+    const m1 = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m1) return `${m1[1]}-${m1[2]}-${m1[3]}`;
+    // Format ambigu : DD/MM/YYYY (FR) ou MM/DD/YYYY (US)
+    const m2 = d.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m2) {
+      const a  = parseInt(m2[1], 10);
+      const b  = parseInt(m2[2], 10);
+      const yr = m2[3].length === 2 ? '20' + m2[3] : m2[3];
+      let day, month;
+      if (a > 12)      { day = a; month = b; }  // DD/MM/YYYY (jour > 12 = sûr)
+      else if (b > 12) { day = b; month = a; }  // MM/DD/YYYY (jour > 12 = sûr)
+      else             { day = a; month = b; }  // ambigu : FR par défaut
+      return `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+    return d;
+  };
+  const parseCsvTime = (t) => {
+    if (!t) return '';
+    const m = t.match(/(\d{1,2})[h:]\s*(\d{2})?/);
+    return m ? `${String(m[1]).padStart(2,'0')}:${m[2] || '00'}` : '';
+  };
+
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells  = parseLine(rows[r]);
+    const subj   = colIdx.subject  >= 0 ? norm(cells[colIdx.subject])  : '';
+    const loc    = colIdx.location >= 0 ? norm(cells[colIdx.location]) : '';
+    const descr  = colIdx.descr    >= 0 ? norm(cells[colIdx.descr])    : '';
+    const dDate  = colIdx.start    >= 0 ? parseCsvDate(norm(cells[colIdx.start])) : '';
+    const dTime  = colIdx.stime    >= 0 ? parseCsvTime(norm(cells[colIdx.stime])) : '';
+    if (!subj && !loc && !descr) continue; // ligne vide
+
+    const { nom, prenom } = _extractNomPrenom(subj);
+
+    const parsedAdr = _parseAdresseImport(loc);
+    out.push({
+      id:          'imp_csv_' + r,
+      nom, prenom,
+      description: subj || descr,
+      texte:       subj,
+      summary:     subj,
+      notes:       descr,
+      date_soin:   dDate,
+      heure_soin:  dTime,
+      street:      parsedAdr.street,
+      zip:         parsedAdr.zip,
+      city:        parsedAdr.city,
+      adresse:     parsedAdr.adresse || loc,
+      _source:     'csv',
+    });
+  }
+  return out.length ? out : null;
+}
+
 function _processImportData(content, source) {
   const result = $('imp-result');
   if (!result) return;
 
-  let parsed    = null;
-  let patients  = [];
+  let patients     = [];
+  let formatDetect = 'texte';
 
-  // Tentative JSON
+  // 1. Tentative JSON
   try {
-    parsed = JSON.parse(content);
-    const found = parsed.patients || parsed.entries || (Array.isArray(parsed) ? parsed : null);
-    if (found) patients = found;
+    const parsed = JSON.parse(content);
+    const found  = parsed.patients || parsed.entries || (Array.isArray(parsed) ? parsed : null);
+    if (found && Array.isArray(found) && found.length) {
+      patients     = found;
+      formatDetect = 'json';
+    }
   } catch { /* pas JSON */ }
 
-  // Tentative ICS / texte libre
+  // 2. Tentative ICS / iCalendar (Google Calendar, Apple Calendar, Outlook, etc.)
+  if (!patients.length) {
+    const ics = _parseICS(content);
+    if (ics && ics.length) { patients = ics; formatDetect = 'ics'; }
+  }
+
+  // 3. Tentative CSV (Outlook.com, Google Calendar CSV export, Excel)
+  if (!patients.length) {
+    const csv = _parseCSV(content);
+    if (csv && csv.length) { patients = csv; formatDetect = 'csv'; }
+  }
+
+  // 4. Fallback texte libre (plannings copiés-collés, SMS, WhatsApp)
   if (!patients.length) {
     const lines = content.split('\n').filter(l => l.trim().length > 3);
     patients = lines.map((l, i) => {
       // Essayer d'extraire une adresse depuis la ligne (format : "Nom — 12 rue X, Ville")
-      const addrMatch = l.match(/(?:—|-|:)\s*(\d+[^,\n]+(?:rue|avenue|bd|boulevard|allée|impasse|chemin|place|villa|résidence)[^,\n]+(?:,\s*\d{5}[^,\n]*)?)/i);
+      const addrMatch = l.match(/(?:—|-|:)\s*(\d+[^,\n]+(?:rue|avenue|bd|boulevard|allée|impasse|chemin|place|villa|résidence)[^,\n]*(?:,\s*\d{5}[^,\n]*)?)/i);
+      const rawAdresse = addrMatch ? addrMatch[1].trim() : '';
+      const parsedAdr  = _parseAdresseImport(rawAdresse);
       return {
-        id:          'imp_' + i,
+        id:          'imp_txt_' + i,
         description: l.trim().replace(/^[-*•→]+\s*/, ''),
         texte:       l.trim(),
         heure_soin:  (l.match(/(\d{1,2})[hH:](\d{2})/) || [])[0] || '',
-        adresse:     addrMatch ? addrMatch[1].trim() : '',
+        street:      parsedAdr.street,
+        zip:         parsedAdr.zip,
+        city:        parsedAdr.city,
+        adresse:     parsedAdr.adresse,
+        _source:     'texte_libre',
       };
     });
+    formatDetect = 'texte';
   }
+
+  // 5. Normalisation finale : adresses alias (rue/cp/ville → street/zip/city)
+  //    + adresse brute à parser si composants structurés absents
+  patients = patients.map(p => {
+    const street = p.street || p.rue   || '';
+    const zip    = p.zip    || p.cp    || '';
+    const city   = p.city   || p.ville || '';
+    if (street || zip || city) {
+      const adresse = [street, [zip, city].filter(Boolean).join(' '), 'France']
+        .map(s => (s || '').trim()).filter(Boolean).join(', ');
+      return { ...p, street, zip, city, adresse: p.adresse || adresse };
+    }
+    if (p.adresse) {
+      const parsedAdr = _parseAdresseImport(p.adresse);
+      return { ...p, ...parsedAdr };
+    }
+    return p;
+  });
 
   storeImportedData({ patients, total: patients.length, source });
 
@@ -2437,19 +2721,28 @@ function _processImportData(content, source) {
   _autoAddImportedToCarnet(patients).catch(() => {});
 
   // Compter les patients avec adresse pour proposer le géocodage
-  const withAddr = patients.filter(p => p.adresse && p.adresse.trim()).length;
-  const missingGPS = patients.filter(p => (!p.lat || !p.lng) && p.adresse && p.adresse.trim()).length;
+  const withAddr    = patients.filter(p => p.adresse && p.adresse.trim()).length;
+  const withStruct  = patients.filter(p => p.street && p.zip && p.city).length;
+  const withGPS     = patients.filter(p => p.lat && p.lng).length;
+  const missingGPS  = patients.filter(p => (!p.lat || !p.lng) && p.adresse && p.adresse.trim()).length;
+  const withIdent   = patients.filter(p => (p.nom || p.prenom)).length;
+
+  const formatLabel = {
+    json:   '🗂️ JSON',
+    ics:    '📅 iCalendar (Google / Apple / Outlook / Thunderbird)',
+    csv:    '📊 CSV (Outlook / Google Calendar / Excel)',
+    texte:  '📝 texte libre',
+  }[formatDetect] || source;
 
   result.innerHTML = `
     <div class="ai su">
-      ✅ Import réussi depuis <strong>${source}</strong><br>
+      ✅ Import réussi — ${formatLabel}<br>
       📋 <strong>${patients.length}</strong> entrée(s) chargée(s)
-      ${missingGPS > 0
-        ? `<br><span style="font-size:12px;color:var(--w)">⚠️ ${missingGPS} adresse(s) sans coordonnées GPS</span>`
-        : withAddr > 0
-          ? `<br><span style="font-size:12px;color:var(--a)">📍 ${withAddr} adresse(s) détectée(s)</span>`
-          : ''}
-      <span style="font-size:11px;color:var(--m);margin-top:4px;display:block">Allez dans <strong>Planning</strong> ou <strong>Tournée IA</strong> pour utiliser ces données.</span>
+      ${withIdent > 0 ? `<br><span style="font-size:12px;color:var(--a)">👤 ${withIdent} patient(s) identifié(s) (nom/prénom)</span>` : ''}
+      ${withStruct > 0 ? `<br><span style="font-size:12px;color:var(--a)">🏠 ${withStruct} adresse(s) complète(s) (rue + CP + ville)</span>` : ''}
+      ${withGPS > 0 ? `<br><span style="font-size:12px;color:var(--a)">📍 ${withGPS} GPS déjà résolu(s)</span>` : ''}
+      ${missingGPS > 0 ? `<br><span style="font-size:12px;color:var(--w)">⚠️ ${missingGPS} adresse(s) sans coordonnées GPS</span>` : ''}
+      <span style="font-size:11px;color:var(--m);margin-top:4px;display:block">Allez dans <strong>Tournée IA</strong> ou <strong>Planning</strong> pour utiliser ces données.</span>
     </div>
     ${missingGPS > 0 ? `
     <div style="margin-top:10px">
@@ -2531,28 +2824,58 @@ async function _autoAddImportedToCarnet(patients) {
       const key = _normalizePatientKey(nom, prenom, p);
       if (!key || existIndex.has(key)) continue; // déjà dans le carnet
 
-      // Construire la fiche minimale avec toutes les données disponibles
+      // Construire la fiche avec TOUS les champs canoniques (schéma savePatient)
+      // Les champs absents du calendrier sont initialisés vides mais présents,
+      // pour garantir cohérence lors de l'édition manuelle ultérieure.
+      const street = p.street || p.rue   || '';
+      const zip    = p.zip    || p.cp    || '';
+      const city   = p.city   || p.ville || '';
+      const address        = [street, [zip, city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      const addressFull    = [street, [zip, city].filter(Boolean).join(' '), 'France']
+        .map(s => (s || '').trim()).filter(Boolean).join(', ');
+
       const fiche = {
-        nom:         nom.trim(),
-        prenom:      prenom.trim(),
-        ddn:         p.ddn || p.date_naissance || '',
-        adresse:     p.adresse || p.address || p.addressFull || '',
-        street:      p.street || '',
-        zip:         p.zip || '',
-        city:        p.city || '',
-        lat:         p.lat || null,
-        lng:         p.lng || null,
-        telephone:   p.telephone || p.tel || '',
-        medecin:     p.medecin || '',
-        amo:         p.amo || '',
-        amc:         p.amc || '',
-        exo:         p.exo || '',
-        notes:       p.notes || p.description || '',
-        ordonnances: [],
-        cotations:   [],
-        _source:     'import_calendrier',
-        created_at:  new Date().toISOString(),
-        updated_at:  new Date().toISOString(),
+        // Identité
+        nom:               nom.trim(),
+        prenom:            prenom.trim(),
+        ddn:               p.ddn    || p.date_naissance || '',
+        secu:              p.secu   || '',
+        // Adresse structurée (3 champs canoniques) + aliases
+        street,
+        zip,
+        city,
+        address,
+        addressFull,
+        adresse:           p.adresse || addressFull || '',
+        lat:               p.lat    || null,
+        lng:               p.lng    || null,
+        // Couverture
+        amo:               p.amo    || '',
+        amc:               p.amc    || '',
+        exo:               p.exo    || '',
+        // Médical
+        medecin:           p.medecin       || '',
+        allergies:         p.allergies     || '',
+        pathologies:       p.pathologies   || '',
+        traitements:       p.traitements   || '',
+        actes_recurrents:  p.actes_recurrents || '',
+        ordo_date:         p.ordo_date     || '',
+        // Contact urgence (le tél calendrier est rattaché ici à défaut d'un champ tél patient dédié)
+        contact_nom:       p.contact_nom   || '',
+        contact_tel:       p.contact_tel   || p.telephone || p.tel || '',
+        // Agenda
+        heure_preferee:    p.heure_preferee || p.heure_soin || '',
+        respecter_horaire: !!p.respecter_horaire,
+        // Notes libres — description ICS/calendrier conservée ici si disponible
+        notes:             p.notes || p.description || '',
+        // Collections liées (initialisées vides pour cohérence)
+        ordonnances:       [],
+        cotations:         [],
+        // Métadonnées
+        _enc:              true,
+        _source:           'import_calendrier',
+        created_at:        new Date().toISOString(),
+        updated_at:        new Date().toISOString(),
       };
 
       const id = p.patient_id || p.id || ('imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
