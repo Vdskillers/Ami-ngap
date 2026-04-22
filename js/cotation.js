@@ -1735,7 +1735,7 @@ async function _saveEditedCotation(d) {
 /* ════════════════════════════════════════════════
    IMPRESSION / PDF
    ────────────────────────────────────────────────
-   1. Vérifie si ADELI, RPPS, Structure sont renseignés
+   1. Vérifie si ADELI et RPPS sont renseignés (Cabinet/Structure optionnel)
    2. Si manquants → modale de complétion avec 2 choix :
         a) Enregistrer + Imprimer
         b) Imprimer sans ces infos
@@ -1744,16 +1744,16 @@ async function _saveEditedCotation(d) {
 async function printInv(d) {
   const u = S?.user || {};
   const missing = [];
-  if (!u.adeli)     missing.push('N° ADELI');
-  if (!u.rpps)      missing.push('N° RPPS');
-  if (!u.structure) missing.push('Cabinet / Structure');
+  if (!u.adeli) missing.push('N° ADELI');
+  if (!u.rpps)  missing.push('N° RPPS');
+  // Cabinet / Structure est recommandé mais PAS bloquant — ne déclenche plus la modale
 
   if (missing.length > 0) {
     /* Infos manquantes → afficher la modale de complétion */
     _pendingPrintData = d;
     _showProInfoModal(u, missing);
   } else {
-    /* Tout est renseigné → imprimer directement */
+    /* ADELI + RPPS OK → imprimer directement (même sans Cabinet/Structure) */
     await _doPrint(d, u);
   }
 }
@@ -1771,7 +1771,7 @@ async function _showProInfoModal(u, missing) {
   const piAdeli = $('pi-adeli'), piRpps = $('pi-rpps'), piStruct = $('pi-structure');
   if (piAdeli)  { piAdeli.value  = u.adeli     || ''; piAdeli.required  = !u.adeli; }
   if (piRpps)   { piRpps.value   = u.rpps      || ''; piRpps.required   = !u.rpps; }
-  if (piStruct) { piStruct.value = u.structure || ''; piStruct.required = !u.structure; }
+  if (piStruct) { piStruct.value = u.structure || ''; piStruct.required = false; /* Cabinet/Structure est OPTIONNEL */ }
 
   /* Masquer uniquement les champs déjà renseignés */
   if ($('pi-adeli')?.closest('.af'))  $('pi-adeli').closest('.af').style.display  = u.adeli     ? 'none' : '';
@@ -1793,20 +1793,33 @@ async function _showProInfoModal(u, missing) {
       btnSave.disabled = true;
       btnSave.innerHTML = '<span class="spin"></span> Enregistrement…';
 
+      // ⚠️ Capturer _pendingPrintData AVANT closeProInfoModal() qui le nulle
+      const _dToPrint = _pendingPrintData;
+
       try {
-        const res = await wpost('/webhook/profil-save', {
-          nom: u.nom || '', prenom: u.prenom || '',
-          adeli, rpps, structure,
-          adresse: u.adresse || '', tel: u.tel || ''
-        });
-        if (!res.ok) throw new Error(res.error || 'Erreur sauvegarde');
+        // Sauvegarde du profil → best-effort : si ça échoue (réseau, admin, etc.)
+        // on imprime quand même plutôt que de bloquer l'utilisateur.
+        try {
+          const res = await wpost('/webhook/profil-save', {
+            nom: u.nom || '', prenom: u.prenom || '',
+            adeli, rpps, structure,
+            adresse: u.adresse || '', tel: u.tel || ''
+          });
+          if (res?.ok) {
+            /* Mettre à jour la session locale seulement si save réussie */
+            S.user = { ...S.user, adeli, rpps, structure };
+            if (typeof ss?.save === 'function') ss.save(S.token, S.role, S.user);
+          } else {
+            console.warn('[printInv] profil-save non-OK, impression quand même:', res?.error);
+          }
+        } catch (_saveErr) {
+          console.warn('[printInv] profil-save KO (impression quand même):', _saveErr?.message);
+        }
 
-        /* Mettre à jour la session locale */
-        S.user = { ...S.user, adeli, rpps, structure };
-        ss.save(S.token, S.role, S.user);
-
+        // User qui sera utilisé pour le PDF (avec les valeurs saisies, même si save KO)
+        const _uForPrint = { ...u, adeli, rpps, structure };
         closeProInfoModal();
-        await _doPrint(_pendingPrintData, S.user);
+        await _doPrint(_dToPrint, _uForPrint);
       } catch (e) {
         const msg = $('pro-info-msg');
         if (msg) { msg.textContent = '❌ ' + e.message; msg.style.display = 'block'; }
@@ -1821,8 +1834,10 @@ async function _showProInfoModal(u, missing) {
   const btnAnyway = $('btn-pi-print-anyway');
   if (btnAnyway) {
     btnAnyway.onclick = async () => {
+      // ⚠️ Capturer AVANT closeProInfoModal() qui nulle _pendingPrintData
+      const _dToPrint = _pendingPrintData;
       closeProInfoModal();
-      await _doPrint(_pendingPrintData, u);
+      await _doPrint(_dToPrint, u);
     };
   }
 
