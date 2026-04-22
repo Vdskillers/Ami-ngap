@@ -2910,13 +2910,21 @@ window.startDay=async function(){
   if (btnStop) btnStop.style.display = 'inline-flex';
   // live-controls reste caché — live-next géré uniquement via uber-next-patient
 
-  // Initialiser le premier patient actif
-  const firstP = patients[0];
-  const _isAdminSD = false; // unused, kept for reference
+  /* ── Initialiser le premier patient actif ────────────────────
+     ⚠️ Priorité à l'ordre uberPatients (ordre optimisé IA) quand il existe,
+     sinon fallback ordre importedData (ordre d'import brut).
+     Sans ça, après optimisation de la tournée, l'UI affichait brièvement
+     le mauvais patient en tête (ordre d'import) avant que
+     renderLivePatientList ne remette l'ordre optimisé. */
+  const _uberForFirst = APP.get('uberPatients') || [];
+  const _ordered = _uberForFirst.length ? _uberForFirst : patients;
+  const firstP = _ordered[0];
   if(firstP){
     LIVE_PATIENT_ID = firstP.patient_id || firstP.id || null;
-    $('live-patient-name').textContent = firstP.description||firstP.texte||'Premier patient';
-    $('live-info').textContent = `Soin 1/${patients.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
+    $('live-patient-name').textContent = firstP.description||firstP.texte||firstP.label||'Premier patient';
+    $('live-info').textContent = `Soin 1/${_ordered.length}${firstP.heure_soin?' · '+firstP.heure_soin:''}`;
+    // Publier nextPatient dans le store pour que renderLivePatientList le mette en tête
+    if (typeof APP.set === 'function') APP.set('nextPatient', firstP);
   }
 
   /* ── Synchroniser uberPatients depuis importedData si pas déjà peuplé ── */
@@ -4690,6 +4698,31 @@ function resetTourneeJour() {
   if (uberProg) uberProg.textContent = '';
   const uberRoute = $('uber-route-info');
   if (uberRoute) uberRoute.textContent = '';
+
+  /* ── Nettoyages ajoutés pour corriger les résidus visuels après reset ─ */
+
+  // 1. Supprimer le banner "📊 Suivi tournée en temps réel" injecté dynamiquement.
+  //    Sans ça, après reset, le bandeau restait affiché dans le Pilotage.
+  const progBanner = document.getElementById('pilotage-progress-banner');
+  if (progBanner) progBanner.remove();
+
+  // 2. Vider la Tournée cabinet multi-IDE (même après reset, la répartition
+  //    restait visible avec les patients précédents).
+  const turCabResult = document.getElementById('tur-cabinet-result');
+  if (turCabResult) turCabResult.innerHTML = '';
+
+  // 3. Purger les assignations IDE + contraintes de tournée en mémoire
+  //    pour éviter que la prochaine optimisation ré-affecte les anciens patients.
+  APP._constraintFirst  = null;
+  APP._constraintSecond = null;
+  // _ideAssignments déjà nettoyé plus haut
+
+  // 4. Publier l'état vide dans le store observable pour déclencher
+  //    les listeners (map, rentabilité, bandeau cabinet, etc.).
+  if (typeof APP.set === 'function') {
+    APP.set('uberPatients', []);
+    APP.set('nextPatient', null);
+  }
 
   LIVE_PATIENT_ID = null;
 
