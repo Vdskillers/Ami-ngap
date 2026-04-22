@@ -50,7 +50,7 @@ async function _computeScore(p) {
 
   // Priorité médicale : hiérarchie clinique stricte (pas proxy financier)
   const acte = (p.actes_recurrents || p.description || p.texte || '').toLowerCase();
-  if (/insuline|inject|glycémie|à jeun|glycem/i.test(acte))           score -= 25; // timing critique
+  if (/insuline|inject|glyc[eé]mie|à jeun|glycem|diab[eè]te/i.test(acte)) score -= 25; // timing critique (ajout diab[eè]te)
   if (/perfusion|perf\b|chimio|intraveineux/i.test(acte))             score -= 22; // technique lourd
   if (/pansement.*(complexe|escarre|ulc[eè]re|nécrose)|escarre/i.test(acte)) score -= 12; // risque infectieux
   if (/pansement/i.test(acte))                                        score -= 6;  // pansement simple
@@ -67,19 +67,33 @@ async function _computeScore(p) {
 /* ── Sélection intelligente du prochain patient ─
    Utilise APP.set() pour déclencher _renderNextPatient
    automatiquement via le listener dans utils.js.
+
+   ⚡ FIX : Le mode Uber respecte maintenant STRICTEMENT l'ordre VRPTW
+   déjà optimisé par `optimizeTour` (distance + horaires + priorité médicale
+   déjà pris en compte). Le re-tri par distance GPS + score médical créait
+   des incohérences : un pansement complexe à 15h00 loin pouvait passer
+   devant un diabète à 13h00 proche à cause du bonus -18 du matching
+   "pansement.*complexe".
+
+   Priorités (dans cet ordre) :
+     1. Urgence explicite (`urgence: true`) — passe toujours devant
+     2. Contrainte `firstId` (patient forcé en 1er)
+     3. Contrainte `secondId` (patient forcé en 2e si 1er fait)
+     4. Premier patient non-done/non-absent dans l'ordre uberPatients
+        = respect strict de la tournée optimisée par l'IA VRPTW
+   Le scoring IA reste disponible comme fallback si aucun ordre n'existe
+   (ex: patients ajoutés à la volée sans optimisation préalable).
 ─────────────────────────────────────────────── */
 async function selectBestPatient() {
-  const patients = APP.get('uberPatients');
+  const patients = APP.get('uberPatients') || [];
   const remaining = patients.filter(p => !p.done && !p.absent);
   if (!remaining.length) { APP.set('nextPatient', null); return; }
 
-  /* ── Contraintes de passage (premier/suivant obligatoire) ──
-     Si le patient contraint est encore dans les restants et qu'aucun
-     patient avant lui n'est encore à faire, on le force en nextPatient.
-     Règle :
-       - firstId  → forcé si aucun autre patient "avant lui" n'a été skip (c'est le 1er tour)
-       - secondId → forcé si le patient firstId est déjà done/absent
-  ─────────────────────────────────────────────────────────── */
+  // ── 1. Urgence explicite → passe devant tout ─────────────────────
+  const urgent = remaining.find(p => p.urgence || p.urgent);
+  if (urgent) { APP.set('nextPatient', urgent); return; }
+
+  // ── 2. Contraintes de passage (premier/suivant obligatoire) ──────
   const firstId  = APP._constraintFirst  || null;
   const secondId = APP._constraintSecond || null;
   const allDone  = patients.filter(p => p.done || p.absent);
@@ -87,7 +101,6 @@ async function selectBestPatient() {
   if (firstId) {
     const firstPatient = remaining.find(p => String(p.patient_id || p.id || '') === firstId);
     if (firstPatient && allDone.length === 0) {
-      // Personne n'a encore été fait → forcer le premier contraint
       APP.set('nextPatient', firstPatient);
       return;
     }
@@ -95,7 +108,6 @@ async function selectBestPatient() {
 
   if (secondId) {
     const secondPatient = remaining.find(p => String(p.patient_id || p.id || '') === secondId);
-    // Le 2ème est forcé si le premier contraint est déjà fait (ou absent), et le 2ème n'a encore vu personne devant lui
     const firstDone = firstId
       ? patients.some(p => String(p.patient_id || p.id || '') === firstId && (p.done || p.absent))
       : allDone.length >= 1;
@@ -105,7 +117,21 @@ async function selectBestPatient() {
     }
   }
 
-  /* ── Sélection normale : score IA + distance GPS ── */
+  // ── 3. Respect strict de l'ordre VRPTW ───────────────────────────
+  // `uberPatients` est déjà trié par optimizeTour (distance + heures + priorité).
+  // Le premier restant dans cet ordre = le prochain patient selon l'IA.
+  // On suppose que si un ordre existe (patients.length > 1 et position 0 stable),
+  // il faut le respecter.
+  const optimizedOrder = patients.length > 1;
+  if (optimizedOrder) {
+    // Trouver le premier patient restant dans l'ORDRE ORIGINAL (pas remaining qui
+    // a le même ordre mais évite les fake indices). Remaining préserve l'ordre
+    // de filter() donc remaining[0] = premier non-done dans uberPatients.
+    APP.set('nextPatient', remaining[0]);
+    return;
+  }
+
+  // ── 4. Fallback : score IA + GPS (si pas d'ordre pré-optimisé) ───
   const userPos = APP.get('userPos');
   if (userPos) remaining.sort((a,b) => _dist(userPos,a) - _dist(userPos,b));
 
@@ -121,16 +147,57 @@ async function selectBestPatient() {
 /* ── Rendu carte prochain patient ────────────── */
 function _renderNextPatient() {
   const el = $('uber-next-patient');
-  if (!el) return;
   const p = APP.get('nextPatient');
+
+  // ⚡ Synchroniser aussi le header "Mode Uber Médical" (#live-patient-name / #live-info)
+  // qui était auparavant figé sur window._liveIndex et ne suivait pas nextPatient.
+  // Ça garantit que le soin affiché en haut correspond au VRAI prochain patient,
+  // pas au patient d'index 0 de IMPORTED_DATA.
+  const liveName = $('live-patient-name');
+  const liveInfo = $('live-info');
+  if (p) {
+    // ⚡ Soin enrichi : "Diabète" brut → "Injection insuline SC, surveillance
+    // glycémie capillaire, éducation thérapeutique". Sans ça, le header du
+    // Pilotage affichait "Diabète" alors que la cotation stockait le détail.
+    const _soinEnrichi = (typeof _enrichSoinLabel === 'function')
+      ? _enrichSoinLabel({
+          actes_recurrents: p.actes_recurrents || '',
+          pathologies:      p.pathologies || '',
+          description:      p.description || p.texte || p.acte || '',
+        }, 160)
+      : (p.description || p.texte || p.acte || '');
+    if (liveName) liveName.textContent = _soinEnrichi || ((p.nom||'') + ' ' + (p.prenom||'')).trim() || 'Patient suivant';
+    if (liveInfo) liveInfo.textContent = `Heure prévue : ${p.heure_soin || p.heure_preferee || p.heure || '—'}`;
+    // Aligner aussi window._liveIndex pour cohérence avec les autres flux (extras.js)
+    try {
+      const imported = APP.importedData?.patients || window.IMPORTED_DATA || [];
+      const nKey = String(p.patient_id || p.id || '');
+      const nIdx = imported.findIndex(x => String(x.patient_id || x.id || '') === nKey);
+      if (nIdx >= 0) window._liveIndex = nIdx;
+    } catch {}
+  } else {
+    if (liveName) liveName.textContent = 'Tournée terminée ✅';
+    if (liveInfo) liveInfo.textContent = 'Tous les patients ont été pris en charge';
+  }
+
+  if (!el) return;
   if (!p) { el.innerHTML = '<div class="ai su">✅ Tous les patients ont été vus !</div>'; return; }
   const userPos = APP.get('userPos');
   const rawDist = userPos && p.lat ? _dist(userPos, p) * 111 : null;
   /* Afficher la distance seulement si GPS actif et distance plausible (<150km) */
   const dist = (rawDist !== null && rawDist < 150) ? rawDist.toFixed(1) + ' km' : (userPos ? rawDist.toFixed(1) + ' km' : '—');
   const nomAff = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient';
+  // ⚡ Description du soin ENRICHIE (Diabète brut → acte NGAP détaillé)
+  const soinAff = (typeof _enrichSoinLabel === 'function')
+    ? _enrichSoinLabel({
+        actes_recurrents: p.actes_recurrents || '',
+        pathologies:      p.pathologies || '',
+        description:      p.description || p.texte || p.acte || '',
+      }, 160)
+    : (p.description || p.texte || p.acte || '');
   el.innerHTML = `
-    <div style="font-size:15px;font-weight:600;margin-bottom:6px">${nomAff}</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:4px">${nomAff}</div>
+    ${soinAff && soinAff !== nomAff ? `<div style="font-size:12px;color:var(--a);margin-bottom:6px">💊 ${soinAff}</div>` : ''}
     <div style="font-size:12px;color:var(--m);margin-bottom:10px">
       ${p.heure_soin ? '⏰ '+p.heure_soin : ''} ${p.urgence ? '🚨 URGENT' : ''}${dist !== '—' ? ' · 📍 ~'+dist : ''}
     </div>
@@ -384,12 +451,22 @@ async function _autoCoterEtImporterPatient(p) {
         : heureReelle;
       // Re-taguer _cotation avec l'heure finale retenue (utile si upsert d'une cotation préexistante)
       if (p._cotation) p._cotation._heure_reelle = _heureUber;
+      // ⚡ Description enrichie pour `soin` : on utilise le texte qui a
+      // réellement été coté (avec conversion pathologie → actes) plutôt
+      // que p.description brute qui pouvait être juste "Diabète".
+      // Résultat affiché partout (carnet patient, historique, planning) :
+      // "Injection insuline SC, surveillance glycémie capillaire…"
+      // au lieu du label court opaque. Cohérence avec le flux "Coter depuis
+      // fiche patient" qui enrichissait déjà la description via pathologiesToActes.
+      const _soinEnriched = (typeof _enrichSoinLabel === 'function')
+        ? _enrichSoinLabel({ ...p, actes_recurrents: actesRecurrents }, 200)
+        : (texte || (p.description || p.texte || '')).slice(0, 200);
       const _cotEntryUber = {
         date:   today,
         heure:  _heureUber, // ⚡ heure RÉELLE de fin de soin (pas la contrainte horaire planifiée)
         actes:  p._cotation.actes || [],
         total:  parseFloat(p._cotation.total || 0),
-        soin:   (p.description || p.texte || '').slice(0, 120),
+        soin:   _soinEnriched,
         source: 'tournee_live',
         invoice_number: p._cotation.invoice_number || null,
         // ⚡ _synced: true SI invoice_number présent (= /ami-calcul a déjà sauvé en Supabase

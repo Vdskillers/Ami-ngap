@@ -1206,11 +1206,59 @@ function histToggleSort() {
   _applyHistFilter();
 }
 
+/* ⚡ Extrait la date+heure triables d'une row historique.
+   Source : data-hist-date + data-hist-heure sur le bouton edit (.hist-edit-btn)
+   posés au moment de la construction de la row dans index.html.
+   Fallback : parsing de la cellule date si les dataset manquent. */
+function _histRowDate(row) {
+  try {
+    const btn = row.querySelector('.hist-edit-btn');
+    if (btn?.dataset.histDate) {
+      const d = btn.dataset.histDate; // YYYY-MM-DD
+      const h = btn.dataset.histHeure || '00:00';
+      return new Date(`${d}T${h}:00`).getTime() || 0;
+    }
+    // Fallback texte (fragile mais robuste aux vieux rows)
+    const txt = row.cells?.[1]?.textContent || '';
+    const t = Date.parse(txt);
+    return isFinite(t) ? t : 0;
+  } catch { return 0; }
+}
+
+/* ⚡ Extrait le total € triable d'une row. Cellule .pt-ca contient "21.45 €". */
+function _histRowTotal(row) {
+  try {
+    const cell = row.querySelector('.pt-ca');
+    const txt = (cell?.textContent || '').replace(/[^\d,.-]/g, '').replace(',', '.');
+    const v = parseFloat(txt);
+    return isFinite(v) ? v : 0;
+  } catch { return 0; }
+}
+
 function _applyHistFilter() {
   const tbody = document.getElementById('htb');
   if (!tbody) return;
   const rows = Array.from(tbody.querySelectorAll('tr[id^="hist-row-"]'));
-  rows.forEach(row => {
+
+  // ── 1. TRI — selon _histSort ────────────────────────────────────────────
+  // On ne modifie PAS le tableau `rows` en place : on fait une copie triée
+  // puis on réinsère les <tr> dans le tbody dans le nouvel ordre via
+  // appendChild (qui déplace les nœuds sans les cloner, donc sans perdre
+  // les listeners attachés aux boutons ✏️ / 🗑️).
+  const sorted = [...rows].sort((a, b) => {
+    switch (_histSort) {
+      case 'date-asc':   return _histRowDate(a)  - _histRowDate(b);
+      case 'date-desc':  return _histRowDate(b)  - _histRowDate(a);
+      case 'total-asc':  return _histRowTotal(a) - _histRowTotal(b);
+      case 'total-desc': return _histRowTotal(b) - _histRowTotal(a);
+      default:           return _histRowDate(b)  - _histRowDate(a);
+    }
+  });
+  // Réinsérer dans l'ordre trié (appendChild = move, pas copy)
+  sorted.forEach(r => tbody.appendChild(r));
+
+  // ── 2. FILTRE — selon _histFilter ───────────────────────────────────────
+  sorted.forEach(row => {
     let show = true;
     if (_histFilter === 'ok') {
       // Statut conforme = dot vert présent
@@ -1283,3 +1331,36 @@ async function _loadRapportKpis(period) {
     if (note) note.textContent = '';
   }
 }
+
+/* ⚡ Auto-tri après rechargement de l'historique.
+   Sans ça, `hist()` reconstruit tbody.innerHTML avec l'ordre renvoyé par le
+   backend et le bouton ↕ Date avait beau changer _histSort, il fallait re-cliquer
+   pour que le tri s'applique. MutationObserver → à chaque nouveau contenu du
+   tbody, on applique _histSort + _histFilter automatiquement. */
+(function _setupHistAutoSort() {
+  const tbody = document.getElementById('htb');
+  if (!tbody) {
+    // DOM pas encore prêt → retry
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _setupHistAutoSort);
+    } else {
+      setTimeout(_setupHistAutoSort, 500);
+    }
+    return;
+  }
+  let debounce;
+  const obs = new MutationObserver(() => {
+    // Debounce pour éviter de trier à chaque append individuel si hist()
+    // fait du DOM batch. Aussi : ignorer si _applyHistFilter vient juste
+    // de réordonner (sinon boucle infinie : tri → mutation → tri).
+    if (tbody._sortingInProgress) return;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      tbody._sortingInProgress = true;
+      try { _applyHistFilter(); } catch {}
+      tbody._sortingInProgress = false;
+    }, 60);
+  });
+  obs.observe(tbody, { childList: true });
+})();
+

@@ -351,6 +351,21 @@ function logout(){
   APP.userPos=null;
   APP.importedData=null;
   APP.uberPatients=[];
+  // ⚡ Reset complet du cache cabinet au logout. Sans ça, quand un user
+  // se déconnecte (ex: Manon) et qu'un autre se connecte (ex: Bastien),
+  // les anciens membres restent affichés dans la Tournée IA jusqu'à ce
+  // que initCabinet() ait fini son fetch — obligeant l'utilisateur à
+  // faire "Clear site data" + Ctrl+Shift+R pour voir les bons membres.
+  if (typeof APP.set === 'function') APP.set('cabinet', null);
+  APP.cabinet = null;
+  // Reset aussi l'état nextPatient (sinon ancien prochain patient visible
+  // dans le header pilotage au prochain login avant qu'une nouvelle
+  // tournée soit construite).
+  if (typeof APP.set === 'function') APP.set('nextPatient', null);
+  APP._ideAssignments = {};
+  APP._constraintFirst = null;
+  APP._constraintSecond = null;
+  try { localStorage.removeItem('ami_tournee_km'); } catch {}
   if(typeof stopVoice==='function') stopVoice();
   /* ── Fermer les connexions IndexedDB ouvertes (sans supprimer les données) ──
      Les données patients/signatures restent intactes sur l'appareil.

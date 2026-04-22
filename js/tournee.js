@@ -159,10 +159,19 @@ function showImportedPatients(){
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
   $('tbody').innerHTML=`<div class="card">
     <div class="ct">👥 Patients importés (${patients.length})</div>
-    ${patients.map((p,i)=>`<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info">
-      <strong>${p.description||p.texte||p.summary||'Patient '+(i+1)}</strong>
+    ${patients.map((p,i)=>{
+      const _soinImp = (typeof _enrichSoinLabel === 'function')
+        ? _enrichSoinLabel({
+            actes_recurrents: p.actes_recurrents || '',
+            pathologies:      p.pathologies || '',
+            description:      p.description || p.texte || p.summary || '',
+          }, 100)
+        : (p.description || p.texte || p.summary || '');
+      return `<div class="route-item"><div class="route-num">${i+1}</div><div class="route-info">
+      <strong>${_soinImp || 'Patient '+(i+1)}</strong>
       <div style="font-size:11px;color:var(--m);margin-top:2px">${p.heure_soin||p.heure||''} ${p.patient_id?'· ID:'+p.patient_id:''}</div>
-    </div></div>`).join('')}
+    </div></div>`;
+    }).join('')}
   </div>`;
   $('res-tur').classList.add('show');
 }
@@ -319,6 +328,32 @@ document.addEventListener('ami:login', () => {
   }, 200);
 });
 
+/* ⚡ Purge du state local au logout pour éviter les fuites de données cross-utilisateur.
+   Sans ça, après logout Manon → login Bastien, les patients importés de Manon, les
+   assignations IDE et le planning restaient en mémoire jusqu'au premier reload, créant
+   l'impression que le cabinet ou la tournée n'avait pas changé. */
+document.addEventListener('ami:logout', () => {
+  try {
+    window.APP._planningData = null;
+    APP._ideAssignments = {};
+    APP._constraintFirst = null;
+    APP._constraintSecond = null;
+    if (typeof APP.set === 'function') {
+      APP.set('uberPatients', []);
+      APP.set('nextPatient', null);
+    }
+    // Purger rendu DOM pour retirer visuellement les anciennes données
+    const turCab = document.getElementById('tur-cabinet-result');
+    if (turCab) turCab.innerHTML = '';
+    const uberNext = document.getElementById('uber-next-patient');
+    if (uberNext) uberNext.innerHTML = '<div style="color:var(--m);font-size:13px">Démarrez la journée pour charger vos patients.</div>';
+    const banner = document.getElementById('pilotage-progress-banner');
+    if (banner) banner.remove();
+  } catch(e) {
+    logWarn && logWarn('logout cleanup:', e.message);
+  }
+});
+
 /* Restaurer APP.importedData depuis le planning sauvegardé si vide */
 function _restorePlanningIfNeeded() {
   // Ne JAMAIS écrire dans APP.importedData depuis ici :
@@ -458,9 +493,18 @@ async function generatePlanningFromImport(){
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
   // Construire un texte structuré depuis l'import
   const txt=patients.map((p,i)=>{
-    const desc=p.description||p.texte||p.summary||'Soin infirmier';
+    // ⚡ Enrichir avant envoi IA — "Diabète" seul ne génère pas d'actes NGAP.
+    // Avec l'enrichissement, l'IA reçoit "Injection insuline SC, surveillance
+    // glycémie capillaire, éducation thérapeutique" et peut coter correctement.
+    const desc = (typeof _enrichSoinLabel === 'function')
+      ? _enrichSoinLabel({
+          actes_recurrents: p.actes_recurrents || '',
+          pathologies:      p.pathologies || '',
+          description:      p.description || p.texte || p.summary || '',
+        }, 180)
+      : (p.description||p.texte||p.summary||'Soin infirmier');
     const freq=p.frequence||p.recurrence||'quotidien';
-    return `Patient P${i+1} : ${desc} (${freq})`;
+    return `Patient P${i+1} : ${desc||'Soin infirmier'} (${freq})`;
   }).join('\n');
   $('pl-txt').value=txt;
   ld('btn-pla',true);
@@ -737,7 +781,18 @@ async function renderPlanning(d){
     } catch {}
     const heure   = p.heure_soin || p.heure_preferee || p.heure || '';
     const actes   = (p.actes_recurrents || '').trim();
-    let soin      = actes || (p.description || p.texte || '').trim();
+    // ⚡ Utiliser _enrichSoinLabel pour que "Diabète" ou "HTA" bruts soient
+    // convertis en description détaillée d'actes NGAP ("Injection insuline SC,
+    // surveillance glycémie capillaire, éducation thérapeutique"). Sinon le
+    // Planning hebdo affichait juste "Diabète" alors que la cotation et
+    // l'Historique montraient le détail — incohérence visuelle.
+    let soin = (typeof _enrichSoinLabel === 'function')
+      ? _enrichSoinLabel({
+          actes_recurrents: p.actes_recurrents || '',
+          pathologies:      p.pathologies || '',
+          description:      p.description || p.texte || '',
+        }, 120)
+      : (actes || (p.description || p.texte || '').trim());
     if (!actes && nom !== 'Patient' && soin.toLowerCase().startsWith(nom.toLowerCase())) {
       soin = soin.slice(nom.length).replace(/^\s*[—\-:]\s*/, '').trim();
     }
@@ -870,7 +925,14 @@ async function renderPlanning(d){
     // ── Carte patient compacte pour la grille cabinet ─────────────────────
     function patCardCab(p, ideId, color) {
       const nom   = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
-      const soin  = (p.actes_recurrents || p.description || p.texte || '').slice(0, 55);
+      const soin  = ((typeof _enrichSoinLabel === 'function')
+        ? _enrichSoinLabel({
+            actes_recurrents: p.actes_recurrents || '',
+            pathologies:      p.pathologies || '',
+            description:      p.description || p.texte || '',
+          }, 55)
+        : (p.actes_recurrents || p.description || p.texte || '')
+      ).slice(0, 55);
       const heure = p.heure_soin || p.heure_preferee || p.heure || '';
       const cot   = p._cotation?.validated;
       const caEst = typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30;
@@ -959,7 +1021,14 @@ async function renderPlanning(d){
       const patsHtml = allDayPats.length
         ? allDayPats.map(({ p, ideId, color, prenom }) => {
             const nom   = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
-            const soin  = (p.actes_recurrents || p.description || p.texte || '').slice(0, 60);
+            const soin  = ((typeof _enrichSoinLabel === 'function')
+              ? _enrichSoinLabel({
+                  actes_recurrents: p.actes_recurrents || '',
+                  pathologies:      p.pathologies || '',
+                  description:      p.description || p.texte || '',
+                }, 60)
+              : (p.actes_recurrents || p.description || p.texte || '')
+            ).slice(0, 60);
             const heure = p.heure_soin || p.heure_preferee || p.heure || '';
             const cot   = p._cotation?.validated;
             const caEst = typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 6.30;
@@ -1705,6 +1774,7 @@ function _renderCabinetAssignmentPanel() {
     const safeMid = mid.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const safeLbl = mLabel.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const elemId  = `ide-stats-${mid.replace(/[^a-zA-Z0-9]/g,'_')}`;
+    const panelId = `ide-panel-${mid.replace(/[^a-zA-Z0-9]/g,'_')}`;
 
     // Stats initiales pour cet IDE
     let ca = 0, nb = 0;
@@ -1717,6 +1787,13 @@ function _renderCabinetAssignmentPanel() {
     });
     const km = _ideKmTotal(mid, patients);
 
+    // ⚡ IDE sans aucun patient assigné → mode compact collapsed par défaut.
+    // Évite la confusion visuelle où les patients apparaissaient sous chaque IDE
+    // avec leurs €/km propres (donnant l'impression que l'IDE "touchait" ces
+    // montants). L'utilisateur peut cliquer pour déplier et assigner manuellement.
+    const _isEmptyIde = (nb === 0);
+    const _collapsedInitially = _isEmptyIde && !isMe;
+
     const patientsHTML = patients.map(p => {
       const pk     = String(p.patient_id || p.id || '');
       const pNom   = ((p.nom||'') + ' ' + (p.prenom||'')).trim() || p.description || p.label || 'Patient';
@@ -1724,6 +1801,10 @@ function _renderCabinetAssignmentPanel() {
       const safePk = pk.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
       const pCa    = parseFloat(p.amount || 0) || (typeof estimateRevenue === 'function' ? estimateRevenue([p]) : 0);
       const pKm    = parseFloat(p._legKm || 0);
+      // ⚡ Rendre les €/km visuellement différents selon coché/non coché pour
+      // lever l'ambiguïté : coché = revenus réels de l'IDE, non coché = simulation
+      const _statOpacity = isChk ? '1' : '.45';
+      const _statPrefix  = isChk ? '' : '~';
       return `<label data-ide="${mid.replace(/"/g,'&quot;')}" data-pk="${pk.replace(/"/g,'&quot;')}"
         style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
           cursor:pointer;user-select:none;
@@ -1736,15 +1817,18 @@ function _renderCabinetAssignmentPanel() {
           onchange="_toggleIdeAssignment('${safeMid}','${safeLbl}','${safePk}',this.checked)"
           style="accent-color:${c};width:14px;height:14px;flex-shrink:0">
         <span style="font-size:12px;flex:1;color:var(--t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pNom}</span>
-        ${pKm > 0 ? `<span style="font-size:10px;font-family:var(--fm);color:var(--m);flex-shrink:0">🚗 ${pKm.toFixed(1)}km</span>` : ''}
-        <span style="font-size:10px;font-family:var(--fm);color:var(--a);flex-shrink:0">💶 ${pCa.toFixed(2)}€</span>
+        ${pKm > 0 ? `<span style="font-size:10px;font-family:var(--fm);color:var(--m);flex-shrink:0;opacity:${_statOpacity}">🚗 ${_statPrefix}${pKm.toFixed(1)}km</span>` : ''}
+        <span style="font-size:10px;font-family:var(--fm);color:var(--a);flex-shrink:0;opacity:${_statOpacity}">💶 ${_statPrefix}${pCa.toFixed(2)}€</span>
       </label>`;
     }).join('');
 
+    // Header de l'IDE — compact si pas de patient assigné, étendu sinon
     return `<div style="border:1px solid var(--b);border-radius:10px;margin-bottom:10px;overflow:hidden;border-left:4px solid ${c}">
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s)">
-        <div style="width:10px;height:10px;border-radius:50%;background:${c};flex-shrink:0"></div>
-        <strong style="font-size:13px;flex:1;color:var(--t)">${mLabel}${isMe?' <em style="font-size:10px;font-weight:400;color:var(--a)">(moi)</em>':''}</strong>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s);cursor:${_collapsedInitially?'pointer':'default'}"
+           ${_collapsedInitially ? `onclick="(function(){var p=document.getElementById('${panelId}');if(p){var show=p.style.display==='none';p.style.display=show?'block':'none';var ic=document.getElementById('${panelId}-ic');if(ic)ic.textContent=show?'▼':'▶';}})()"` : ''}>
+        <div style="width:10px;height:10px;border-radius:50%;background:${c};flex-shrink:0;opacity:${_isEmptyIde?'.5':'1'}"></div>
+        <strong style="font-size:13px;flex:1;color:${_isEmptyIde?'var(--m)':'var(--t)'}">${mLabel}${isMe?' <em style="font-size:10px;font-weight:400;color:var(--a)">(moi)</em>':''}</strong>
+        ${_isEmptyIde ? `<span style="font-size:10px;font-family:var(--fm);color:var(--m);font-style:italic;margin-right:6px">Aucun patient assigné</span>` : ''}
         <span id="${elemId}" data-ide-id="${mid.replace(/"/g,'&quot;')}"
           style="font-size:12px;font-family:var(--fm);color:var(--m);white-space:nowrap;display:flex;align-items:center;gap:6px">
           <span style="background:var(--ad);color:var(--a);border-radius:20px;padding:1px 7px;font-size:11px">
@@ -1753,8 +1837,9 @@ function _renderCabinetAssignmentPanel() {
           💶 <span class="ide-ca-val">${ca.toFixed(2)}</span> €
           🚗 <span class="ide-km-val">${km.toFixed(1)}</span> km
         </span>
+        ${_collapsedInitially ? `<span id="${panelId}-ic" style="font-size:11px;color:var(--m);font-family:var(--fm);margin-left:4px">▶</span>` : ''}
       </div>
-      <div style="padding:6px 8px">${patientsHTML}</div>
+      <div id="${panelId}" style="padding:6px 8px;display:${_collapsedInitially?'none':'block'}">${patientsHTML}</div>
     </div>`;
   }).join('');
 }
@@ -2009,7 +2094,18 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
         const _ideArrSync = (typeof APP !== 'undefined' ? APP._ideAssignments?.[_pKeySync] : null) || [];
         const _idesSuffix = _ideArrSync.length
           ? ` [IDEs: ${_ideArrSync.map(a => a.label).join(', ')}]` : '';
-        const _soinBase = (p.description || p.texte || p._idb_cot?.soin || '').slice(0, 180);
+        // ⚡ Description enrichie pour stockage Supabase : permet que le soin
+        // apparaisse détaillé ("Injection insuline SC, surveillance glycémie…")
+        // dans l'Historique des soins au lieu de "Diabète" brut.
+        // Priorité : cotation IDB existante (déjà enrichie par uber.js/tournee.js) > helper.
+        const _soinBase = p._idb_cot?.soin
+          || (typeof _enrichSoinLabel === 'function'
+                ? _enrichSoinLabel({
+                    actes_recurrents: p.actes_recurrents || '',
+                    pathologies:      p.pathologies || '',
+                    description:      p.description || p.texte || '',
+                  }, 180)
+                : (p.description || p.texte || '').slice(0, 180));
 
         return {
           actes:          p._cotation.actes || [],
@@ -3084,6 +3180,44 @@ function renderLivePatientList() {
     return s;
   }, 0);
 
+  // ⚡ Bandeau compteur visible en haut de la section Pilotage (au-dessus des contrôles GPS).
+  // Injecté dynamiquement pour éviter de modifier index.html. Suivi continu Fait/Absent/Restant.
+  try {
+    const parent = el.parentNode;
+    let banner = document.getElementById('pilotage-progress-banner');
+    if (!banner && parent) {
+      banner = document.createElement('div');
+      banner.id = 'pilotage-progress-banner';
+      banner.style.cssText = 'position:sticky;top:0;z-index:5;background:linear-gradient(90deg,rgba(0,212,170,.04),rgba(0,212,170,0));border:1px solid rgba(0,212,170,.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)';
+      parent.insertBefore(banner, el);
+    }
+    if (banner) {
+      const pct = displayPatients.length ? Math.round(((done + absent) / displayPatients.length) * 100) : 0;
+      banner.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+          <div style="font-size:11px;font-family:var(--fm);color:var(--m);letter-spacing:1px;text-transform:uppercase">📊 Suivi tournée en temps réel</div>
+          <div style="font-size:11px;font-family:var(--fm);color:var(--a);font-weight:600">${pct}% complété</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;align-items:center;gap:5px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#22c55e;border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600">
+            <span style="font-size:13px">✅</span> ${done} <span style="opacity:.8;font-weight:500">visité${done>1?'s':''}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;background:rgba(255,95,109,.1);border:1px solid rgba(255,95,109,.3);color:var(--d);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600">
+            <span style="font-size:13px">❌</span> ${absent} <span style="opacity:.8;font-weight:500">absent${absent>1?'s':''}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;background:rgba(79,168,255,.1);border:1px solid rgba(79,168,255,.3);color:var(--a2);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600">
+            <span style="font-size:13px">⏳</span> ${reste} <span style="opacity:.8;font-weight:500">restant${reste>1?'s':''}</span>
+          </div>
+          ${caRealise > 0 ? `<div style="display:flex;align-items:center;gap:5px;background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.3);color:var(--a);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600;margin-left:auto">
+            <span style="font-size:13px">💶</span> ${caRealise.toFixed(2)} € <span style="opacity:.8;font-weight:500">réalisés</span>
+          </div>` : ''}
+        </div>
+        <div style="margin-top:8px;height:5px;background:rgba(255,255,255,.04);border-radius:20px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#22c55e,var(--a));border-radius:20px;transition:width .4s ease"></div>
+        </div>`;
+    }
+  } catch {}
+
   const html = `<div class="card">
     <div class="ct" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <span>📋 Patients de la journée (${displayPatients.length})</span>
@@ -3111,10 +3245,25 @@ function renderLivePatientList() {
           : isNext ? 'rgba(0,212,170,.08)' : 'var(--s)';
       const borderStyle = isNext ? 'border:2px solid var(--a);' : 'border:1px solid var(--b);';
       const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+      // ⚡ Soin enrichi affiché sous le nom — évite que "Diabète" brut apparaisse
+      // alors que la cotation et l'Historique contiennent le détail.
+      const _soinLivePat = (typeof _enrichSoinLabel === 'function')
+        ? _enrichSoinLabel({
+            actes_recurrents: p.actes_recurrents || '',
+            pathologies:      p.pathologies || '',
+            description:      p.description || p.texte || '',
+          }, 80)
+        : (p.description || p.texte || '').slice(0, 80);
+      // Si le soin enrichi est juste le nom du patient (pas d'acte technique
+      // identifiable), on ne l'affiche pas pour éviter la redondance.
+      const _pNomLowerLive = desc.toLowerCase();
+      const _showSoin = _soinLivePat && _soinLivePat.toLowerCase() !== _pNomLowerLive
+                        && !_soinLivePat.toLowerCase().startsWith(_pNomLowerLive);
       return `<div class="route-item" style="background:${statusColor};${borderStyle}border-radius:10px;margin-bottom:6px;padding:10px 12px;align-items:center">
         <div class="route-num" style="font-size:16px">${statusIcon}</div>
         <div class="route-info" style="flex:1;min-width:0">
           <strong style="font-size:13px${isNext ? ';color:var(--a)' : ''}">${desc}</strong>
+          ${_showSoin ? `<div style="font-size:10px;color:var(--m);margin-top:2px;line-height:1.3">💊 ${_soinLivePat}</div>` : ''}
           ${isNext ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a);margin-top:1px">▶ Prochain patient</div>` : ''}
           ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
           ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
@@ -3870,7 +4019,17 @@ function _validateCotationLive() {
       const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
       if (!p.cotations) p.cotations = [];
       const today     = (typeof _localDateStr === 'function') ? _localDateStr() : new Date().toISOString().slice(0, 10);
-      const soinLabel = (patient.description || patient.texte || '').slice(0, 120);
+      // ⚡ Description enrichie : patient.description peut être "Diabète" brut.
+      // On charge actes_recurrents depuis l'IDB (source de vérité patient) puis
+      // on enrichit via pathologiesToActes si nécessaire. Cohérent avec uber.js
+      // et le flux "Coter depuis fiche patient".
+      const soinLabel = (typeof _enrichSoinLabel === 'function')
+        ? _enrichSoinLabel({
+            actes_recurrents: p.actes_recurrents || '',
+            pathologies:      p.pathologies || '',
+            description:      patient.description || patient.texte || '',
+          }, 200)
+        : (patient.description || patient.texte || '').slice(0, 200);
       // Chercher la cotation existante par invoice_number (plus fiable),
       // puis par fenêtre temporelle 6h sur source tournée (fallback)
       let existingIdx = existingInvoice

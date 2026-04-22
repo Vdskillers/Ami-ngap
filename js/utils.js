@@ -255,7 +255,7 @@ const _PATHO_MAP = [
   ════════════════════════════════════════════ */
   {
     re: /diab[eè]te?(?:\s*(?:type\s*[12]|insulino[- ]d[eé]pendant|non\s*insulino|instable|d[eé]s[eé]quilibr))?|\bDT[12]\b|\bDNID\b|\bDID\b|\bT[12]D\b/i,
-    actes: 'Injection insuline SC, surveillance glycémie capillaire, éducation thérapeutique diabète'
+    actes: 'Injection insuline SC, surveillance glycémie capillaire, éducation thérapeutique'
   },
 
   /* ════════════════════════════════════════════
@@ -461,6 +461,68 @@ function pathologiesToActes(pathologies) {
 
 /* Exposer globalement pour cotation.js, extras.js, tournee.js, index.html */
 window.pathologiesToActes = pathologiesToActes;
+
+/**
+ * ⚡ Convertit un patient en description de soin enrichie pour stockage.
+ *
+ * Pourquoi : l'affichage des cotations (carnet patient, historique, planning)
+ * montrait juste "Diabète" ou "HTA" au lieu du détail du soin ("Injection
+ * insuline SC, surveillance glycémie capillaire…"). La raison : le champ
+ * `soin` de la cotation IDB recevait p.description brute, alors que le champ
+ * `texte` envoyé à l'IA NGAP était bien enrichi via pathologiesToActes.
+ *
+ * Ce helper centralise la logique d'enrichissement. Ordre de priorité :
+ *   1. actes_recurrents (description manuelle détaillée par l'infirmière)
+ *   2. Description brute SI elle contient déjà un acte technique reconnu
+ *   3. pathologiesToActes(pathologies) si champ pathologies rempli
+ *   4. pathologiesToActes(description) si description est une pathologie brute
+ *   5. description brute en dernier recours
+ *
+ * @param {Object} patient - Patient avec actes_recurrents/pathologies/description
+ * @param {number} [max=200] - Longueur max (default 200 pour stockage IDB)
+ * @returns {string} Description enrichie prête pour affichage/stockage
+ */
+function _enrichSoinLabel(patient, max = 200) {
+  if (!patient) return '';
+  const p = patient;
+  const actesRec = (p.actes_recurrents || '').trim();
+  const pathoBrut = (p.pathologies || '').trim();
+  const desc = (p.description || p.texte || p.texte_soin || p.acte || '').trim();
+
+  // ⚡ Règle #1 révisée — actes_recurrents prime UNIQUEMENT s'il est vraiment
+  // détaillé (phrase ≥ 20 caractères avec au moins un espace). Sinon ("Diabète",
+  // "AMI1", "HTA" en saisie brève), on doit enrichir via pathologiesToActes pour
+  // ne pas afficher "Diabète" brut dans l'Historique des soins ou la Tournée.
+  const _isDetaille = actesRec.length >= 20 && /\s/.test(actesRec);
+  if (_isDetaille) {
+    return actesRec.slice(0, max);
+  }
+
+  // Règle #2 — description contenant déjà un acte technique reconnu → garder
+  // (mais on exclut "AMI\d" seul sans autre mot, trop court pour être informatif)
+  const _hasActe = /injection|pansement|pr[eé]l[eè]vement|perfusion|nursing|toilette|bilan|sonde|insuline|glyc[eé]mie|BSA|BSC|BSB/i;
+  if (desc && _hasActe.test(desc)) {
+    return desc.slice(0, max);
+  }
+
+  // Règle #3 — enrichir via pathologiesToActes. Sources testées dans l'ordre :
+  // pathologies > actes_recurrents court > description brute.
+  if (typeof pathologiesToActes === 'function') {
+    const _candidats = [pathoBrut, actesRec, desc].filter(Boolean);
+    for (const src of _candidats) {
+      const enriched = pathologiesToActes(src);
+      // On garde uniquement si ça matche réellement un pattern de _PATHO_MAP
+      // (pas le fallback "Soins infirmiers pour : X" qui renvoie juste la pathologie).
+      if (enriched && !enriched.startsWith('Soins infirmiers pour :')) {
+        return enriched.slice(0, max);
+      }
+    }
+  }
+
+  // Règle #4 — fallback brut dans l'ordre : actes_recurrents > description > pathologies
+  return (actesRec || desc || pathoBrut).slice(0, max);
+}
+window._enrichSoinLabel = _enrichSoinLabel;
 
 /* ── 11. ÉCOUTES RÉACTIVES GLOBALES ─────────────
    Effets de bord déclenchés par APP.set().

@@ -1860,18 +1860,56 @@ async function coterDepuisPatient(id) {
     // sinon pathologies converties en actes NGAP applicables
     const fTxt = $('f-txt');
     if (fTxt) {
-      const _txtVal = p.actes_recurrents
-        || (p.pathologies && typeof pathologiesToActes === 'function'
-            ? pathologiesToActes(p.pathologies) : '');
+      // ⚡ Enrichissement intelligent de la description :
+      // Si actes_recurrents est court (< 20 chars, ex : "Diabète", "AMI1", "HTA"),
+      // on tente l'enrichissement via pathologiesToActes pour obtenir la description
+      // détaillée cohérente ("Injection insuline SC, surveillance glycémie…").
+      // Sinon (phrase complète type "Injection insuline 2x/jour + glycémie"), on garde
+      // la saisie manuelle de l'infirmière qui prime.
+      const _actesBrut = (p.actes_recurrents || '').trim();
+      const _pathoBrut = (p.pathologies || '').trim();
+      let _txtVal = '';
+      const _isDetaille = _actesBrut.length >= 20 && /\s/.test(_actesBrut);
+
+      if (_isDetaille) {
+        // Saisie manuelle détaillée → on la garde telle quelle
+        _txtVal = _actesBrut;
+      } else if (typeof pathologiesToActes === 'function') {
+        // Actes récurrents vide ou trop court → enrichir via pathologies
+        // Priorité : pathologies si rempli, sinon contenu bref d'actes_recurrents
+        const _src = _pathoBrut || _actesBrut;
+        if (_src) {
+          const enrichi = pathologiesToActes(_src);
+          // pathologiesToActes renvoie la version enrichie si match, ou
+          // "Soins infirmiers pour : X" en fallback. On garde l'enrichi
+          // uniquement s'il matche réellement un pattern du _PATHO_MAP.
+          if (enrichi && !enrichi.startsWith('Soins infirmiers pour :')) {
+            _txtVal = enrichi;
+          } else {
+            _txtVal = _actesBrut || _src;
+          }
+        } else {
+          _txtVal = '';
+        }
+      } else {
+        _txtVal = _actesBrut || _pathoBrut;
+      }
+
       if (_txtVal) {
         fTxt.value = _txtVal;
         if (typeof renderLiveReco === 'function') renderLiveReco(_txtVal);
       }
       fTxt.focus();
     }
-    const _srcLabel = p.actes_recurrents
-      ? ' — actes récurrents pré-remplis'
-      : (p.pathologies ? ' — pathologies converties en actes NGAP' : '');
+    // Message contextuel : indiquer la source du texte pré-rempli
+    let _srcLabel = '';
+    const _actesBrutMsg = (p.actes_recurrents || '').trim();
+    const _isDetailleMsg = _actesBrutMsg.length >= 20 && /\s/.test(_actesBrutMsg);
+    if (_isDetailleMsg) {
+      _srcLabel = ' — actes récurrents pré-remplis';
+    } else if (p.pathologies || _actesBrutMsg) {
+      _srcLabel = ' — pathologies converties en actes NGAP';
+    }
     showToastSafe(`👤 Fiche de ${p.prenom||''} ${p.nom} chargée${_srcLabel}.`);
   }, 200);
 }

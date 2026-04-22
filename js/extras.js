@@ -490,7 +490,18 @@ function showNextPatientLocal(){
     return;
   }
 
-  if(nameEl) nameEl.textContent = p.acte || p.description || 'Patient suivant';
+  if(nameEl) {
+    // ⚡ Enrichir : "Diabète" brut → "Injection insuline SC, surveillance glycémie
+    // capillaire, éducation thérapeutique". Aligné avec uber.js _renderNextPatient.
+    const _soinEnr = (typeof _enrichSoinLabel === 'function')
+      ? _enrichSoinLabel({
+          actes_recurrents: p.actes_recurrents || '',
+          pathologies:      p.pathologies || '',
+          description:      p.acte || p.description || p.texte || '',
+        }, 160)
+      : (p.acte || p.description || '');
+    nameEl.textContent = _soinEnr || 'Patient suivant';
+  }
   // Afficher uniquement l'heure — le compteur restant(s) est dans renderLivePatientList
   if(infoEl) infoEl.textContent = `Heure prévue : ${p.heure_soin||p.heure_preferee||p.time||p.heure||'—'}`;
 
