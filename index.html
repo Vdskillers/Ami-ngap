@@ -3564,12 +3564,19 @@ async function editFromHist(data) {
   } catch (_e) { console.warn('[editFromHist] IDB lookup:', _e?.message); }
 
   // ── Poser _editingCotation explicitement (sans _autoDetected) ──────────
-  // → _cotationCheckDoublon() bypassera la modale, mode upsert garanti
+  // → _cotationCheckDoublon() bypassera la modale, mode upsert garanti si la
+  //    cotation existe en IDB ; sinon push propre (grâce à _forceAttachToPatient
+  //    posé quand le patientId est connu → le pipeline local push au lieu de
+  //    refuser silencieusement).
   window._editingCotation = {
-    patientId:      patientId,
-    cotationIdx:    cotationIdx >= 0 ? cotationIdx : null,
-    invoice_number: invNum,
-    _fromHist:      true,
+    patientId:             patientId,
+    cotationIdx:           cotationIdx >= 0 ? cotationIdx : null,
+    invoice_number:        invNum,
+    _fromHist:             true,
+    // _forceAttachToPatient : garantit que le pipeline local attache la cotation
+    // à ce patient.id même si la cotation n'existe pas déjà localement (cas admin
+    // qui édite une ligne serveur sans équivalent IDB local).
+    _forceAttachToPatient: !!patientId && cotationIdx < 0 && !invNum,
     // PAS de _autoDetected → bypass modale doublon
   };
 
