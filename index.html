@@ -123,12 +123,6 @@
   .lp-toc-link{font-family:var(--fm);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#a0bbd0;padding:7px 13px;border-radius:20px;text-decoration:none;white-space:nowrap;transition:all .18s;border:1px solid transparent}
   .lp-toc-link:hover{color:#00d4aa;background:rgba(0,212,170,.06);border-color:rgba(0,212,170,.18)}
 
-  /* ── Founder access banner ──────────────────── */
-  .lp-founder{background:linear-gradient(135deg,rgba(255,180,50,.08),rgba(0,212,170,.06));border:1px solid rgba(255,180,50,.25);border-radius:14px;padding:14px 20px;margin-bottom:36px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .lp-founder-badge{background:rgba(255,180,50,.18);color:#ffc857;font-family:var(--fm);font-size:10px;letter-spacing:1.5px;padding:5px 11px;border-radius:12px;white-space:nowrap;font-weight:700}
-  .lp-founder-txt{flex:1;min-width:220px;font-size:13px;color:#e8dcc4;line-height:1.45}
-  .lp-founder-txt strong{color:#ffffff}
-
   /* ── Comment ça marche (3 steps) ────────────── */
   .lp-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px;position:relative}
   @media(max-width:640px){.lp-steps{grid-template-columns:1fr}}
@@ -157,17 +151,6 @@
   .lp-roi-v{font-family:var(--fs);font-size:30px;color:#00d4aa;line-height:1}
   .lp-roi-l{font-size:12.5px;color:#b8cdd8;line-height:1.5}
   .lp-roi-src{font-family:var(--fm);font-size:9px;color:#6a7f91;letter-spacing:.5px;margin-top:auto;padding-top:8px;border-top:1px solid rgba(30,45,61,.6)}
-
-  /* ── Preuve sociale / Testimonials ──────────── */
-  .lp-testi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:52px}
-  @media(max-width:720px){.lp-testi-grid{grid-template-columns:1fr}}
-  .lp-testi{background:rgba(14,20,30,.92);border:1px solid rgba(30,45,61,.95);border-radius:16px;padding:22px 22px 18px;display:flex;flex-direction:column}
-  .lp-testi-stars{color:#ffc857;font-size:13px;letter-spacing:2px;margin-bottom:10px}
-  .lp-testi-q{font-size:13.5px;color:#d8e4ec;line-height:1.6;font-style:italic;margin-bottom:14px;flex:1}
-  .lp-testi-who{display:flex;align-items:center;gap:10px;border-top:1px solid rgba(30,45,61,.6);padding-top:12px}
-  .lp-testi-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0b1a14,#102a1e);border:1px solid rgba(0,212,170,.35);display:grid;place-items:center;font-family:var(--fs);color:#00d4aa;font-size:14px;flex-shrink:0}
-  .lp-testi-meta{font-size:11px;color:#a0bbd0;line-height:1.4}
-  .lp-testi-meta b{color:#ffffff;font-weight:700;display:block;font-size:12px}
 
   /* ── Cabinet B2B dedicated section ──────────── */
   .lp-cabinet{background:linear-gradient(135deg,rgba(79,168,255,.05),rgba(0,212,170,.04));border:1px solid rgba(79,168,255,.18);border-radius:20px;padding:32px 30px;margin-bottom:52px}
@@ -347,12 +330,6 @@
         <a class="lp-toc-link" href="#lp-security">Sécurité</a>
       </div>
     </nav>
-
-    <!-- FOUNDER ACCESS BANNER -->
-    <div class="lp-founder">
-      <span class="lp-founder-badge">✦ Accès fondateur</span>
-      <div class="lp-founder-txt"><strong>Phase de lancement privée.</strong> Tarif préférentiel garanti à vie pour les 100 premières infirmières et 10 premiers cabinets inscrits. Ton retour pèse directement sur la v1.</div>
-    </div>
 
     <!-- COMMENT ÇA MARCHE -->
     <div id="lp-steps" class="lp-sec-label">⚙ Comment ça marche</div>
@@ -638,36 +615,6 @@
       <div class="lp-stat"><div class="lp-stat-v">+2h</div><div class="lp-stat-l">gagnées par jour</div></div>
     </div>
 
-    <!-- PREUVE SOCIALE -->
-    <div class="lp-sec-label">💚 Ils testent AMI</div>
-    <div class="lp-sec-h2">Ce qu'en disent les <em>infirmières en beta</em></div>
-    <div class="lp-testi-grid">
-      <div class="lp-testi">
-        <div class="lp-testi-stars">★★★★★</div>
-        <div class="lp-testi-q">« Je rentrais à 21h pour coter, maintenant c'est fini avant la dernière visite. J'ai récupéré mes soirées. »</div>
-        <div class="lp-testi-who">
-          <div class="lp-testi-av">M</div>
-          <div class="lp-testi-meta"><b>Marie L.</b>IDEL · Finistère · 14 patients/j</div>
-        </div>
-      </div>
-      <div class="lp-testi">
-        <div class="lp-testi-stars">★★★★★</div>
-        <div class="lp-testi-q">« On est 5 IDE au cabinet. La sync sélective nous a résolu tous nos problèmes RGPD de partage. »</div>
-        <div class="lp-testi-who">
-          <div class="lp-testi-av">S</div>
-          <div class="lp-testi-meta"><b>Sophie D.</b>Cabinet multi-IDE · Bretagne</div>
-        </div>
-      </div>
-      <div class="lp-testi">
-        <div class="lp-testi-stars">★★★★★</div>
-        <div class="lp-testi-q">« Le copilote IA m'a sauvée 3 fois sur des cumuls que j'aurais validés. C'est vraiment un filet de sécurité. »</div>
-        <div class="lp-testi-who">
-          <div class="lp-testi-av">A</div>
-          <div class="lp-testi-meta"><b>Anaïs M.</b>IDEL · Morbihan · 2 ans d'exercice</div>
-        </div>
-      </div>
-    </div>
-
     <!-- POUR QUI -->
     <div class="lp-sec-label">⚡ Pour qui ?</div>
     <div class="lp-audience">
@@ -736,14 +683,6 @@
     <div id="lp-faq-sec" class="lp-sec-label">❓ Questions fréquentes</div>
     <div class="lp-sec-h2">Tout ce que tu veux <em>savoir</em></div>
     <div class="lp-faq">
-      <details class="lp-faq-item">
-        <summary class="lp-faq-q">AMI est-il compatible SESAM-Vitale et FSE ?</summary>
-        <div class="lp-faq-a">Oui. AMI génère les FSE (Feuilles de Soins Électroniques) conformes et s'intègre dans le workflow SESAM-Vitale. La cotation est poussée automatiquement après validation.</div>
-      </details>
-      <details class="lp-faq-item">
-        <summary class="lp-faq-q">Combien coûte AMI ?</summary>
-        <div class="lp-faq-a">En phase de lancement, l'accès est <strong>gratuit pour les 100 premières IDE inscrites</strong>, avec tarif préférentiel garanti à vie ensuite. Les tarifs commerciaux seront publiés avant la fin de la beta, pensés pour le budget d'une IDEL (ROI dès le 1<sup>er</sup> mois).</div>
-      </details>
       <details class="lp-faq-item">
         <summary class="lp-faq-q">Qu'en est-il de mes données patients ?</summary>
         <div class="lp-faq-a">Les données de santé sont <strong>stockées exclusivement sur ton terminal</strong> (navigateur, IndexedDB chiffrée). Elles ne transitent jamais par nos serveurs. Chiffrement AES-256-GCM, conformité RGPD by design, architecture prête pour l'hébergement HDS.</div>
@@ -3624,22 +3563,21 @@ async function editFromHist(data) {
     }
   } catch (_e) { console.warn('[editFromHist] IDB lookup:', _e?.message); }
 
-  // ── Poser _editingCotation explicitement ───────────────────────────────
-  // _userChose:true             → bypass garanti de la modale doublon (le user
-  //                               a déjà choisi explicitement en cliquant ✏️)
-  // _forceAttachToPatient:true  → si la cotation n'est pas trouvée dans le
-  //                               cotations[] du patient (cas admin avec IDB
-  //                               fraîchement synchronisée), forcer un push
-  //                               au lieu du "ne rien faire" anti-doublon.
-  //                               Ce flag est SAFE : il n'agit que si patientId
-  //                               est connu — pas de fiche fantôme.
+  // ── Poser _editingCotation explicitement (sans _autoDetected) ──────────
+  // → _cotationCheckDoublon() bypassera la modale, mode upsert garanti si la
+  //    cotation existe en IDB ; sinon push propre (grâce à _forceAttachToPatient
+  //    posé quand le patientId est connu → le pipeline local push au lieu de
+  //    refuser silencieusement).
   window._editingCotation = {
     patientId:             patientId,
     cotationIdx:           cotationIdx >= 0 ? cotationIdx : null,
     invoice_number:        invNum,
     _fromHist:             true,
-    _userChose:            true,
-    _forceAttachToPatient: !!patientId && cotationIdx < 0,
+    // _forceAttachToPatient : garantit que le pipeline local attache la cotation
+    // à ce patient.id même si la cotation n'existe pas déjà localement (cas admin
+    // qui édite une ligne serveur sans équivalent IDB local).
+    _forceAttachToPatient: !!patientId && cotationIdx < 0 && !invNum,
+    // PAS de _autoDetected → bypass modale doublon
   };
 
   // ── Naviguer vers la page cotation ─────────────────────────────────────
