@@ -296,9 +296,42 @@ async function _autoCoterEtImporterPatient(p) {
   let actesRecurrents = '';
   let texte           = '';
 
-  /* ── 1. AUTO-COTATION ── */
+  /* ══════════════════════════════════════════════════════════════════════
+     ⚡ PRÉ-PHASE : COTATION LOCALE INSTANTANÉE (100% SYNCHRONE, pas d'await)
+     ══════════════════════════════════════════════════════════════════════
+     Calcule un montant estimé depuis `p` directement, sans attendre l'IDB.
+     Affiché immédiatement dans la liste → l'utilisateur voit "X € validés"
+     dès le clic "Terminer", sans délai perceptible.
+     La cotation est ensuite raffinée par l'IDB (actes_recurrents) puis par
+     l'API /ami-calcul (invoice_number CPAM + montants NGAP exacts).
+     ═══════════════════════════════════════════════════════════════════════ */
+  if (!p._cotation?.validated) {
+    // Texte le plus rapide disponible depuis p (sans IDB)
+    const _texteRapide = (p.actes_recurrents || p.description || p.texte
+                          || p.texte_soin || p.acte || p.pathologies || '').trim();
+    if (_texteRapide && typeof autoCotationLocale === 'function') {
+      const _cotRapide = autoCotationLocale(_texteRapide);
+      if (_cotRapide.total > 0 || (_cotRapide.actes && _cotRapide.actes.length)) {
+        p._cotation = {
+          actes:          _cotRapide.actes || [],
+          total:          parseFloat(_cotRapide.total || 0),
+          auto:           true,
+          validated:      true,
+          invoice_number: null,
+          _heure_reelle:  heureReelle,
+          _pending_api:   true, // marqueur : raffinement en cours
+        };
+        // Re-render INSTANTANÉ — l'utilisateur voit le montant tout de suite
+        if (typeof renderLivePatientList === 'function') {
+          try { renderLivePatientList(); } catch (_e) {}
+        }
+      }
+    }
+  }
+
+  /* ── 1. AUTO-COTATION (raffinement IDB + API en arrière-plan) ── */
   try {
-    if (!p._cotation?.validated) {
+    if (p._cotation?._pending_api || !p._cotation?.validated) {
       try {
         if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
           const rows = await _idbGetAll(PATIENTS_STORE);
@@ -327,8 +360,31 @@ async function _autoCoterEtImporterPatient(p) {
       texte = actesRecurrents || _texteBase;
 
       if (texte) {
+        /* Cotation locale enrichie (avec actes_recurrents de l'IDB) */
         let cot = (typeof autoCotationLocale === 'function')
           ? autoCotationLocale(texte) : { actes: [], total: 0 };
+
+        // Si la pré-phase n'a pas déjà set p._cotation (ex: pas de _texteRapide),
+        // on le fait maintenant avec la valeur enrichie + re-render
+        if (!p._cotation?.validated) {
+          p._cotation = {
+            actes:          cot.actes || [],
+            total:          parseFloat(cot.total || 0),
+            auto:           true,
+            validated:      true,
+            invoice_number: null,
+            _heure_reelle:  heureReelle,
+            _pending_api:   true,
+          };
+          if (typeof renderLivePatientList === 'function') {
+            try { renderLivePatientList(); } catch (_e) {}
+          }
+        }
+
+        /* Appel API /ami-calcul pour raffiner la cotation
+           et obtenir invoice_number officiel. Si l'API répond, on met à
+           jour p._cotation + re-render. Si elle échoue, la cotation locale
+           reste en place (fallback déjà prêt). */
         try {
           // ── Résoudre nom/prenom depuis l'IDB avant l'appel ──────────────
           // Indispensable pour que le worker sauvegarde patient_nom dans Supabase
@@ -359,17 +415,25 @@ async function _autoCoterEtImporterPatient(p) {
           }) : Promise.reject('no apiCall'));
           if ((d?.actes?.length || d?.total > 0) && !d?.error) cot = d;
         } catch (_e) { /* silencieux — fallback local déjà prêt */ }
+
+        // Mettre à jour p._cotation avec la valeur API (si elle a répondu)
         // Conserver invoice_number retourné par le worker — indispensable pour
         // que toute re-cotation manuelle ultérieure fasse un PATCH Supabase
         // et non un INSERT (évite le doublon dans l'historique des soins).
         p._cotation = {
-          actes:          cot.actes || [],
-          total:          parseFloat(cot.total || 0),
+          actes:          cot.actes || p._cotation.actes || [],
+          total:          parseFloat(cot.total || p._cotation.total || 0),
           auto:           true,
           validated:      true,
           invoice_number: cot.invoice_number || null,
-          _heure_reelle:  heureReelle, // ⚡ propagé à _syncCotationsToSupabase
+          _heure_reelle:  heureReelle,
+          _pending_api:   false,
         };
+
+        // Re-render après réponse API (montants raffinés + invoice_number)
+        if (typeof renderLivePatientList === 'function') {
+          try { renderLivePatientList(); } catch (_e) {}
+        }
       }
     }
   } catch (_e) { console.warn('[AMI] Cotation auto KO:', _e?.message); }
