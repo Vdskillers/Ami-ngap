@@ -552,32 +552,13 @@ async function _cotationCabinetPersistMyPart(d, txt) {
   const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
   const _invNum  = myCot.invoice_number || _editRef?.invoice_number || null;
 
-  // ── Résolution patient : 3 niveaux (même logique que pipeline solo) ──
-  // 1. Par ID (fiable — _editRef.patientId posé par coterDepuisPatient / editFromHist)
-  // 2. Par nom clair
-  // 3. Fallback décryptage si colonnes nom/prenom vides
+  // Recherche du patient dans l'IDB (même logique que le pipeline solo)
   const _allRows = await _idbGetAll(PATIENTS_STORE);
   const _nomLow  = _patNom.toLowerCase();
-  let _patRow = _editRef?.patientId
-    ? _allRows.find(r => r.id === _editRef.patientId)
-    : null;
-  if (!_patRow) {
-    _patRow = _allRows.find(r =>
-      ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
-      ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
-    );
-    if (!_patRow) {
-      for (const r of _allRows) {
-        if (r.nom || r.prenom) continue;
-        try {
-          const _pp = _dec(r._data) || {};
-          const _a = ((_pp.prenom||'') + ' ' + (_pp.nom||'')).toLowerCase();
-          const _b = ((_pp.nom||'') + ' ' + (_pp.prenom||'')).toLowerCase();
-          if (_a.includes(_nomLow) || _b.includes(_nomLow)) { _patRow = r; break; }
-        } catch (_) {}
-      }
-    }
-  }
+  const _patRow  = _allRows.find(r =>
+    ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+    ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+  );
 
   const _newCot = {
     date:           _cotDate,
@@ -607,13 +588,13 @@ async function _cotationCabinetPersistMyPart(d, txt) {
       _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
     if (_idx < 0 && _editRef?.invoice_number)
       _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
-    // ⚠️ Fallback par date : UNIQUEMENT si _editRef est un vrai mode édition.
-    // Skip pour _userChose (choix "Nouvelle cotation") et _forceAttachToPatient
-    // (coter-depuis-carnet sans cotation du jour), qui doivent pusher une nouvelle
-    // entrée et pas écraser une cotation existante par match de date.
-    const _isForceNew    = _editRef?._userChose            && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-    const _isForceAttach = _editRef?._forceAttachToPatient && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-    if (_idx < 0 && _editRef && _cotDate && !_isForceNew && !_isForceAttach) {
+    // ⚠️ Fallback par date : UNIQUEMENT si _editRef est un vrai mode édition
+    // (cotationIdx ou invoice_number fourni). Si l'utilisateur a cliqué
+    // "✨ Nouvelle cotation" dans la modale doublon, _editRef = { _userChose: true }
+    // SANS cotationIdx/invoice_number → le fallback par date trouverait l'ancienne
+    // cotation et ferait un upsert silencieux au lieu de respecter le choix utilisateur.
+    const _isForceNew = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+    if (_idx < 0 && _editRef && _cotDate && !_isForceNew) {
       _idx = _pat.cotations.findIndex(c =>
         (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
       );
@@ -622,11 +603,16 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     if (_idx >= 0) {
       // Cotation existante → upsert
       _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-    } else if (!_editRef || _isForceNew || _isForceAttach) {
-      // Pas de _editRef OU choix "Nouvelle cotation" OU coter-depuis-carnet → push
+    } else if (!_editRef || _isForceNew) {
+      // Pas de _editRef OU choix explicite "Nouvelle cotation" → push
+      _pat.cotations.push(_newCot);
+    } else if (_editRef?._forceAttachToPatient) {
+      // Patient existant + mode édition explicite (✏️ Historique) mais
+      // cotation absente du cotations[] local — ré-attache au patient connu
       _pat.cotations.push(_newCot);
     }
-    // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite doublons)
+    // Sinon (_editRef avec cotationIdx/invoice_number mais pas d'index ET
+    // pas de _forceAttachToPatient) → ne rien faire (évite doublons)
 
     _pat.updated_at = new Date().toISOString();
     const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
@@ -1174,13 +1160,7 @@ async function _cotationPipeline() {
       if (_patNom && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
         const _patRows = await _idbGetAll(PATIENTS_STORE);
 
-        // ── Résolution patient : 3 niveaux de robustesse ──────────────────
-        // 1. Par ID (le plus fiable — via _editRef.patientId posé par
-        //    coterDepuisPatient / editFromHist / editCotationPatient)
-        // 2. Par nom en clair (colonnes indexées nom/prenom)
-        // 3. Fallback : décryptage _data si colonnes nom/prenom vides
-        //    (cas rare : patient créé avec ancienne version sans colonnes claires,
-        //     ou corruption partielle de la row)
+        // Recherche par ID (mode édition) puis par nom exact/partiel
         let _patRow = _editRef?.patientId
           ? _patRows.find(r => r.id === _editRef.patientId)
           : null;
@@ -1190,18 +1170,6 @@ async function _cotationPipeline() {
             ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
             ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
           );
-          // Fallback décryptage : seulement pour rows avec colonnes claires vides
-          if (!_patRow) {
-            for (const r of _patRows) {
-              if (r.nom || r.prenom) continue; // déjà testé au-dessus
-              try {
-                const _pp = _dec(r._data) || {};
-                const _a = ((_pp.prenom||'') + ' ' + (_pp.nom||'')).toLowerCase();
-                const _b = ((_pp.nom||'') + ' ' + (_pp.prenom||'')).toLowerCase();
-                if (_a.includes(_nomLow) || _b.includes(_nomLow)) { _patRow = r; break; }
-              } catch (_) { /* row illisible, skip */ }
-            }
-          }
         }
 
         const _invNum = d.invoice_number || _editRef?.invoice_number || null;
@@ -1251,11 +1219,8 @@ async function _cotationPipeline() {
           //    _editRef vaut { _userChose: true } SANS cotationIdx/invoice_number → on
           //    skip ce fallback pour respecter le choix utilisateur (sinon upsert
           //    silencieux de l'ancienne cotation au lieu de créer une nouvelle).
-          // Pareil pour _forceAttachToPatient (coter depuis carnet) : si pas d'idx
-          // ni d'invNum posé, c'est une nouvelle cotation → on skip le fallback date.
-          const _isForceNewSolo  = _editRef?._userChose           && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-          const _isForceAttach   = _editRef?._forceAttachToPatient && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-          if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo && !_isForceAttach) {
+          const _isForceNewSolo = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+          if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo) {
             _idx = _pat.cotations.findIndex(c =>
               (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
             );
@@ -1264,11 +1229,19 @@ async function _cotationPipeline() {
           if (_idx >= 0) {
             // Cotation existante trouvée → mettre à jour (upsert)
             _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-          } else if (!_editRef || _isForceNewSolo || _isForceAttach) {
-            // Pas en mode édition OU choix "Nouvelle cotation" OU coter-depuis-carnet → push
+          } else if (!_editRef || _isForceNewSolo) {
+            // Pas en mode édition OU choix explicite "Nouvelle cotation" → push
+            _pat.cotations.push(_newCot);
+          } else if (_editRef?._forceAttachToPatient) {
+            // Patient existant + mode édition explicite (✏️ depuis Historique)
+            // mais cotation introuvable dans cotations[] (IDB fraîchement
+            // synchronisée côté admin, ou cotation créée par un autre device).
+            // → ré-attacher la cotation au patient connu (PAS de fiche fantôme,
+            //   le patient existe vraiment dans l'IDB).
             _pat.cotations.push(_newCot);
           }
-          // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite les doublons)
+          // Sinon (_editRef avec cotationIdx/invoice_number mais pas d'index
+          // trouvé ET pas de _forceAttachToPatient) → ne rien faire (évite les doublons)
 
           _pat.updated_at = new Date().toISOString();
           const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
@@ -1735,7 +1708,7 @@ async function _saveEditedCotation(d) {
 /* ════════════════════════════════════════════════
    IMPRESSION / PDF
    ────────────────────────────────────────────────
-   1. Vérifie si ADELI et RPPS sont renseignés (Cabinet/Structure optionnel)
+   1. Vérifie si ADELI, RPPS, Structure sont renseignés
    2. Si manquants → modale de complétion avec 2 choix :
         a) Enregistrer + Imprimer
         b) Imprimer sans ces infos
@@ -1744,16 +1717,16 @@ async function _saveEditedCotation(d) {
 async function printInv(d) {
   const u = S?.user || {};
   const missing = [];
-  if (!u.adeli) missing.push('N° ADELI');
-  if (!u.rpps)  missing.push('N° RPPS');
-  // Cabinet / Structure est recommandé mais PAS bloquant — ne déclenche plus la modale
+  if (!u.adeli)     missing.push('N° ADELI');
+  if (!u.rpps)      missing.push('N° RPPS');
+  if (!u.structure) missing.push('Cabinet / Structure');
 
   if (missing.length > 0) {
     /* Infos manquantes → afficher la modale de complétion */
     _pendingPrintData = d;
     _showProInfoModal(u, missing);
   } else {
-    /* ADELI + RPPS OK → imprimer directement (même sans Cabinet/Structure) */
+    /* Tout est renseigné → imprimer directement */
     await _doPrint(d, u);
   }
 }
@@ -1771,7 +1744,7 @@ async function _showProInfoModal(u, missing) {
   const piAdeli = $('pi-adeli'), piRpps = $('pi-rpps'), piStruct = $('pi-structure');
   if (piAdeli)  { piAdeli.value  = u.adeli     || ''; piAdeli.required  = !u.adeli; }
   if (piRpps)   { piRpps.value   = u.rpps      || ''; piRpps.required   = !u.rpps; }
-  if (piStruct) { piStruct.value = u.structure || ''; piStruct.required = false; /* Cabinet/Structure est OPTIONNEL */ }
+  if (piStruct) { piStruct.value = u.structure || ''; piStruct.required = !u.structure; }
 
   /* Masquer uniquement les champs déjà renseignés */
   if ($('pi-adeli')?.closest('.af'))  $('pi-adeli').closest('.af').style.display  = u.adeli     ? 'none' : '';
@@ -1793,33 +1766,20 @@ async function _showProInfoModal(u, missing) {
       btnSave.disabled = true;
       btnSave.innerHTML = '<span class="spin"></span> Enregistrement…';
 
-      // ⚠️ Capturer _pendingPrintData AVANT closeProInfoModal() qui le nulle
-      const _dToPrint = _pendingPrintData;
-
       try {
-        // Sauvegarde du profil → best-effort : si ça échoue (réseau, admin, etc.)
-        // on imprime quand même plutôt que de bloquer l'utilisateur.
-        try {
-          const res = await wpost('/webhook/profil-save', {
-            nom: u.nom || '', prenom: u.prenom || '',
-            adeli, rpps, structure,
-            adresse: u.adresse || '', tel: u.tel || ''
-          });
-          if (res?.ok) {
-            /* Mettre à jour la session locale seulement si save réussie */
-            S.user = { ...S.user, adeli, rpps, structure };
-            if (typeof ss?.save === 'function') ss.save(S.token, S.role, S.user);
-          } else {
-            console.warn('[printInv] profil-save non-OK, impression quand même:', res?.error);
-          }
-        } catch (_saveErr) {
-          console.warn('[printInv] profil-save KO (impression quand même):', _saveErr?.message);
-        }
+        const res = await wpost('/webhook/profil-save', {
+          nom: u.nom || '', prenom: u.prenom || '',
+          adeli, rpps, structure,
+          adresse: u.adresse || '', tel: u.tel || ''
+        });
+        if (!res.ok) throw new Error(res.error || 'Erreur sauvegarde');
 
-        // User qui sera utilisé pour le PDF (avec les valeurs saisies, même si save KO)
-        const _uForPrint = { ...u, adeli, rpps, structure };
+        /* Mettre à jour la session locale */
+        S.user = { ...S.user, adeli, rpps, structure };
+        ss.save(S.token, S.role, S.user);
+
         closeProInfoModal();
-        await _doPrint(_dToPrint, _uForPrint);
+        await _doPrint(_pendingPrintData, S.user);
       } catch (e) {
         const msg = $('pro-info-msg');
         if (msg) { msg.textContent = '❌ ' + e.message; msg.style.display = 'block'; }
@@ -1834,10 +1794,8 @@ async function _showProInfoModal(u, missing) {
   const btnAnyway = $('btn-pi-print-anyway');
   if (btnAnyway) {
     btnAnyway.onclick = async () => {
-      // ⚠️ Capturer AVANT closeProInfoModal() qui nulle _pendingPrintData
-      const _dToPrint = _pendingPrintData;
       closeProInfoModal();
-      await _doPrint(_dToPrint, u);
+      await _doPrint(_pendingPrintData, u);
     };
   }
 
