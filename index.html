@@ -3420,6 +3420,7 @@ async function hist() {
         <td>${idesHtml}</td>
         <td>${alertsHtml}</td>
         <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
+          onclick="window.editFromHistBtn(this)"
           data-hist-id="${r.id}"
           data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
           data-hist-date="${(r.date_soin||'').replace(/"/g,'&quot;')}"
@@ -3519,7 +3520,8 @@ async function resetAllHist() {
    → bypass de la modale doublon, mode upsert garanti.
    ═══════════════════════════════════════════════════════════ */
 async function editFromHist(data) {
-  if (!data) return;
+  console.log('[editFromHist] Démarrage avec data:', data);
+  if (!data) { console.warn('[editFromHist] data null/undefined → abort'); return; }
 
   const invNum   = data.invoice_number || null;
   const dateSoin = data.date_soin ? data.date_soin.slice(0, 10) : null;
@@ -3563,21 +3565,23 @@ async function editFromHist(data) {
     }
   } catch (_e) { console.warn('[editFromHist] IDB lookup:', _e?.message); }
 
-  // ── Poser _editingCotation explicitement (sans _autoDetected) ──────────
-  // → _cotationCheckDoublon() bypassera la modale, mode upsert garanti si la
-  //    cotation existe en IDB ; sinon push propre (grâce à _forceAttachToPatient
-  //    posé quand le patientId est connu → le pipeline local push au lieu de
-  //    refuser silencieusement).
+  // ── Poser _editingCotation explicitement ───────────────────────────────
+  // _userChose:true             → bypass garanti de la modale doublon (le user
+  //                               a cliqué ✏️ → choix explicite, pas de modale)
+  // _forceAttachToPatient:true  → si la cotation n'est pas dans cotations[]
+  //                               du patient local (cas admin avec IDB
+  //                               fraîchement synchronisée OU cotation créée
+  //                               sur un autre device), forcer un push au
+  //                               lieu du "ne rien faire" anti-doublon.
+  //                               SAFE : n'agit que si patientId est connu
+  //                               (donc le patient existe vraiment dans l'IDB).
   window._editingCotation = {
     patientId:             patientId,
     cotationIdx:           cotationIdx >= 0 ? cotationIdx : null,
     invoice_number:        invNum,
     _fromHist:             true,
-    // _forceAttachToPatient : garantit que le pipeline local attache la cotation
-    // à ce patient.id même si la cotation n'existe pas déjà localement (cas admin
-    // qui édite une ligne serveur sans équivalent IDB local).
-    _forceAttachToPatient: !!patientId && cotationIdx < 0 && !invNum,
-    // PAS de _autoDetected → bypass modale doublon
+    _userChose:            true,
+    _forceAttachToPatient: !!patientId && cotationIdx < 0,
   };
 
   // ── Naviguer vers la page cotation ─────────────────────────────────────
@@ -3651,10 +3655,20 @@ async function editFromHist(data) {
   }, 250);
 }
 
-/* Délégué d'événement pour les boutons ✏️ de l'historique */
-document.addEventListener('click', function(e) {
-  const btn = e.target.closest('.hist-edit-btn');
-  if (!btn) return;
+/* ═══════════════════════════════════════════════════════════
+   Exposition globale pour onclick inline + délégué fallback
+   ═══════════════════════════════════════════════════════════ */
+window.editFromHist = editFromHist;
+
+/* Wrapper appelé directement par le onclick inline du bouton ✏️.
+   Plus robuste que la délégation : exécute même si d'autres scripts
+   modifient le DOM ou capturent les events au niveau document. */
+window.editFromHistBtn = function(btn) {
+  console.log('[editFromHistBtn] Clic ✏️ détecté sur:', btn);
+  if (!btn || !btn.dataset) {
+    console.warn('[editFromHistBtn] bouton ou dataset invalide');
+    return;
+  }
   const data = {
     id:             btn.dataset.histId    || '',
     invoice_number: btn.dataset.histInv   || '',
@@ -3665,6 +3679,17 @@ document.addEventListener('click', function(e) {
     actes:          (() => { try { return JSON.parse(decodeURIComponent(btn.dataset.histActes || '%5B%5D')); } catch { return []; } })(),
   };
   editFromHist(data);
+};
+
+/* Délégué d'événement — SECOURS uniquement (au cas où l'onclick inline
+   serait stripé par un sanitizer ou un re-render dynamique). */
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.hist-edit-btn');
+  if (!btn) return;
+  // Si onclick inline est déjà présent, il a déjà été appelé → ne pas re-déclencher
+  if (btn.hasAttribute('onclick')) return;
+  console.log('[editFromHist délégué] Fallback déclenché');
+  window.editFromHistBtn(btn);
 });
 
 </script>
@@ -4244,3 +4269,5 @@ window._initTopbarExtras = function() {
   });
 })();
 </script>
+</body>
+</html>
