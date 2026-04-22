@@ -209,8 +209,18 @@ function stopLiveTracking() {
    ============================================================ */
 async function _autoCoterEtImporterPatient(p) {
   const _now     = new Date();
-  const today    = _now.toISOString();
-  const todayStr = today.split('T')[0];
+  // ⚡ Date locale (pas UTC) : cotation faite à 1h du matin France doit
+  // s'afficher au jour calendaire courant, pas la veille UTC.
+  const todayStr = (typeof _localDateStr === 'function')
+    ? _localDateStr(_now)
+    : (() => { // fallback inline si utils.js pas encore chargé
+        const y=_now.getFullYear(),m=String(_now.getMonth()+1).padStart(2,'0'),d=String(_now.getDate()).padStart(2,'0');
+        return `${y}-${m}-${d}`;
+      })();
+  // ISO local (sans Z) — slice(0,10) renvoie alors la date locale
+  const today = (typeof _localDateTimeISO === 'function')
+    ? _localDateTimeISO(_now)
+    : todayStr + 'T' + _now.toTimeString().slice(0, 8);
   // ⚡ Heure RÉELLE de fin de soin. Priorité :
   //   1. p._done_at : posé par markUberDone() au clic "Terminer" — c'est l'ancre
   //      fiable, même si cette fonction est ré-appelée plus tard en batch par
@@ -382,7 +392,11 @@ async function _autoCoterEtImporterPatient(p) {
         soin:   (p.description || p.texte || '').slice(0, 120),
         source: 'tournee_live',
         invoice_number: p._cotation.invoice_number || null,
-        _synced: false,
+        // ⚡ _synced: true SI invoice_number présent (= /ami-calcul a déjà sauvé en Supabase
+        // côté worker via _saveCotationNurse). Évite que _syncCotationsToSupabase ne re-pousse
+        // la même cotation et crée un doublon (2 INSERTs visibles dans Historique).
+        // _synced: false sinon → rattrapage par _stopDayInternal à la clôture.
+        _synced: !!p._cotation.invoice_number,
         updated_at: today,
       };
       if (_existUberIdx >= 0) {
@@ -428,19 +442,17 @@ async function _autoCoterEtImporterPatient(p) {
     }
   } catch (_e) {}
 
-  /* ── Sync Supabase silencieux ──
-     ⚠️ skipIDB: true OBLIGATOIRE :
-     La cotation vient d'être écrite en IDB juste au-dessus avec
-     `_synced: false` et `invoice_number: null` (l'API /ami-calcul renvoie
-     les actes mais PAS d'invoice_number — celui-ci sera généré par
-     /ami-save-cotation). Si on laisse _syncCotationsToSupabase relire l'IDB,
-     il trouvera la cotation fraîchement saved et l'enverra une 2e fois en
-     plus de fromMemory[p] → 2 INSERT dans Supabase → 2 invoice_numbers
-     différents → DOUBLON dans Historique des soins après pull au login.
-     Le rattrapage IDB (skipIDB=false) est fait à la clôture journée
-     (_stopDayInternal) — c'est suffisant comme filet de sécurité. */
+  /* ── Sync Supabase silencieux (SEULEMENT si /ami-calcul n'a pas déjà sauvé) ──
+     Depuis le fix worker (_saveCotationNurse génère + retourne un invoice_number),
+     /ami-calcul sauvegarde TOUJOURS la cotation en Supabase et nous renvoie son
+     invoice_number. Dans ce cas, _syncCotationsToSupabase ferait un 2e appel
+     redondant qui peut créer un doublon (le critère 2 patient_id+date_soin du
+     worker ne match pas toujours sur l'INSERT précédent dans la même ms).
+     On skip donc proprement quand invoice_number est connu.
+     Si invoice_number est null (échec /ami-calcul ou worker non déployé),
+     on tombe sur l'ancien comportement : push via _syncCotationsToSupabase. */
   try {
-    if (typeof _syncCotationsToSupabase === 'function') {
+    if (typeof _syncCotationsToSupabase === 'function' && !p?._cotation?.invoice_number) {
       _syncCotationsToSupabase([p], { skipIDB: true }).catch(() => {});
     }
   } catch (_e) {}

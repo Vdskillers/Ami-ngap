@@ -117,6 +117,35 @@ function showM(id,txt,type='e'){ const el=$(id); if(!el)return; el.className='ms
 function hideM(...ids){ ids.forEach(id=>{ const el=$(id); if(el) el.style.display='none'; }); }
 function ld(id,on){ const b=$(id); if(!b)return; b.disabled=on; if(on){b._o=b.innerHTML;b.innerHTML='<span class="spin"></span> En cours...';}else b.innerHTML=b._o||b.innerHTML; }
 
+/* ⚡ Date locale du jour au format YYYY-MM-DD (pas UTC).
+   Critique pour date_soin : à 1h du matin France (CEST = UTC+2),
+   `new Date().toISOString().slice(0,10)` renvoie la veille ("2026-04-21"
+   alors que le calendrier local affiche mercredi 22/04). Stocker la date
+   en UTC fait apparaître toutes les cotations nocturnes au mauvais jour
+   dans le carnet, l'historique et le simulateur audit CPAM. */
+function _localDateStr(d) {
+  const dd = d || new Date();
+  const y = dd.getFullYear();
+  const m = String(dd.getMonth() + 1).padStart(2, '0');
+  const day = String(dd.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+window._localDateStr = _localDateStr;
+
+/* ⚡ Date+Heure locale ISO (sans suffixe Z) — utilisé pour cotation.date
+   afin que slice(0,10) renvoie bien la date locale partout. */
+function _localDateTimeISO(d) {
+  const dd = d || new Date();
+  const y = dd.getFullYear();
+  const m = String(dd.getMonth() + 1).padStart(2, '0');
+  const day = String(dd.getDate()).padStart(2, '0');
+  const h = String(dd.getHours()).padStart(2, '0');
+  const mi = String(dd.getMinutes()).padStart(2, '0');
+  const s = String(dd.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${day}T${h}:${mi}:${s}`;
+}
+window._localDateTimeISO = _localDateTimeISO;
+
 /* ── 8. API — FETCH AVEC RETRY v5 ───────────────
    ✅ Parsing JSON sécurisé (anti "Unexpected end of JSON")
    ✅ Timeout IA 30s, standard 8s

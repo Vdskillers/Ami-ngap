@@ -756,7 +756,27 @@ async function renderPlanning(d){
         </div>
       </div>
       ${soin ? `<div style="font-size:11px;color:${actes ? 'var(--a)' : 'var(--m)'};margin-bottom:6px;line-height:1.4">${actes ? '💊 ' : ''}${soin}</div>` : ''}
-      ${cot  ? `<div style="font-size:10px;color:var(--a);font-family:var(--fm);margin-bottom:6px">✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} €</div>` : ''}
+      ${cot  ? (() => {
+        // ⚡ Bloc enrichi : Date+Heure + N° Facture + ID — facilite le rapprochement
+        // avec l'Historique des soins pour repérer/auditer les doublons éventuels.
+        const _invNumP = p._cotation.invoice_number || null;
+        const _heureP  = p._cotation._heure_reelle || p._cotation.heure || null;
+        const _dateP   = p._cotation._tournee_date || (typeof _localDateStr === 'function' ? _localDateStr() : new Date().toISOString().slice(0,10));
+        let _dateAffP = _dateP;
+        try { _dateAffP = new Date(_dateP + 'T00:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'}); } catch {}
+        const _pidP    = p.patient_id || p.id || '—';
+        const _syncIco = p._cotation._synced ? '☁️✓' : '☁️…';
+        return `<div style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.15);border-radius:6px;padding:6px 8px;margin-bottom:6px">
+          <div style="font-size:11px;color:var(--a);font-family:var(--fm);font-weight:600;margin-bottom:3px">
+            ✅ Cotation : ${parseFloat(p._cotation.total||0).toFixed(2)} € ${_syncIco}
+          </div>
+          <div style="font-size:9px;color:var(--m);font-family:var(--fm);line-height:1.5">
+            ${_dateAffP}${_heureP ? ' · ' + _heureP : ''}<br>
+            ${_invNumP ? `N° <span style="color:var(--a)">${_invNumP}</span>` : '<span style="color:#f59e0b">N° en attente</span>'}
+            <span style="opacity:.6"> · ID #${String(_pidP).slice(-6)}</span>
+          </div>
+        </div>`;
+      })() : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
 
         <button onclick="_planningRemovePatient(${idx})" style="font-size:10px;font-family:var(--fm);padding:3px 9px;border-radius:20px;border:1px solid var(--b);background:none;color:var(--m);cursor:pointer">✕</button>
@@ -1994,7 +2014,8 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
         return {
           actes:          p._cotation.actes || [],
           total:          parseFloat(p._cotation.total || 0),
-          date_soin:      p._cotation._tournee_date || new Date().toISOString().slice(0, 10),
+          date_soin:      p._cotation._tournee_date
+                            || (typeof _localDateStr === 'function' ? _localDateStr() : new Date().toISOString().slice(0, 10)),
           // ⚡ Heure RÉELLE du soin (clic "Terminer") — JAMAIS la contrainte horaire
           // planifiée (p.heure_soin / p.heure_preferee) qui vient de la tournée.
           // Priorité : _heure_reelle (mémoire, taguée par uber.js/_validateCotationLive)
@@ -3832,7 +3853,8 @@ function _validateCotationLive() {
     total,
     validated:      true,
     invoice_number: existingInvoice,
-    _tournee_date:  patient._cotation?._tournee_date || new Date().toISOString().slice(0, 10),
+    _tournee_date:  patient._cotation?._tournee_date
+                      || (typeof _localDateStr === 'function' ? _localDateStr() : new Date().toISOString().slice(0, 10)),
     _heure_reelle:  existingHeureMem || heureReelleLive, // ⚡ propagé à _syncCotationsToSupabase
   };
 
@@ -3847,7 +3869,7 @@ function _validateCotationLive() {
       if (!row) return;
       const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
       if (!p.cotations) p.cotations = [];
-      const today     = new Date().toISOString().slice(0, 10);
+      const today     = (typeof _localDateStr === 'function') ? _localDateStr() : new Date().toISOString().slice(0, 10);
       const soinLabel = (patient.description || patient.texte || '').slice(0, 120);
       // Chercher la cotation existante par invoice_number (plus fiable),
       // puis par fenêtre temporelle 6h sur source tournée (fallback)
@@ -3887,7 +3909,9 @@ function _validateCotationLive() {
       if (patient?._cotation) patient._cotation._heure_reelle = heureFinalLive;
 
       const cotEntry = {
-        date:           existingIdx >= 0 ? p.cotations[existingIdx].date : new Date().toISOString(),
+        date:           existingIdx >= 0
+                          ? p.cotations[existingIdx].date
+                          : (typeof _localDateTimeISO === 'function' ? _localDateTimeISO() : new Date().toISOString()),
         heure:          heureFinalLive, // ⚡ heure RÉELLE du soin (pas la contrainte horaire planifiée)
         actes,
         total,

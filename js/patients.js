@@ -847,22 +847,37 @@ function _patTabRender(tab, id, p, notes) {
           ${p.cotations.slice().reverse().map((c, ri) => {
             const realIdx = p.cotations.length - 1 - ri;
             const dateObj = new Date(c.date);
-            const dateStr = dateObj.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+            const dateStr = dateObj.toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
             const heureStr = c.heure || dateObj.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
             const actesList = (c.actes||[]).map(a => `<div style="font-size:12px;color:var(--m);padding:2px 0">• ${a.code||a.nom||''} — ${parseFloat(a.total||0).toFixed(2)} €</div>`).join('');
             const sourceBadge = c.source === 'tournee_auto'
               ? `<span style="font-size:9px;background:rgba(79,168,255,.1);color:var(--a2);border-radius:20px;padding:1px 6px;margin-left:4px">⚡ Auto</span>`
               : c.source === 'tournee'
               ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;margin-left:4px">🚗 Tournée</span>`
+              : c.source === 'tournee_live'
+              ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px;margin-left:4px">🚗 Live</span>`
               : '';
+            // ⚡ N° facture & statut sync — utiles pour rapprochement avec Historique des soins
+            const invHtml = c.invoice_number
+              ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(0,212,170,.08);color:var(--a);border-radius:4px;padding:2px 6px;border:1px solid rgba(0,212,170,.2)">N° ${c.invoice_number}</span>`
+              : `<span style="font-size:10px;font-family:var(--fm);color:var(--m);background:rgba(255,180,0,.08);border-radius:4px;padding:2px 6px;border:1px solid rgba(255,180,0,.2)">⏳ N° en attente</span>`;
+            const syncIcon = c._synced
+              ? `<span title="Synchronisée vers Supabase" style="font-size:10px;color:var(--a)">☁️✓</span>`
+              : `<span title="En attente de synchronisation" style="font-size:10px;color:#f59e0b">☁️…</span>`;
+            const idIdx = `<span style="font-size:9px;font-family:var(--fm);color:var(--m);opacity:.6">#${realIdx}</span>`;
             return `<div style="border:1px solid var(--b);border-radius:var(--r);padding:12px 14px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
-                <div style="font-family:var(--fm);font-size:11px;color:var(--m)">${dateStr} à ${heureStr}${sourceBadge}${c.soin?' · '+c.soin.slice(0,40):''}</div>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <span style="font-family:var(--fm);font-size:11px;color:var(--m)">${dateStr} à ${heureStr}</span>
+                  ${sourceBadge}${syncIcon}${idIdx}
+                  ${c.soin?`<span style="font-size:11px;color:var(--m)">· ${c.soin.slice(0,40)}</span>`:''}
+                </div>
                 <div style="display:flex;gap:6px">
                   <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editCotationPatient('${id}',${realIdx})">✏️</button>
                   <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteCotationPatient('${id}',${realIdx})">🗑️</button>
                 </div>
               </div>
+              <div style="margin-bottom:6px">${invHtml}</div>
               ${actesList}
               <div style="font-size:13px;font-weight:600;color:var(--a);margin-top:6px">Total : ${parseFloat(c.total||0).toFixed(2)} €</div>
             </div>`;
