@@ -552,13 +552,32 @@ async function _cotationCabinetPersistMyPart(d, txt) {
   const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
   const _invNum  = myCot.invoice_number || _editRef?.invoice_number || null;
 
-  // Recherche du patient dans l'IDB (même logique que le pipeline solo)
+  // ── Résolution patient : 3 niveaux (même logique que pipeline solo) ──
+  // 1. Par ID (fiable — _editRef.patientId posé par coterDepuisPatient / editFromHist)
+  // 2. Par nom clair
+  // 3. Fallback décryptage si colonnes nom/prenom vides
   const _allRows = await _idbGetAll(PATIENTS_STORE);
   const _nomLow  = _patNom.toLowerCase();
-  const _patRow  = _allRows.find(r =>
-    ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
-    ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
-  );
+  let _patRow = _editRef?.patientId
+    ? _allRows.find(r => r.id === _editRef.patientId)
+    : null;
+  if (!_patRow) {
+    _patRow = _allRows.find(r =>
+      ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+      ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+    );
+    if (!_patRow) {
+      for (const r of _allRows) {
+        if (r.nom || r.prenom) continue;
+        try {
+          const _pp = _dec(r._data) || {};
+          const _a = ((_pp.prenom||'') + ' ' + (_pp.nom||'')).toLowerCase();
+          const _b = ((_pp.nom||'') + ' ' + (_pp.prenom||'')).toLowerCase();
+          if (_a.includes(_nomLow) || _b.includes(_nomLow)) { _patRow = r; break; }
+        } catch (_) {}
+      }
+    }
+  }
 
   const _newCot = {
     date:           _cotDate,
@@ -588,13 +607,13 @@ async function _cotationCabinetPersistMyPart(d, txt) {
       _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
     if (_idx < 0 && _editRef?.invoice_number)
       _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
-    // ⚠️ Fallback par date : UNIQUEMENT si _editRef est un vrai mode édition
-    // (cotationIdx ou invoice_number fourni). Si l'utilisateur a cliqué
-    // "✨ Nouvelle cotation" dans la modale doublon, _editRef = { _userChose: true }
-    // SANS cotationIdx/invoice_number → le fallback par date trouverait l'ancienne
-    // cotation et ferait un upsert silencieux au lieu de respecter le choix utilisateur.
-    const _isForceNew = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-    if (_idx < 0 && _editRef && _cotDate && !_isForceNew) {
+    // ⚠️ Fallback par date : UNIQUEMENT si _editRef est un vrai mode édition.
+    // Skip pour _userChose (choix "Nouvelle cotation") et _forceAttachToPatient
+    // (coter-depuis-carnet sans cotation du jour), qui doivent pusher une nouvelle
+    // entrée et pas écraser une cotation existante par match de date.
+    const _isForceNew    = _editRef?._userChose            && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+    const _isForceAttach = _editRef?._forceAttachToPatient && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+    if (_idx < 0 && _editRef && _cotDate && !_isForceNew && !_isForceAttach) {
       _idx = _pat.cotations.findIndex(c =>
         (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
       );
@@ -603,8 +622,8 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     if (_idx >= 0) {
       // Cotation existante → upsert
       _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-    } else if (!_editRef || _isForceNew) {
-      // Pas de _editRef OU choix explicite "Nouvelle cotation" → push
+    } else if (!_editRef || _isForceNew || _isForceAttach) {
+      // Pas de _editRef OU choix "Nouvelle cotation" OU coter-depuis-carnet → push
       _pat.cotations.push(_newCot);
     }
     // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite doublons)
@@ -719,7 +738,7 @@ function renderCotCabinet(d) {
       <!-- Actions par IDE -->
       <div style="padding:8px 14px;border-top:1px solid var(--b);display:flex;gap:8px;flex-wrap:wrap;background:var(--s)">
         ${cot.invoice_number ? `<button class="btn bv bsm" onclick="openSignatureModal('${cot.invoice_number}')">✍️ Signature patient</button>` : ''}
-        ${cot.invoice_number ? `<button class="btn bs bsm" onclick="printInv(${JSON.stringify({...cot,total:cot.total}).replace(/'/g,'&#39;')})">📥 Facture</button>` : ''}
+        <button class="btn bs bsm" onclick='printInv(${JSON.stringify({...cot,total:cot.total}).replace(/'/g, "&#39;")})' title="${cot.invoice_number ? 'Télécharger la facture' : 'Télécharger — n° provisoire (cotation pas encore synchronisée)'}">📥 Facture${cot.invoice_number ? '' : ' <span style=\"font-size:9px;opacity:.7\">(provisoire)</span>'}</button>
       </div>
     </div>`;
   }).join('');
@@ -1155,7 +1174,13 @@ async function _cotationPipeline() {
       if (_patNom && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
         const _patRows = await _idbGetAll(PATIENTS_STORE);
 
-        // Recherche par ID (mode édition) puis par nom exact/partiel
+        // ── Résolution patient : 3 niveaux de robustesse ──────────────────
+        // 1. Par ID (le plus fiable — via _editRef.patientId posé par
+        //    coterDepuisPatient / editFromHist / editCotationPatient)
+        // 2. Par nom en clair (colonnes indexées nom/prenom)
+        // 3. Fallback : décryptage _data si colonnes nom/prenom vides
+        //    (cas rare : patient créé avec ancienne version sans colonnes claires,
+        //     ou corruption partielle de la row)
         let _patRow = _editRef?.patientId
           ? _patRows.find(r => r.id === _editRef.patientId)
           : null;
@@ -1165,6 +1190,18 @@ async function _cotationPipeline() {
             ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
             ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
           );
+          // Fallback décryptage : seulement pour rows avec colonnes claires vides
+          if (!_patRow) {
+            for (const r of _patRows) {
+              if (r.nom || r.prenom) continue; // déjà testé au-dessus
+              try {
+                const _pp = _dec(r._data) || {};
+                const _a = ((_pp.prenom||'') + ' ' + (_pp.nom||'')).toLowerCase();
+                const _b = ((_pp.nom||'') + ' ' + (_pp.prenom||'')).toLowerCase();
+                if (_a.includes(_nomLow) || _b.includes(_nomLow)) { _patRow = r; break; }
+              } catch (_) { /* row illisible, skip */ }
+            }
+          }
         }
 
         const _invNum = d.invoice_number || _editRef?.invoice_number || null;
@@ -1214,8 +1251,11 @@ async function _cotationPipeline() {
           //    _editRef vaut { _userChose: true } SANS cotationIdx/invoice_number → on
           //    skip ce fallback pour respecter le choix utilisateur (sinon upsert
           //    silencieux de l'ancienne cotation au lieu de créer une nouvelle).
-          const _isForceNewSolo = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-          if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo) {
+          // Pareil pour _forceAttachToPatient (coter depuis carnet) : si pas d'idx
+          // ni d'invNum posé, c'est une nouvelle cotation → on skip le fallback date.
+          const _isForceNewSolo  = _editRef?._userChose           && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+          const _isForceAttach   = _editRef?._forceAttachToPatient && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+          if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo && !_isForceAttach) {
             _idx = _pat.cotations.findIndex(c =>
               (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
             );
@@ -1224,8 +1264,8 @@ async function _cotationPipeline() {
           if (_idx >= 0) {
             // Cotation existante trouvée → mettre à jour (upsert)
             _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-          } else if (!_editRef || _isForceNewSolo) {
-            // Pas en mode édition OU choix explicite "Nouvelle cotation" → push
+          } else if (!_editRef || _isForceNewSolo || _isForceAttach) {
+            // Pas en mode édition OU choix "Nouvelle cotation" OU coter-depuis-carnet → push
             _pat.cotations.push(_newCot);
           }
           // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite les doublons)

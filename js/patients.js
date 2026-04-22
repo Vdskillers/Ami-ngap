@@ -604,7 +604,10 @@ async function loadPatients() {
       </div>
       <div class="acc-acts">
         <button class="bxs b-unblk" onclick="event.stopPropagation();coterDepuisPatient('${p.id}')">⚡ Coter</button>
-        <button class="bxs" onclick="event.stopPropagation();_importSinglePatient('${p.id}')" title="Ajouter à la tournée IA — géocode et importe ce patient dans la tournée optimisée" style="background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2)">🗺️ Tournée</button>
+        ${(typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'))
+          ? `<button class="bxs" onclick="event.stopPropagation();_importSinglePatient('${p.id}','tur')" title="Ajouter à la tournée IA — géocode et importe ce patient dans la tournée optimisée" style="background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2)">🗺️ Tournée</button>`
+          : ''}
+        <button class="bxs" onclick="event.stopPropagation();_importSinglePatient('${p.id}','live')" title="Ajouter au pilotage journée — à utiliser avec le point de départ GPS" style="background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.25)">📍 Pilotage</button>
         <button class="bxs b-del" onclick="event.stopPropagation();deletePatient('${p.id}','${fullName.replace(/'/g,'')}')">🗑️</button>
       </div>
     </div>`;
@@ -872,9 +875,10 @@ function _patTabRender(tab, id, p, notes) {
                   ${sourceBadge}${syncIcon}${idIdx}
                   ${c.soin?`<span style="font-size:11px;color:var(--m)">· ${c.soin.slice(0,40)}</span>`:''}
                 </div>
-                <div style="display:flex;gap:6px">
-                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editCotationPatient('${id}',${realIdx})">✏️</button>
-                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteCotationPatient('${id}',${realIdx})">🗑️</button>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="printCotationPatient('${id}',${realIdx})" title="Télécharger la facture PDF">📥 PDF</button>
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px" onclick="editCotationPatient('${id}',${realIdx})" title="Éditer la cotation">✏️</button>
+                  <button class="btn bs bsm" style="font-size:10px;padding:3px 8px;color:var(--d);border-color:rgba(255,95,109,.3)" onclick="deleteCotationPatient('${id}',${realIdx})" title="Supprimer la cotation">🗑️</button>
                 </div>
               </div>
               <div style="margin-bottom:6px">${invHtml}</div>
@@ -1296,6 +1300,89 @@ async function deleteAllSoinNotes(patientId) {
   await openPatientDetail(patientId);
   showToastSafe('🗑️ Historique des soins supprimé.');
   _syncNotesIntoPatient(patientId).catch(() => {});
+}
+
+/* ════════════════════════════════════════════════════════════════
+   📥 TÉLÉCHARGEMENT PDF d'UNE COTATION INDIVIDUELLE (fiche patient)
+   ────────────────────────────────────────────────────────────────
+   Accessible depuis Carnet → fiche patient → onglet 🧾 Cotations
+   → bouton 📥 PDF sur chaque ligne.
+
+   Résout le bug "impossible de télécharger le PDF de certaines cotations"
+   en :
+     1. Récupérant la cotation directement depuis IDB (source de vérité)
+     2. Reconstruisant l'objet complet attendu par printInv()
+     3. Générant un numéro de facture temporaire si invoice_number absent
+        (cas : cotation en fallback local, cotation admin en mode test,
+         cotation jamais synchronisée avec n8n)
+     4. Attachant les infos patient (nom) pour affichage dans le PDF
+   Fonctionne pour TOUTES les cotations, quelle que soit leur origine.
+════════════════════════════════════════════════════════════════ */
+async function printCotationPatient(patientId, cotationIdx) {
+  try {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) {
+      showToastSafe('❌ Patient introuvable.');
+      return;
+    }
+    const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
+    const c = p.cotations?.[cotationIdx];
+    if (!c) {
+      showToastSafe('❌ Cotation introuvable dans la fiche patient.');
+      return;
+    }
+
+    // ── Reconstruction robuste des parts AMO / AMC / Patient ──
+    // Les anciennes cotations peuvent ne pas avoir part_* stockées → recalcul
+    const total = parseFloat(c.total || 0);
+    const part_amo     = parseFloat(c.part_amo)     || (total * 0.6);
+    const part_amc     = parseFloat(c.part_amc)     || 0;
+    const part_patient = parseFloat(c.part_patient) || (total - part_amo - part_amc);
+
+    // ── Numéro de facture : priorité à l'existant, fallback temporaire sinon ──
+    // Format fallback : TMP-YYYYMMDD-<4 derniers chars patient id>-<idx>
+    const d = new Date(c.date || Date.now());
+    const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const invNum = c.invoice_number
+      || `TMP-${dateStr}-${String(patientId).slice(-4)}-${cotationIdx}`;
+
+    // ── Construction de l'objet attendu par printInv() ──
+    const factureData = {
+      actes:          c.actes || [],
+      total,
+      part_amo,
+      part_amc,
+      part_patient,
+      invoice_number: invNum,
+      date_soin:      c.date ? new Date(c.date).toLocaleDateString('fr-FR') : '',
+      dre_requise:    !!c.dre_requise,
+      ngap_version:   c.ngap_version || '',
+      patient:        `${p.prenom || ''} ${p.nom || ''}`.trim(),
+      prescripteur:   c.prescripteur || null,
+      // Signature PNG si disponible (même chemin que cotation.js)
+      _sig_html:      c._sig_html || '',
+    };
+
+    // ── Appel printInv (défini dans cotation.js) ──
+    if (typeof printInv === 'function') {
+      await printInv(factureData);
+      // Petit feedback UX selon que l'invoice_number est officiel ou temporaire
+      if (!c.invoice_number) {
+        showToastSafe('📥 PDF généré avec n° provisoire (cotation pas encore synchronisée).');
+      }
+    } else if (typeof _doPrint === 'function') {
+      // Fallback direct si cotation.js expose _doPrint mais pas printInv
+      const u = (typeof S !== 'undefined') ? S?.user || {} : {};
+      await _doPrint(factureData, u);
+    } else {
+      showToastSafe('❌ Module de génération PDF indisponible.');
+      console.warn('[printCotationPatient] printInv et _doPrint absents');
+    }
+  } catch (e) {
+    console.error('[printCotationPatient]', e);
+    showToastSafe('❌ Erreur lors de la génération du PDF.');
+  }
 }
 
 /* ── Éditer une cotation dans la fiche patient ── */
@@ -1824,28 +1911,31 @@ async function coterDepuisPatient(id) {
   if (!row) return;
   const p = { ...(_dec(row._data)||{}), nom: row.nom, prenom: row.prenom };
 
-  // ── Pré-détection cotation existante ────────────────────────────────────
-  // Si une cotation existe déjà pour ce patient aujourd'hui, pré-poser
-  // _editingCotation pour que la modale de choix s'affiche dès le clic sur "Coter".
-  // On efface d'abord toute ref précédente pour repartir propre.
+  // ── Pré-détection cotation existante + attachement systématique au patient ──
+  // REGLE : l'utilisateur a cliqué ⚡ Coter sur UN patient précis depuis le carnet.
+  // On DOIT garantir que la nouvelle cotation s'attache à ce patient.id, peu
+  // importe ce que l'infirmière tape dans le champ nom. Donc on pose toujours
+  // patientId + _forceAttachToPatient pour que le pipeline cotation.js
+  // résolve par ID (fiable) et non par nom (fragile si doublons / chiffrement).
   window._editingCotation = null;
   try {
     const _todayStr = new Date().toISOString().slice(0, 10);
+    let _existIdx = -1;
     if (Array.isArray(p.cotations)) {
-      const _existIdx = p.cotations.findIndex(c => c.date === _todayStr);
-      if (_existIdx >= 0) {
-        const _existCot = p.cotations[_existIdx];
-        window._editingCotation = {
-          patientId:      row.id,
-          cotationIdx:    _existIdx,
-          invoice_number: _existCot.invoice_number || null,
-          _fromPatient:   true,
-          _autoDetected:  true, // sera remplacé par le choix explicite de l'utilisateur
-        };
-        if (typeof showToast === 'function')
-          showToast(`⚠️ Cotation du ${new Date(_todayStr).toLocaleDateString('fr-FR')} déjà existante — mise à jour proposée`, 'wa');
-      }
+      // ⚡ Comparaison robuste : c.date peut être ISO complet ("2026-04-22T14:30:00.000Z")
+      // ou juste YYYY-MM-DD. Le .slice(0,10) couvre les deux cas.
+      _existIdx = p.cotations.findIndex(c => (c.date || '').slice(0, 10) === _todayStr);
     }
+    window._editingCotation = {
+      patientId:             row.id,
+      cotationIdx:           _existIdx >= 0 ? _existIdx : null,
+      invoice_number:        _existIdx >= 0 ? ((p.cotations[_existIdx] || {}).invoice_number || null) : null,
+      _fromPatient:          true,
+      _forceAttachToPatient: true,              // garantit l'attachement par id
+      _autoDetected:         _existIdx >= 0,    // true uniquement si cotation du jour détectée
+    };
+    if (_existIdx >= 0 && typeof showToast === 'function')
+      showToast(`⚠️ Cotation du ${new Date(_todayStr).toLocaleDateString('fr-FR')} déjà existante — mise à jour proposée`, 'wa');
   } catch (_) {}
 
   navTo('cot', null);
@@ -1987,7 +2077,10 @@ async function openPatientImportPicker() {
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <span id="picker-count" style="font-size:12px;color:var(--m);font-family:var(--fm);flex:1">0 patient(s) sélectionné(s)</span>
         <button onclick="_selectAllPickerPatients()" class="btn bs bsm">☑️ Tout sélectionner</button>
-        <button onclick="_importPickerPatients()" class="btn bp bsm" id="btn-picker-import">📥 Importer dans la tournée</button>
+        ${(typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'))
+          ? `<button onclick="_importPickerPatients('tur')" class="btn bp bsm" id="btn-picker-import-tur" title="Importer dans la Tournée optimisée par IA">📥 Tournée IA</button>`
+          : ''}
+        <button onclick="_importPickerPatients('live')" class="btn bp bsm" id="btn-picker-import-live" style="background:rgba(79,168,255,.15);color:var(--a2);border-color:rgba(79,168,255,.4)" title="Importer dans le Pilotage journée (point de départ GPS)">📍 Pilotage journée</button>
       </div>
     </div>`;
 
@@ -2172,11 +2265,12 @@ async function _geocodePatients(patients, onProgress) {
   return { patients: results, geocoded, failed };
 }
 
-async function _importPickerPatients() {
+async function _importPickerPatients(target) {
+  target = target || 'tur';
   if (_selectedPatientIds.size === 0) { showToastSafe('⚠️ Sélectionnez au moins un patient.'); return; }
 
   const rows = await _idbGetAll(PATIENTS_STORE);
-  const selected = rows
+  const allSelected = rows
     .filter(r => _selectedPatientIds.has(r.id))
     .map(r => {
       const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
@@ -2212,8 +2306,34 @@ async function _importPickerPatients() {
       };
     });
 
+  // ── Filtre OBLIGATOIRE : rejeter les patients sans adresse exploitable ──
+  // S'applique aux 2 cibles (Tournée IA + Pilotage journée) — le routage et
+  // le point de départ GPS nécessitent tous deux une adresse géocodable.
+  const hasRealAddr = p => p.adresse && p.adresse !== 'France' && p.adresse.trim().length >= 4;
+  const selected = allSelected.filter(hasRealAddr);
+  const rejected = allSelected.filter(p => !hasRealAddr(p));
+
+  if (selected.length === 0) {
+    showToastSafe(`⚠️ Aucun des patients sélectionnés n'a d'adresse renseignée. Ouvrez la fiche patient (rue + CP + ville) puis réessayez.`);
+    return;
+  }
+
+  if (rejected.length > 0) {
+    const names = rejected.slice(0, 3).map(p => `${p.prenom||''} ${p.nom}`.trim()).join(', ')
+                + (rejected.length > 3 ? `, +${rejected.length - 3}` : '');
+    const ok = confirm(
+      `⚠️ ${rejected.length} patient(s) sans adresse seront IGNORÉS :\n${names}\n\n` +
+      `Seuls les ${selected.length} patient(s) avec adresse seront importés dans le ${target === 'live' ? 'pilotage journée' : 'tournée'}.\n\n` +
+      `Continuer ?`
+    );
+    if (!ok) return;
+  }
+
   // Afficher progression géocodage dans la modale
-  const btn = document.getElementById('btn-picker-import');
+  //   Le bouton actif dépend du target (tur = btn-picker-import-tur, live = btn-picker-import-live)
+  const btnId = target === 'live' ? 'btn-picker-import-live' : 'btn-picker-import-tur';
+  const btnLabel = target === 'live' ? '📍 Pilotage journée' : '📥 Tournée IA';
+  const btn = document.getElementById(btnId);
   const cnt = document.getElementById('picker-count');
   const withAddr = selected.filter(p => p.adresse && p.adresse !== 'France').length;
 
@@ -2228,7 +2348,7 @@ async function _importPickerPatients() {
       }
     );
 
-    if (btn) { btn.disabled = false; btn.textContent = '📥 Importer dans la tournée'; }
+    if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
 
     const msg = ok > 0
       ? `✅ ${ok} adresse(s) géocodée(s)${failed > 0 ? ` · ⚠️ ${failed} sans coordonnées` : ''}`
@@ -2244,25 +2364,23 @@ async function _importPickerPatients() {
 
     showToastSafe(`✅ ${geocoded.length} patient(s) importé(s) — ${ok} position(s) GPS résolue(s).`);
   } else {
-    // Pas d'adresses → import direct sans géocodage
-    if (typeof storeImportedData === 'function') {
-      storeImportedData({ patients: selected, total: selected.length, source: 'Carnet patients' });
-    } else {
-      APP.importedData = { patients: selected, total: selected.length, source: 'Carnet patients' };
-    }
-    showToastSafe(`⚠️ ${selected.length} patient(s) importé(s) sans adresse GPS — ajoutez des adresses dans le carnet.`);
+    // Safety net : ne devrait jamais être atteint grâce au filtre hasRealAddr ci-dessus
+    showToastSafe(`⚠️ Aucune adresse exploitable — opération annulée.`);
+    return;
   }
 
   // Fermer modale
   const modal = document.getElementById('patient-import-picker-modal');
   if (modal) modal.style.display = 'none';
 
-  // Naviguer vers la Tournée IA
-  if (typeof navTo === 'function') navTo('tur', null);
+  // Naviguer vers la vue cible (tur = Tournée IA, live = Pilotage journée)
+  if (typeof navTo === 'function') navTo(target, null);
 }
 
-/* Import rapide d'un seul patient (depuis la liste) */
-async function _importSinglePatient(id) {
+/* Import rapide d'un seul patient (depuis la liste)
+   @param target 'tur' (Tournée IA) | 'live' (Pilotage journée) — défaut 'tur' pour rétrocompat */
+async function _importSinglePatient(id, target) {
+  target = target || 'tur';
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === id);
   if (!row) return;
@@ -2342,9 +2460,10 @@ async function _importSinglePatient(id) {
   }
 
   const gpsMsg = lat ? ` (📍 GPS résolu)` : ` (⚠️ adresse sans coordonnées GPS — tournée moins précise)`;
-  showToastSafe(`🗺️ ${(p.prenom||'')} ${p.nom} ajouté(e) à la tournée${gpsMsg}.`);
-  // Naviguer vers la tournée
-  if (typeof navTo === 'function') navTo('tur', null);
+  const targetMsg = target === 'live' ? 'pilotage journée' : 'tournée';
+  showToastSafe(`🗺️ ${(p.prenom||'')} ${p.nom} ajouté(e) à la ${targetMsg}${gpsMsg}.`);
+  // Naviguer vers la vue cible (tur = Tournée IA, live = Pilotage journée)
+  if (typeof navTo === 'function') navTo(target, null);
 }
 
 /* Géocoder l'adresse d'un patient et sauvegarder lat/lng dans l'IDB */
