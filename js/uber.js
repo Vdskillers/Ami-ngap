@@ -302,10 +302,18 @@ async function _autoCoterEtImporterPatient(p) {
   const heureReelle = p._done_at || _now.toTimeString().slice(0, 5); // "HH:MM" locale
   const u        = (typeof S !== 'undefined' && S?.user) ? S.user : {};
 
+  /* ⚡ Variables liftées au scope de la fonction :
+     Utilisées à la fois par la section 1 (AUTO-COTATION) pour construire le
+     texte à coter, et par la section 2 (IMPORT IDB) pour enrichir le `soin`
+     écrit dans la cotation du carnet patient. Sans ce lift, quand un patient
+     arrivait ici avec `_cotation.validated = true` (section 1 sautée), la
+     section 2 levait `ReferenceError: actesRecurrents is not defined`. */
+  let actesRecurrents = '';
+  let texte           = '';
+
   /* ── 1. AUTO-COTATION ── */
   try {
     if (!p._cotation?.validated) {
-      let actesRecurrents = '';
       try {
         if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
           const rows = await _idbGetAll(PATIENTS_STORE);
@@ -331,7 +339,7 @@ async function _autoCoterEtImporterPatient(p) {
             ? (texteImport ? texteImport + ' — ' + _pathoConv : _pathoConv)
             : (texteImport || 'soin infirmier à domicile'));
       // actes_recurrents prime
-      const texte = actesRecurrents || _texteBase;
+      texte = actesRecurrents || _texteBase;
 
       if (texte) {
         let cot = (typeof autoCotationLocale === 'function')
