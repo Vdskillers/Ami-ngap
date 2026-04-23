@@ -111,9 +111,90 @@ async function loadAdmStats() {
     // ── Stocker + rendre les stats par infirmière ──────────────────────
     _ADM_PER_USER_DATA = d.per_user || [];
     _admRenderNurseStats(_ADM_PER_USER_DATA);
+
+    // ── 💸 Injection du bouton Analyse NGAP (non destructif) ───────────
+    // Ajouté 1 seule fois — réutilise le container existant si présent
+    _admInjectNgapButton();
   } catch(e) {
     if (puEl) puEl.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message)}</div>`;
   }
+}
+
+/* ════════════════════════════════════════════════
+   💸 Panel Analyse NGAP — pertes € + anomalies référentiel
+   ────────────────────────────────────────────────
+   • runRealLossAnalysis : détecte sous-cotations dans les 500
+     dernières cotations (données anonymisées)
+   • renderAnomaliesUI   : détecte anomalies dans le référentiel
+   Dépend de window.NGAPAnalyzer (ngap-analyzer.js)
+════════════════════════════════════════════════ */
+function _admInjectNgapButton() {
+  // Container cible : juste après les KPIs stats — sinon fallback à puEl
+  const host = document.getElementById('adm-top-actes') || document.getElementById('adm-per-user-stats');
+  if (!host) return;
+  if (document.getElementById('adm-ngap-btn-wrap')) return; // déjà injecté
+
+  const wrap = document.createElement('div');
+  wrap.id = 'adm-ngap-btn-wrap';
+  wrap.style.cssText = 'margin-top:16px;padding-top:16px;border-top:1px solid var(--b);display:flex;gap:10px;flex-wrap:wrap;align-items:center';
+  wrap.innerHTML = `
+    <button class="btn bv bsm" onclick="admOpenNgapAnalysis()" title="Analyse les cotations réelles et détecte les pertes € (anonymisé)">
+      💸 Analyse pertes NGAP
+    </button>
+    <button class="btn bs bsm" onclick="admOpenNgapAnomalies()" title="Détecte les anomalies dans le référentiel NGAP">
+      🔍 Vérifier référentiel
+    </button>
+    <span style="font-size:11px;color:var(--m)">Données anonymisées · lecture seule · audit-safe</span>
+  `;
+  host.parentElement?.appendChild(wrap);
+
+  // Container pour résultats
+  if (!document.getElementById('adm-ngap-result')) {
+    const res = document.createElement('div');
+    res.id = 'adm-ngap-result';
+    res.style.cssText = 'margin-top:14px';
+    host.parentElement?.appendChild(res);
+  }
+}
+
+/* Lance l'analyse des cotations réelles */
+async function admOpenNgapAnalysis() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+  if (!window.NGAPAnalyzer || typeof NGAPAnalyzer.runRealLossAnalysis !== 'function') {
+    res.innerHTML = '<div class="ai er">⚠️ Module NGAPAnalyzer non chargé.</div>';
+    return;
+  }
+  // Délègue à ngap-analyzer.js qui gère le rendu complet
+  await NGAPAnalyzer.runRealLossAnalysis('adm-ngap-result');
+
+  // Attacher handlers pour les éventuels boutons "Appliquer fix" générés
+  res.querySelectorAll('[data-ngap-fix]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      try {
+        const fix = JSON.parse(btn.getAttribute('data-ngap-fix'));
+        if (typeof showToast === 'function') {
+          showToast('info', 'Fix enregistré', 'Les modifications du référentiel nécessitent une mise à jour côté backend.');
+        }
+        console.info('[NGAP] Fix sélectionné:', fix);
+      } catch(e) { console.warn('[NGAP] Fix parse KO:', e.message); }
+    });
+  });
+}
+
+/* Affiche les anomalies détectées dans le référentiel */
+function admOpenNgapAnomalies() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+  if (!window.NGAPAnalyzer || typeof NGAPAnalyzer.renderAnomaliesUI !== 'function') {
+    res.innerHTML = '<div class="ai er">⚠️ Module NGAPAnalyzer non chargé.</div>';
+    return;
+  }
+  if (!window.NGAP_REFERENTIEL) {
+    res.innerHTML = '<div class="ai wa">⚠️ Référentiel NGAP pas encore chargé — patientez quelques secondes puis réessayez.</div>';
+    return;
+  }
+  NGAPAnalyzer.renderAnomaliesUI('adm-ngap-result');
 }
 
 /* Filtre la liste par nom/prénom */

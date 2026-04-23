@@ -3196,6 +3196,43 @@
 <script src="js/alertes-medicaments.js?v=3.8"></script>
 <script src="js/audit-cpam.js?v=3.9"></script>
 
+<!-- 🧠 NGAP Analyzer — détection anomalies + analyse pertes € + auto-correction temps réel -->
+<script src="js/ngap-analyzer.js?v=1.0"></script>
+
+<!-- ⚡ Chargement asynchrone du référentiel NGAP (source de vérité unique) -->
+<!-- Exposé via window.NGAP_REFERENTIEL — utilisé par cotation.js, tournee.js, ngap-analyzer.js -->
+<script>
+(function loadNGAPRef() {
+  if (window.NGAP_REFERENTIEL) return; // déjà chargé
+  // ⚡ Tentative 1 : endpoint worker (source embarquée dans worker.js)
+  fetch('/api/ngap/referentiel', { cache: 'force-cache' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(data => {
+      if (data && (data.actes_chapitre_I || data.version)) {
+        window.NGAP_REFERENTIEL = data;
+        document.dispatchEvent(new CustomEvent('ngap:ref_loaded', { detail: { version: data.version } }));
+        if (window.console && console.info) console.info('[NGAP] Référentiel chargé :', data.version || 'inconnu');
+      }
+    })
+    .catch(e => {
+      // ⚡ Tentative 2 : fichier statique à la racine
+      fetch('/ngap_referentiel_2026.json', { cache: 'force-cache' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data) {
+            window.NGAP_REFERENTIEL = data;
+            document.dispatchEvent(new CustomEvent('ngap:ref_loaded', { detail: { version: data.version } }));
+          }
+        })
+        .catch(() => {
+          // Non bloquant : les modules fonctionnent via le worker côté serveur,
+          // cotation.js/tournee.js utilisent window.NGAP_REFERENTIEL en enrichissement
+          if (window.console && console.warn) console.warn('[NGAP] Référentiel non chargé côté front — fallback serveur actif.');
+        });
+    });
+})();
+</script>
+
 <script>
 /* ══ Bannières admin — modules cliniques v2 ══
    Affiche la notice admin sur chaque nouveau module
