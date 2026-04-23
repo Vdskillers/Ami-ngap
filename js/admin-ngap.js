@@ -91,6 +91,7 @@ function _render() {
       <button class="btn bs bsm" onclick="admNgapLoad()" title="Recharger depuis le serveur">↻ Actualiser</button>
       <button class="btn bs bsm" onclick="admNgapReset()" ${dirty ? '' : 'disabled style="opacity:.4;cursor:not-allowed"'} title="Annuler les modifications">↺ Annuler</button>
       <button class="btn bs bsm" onclick="admNgapToggleHistory()" title="Historique des versions">📜 Historique (${_NG.history.length})</button>
+      <button class="btn bs bsm" onclick="admNgapAnalyze()" title="Détecter les anomalies du référentiel (tarifs aberrants, règles manquantes)">🔍 Analyser</button>
       <div style="flex:1"></div>
       <button class="btn bp bsm" onclick="admNgapSavePrompt()" ${dirty ? '' : 'disabled style="opacity:.4;cursor:not-allowed"'} title="Enregistrer une nouvelle version">
         💾 Enregistrer une nouvelle version
@@ -99,6 +100,9 @@ function _render() {
 
     <!-- Zone historique (repliable) -->
     <div id="adm-ngap-history" style="display:none;margin-bottom:20px"></div>
+
+    <!-- Zone résultats analyseur (repliable) -->
+    <div id="adm-ngap-analyze" style="display:none;margin-bottom:20px"></div>
 
     <!-- Résumé compteurs -->
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:20px">
@@ -624,6 +628,141 @@ window.admNgapRollback = async function(id, version) {
     await window.admNgapLoad();
   } catch(e) {
     _toast('error', 'Rollback échoué', e.message);
+  }
+};
+
+
+/* ── Analyse anomalies via NGAPAnalyzer ──────── */
+window.admNgapAnalyze = function() {
+  const panel = document.getElementById('adm-ngap-analyze');
+  if (!panel) return;
+
+  // Toggle si déjà affiché
+  if (panel.style.display === 'block' && panel.dataset.shown === '1') {
+    panel.style.display = 'none';
+    panel.dataset.shown = '0';
+    return;
+  }
+
+  if (typeof window.NGAPAnalyzer === 'undefined' || !window.NGAPAnalyzer.analyzeReferentiel) {
+    panel.innerHTML = '<div class="ai wa">⚠️ Module NGAPAnalyzer non chargé. Vérifier que <code>js/ngap-analyzer.js</code> est bien inclus dans <code>index.html</code>.</div>';
+    panel.style.display = 'block';
+    panel.dataset.shown = '1';
+    return;
+  }
+
+  try {
+    const results = window.NGAPAnalyzer.analyzeReferentiel(_NG.edit);
+    if (!Array.isArray(results) || results.length === 0) {
+      panel.innerHTML = `
+        <div class="ai ok" style="border-color:rgba(16,185,129,.4);background:rgba(16,185,129,.08)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">✅</span>
+            <div>
+              <strong style="color:#10b981">Aucune anomalie détectée</strong>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">Le référentiel est conforme aux règles NGAP 2026 / CIR-9/2025 connues.</div>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      const errors = results.filter(r => r.level === 'error');
+      const warnings = results.filter(r => r.level === 'warning');
+      const infos = results.filter(r => r.level === 'info');
+
+      const renderItem = (r, i) => {
+        const color = r.level === 'error' ? '#ef4444' : (r.level === 'warning' ? '#f59e0b' : '#4fa8ff');
+        const icon = r.level === 'error' ? '🛑' : (r.level === 'warning' ? '⚠️' : 'ℹ️');
+        const fixBtn = r.fix ? `
+          <button class="btn bs" style="padding:4px 10px;font-size:11px;margin-top:6px"
+                  onclick='admNgapApplyFix(${_esc(JSON.stringify(r.fix))})'
+                  title="Appliquer la correction suggérée (à vérifier avant sauvegarde)">
+            🔧 Appliquer la correction suggérée
+          </button>` : '';
+        return `
+          <div style="padding:10px 12px;background:rgba(${r.level === 'error' ? '239,68,68' : (r.level === 'warning' ? '245,158,11' : '79,168,255')},.06);border-left:3px solid ${color};border-radius:6px;margin-bottom:6px">
+            <div style="display:flex;gap:8px;align-items:flex-start">
+              <span style="font-size:14px;flex-shrink:0">${icon}</span>
+              <div style="flex:1;font-size:12px;line-height:1.5;color:var(--t)">${_esc(r.msg)}${fixBtn}</div>
+            </div>
+          </div>`;
+      };
+
+      panel.innerHTML = `
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--b)">
+            <span style="font-size:22px">🔍</span>
+            <div style="flex:1">
+              <strong style="font-family:var(--fi);font-size:14px">Analyse du référentiel</strong>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">
+                ${errors.length > 0 ? `<span style="color:#ef4444">🛑 ${errors.length} erreur${errors.length>1?'s':''}</span> · ` : ''}
+                ${warnings.length > 0 ? `<span style="color:#f59e0b">⚠️ ${warnings.length} avertissement${warnings.length>1?'s':''}</span> · ` : ''}
+                ${infos.length > 0 ? `<span style="color:#4fa8ff">ℹ️ ${infos.length} info${infos.length>1?'s':''}</span>` : ''}
+              </div>
+            </div>
+            <button class="btn bs" style="padding:4px 10px;font-size:11px" onclick="document.getElementById('adm-ngap-analyze').style.display='none';document.getElementById('adm-ngap-analyze').dataset.shown='0'">✕ Fermer</button>
+          </div>
+          ${errors.map(renderItem).join('')}
+          ${warnings.map(renderItem).join('')}
+          ${infos.map(renderItem).join('')}
+        </div>`;
+    }
+    panel.style.display = 'block';
+    panel.dataset.shown = '1';
+  } catch(e) {
+    panel.innerHTML = `<div class="ai er">⚠️ Erreur lors de l'analyse : ${_esc(e.message)}</div>`;
+    panel.style.display = 'block';
+    panel.dataset.shown = '1';
+  }
+};
+
+/* ── Applique un fix suggéré par l'analyseur ─── */
+window.admNgapApplyFix = function(fix) {
+  if (!fix || !fix.type) return;
+  try {
+    if (fix.type === 'set_tarif' && fix.code && fix.value != null) {
+      // Chercher l'acte dans les deux chapitres + forfaits/majorations
+      const code = fix.code;
+      const edit = _NG.edit;
+      let updated = false;
+
+      // Chercher dans les actes des chapitres I et II
+      ['actes_chapitre_I', 'actes_chapitre_II'].forEach(key => {
+        (edit[key] || []).forEach(a => {
+          if ((a.code === code || a.code_facturation === code) && !updated) {
+            a.tarif = fix.value;
+            updated = true;
+          }
+        });
+      });
+
+      // Chercher dans forfaits BSI
+      if (!updated && edit.forfaits_bsi && edit.forfaits_bsi[code]) {
+        edit.forfaits_bsi[code].tarif = fix.value;
+        updated = true;
+      }
+      // Chercher dans majorations
+      if (!updated && edit.majorations) {
+        Object.keys(edit.majorations).forEach(k => {
+          if ((k === code || edit.majorations[k].code_alias === code) && !updated) {
+            edit.majorations[k].tarif = fix.value;
+            updated = true;
+          }
+        });
+      }
+
+      if (updated) {
+        _toast('success', 'Correction appliquée', `${code} → ${fix.value.toFixed(2)}€ (à vérifier et sauvegarder).`);
+        _render();
+        // Réouvrir le panneau d'analyse pour voir l'évolution
+        setTimeout(() => { const p = document.getElementById('adm-ngap-analyze'); if (p) p.dataset.shown = '0'; window.admNgapAnalyze(); }, 150);
+      } else {
+        _toast('warn', 'Code non trouvé', `Impossible de localiser ${code} dans le référentiel.`);
+      }
+    } else {
+      _toast('warn', 'Correction non supportée', `Type de fix : ${fix.type}`);
+    }
+  } catch(e) {
+    _toast('error', 'Erreur application', e.message);
   }
 };
 
