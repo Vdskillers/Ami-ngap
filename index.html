@@ -3420,6 +3420,7 @@ async function hist() {
         <td>${idesHtml}</td>
         <td>${alertsHtml}</td>
         <td><button type="button" class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
+          onmousedown="if(event.button===0){event.preventDefault();window.editFromHistBtn(this);}"
           onclick="window.editFromHistBtn(this)"
           data-hist-id="${r.id}"
           data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
@@ -3429,7 +3430,7 @@ async function hist() {
           data-hist-patnom="${(r.patient_nom||r.nom||'').replace(/"/g,'&quot;')}"
           data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
           title="Modifier cette cotation">✏️</button></td>
-        <td><button type="button" class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
+        <td><button type="button" class="btn bd bsm" style="font-size:10px;padding:3px 8px" onmousedown="if(event.button===0){event.preventDefault();delHist(${r.id}, this);}" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
 
@@ -3662,8 +3663,18 @@ window.editFromHist = editFromHist;
 
 /* Wrapper appelé directement par le onclick inline du bouton ✏️.
    Plus robuste que la délégation : exécute même si d'autres scripts
-   modifient le DOM ou capturent les events au niveau document. */
+   modifient le DOM ou capturent les events au niveau document.
+   Anti-doublon : appelé via mousedown ET click → on ignore le 2e dans 500ms. */
+let _editFromHistBtnLastCall = 0;
 window.editFromHistBtn = function(btn) {
+  // Anti-double-déclenchement (mousedown + click sur le même bouton)
+  const now = Date.now();
+  if (now - _editFromHistBtnLastCall < 500) {
+    console.log('[editFromHistBtn] Doublon ignoré (mousedown + click)');
+    return;
+  }
+  _editFromHistBtnLastCall = now;
+
   console.log('[editFromHistBtn] Clic ✏️ détecté sur:', btn);
   if (!btn || !btn.dataset) {
     console.warn('[editFromHistBtn] bouton ou dataset invalide');
