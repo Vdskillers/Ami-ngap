@@ -3419,7 +3419,7 @@ async function hist() {
         <td>${statutHtml}</td>
         <td>${idesHtml}</td>
         <td>${alertsHtml}</td>
-        <td><button class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
+        <td><button type="button" class="btn bs bsm hist-edit-btn" style="font-size:10px;padding:3px 8px"
           onclick="window.editFromHistBtn(this)"
           data-hist-id="${r.id}"
           data-hist-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}"
@@ -3429,7 +3429,7 @@ async function hist() {
           data-hist-patnom="${(r.patient_nom||r.nom||'').replace(/"/g,'&quot;')}"
           data-hist-actes="${encodeURIComponent(JSON.stringify(actesArr))}"
           title="Modifier cette cotation">✏️</button></td>
-        <td><button class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
+        <td><button type="button" class="btn bd bsm" style="font-size:10px;padding:3px 8px" onclick="delHist(${r.id}, this)" data-inv="${(r.invoice_number||'').replace(/"/g,'&quot;')}" title="Supprimer cette cotation">🗑️</button></td>
       </tr>`;
     }).join('');
 
