@@ -1449,10 +1449,22 @@ function renderCot(d) {
   })() : '';
 
   // ── Bandeau estimation automatique (A3) ────────────────────────────────────
-  // Affiché quand : (1) mode fallback worker, OU (2) actes viennent du NLP local
-  // sans détection réelle (flag _estimation sur le seul acte AMI1 retourné).
-  const _isEstimation = !!d.fallback ||
+  // Affiché UNIQUEMENT quand la détection NGAP a vraiment échoué :
+  // - 0 acte détecté (impossible en pratique, mais au cas où)
+  // - 1 seul acte AMI1 qui est le DÉFAUT (pas un vrai match)
+  // Si le moteur a ajouté d'autres codes (AMI14, NUIT_PROF, BSC, etc.) via règles
+  // déclaratives ou majorations temporelles, la détection a fonctionné → pas de bandeau.
+  // NB : distinguer AMI1_INJ_INSULINE/AMI1_INJ_IM (vraies détections) de "AMI1 défaut".
+  const _hasOnlyDefaultAMI1 =
+    a.length === 0 ||
     (a.length === 1 && a[0].code === 'AMI1' && !!a[0]._estimation);
+  const _hasNoRealAct = !a.some(x =>
+    x && x.code &&
+    x.code !== 'AMI1' &&      // exclut AMI1 défaut
+    !/^(NUIT|DIM|IFD|IFI|IK|MCI|MIE|MAU)$/.test(x.code)  // exclut majorations/déplacements seuls
+  );
+  // Bandeau affiché UNIQUEMENT si aucun acte médical réel n'a été détecté
+  const _isEstimation = _hasOnlyDefaultAMI1 || (!!d.fallback && _hasNoRealAct && a.length <= 1);
   const estimationBannerBloc = _isEstimation
     ? `<div style="margin-bottom:14px;padding:10px 14px;border-radius:8px;
           background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.35);

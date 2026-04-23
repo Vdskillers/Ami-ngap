@@ -270,12 +270,45 @@ async function loadSystemHealth() {
     const fraudAlerts  = (logs?.stats?.fraud_alerts      || 0);
     const frontErrors  = (logs?.stats?.frontend_errors   || 0);
 
-    const n8nOk    = n8nFails === 0;
-    const iaOk     = iaFallbacks < 5;
+    // ── Analyse fine des logs pour distinguer les événements réellement problématiques ──
+    // IA_FALLBACK_RECOVERED (INFO) = fallback a marché, cotation OK → PAS une vraie panne
+    // IA_FALLBACK_AI_VIDE (INFO) = n8n a répondu mais IA vide → cotation OK par règles → PAS critique
+    // IA_FALLBACK sans suffixe (WARN) = fallback + vraie erreur → à surveiller
+    // N8N_FAILURE (ERROR) = vraie panne n8n → critique
+    // INTERNAL_ERROR (ERROR) = bug worker → critique
+    const criticalEvents = sl.filter(l =>
+      (l.level === 'error' || l.level === 'critical') &&
+      ['N8N_FAILURE','IA_FALLBACK','INTERNAL_ERROR','FRAUD_ALERT'].includes(l.event)
+    ).length;
+    const warningEvents = sl.filter(l =>
+      l.level === 'warn' &&
+      ['IA_FALLBACK','N8N_TIMEOUT'].includes(l.event)
+    ).length;
+    const recoveredEvents = sl.filter(l =>
+      l.event === 'IA_FALLBACK_RECOVERED' || l.event === 'IA_FALLBACK_AI_VIDE'
+    ).length;
+
+    // Seuils tolérants — un fallback recovered n'est PAS une panne
+    const n8nOk    = criticalEvents === 0 && warningEvents < 3;
+    const iaOk     = iaFallbacks < 10 && criticalEvents === 0;  // doublé le seuil
     const fraudOk  = fraudAlerts === 0;
 
-    const overallHealth = n8nOk && iaOk ? 'green' : n8nFails < 3 ? 'orange' : 'red';
-    const healthLabel   = overallHealth === 'green' ? '✅ Opérationnel' : overallHealth === 'orange' ? '⚠️ Dégradé' : '🔴 Incident';
+    // Ordre de gravité : incident (erreurs critiques) > dégradé (warn) > opérationnel
+    let overallHealth;
+    if (criticalEvents >= 3 || fraudAlerts > 0) {
+      overallHealth = 'red';
+    } else if (criticalEvents > 0 || warningEvents >= 3 || iaFallbacks >= 10) {
+      overallHealth = 'orange';
+    } else {
+      // Tout OK — y compris si des IA_FALLBACK_RECOVERED sont présents (c'est le rôle du fallback)
+      overallHealth = 'green';
+    }
+
+    const healthLabel = overallHealth === 'green'
+      ? (recoveredEvents > 0
+          ? `✅ Opérationnel · ${recoveredEvents} fallback(s) récupéré(s)`
+          : '✅ Opérationnel')
+      : overallHealth === 'orange' ? '⚠️ Dégradé' : '🔴 Incident';
 
     const html = `
       <!-- Score global -->
@@ -295,10 +328,24 @@ async function loadSystemHealth() {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">
         ${[
           { label:'Worker Cloudflare',  ok:true,            detail:'API opérationnelle',    icon:'⚙️' },
-          { label:'N8N / IA',           ok:n8nOk,           detail:`${n8nFails} erreur(s)`,  icon:'🤖' },
-          { label:'Moteur cotation IA', ok:iaOk,            detail:`${iaFallbacks} fallback(s)`, icon:'🩺' },
-          { label:'Fraude détectée',    ok:fraudOk,         detail:`${fraudAlerts} alerte(s)`,  icon:'🚨' },
-          { label:'Erreurs frontend',   ok:frontErrors===0, detail:`${frontErrors} erreur(s)`,  icon:'🖥️' },
+          { label:'N8N / IA',           ok:n8nOk,
+            detail: criticalEvents > 0
+              ? `${criticalEvents} erreur(s) critique(s)`
+              : warningEvents > 0
+                ? `${warningEvents} avertissement(s)`
+                : recoveredEvents > 0
+                  ? `${recoveredEvents} fallback(s) récupéré(s) · OK`
+                  : 'Opérationnel',
+            icon:'🤖' },
+          { label:'Moteur cotation IA', ok:iaOk,
+            detail: iaFallbacks === 0
+              ? 'Moteur local + IA OK'
+              : iaFallbacks < 10
+                ? `${iaFallbacks} fallback(s) · moteur local actif`
+                : `${iaFallbacks} fallback(s) — n8n à vérifier`,
+            icon:'🩺' },
+          { label:'Fraude détectée',    ok:fraudOk,         detail:fraudAlerts===0 ? 'Aucune alerte' : `${fraudAlerts} alerte(s)`,  icon:'🚨' },
+          { label:'Erreurs frontend',   ok:frontErrors===0, detail:frontErrors===0 ? 'Aucune erreur' : `${frontErrors} erreur(s)`,  icon:'🖥️' },
           { label:'Base de données',    ok:true,            detail:'Supabase EU',            icon:'🗄️' },
         ].map(c => `
           <div style="background:var(--c);border:1px solid ${c.ok?'rgba(0,212,170,.2)':'rgba(255,181,71,.3)'};
