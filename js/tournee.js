@@ -4176,26 +4176,55 @@ function _renderCotModal(patient, cotationOriginal) {
   const desc  = (patient.description || patient.texte || 'Soin infirmier').slice(0, 100);
 
   /* Catalogue d'actes courants pour ajout rapide — Tarifs NGAP 2026 (CIR-9/2025) */
-  const ACTES_RAPIDES = [
-    { code:'AMI1',      nom:'Soin infirmier',         total: 3.15 },
-    { code:'AMI2',      nom:'Acte infirmier ×2',      total: 6.30 },
-    { code:'AMI4',      nom:'Pansement complexe',     total:12.60 },
-    { code:'AMI4_1',    nom:'Changement flacon / 2e perf. même jour', total: 6.30 },
-    { code:'AMI5',      nom:'Retrait définitif dispositif ≥24h',      total:15.75 },
-    { code:'AMI9',      nom:'Perfusion courte ≤1h surveillance',      total:28.35 },
-    { code:'AMI10',     nom:'Perfusion courte — cancer/immunodépr.',  total:31.50 },
-    { code:'AMI14',     nom:'Forfait perfusion longue >1h (1x/jour)', total:44.10 },
-    { code:'AMI15',     nom:'Forfait perfusion — cancer/immunodépr.', total:47.25 },
-    { code:'BSA',       nom:'Bilan soins A (dép. légère)',   total:13.00 },
-    { code:'BSB',       nom:'Bilan soins B (dép. modérée)',  total:18.20 },
-    { code:'BSC',       nom:'Bilan soins C (dép. lourde)',   total:28.70 },
-    { code:'IFD',       nom:'Forfait déplacement',    total: 2.75 },
-    { code:'MCI',       nom:'Majoration coordination',total: 5.00 },
-    { code:'MIE',       nom:'Majoration enfant < 7 ans', total: 3.15 },
-    { code:'NUIT',      nom:'Majoration nuit (20h-23h/5h-8h)', total: 9.15 },
-    { code:'NUIT_PROF', nom:'Majoration nuit profonde (23h-5h)', total:18.30 },
-    { code:'DIM',       nom:'Majoration dim./férié',  total: 8.50 },
-  ];
+  // ─── ACTES RAPIDES — lecture dynamique du référentiel NGAP si chargé ───
+  // window.NGAP_REFERENTIEL est injecté au chargement de l'app (voir index.html)
+  // Fallback hardcodé si le référentiel n'est pas disponible
+  const ACTES_RAPIDES = (() => {
+    if (window.NGAP_REFERENTIEL && window.NGAP_REFERENTIEL.actes_chapitre_I) {
+      // Codes les plus fréquents en tournée IDEL — extraits dynamiquement
+      const codes_frequents = [
+        'AMI1', 'AMI2', 'AMI4', 'AMI4.1', 'AMI5', 'AMI9', 'AMI10', 'AMI14', 'AMI15',
+        'BSA', 'BSB', 'BSC', 'IFD', 'MCI', 'MIE', 'NUIT', 'NUIT_PROF', 'DIM'
+      ];
+      const all = [...window.NGAP_REFERENTIEL.actes_chapitre_I, ...window.NGAP_REFERENTIEL.actes_chapitre_II];
+      const forfaits = window.NGAP_REFERENTIEL.forfaits_bsi || {};
+      const dep = window.NGAP_REFERENTIEL.deplacements || {};
+      const maj = window.NGAP_REFERENTIEL.majorations || {};
+      return codes_frequents.map(code => {
+        // Chercher dans actes Chap I/II
+        let a = all.find(x => x.code_facturation === code || x.code === code);
+        if (a) return { code, nom: a.label, total: a.tarif };
+        // Sinon chercher dans forfaits/deplacements/majorations
+        if (forfaits[code]) return { code, nom: forfaits[code].label, total: forfaits[code].tarif };
+        if (dep[code]) return { code, nom: dep[code].label, total: dep[code].tarif };
+        // Alias majorations
+        const majKey = { 'NUIT':'ISN_NUIT', 'NUIT_PROF':'ISN_NUIT_PROFONDE', 'DIM':'ISD' }[code] || code;
+        if (maj[majKey]) return { code, nom: maj[majKey].label, total: maj[majKey].tarif };
+        return null;
+      }).filter(Boolean);
+    }
+    // Fallback hardcodé (NGAP 2026.3 tarifs officiels, AMI4.1 = 12.92€ corrigé)
+    return [
+      { code:'AMI1',      nom:'Soin infirmier',         total: 3.15 },
+      { code:'AMI2',      nom:'Acte infirmier ×2',      total: 6.30 },
+      { code:'AMI4',      nom:'Pansement complexe',     total:12.60 },
+      { code:'AMI4.1',    nom:'Changement flacon / 2e perf. même jour', total:12.92 },
+      { code:'AMI5',      nom:'Retrait définitif dispositif ≥24h',      total:15.75 },
+      { code:'AMI9',      nom:'Perfusion courte ≤1h surveillance',      total:28.35 },
+      { code:'AMI10',     nom:'Perfusion courte — cancer/immunodépr.',  total:31.50 },
+      { code:'AMI14',     nom:'Forfait perfusion longue >1h (1x/jour)', total:44.10 },
+      { code:'AMI15',     nom:'Forfait perfusion — cancer/immunodépr.', total:47.25 },
+      { code:'BSA',       nom:'Bilan soins A (dép. légère)',   total:13.00 },
+      { code:'BSB',       nom:'Bilan soins B (dép. modérée)',  total:18.20 },
+      { code:'BSC',       nom:'Bilan soins C (dép. lourde)',   total:28.70 },
+      { code:'IFD',       nom:'Forfait déplacement',    total: 2.75 },
+      { code:'MCI',       nom:'Majoration coordination',total: 5.00 },
+      { code:'MIE',       nom:'Majoration enfant < 7 ans', total: 3.15 },
+      { code:'NUIT',      nom:'Majoration nuit (20h-23h/5h-8h)', total: 9.15 },
+      { code:'NUIT_PROF', nom:'Majoration nuit profonde (23h-5h)', total:18.30 },
+      { code:'DIM',       nom:'Majoration dim./férié',  total: 8.50 },
+    ];
+  })();
 
   const modal = document.createElement('div');
   modal.id = 'cot-modal-live';

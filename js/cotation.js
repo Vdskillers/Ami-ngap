@@ -34,13 +34,52 @@ let _pendingPrintData = null;
    CABINET MULTI-IDE — CONSTANTES
 ════════════════════════════════════════════════ */
 
-const _COT_TARIFS = {
-  AMI1:3.15,  AMI2:6.30,  AMI3:9.45,  AMI4:12.60, AMI5:15.75, AMI6:18.90,
-  AIS1:2.65,  AIS3:7.95,
-  BSA:13.00,  BSB:18.20,  BSC:28.70,
-  IFD:2.75,   MCI:5.00,   MIE:3.15,
-  NUIT:9.15,  NUIT_PROF:18.30, DIM:8.50,
-};
+// ─── TARIFS NGAP — lecture dynamique du référentiel si chargé ───
+// Fallback hardcodé complet NGAP 2026.3 (CIR-9/2025)
+const _COT_TARIFS = (() => {
+  if (window.NGAP_REFERENTIEL) {
+    const ref = window.NGAP_REFERENTIEL;
+    const out = {};
+    // Actes Chap I + II
+    [...(ref.actes_chapitre_I||[]), ...(ref.actes_chapitre_II||[])].forEach(a => {
+      const key = a.code_facturation || a.code;
+      if (key) out[key] = a.tarif;
+    });
+    // Forfaits BSI
+    Object.entries(ref.forfaits_bsi || {}).forEach(([k, v]) => { out[k] = v.tarif; });
+    // Déplacements
+    Object.entries(ref.deplacements || {}).forEach(([k, v]) => { if (v.tarif) out[k] = v.tarif; });
+    // Majorations (avec alias)
+    Object.entries(ref.majorations || {}).forEach(([k, v]) => { out[k] = v.tarif; });
+    out['NUIT'] = ref.majorations?.ISN_NUIT?.tarif || 9.15;
+    out['NUIT_PROF'] = ref.majorations?.ISN_NUIT_PROFONDE?.tarif || 18.30;
+    out['DIM'] = ref.majorations?.ISD?.tarif || 8.50;
+    return out;
+  }
+  // Fallback NGAP 2026.3 complet (tarifs officiels vérifiés)
+  return {
+    // Actes techniques — coefficients simples
+    AMI0_5:1.58, AMI1:3.15,  AMI1_2:3.78, AMI1_25:3.94, AMI1_5:4.73, AMI1_6:5.04,
+    AMI2:6.30,  AMI2_1:6.62, AMI2_4:7.56, AMI2_5:7.88, AMI2_8:8.82, AMI3:9.45,
+    AMI3_05:9.61, AMI3_5:11.03, AMI3_9:12.29, AMI4:12.60, AMI4_1:12.92, AMI4_2:13.23,
+    AMI4_5:14.18, AMI4_6:14.49, AMI5:15.75, AMI5_1:16.07, AMI5_8:18.27, AMI6:18.90,
+    AMI7:22.05, AMI9:28.35, AMI10:31.50, AMI11:34.65, AMI14:44.10, AMI15:47.25,
+    // Alias point (AMI4.1 = AMI4_1)
+    'AMI4.1':12.92, 'AMI3.9':12.29, 'AMI4.2':13.23, 'AMI5.1':16.07, 'AMI5.8':18.27,
+    'AMI1.5':4.73,  'AMI1.1':3.47,  'AMI2.5':7.88,  'AMI2.8':8.82,  'AMI1.25':3.94,
+    // AIS
+    AIS1:2.65,  AIS3:7.95, AIS3_1:8.22, AIS4:10.60, AIS13:34.45, AIS16:42.40,
+    // BSI
+    BSA:13.00,  BSB:18.20,  BSC:28.70,
+    // Déplacements
+    IFD:2.75, IFI:2.75,
+    // Majorations
+    MCI:5.00,   MIE:3.15, MAU:1.35,
+    NUIT:9.15,  NUIT_PROF:18.30, DIM:8.50,
+    // Télésoin
+    TLS:10.00, TLL:12.00, TLD:15.00, RQD:10.00, TMI:5.04,
+  };
+})();
 
 // NLP côté client — détection complète des actes NGAP depuis le texte libre
 const _COT_NLP_PATTERNS = [

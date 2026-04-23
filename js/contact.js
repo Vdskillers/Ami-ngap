@@ -82,13 +82,35 @@ function _renderMyMessages(messages) {
 
   el.innerHTML = messages.map(m => {
     const date    = new Date(m.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-    const statut  = m.status === 'replied' ? '<span style="color:#00d4aa;font-size:11px;font-family:var(--fm)">✅ Répondu</span>' :
+
+    // Reconstruction du fil de réponses (rétro-compat : replies[] moderne ou reply_message unique)
+    let thread = [];
+    if (Array.isArray(m.replies) && m.replies.length) {
+      thread = m.replies.map(r => ({
+        message: String(r.message || r.text || ''),
+        at: r.at || r.created_at || m.replied_at
+      })).filter(r => r.message);
+    } else if (m.reply_message) {
+      thread = [{ message: m.reply_message, at: m.replied_at || m.updated_at }];
+    }
+
+    const replyCount = thread.length;
+    const statut  = m.status === 'replied' ? `<span style="color:#00d4aa;font-size:11px;font-family:var(--fm)">✅ ${replyCount>1?replyCount+' réponses':'Répondu'}</span>` :
                     m.status === 'read'    ? '<span style="color:#f59e0b;font-size:11px;font-family:var(--fm)">👁️ Lu</span>' :
                                              '<span style="color:var(--m);font-size:11px;font-family:var(--fm)">📤 Envoyé</span>';
-    const replyBloc = m.reply_message
-      ? `<div style="margin-top:12px;padding:12px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px">
-           <div style="font-size:11px;color:var(--a);font-family:var(--fm);margin-bottom:6px">💬 RÉPONSE DE L'ADMINISTRATION · ${new Date(m.replied_at||m.updated_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
-           <div style="font-size:13px;line-height:1.6;white-space:pre-wrap">${_escHtml(m.reply_message)}</div>
+
+    const replyBloc = thread.length
+      ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+           ${thread.map((r, i) => {
+             const rd = r.at ? new Date(r.at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+             return `<div style="padding:12px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px">
+               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+                 <span style="font-size:11px;color:var(--a);font-family:var(--fm)">💬 ADMIN${thread.length>1?` · RÉPONSE ${i+1}/${thread.length}`:''}</span>
+                 ${rd ? `<span style="font-size:10px;color:var(--m);font-family:var(--fm)">${rd}</span>` : ''}
+               </div>
+               <div style="font-size:13px;line-height:1.6;white-space:pre-wrap">${_escHtml(r.message)}</div>
+             </div>`;
+           }).join('')}
          </div>`
       : '';
     return `<div style="border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:12px;background:var(--s)">

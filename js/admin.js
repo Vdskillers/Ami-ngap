@@ -65,12 +65,20 @@ async function loadAdmComptes() {
   if (!el) return;
   el.innerHTML = '<div class="empty"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:12px">Chargement...</p></div>';
   try {
-    const d = await wpost('/webhook/admin-liste', {});
+    // 💎 Nouveau : endpoint enrichi qui retourne nom/prenom + tier + days_left
+    // Fallback automatique sur /webhook/admin-liste si l'endpoint n'est pas déployé
+    let d;
+    try {
+      d = await wpost('/webhook/admin-subscription-list', {});
+    } catch (_) {
+      d = await wpost('/webhook/admin-liste', {});
+    }
     if (!d.ok) throw new Error(d.error || 'Erreur');
-    // ⚠️ RGPD/HDS : les admins ne voient pas les autres admins — nurses uniquement
-    // Le worker filtre déjà role=nurse, mais on double la protection côté client
+    // ⚠️ RGPD/HDS : les admins ne voient pas les autres admins
     ACCS = (d.comptes || []).filter(a => a.role !== 'admin');
     renderAccs(ACCS);
+    // Charger aussi le mode app (switch TEST/PAYANT)
+    loadAdmAppMode();
   } catch (e) {
     admAlert(e.message, 'e');
     el.innerHTML = '<div class="empty"><div class="ei">⚠️</div><p>Impossible de charger les comptes</p></div>';
@@ -554,12 +562,82 @@ async function loadAdmSecurityStats(){
 function filterAccs(){const q=gv('adm-q').toLowerCase();renderAccs(q?ACCS.filter(a=>(a.nom||'').toLowerCase().includes(q)||(a.prenom||'').toLowerCase().includes(q)):ACCS);}
 function renderAccs(list){
   if(!list.length){$('accs').innerHTML='<div class="empty"><div class="ei">👥</div><p>Aucun compte trouvé</p></div>';return;}
+
+  // Palette tier → couleur (miroir de SUB.TIERS)
+  const TIER_COLORS = {
+    TRIAL:'#00d4aa', ESSENTIEL:'#4fa8ff', PRO:'#00d4aa',
+    CABINET:'#ffb547', PREMIUM:'#c678dd', COMPTABLE:'#ff5f6d',
+    LOCKED:'#6a8099', UNKNOWN:'#6a8099'
+  };
+  const TIER_LABELS = {
+    TRIAL:'Essai', ESSENTIEL:'Essentiel', PRO:'Pro',
+    CABINET:'Cabinet', PREMIUM:'Premium', COMPTABLE:'Comptable',
+    LOCKED:'Verrouillé', UNKNOWN:'—'
+  };
+
   $('accs').innerHTML=list.map(a=>{
     const ini=((a.prenom||'?')[0]+(a.nom||'?')[0]).toUpperCase();
     const name=((a.prenom||'')+' '+(a.nom||'')).trim()||'—';
     const safe=name.replace(/'/g,"\\'");
-    // ⚠️ toAdminView côté worker : seuls id, nom, prenom, is_blocked sont présents — jamais d'email ni de données patient
-    return`<div class="acc ${a.is_blocked?'blk':''}"><div class="avat ${a.is_blocked?'blk':''}">${ini}</div><div class="acc-name">${name}</div><div class="acc-st ${a.is_blocked?'blk':'on'}">${a.is_blocked?'⏸ Suspendu':'● Actif'}</div><div class="acc-acts">${a.is_blocked?`<button class="bxs b-unblk" onclick="admAct('debloquer','${a.id}','${safe}')">▶ Réactiver</button>`:`<button class="bxs b-blk" onclick="admAct('bloquer','${a.id}','${safe}')">⏸ Suspendre</button>`}<button class="bxs b-del" onclick="admAct('supprimer','${a.id}','${safe}')">🗑️</button></div></div>`;
+
+    // 💎 Abonnement : infos (ne sont présentes que si admin-subscription-list a réussi)
+    const tier = a.tier || 'UNKNOWN';
+    const tierColor = TIER_COLORS[tier] || '#6a8099';
+    const tierLabel = TIER_LABELS[tier] || tier;
+    const daysLeft  = a.days_left;
+    const isTrial   = !!a.is_trial;
+    const hasOverride = !!a.override;
+
+    // Pill abonnement (affiché seulement si on a les infos)
+    let subPill = '';
+    if (a.tier) {
+      let sub = '';
+      if (isTrial && daysLeft != null) {
+        const urgent = daysLeft <= 7;
+        sub = `<span class="acc-sub-days ${urgent?'urgent':''}">${daysLeft}j restant${daysLeft>1?'s':''}</span>`;
+      } else if (tier === 'LOCKED') {
+        // Différencier : essai expiré vs abo payant expiré
+        sub = a.expired
+          ? `<span class="acc-sub-days urgent">Abo expiré</span>`
+          : `<span class="acc-sub-days urgent">Essai expiré</span>`;
+      } else if (['ESSENTIEL','PRO','CABINET','PREMIUM','COMPTABLE'].includes(tier) && a.paid_until) {
+        const daysRem = Math.max(0, Math.ceil((new Date(a.paid_until) - Date.now())/(1000*60*60*24)));
+        const lowStock = daysRem <= 7;
+        sub = `<span class="acc-sub-days ${lowStock?'urgent':''}">${daysRem}j payé${daysRem>1?'s':''}</span>`;
+      }
+      const ovrIcon = hasOverride ? ' 🛠️' : '';
+      // Rôle cabinet : afficher un marqueur selon le rôle
+      let cabIcon = '';
+      if (a.cabinet_member) {
+        const roleLabels = { titulaire: '⭐ Titulaire', gestionnaire: '🛠️ Gestionnaire', membre: 'Membre' };
+        const roleLabel = roleLabels[a.cabinet_role] || 'Membre';
+        const tooltip = `Cabinet ${a.cabinet_size} IDE — ${roleLabel}`;
+        // Icône différenciée : 🏥 pour membre standard, ⭐ pour titulaire, 🛠️ pour gestionnaire
+        const icon = a.cabinet_role === 'titulaire' ? '⭐' : (a.cabinet_role === 'gestionnaire' ? '🛠️' : '🏥');
+        cabIcon = ` <span title="${tooltip}" style="cursor:help">${icon}</span>`;
+      }
+      subPill = `<div class="acc-sub-pill" style="background:${tierColor}22;border-color:${tierColor}55;color:${tierColor}">
+        <span class="acc-sub-label">${tierLabel}${ovrIcon}${cabIcon}</span>
+        ${sub}
+      </div>`;
+    }
+
+    // ⚠️ toAdminView côté worker : seuls id, nom, prenom, is_blocked, tier, days_left, trial_end, paid_until sont exposés
+    return `<div class="acc ${a.is_blocked?'blk':''}">
+      <div class="avat ${a.is_blocked?'blk':''}">${ini}</div>
+      <div class="acc-info-col">
+        <div class="acc-name">${name}</div>
+        ${subPill}
+      </div>
+      <div class="acc-st ${a.is_blocked?'blk':'on'}">${a.is_blocked?'⏸ Suspendu':'● Actif'}</div>
+      <div class="acc-acts">
+        ${a.tier ? `<button class="bxs b-sub" onclick="openSubOverrideModal('${a.id}','${safe}','${tier}',${daysLeft==null?'null':daysLeft})" title="Gérer l'abonnement">💎</button>` : ''}
+        ${a.is_blocked
+          ? `<button class="bxs b-unblk" onclick="admAct('debloquer','${a.id}','${safe}')">▶ Réactiver</button>`
+          : `<button class="bxs b-blk" onclick="admAct('bloquer','${a.id}','${safe}')">⏸ Suspendre</button>`}
+        <button class="bxs b-del" onclick="admAct('supprimer','${a.id}','${safe}')">🗑️</button>
+      </div>
+    </div>`;
   }).join('');
 }
 function admAlert(msg,type='o'){const el=$('adm-alert');el.className='adm-alert '+type;el.textContent=msg;el.style.display='block';setTimeout(()=>el.style.display='none',5000);}
@@ -624,18 +702,45 @@ function _renderAdmMessages(messages) {
     const nurseName = ((m.infirmiere_prenom||'') + ' ' + (m.infirmiere_nom||'')).trim() || 'Infirmier(ère)';
     const ini      = (nurseName.substring(0,1) + (nurseName.split(' ')[1]||'').substring(0,1)).toUpperCase();
     const isUnread = m.status === 'sent';
-    const replyBloc = m.reply_message
-      ? `<div style="margin-top:10px;padding:10px 14px;background:rgba(0,212,170,.06);border-left:3px solid var(--a);border-radius:0 8px 8px 0;font-size:12px;color:var(--m)"><span style="color:var(--a);font-weight:600">Votre réponse :</span> ${_escAdm(m.reply_message)}</div>`
-      : '';
-    const replyForm = m.status !== 'replied'
-      ? `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-           <textarea id="reply-${m.id}" placeholder="Répondre à ${nurseName}…" style="flex:1;min-width:200px;padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fi);resize:vertical;min-height:60px" maxlength="1000"></textarea>
-           <div style="display:flex;flex-direction:column;gap:6px">
-             <button class="btn bp bsm" style="white-space:nowrap" onclick="replyToMessage('${m.id}','${_escAdm(nurseName)}')">📤 Répondre</button>
-             ${isUnread ? `<button class="btn bs bsm" style="font-size:11px" onclick="markMessageRead('${m.id}')">👁️ Marquer lu</button>` : ''}
-           </div>
+
+    // ═══ Reconstruction du fil de réponses (rétro-compat) ═══
+    // Priorité : m.replies (array JSONB moderne) ; fallback : m.reply_message (ancien format unique).
+    let thread = [];
+    if (Array.isArray(m.replies) && m.replies.length) {
+      thread = m.replies.map(r => ({
+        message: String(r.message || r.text || ''),
+        at: r.at || r.created_at || m.replied_at
+      })).filter(r => r.message);
+    } else if (m.reply_message) {
+      thread = [{ message: m.reply_message, at: m.replied_at }];
+    }
+
+    const threadBloc = thread.length
+      ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+           ${thread.map((r, i) => {
+             const rd = r.at ? new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+             return `<div style="padding:10px 14px;background:rgba(0,212,170,.06);border-left:3px solid var(--a);border-radius:0 8px 8px 0;font-size:12px;color:var(--m)">
+               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;flex-wrap:wrap">
+                 <span style="color:var(--a);font-weight:600;font-size:11px;font-family:var(--fm)">💬 RÉPONSE #${i+1}${thread.length>1?' / '+thread.length:''}</span>
+                 ${rd ? `<span style="font-size:10px;color:var(--m);font-family:var(--fm)">${rd}</span>` : ''}
+               </div>
+               <div style="color:var(--t);line-height:1.5;white-space:pre-wrap">${_escAdm(r.message)}</div>
+             </div>`;
+           }).join('')}
          </div>`
       : '';
+
+    // Formulaire TOUJOURS affiché — permet d'ajouter autant de réponses que nécessaire.
+    const btnLabel   = thread.length ? '➕ Ajouter une réponse' : '📤 Répondre';
+    const placeholder = thread.length ? `Ajouter une réponse à ${nurseName}…` : `Répondre à ${nurseName}…`;
+    const replyForm = `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+           <textarea id="reply-${m.id}" placeholder="${placeholder}" style="flex:1;min-width:200px;padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fi);resize:vertical;min-height:60px" maxlength="1000"></textarea>
+           <div style="display:flex;flex-direction:column;gap:6px">
+             <button class="btn bp bsm" style="white-space:nowrap" onclick="replyToMessage('${m.id}','${_escAdm(nurseName)}')">${btnLabel}</button>
+             ${isUnread ? `<button class="btn bs bsm" style="font-size:11px" onclick="markMessageRead('${m.id}')">👁️ Marquer lu</button>` : ''}
+           </div>
+         </div>`;
+
     return `<div style="border:1px solid ${isUnread ? '#ef4444' : 'var(--b)'};border-radius:12px;padding:16px;margin-bottom:12px;background:var(--s);${isUnread ? 'box-shadow:0 0 0 1px rgba(239,68,68,.2)' : ''}">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:10px">
@@ -647,12 +752,12 @@ function _renderAdmMessages(messages) {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--fm);background:rgba(255,255,255,.05);border:1px solid var(--b)">${catLabel[m.categorie]||m.categorie}</span>
-          <span style="padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--fm);color:${statusColor[m.status]||'var(--m)'};">${statusLabel[m.status]||m.status}</span>
+          <span style="padding:3px 10px;border-radius:20px;font-size:11px;font-family:var(--fm);color:${statusColor[m.status]||'var(--m)'};">${statusLabel[m.status]||m.status}${thread.length>1?` · ${thread.length} réponses`:''}</span>
         </div>
       </div>
       <div style="font-weight:600;font-size:13px;margin-bottom:6px">${_escAdm(m.sujet)}</div>
       <div style="font-size:13px;color:var(--m);line-height:1.6;white-space:pre-wrap;background:var(--dd);padding:10px 14px;border-radius:8px">${_escAdm(m.message)}</div>
-      ${replyBloc}
+      ${threadBloc}
       ${replyForm}
     </div>`;
   }).join('');
@@ -667,16 +772,30 @@ async function markMessageRead(id) {
 }
 
 async function replyToMessage(id, nurseName) {
-  const ta   = document.getElementById('reply-' + id);
+  const ta    = document.getElementById('reply-' + id);
   const reply = (ta?.value || '').trim();
   if (!reply) { admAlert('Rédigez une réponse avant d\'envoyer.', 'e'); return; }
   if (reply.length < 5) { admAlert('Réponse trop courte.', 'e'); return; }
   try {
     const d = await wpost('/webhook/admin-message-reply', { id, reply });
     if (!d.ok) throw new Error(d.error || 'Erreur');
-    admAlert(`✅ Réponse envoyée à ${nurseName}.`, 'o');
     const m = ADM_MESSAGES.find(x => x.id === id);
-    if (m) { m.status = 'replied'; m.reply_message = reply; m.replied_at = new Date().toISOString(); }
+    if (m) {
+      const now = new Date().toISOString();
+      if (!Array.isArray(m.replies)) m.replies = [];
+      // Si l'ancien champ reply_message existait et que replies est vide → migrer localement pour l'affichage.
+      if (!m.replies.length && m.reply_message) {
+        m.replies.push({ message: m.reply_message, at: m.replied_at || now });
+      }
+      m.replies.push({ message: reply, at: now });
+      // Rétro-compat : la 1ère réponse reste dans reply_message
+      if (!m.reply_message) { m.reply_message = reply; m.replied_at = now; }
+      m.status = 'replied';
+      const count = m.replies.length;
+      admAlert(count > 1 ? `✅ Réponse #${count} envoyée à ${nurseName}.` : `✅ Réponse envoyée à ${nurseName}.`, 'o');
+    } else {
+      admAlert(`✅ Réponse envoyée à ${nurseName}.`, 'o');
+    }
     _renderAdmMessages(ADM_MESSAGES);
   } catch (e) { admAlert(e.message, 'e'); }
 }
@@ -723,3 +842,375 @@ async function adminFixPatientNom() {
     btn.textContent = '👤 Corriger les noms manquants';
   }
 }
+
+/* ════════════════════════════════════════════════
+   💎 SUBSCRIPTION — Outils admin (simulation tier)
+   ────────────────────────────────────────────────
+   Le panneau de simulation est rendu dans la page #view-mon-abo
+   par SUB.renderAbonnementPage() quand isAdmin.
+   Ce bouton ferme le panneau admin et y redirige directement.
+════════════════════════════════════════════════ */
+
+/**
+ * Ouvre le simulateur de tier (accessible depuis le bouton "Simuler tier"
+ * dans la barre d'actions du panneau admin).
+ * Redirige vers la page "Mon abonnement" de l'app qui contient le panneau
+ * de simulation pour admin.
+ */
+function openTierSimulator() {
+  if (typeof SUB === 'undefined') {
+    alert('Module SUB non chargé. Rechargez la page.');
+    return;
+  }
+  // Fermer le panneau admin → revenir à l'app
+  const adm = document.getElementById('adm');
+  const app = document.getElementById('app');
+  if (adm) adm.classList.remove('show');
+  if (app) app.style.display = 'grid';
+  if (typeof updateNavMode === 'function') updateNavMode();
+  // Naviguer vers la page abonnement
+  setTimeout(() => {
+    if (typeof navTo === 'function') navTo('mon-abo');
+    if (typeof SUB.renderAbonnementPage === 'function') {
+      setTimeout(() => SUB.renderAbonnementPage(), 100);
+    }
+  }, 50);
+}
+
+/**
+ * Met à jour la carte de statut simulation dans le tab Comptes.
+ * Appelée après chaque setAdminSim / clearAdminSim.
+ */
+function updateAdmSimStatus() {
+  const card = document.getElementById('adm-sim-status');
+  const txt  = document.getElementById('adm-sim-status-text');
+  if (!card || !txt || typeof SUB === 'undefined') return;
+
+  const st = SUB.getState();
+  if (st.isAdmin && st.isAdminSim && st.simTier) {
+    const tinfo = SUB.TIERS[st.simTier];
+    const tierLabel = tinfo?.label || st.simTier;
+    txt.textContent = `Vous testez l'application comme une IDEL au tier « ${tierLabel} ». Les verrous et paywalls correspondants sont actifs sur toutes les pages.`;
+    card.style.display = 'flex';
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+/* Auto-refresh du statut quand l'admin ouvre le tab "comptes" */
+(function() {
+  const _origAdmTab = typeof admTab === 'function' ? admTab : null;
+  if (!_origAdmTab) return;
+  window.admTab = function(tab) {
+    const r = _origAdmTab.apply(this, arguments);
+    if (tab === 'comptes') setTimeout(updateAdmSimStatus, 100);
+    return r;
+  };
+})();
+
+/* Refresh aussi quand l'admin ouvre le panel (loadAdm) */
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(updateAdmSimStatus, 500);
+});
+
+/* ════════════════════════════════════════════════
+   💎 SUBSCRIPTION — Pilotage admin (v2.0)
+   ────────────────────────────────────────────────
+   ✅ Switch global TEST ↔ PAYANT
+   ✅ Override manuel du tier par user (avec prolongation essai)
+   ✅ Synchronisé avec le worker (/webhook/admin-subscription-*)
+════════════════════════════════════════════════ */
+
+let _ADM_APP_MODE = null;   // 'TEST' | 'PAYANT'
+
+/** Charge le mode actuel depuis le worker et met à jour l'UI du switch */
+async function loadAdmAppMode() {
+  const wrap = $('adm-app-mode-card');
+  if (!wrap) return;
+  try {
+    const d = await wpost('/webhook/admin-subscription-mode', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    _ADM_APP_MODE = d.mode || 'TEST';
+    _renderAdmAppMode(d);
+  } catch (e) {
+    wrap.innerHTML = `
+      <div style="color:var(--d);font-size:12px">
+        ⚠️ Endpoint non disponible : <code>${e.message}</code>.
+        Vérifiez que le worker est à jour (v2.0 avec endpoints subscription).
+      </div>`;
+  }
+}
+
+/** Rendu de la carte de pilotage du mode app */
+function _renderAdmAppMode(d) {
+  const wrap = $('adm-app-mode-card');
+  if (!wrap) return;
+  const mode = d.mode || 'TEST';
+  const paidSince = d.paid_since ? new Date(d.paid_since).toLocaleDateString('fr-FR') : null;
+
+  wrap.innerHTML = `
+    <div class="adm-appmode-head">
+      <div>
+        <div class="adm-appmode-label">Mode application</div>
+        <div class="adm-appmode-value ${mode.toLowerCase()}">
+          ${mode === 'TEST' ? '🧪 MODE TEST' : '💳 MODE PAYANT'}
+        </div>
+        <div class="adm-appmode-sub">
+          ${mode === 'TEST'
+            ? 'Aucune limitation pour personne. Toutes les fonctionnalités sont accessibles à tous les utilisateurs.'
+            : `Abonnements actifs${paidSince ? ` depuis le ${paidSince}` : ''}. Les infirmières voient les verrous et paywalls selon leur tier.`}
+        </div>
+      </div>
+      <div class="adm-appmode-toggle-wrap">
+        <label class="adm-appmode-toggle">
+          <input type="checkbox" id="adm-appmode-switch" ${mode==='PAYANT'?'checked':''} onchange="toggleAppMode(this.checked)">
+          <span class="adm-appmode-slider"></span>
+        </label>
+        <div class="adm-appmode-toggle-label">${mode==='PAYANT'?'Payant':'Test'}</div>
+      </div>
+    </div>
+    ${mode === 'TEST' ? `
+      <div class="adm-appmode-warn">
+        ⚠️ <strong>Attention :</strong> passer en <b>mode payant</b> démarrera un essai gratuit de 30 jours pour toutes les infirmières actuellement sans abonnement. Cette action est irréversible par simple toggle (il faut recompter 30 jours pour revenir à l'état équivalent).
+      </div>
+    ` : `
+      <div class="adm-appmode-info">
+        💡 Les abonnements sont actifs. Vous pouvez revenir en mode test à tout moment (l'état des abonnements est conservé dans la BDD).
+      </div>
+    `}
+  `;
+}
+
+/** Toggle entre TEST et PAYANT */
+async function toggleAppMode(toPayant) {
+  const newMode = toPayant ? 'PAYANT' : 'TEST';
+  const currentMode = _ADM_APP_MODE || 'TEST';
+  if (newMode === currentMode) return;
+
+  const msg = newMode === 'PAYANT'
+    ? `⚠️ Basculer l'application en MODE PAYANT ?\n\n• Toutes les infirmières sans abonnement recevront un essai gratuit de 30 jours\n• Les verrous et paywalls deviendront actifs\n• Les infirmières en essai verront le compte à rebours\n\nContinuer ?`
+    : `Revenir en MODE TEST ?\n\n• Toutes les limitations sont désactivées\n• Tous les utilisateurs retrouvent un accès complet\n• Les abonnements sont conservés en BDD (réactivables)\n\nContinuer ?`;
+
+  if (!confirm(msg)) {
+    // Annuler : remettre le switch dans son état précédent
+    const sw = $('adm-appmode-switch');
+    if (sw) sw.checked = currentMode === 'PAYANT';
+    return;
+  }
+
+  try {
+    const d = await wpost('/webhook/admin-subscription-mode', { mode: newMode });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    _ADM_APP_MODE = d.mode;
+    admAlert(`✓ Mode basculé en ${d.mode === 'PAYANT' ? 'PAYANT' : 'TEST'}. ${d.mode === 'PAYANT' ? 'Essai 30j activé pour toutes les infirmières.' : 'Accès illimité pour tous.'}`, 'o');
+    _renderAdmAppMode(d);
+    // Recharger la liste pour voir les nouveaux tiers
+    loadAdmComptes();
+  } catch (e) {
+    admAlert(e.message, 'e');
+    // Remettre le switch
+    const sw = $('adm-appmode-switch');
+    if (sw) sw.checked = currentMode === 'PAYANT';
+  }
+}
+
+/** Ouvre la modale d'override tier pour un user */
+function openSubOverrideModal(userId, userName, currentTier, daysLeft) {
+  let modal = $('adm-sub-override-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'adm-sub-override-modal';
+    modal.className = 'adm-sub-ovr-overlay';
+    modal.addEventListener('click', e => { if (e.target === modal) closeSubOverrideModal(); });
+    document.body.appendChild(modal);
+  }
+
+  const TIERS_LIST = [
+    { key:'TRIAL',     label:'Essai gratuit (30j)',   color:'#00d4aa' },
+    { key:'ESSENTIEL', label:'AMI Essentiel',          color:'#4fa8ff' },
+    { key:'PRO',       label:'AMI Pro',                color:'#00d4aa' },
+    { key:'CABINET',   label:'AMI Cabinet',            color:'#ffb547' },
+    { key:'PREMIUM',   label:'AMI Premium',            color:'#c678dd' },
+    { key:'COMPTABLE', label:'AMI Comptable',          color:'#ff5f6d' },
+    { key:'LOCKED',    label:'Verrouiller (aucun accès)', color:'#6a8099' }
+  ];
+
+  const currentLabel = TIERS_LIST.find(t => t.key === currentTier)?.label || currentTier;
+
+  modal.innerHTML = `
+    <div class="adm-sub-ovr-card">
+      <div class="adm-sub-ovr-close" onclick="closeSubOverrideModal()">×</div>
+      <h2 class="adm-sub-ovr-title">💎 Gérer l'abonnement</h2>
+      <div class="adm-sub-ovr-user">${userName}</div>
+      <div class="adm-sub-ovr-current">
+        <span>Abonnement actuel :</span>
+        <b style="color:${TIERS_LIST.find(t => t.key === currentTier)?.color || '#6a8099'}">${currentLabel}</b>
+        ${daysLeft != null && daysLeft !== 'null' ? ` · <span style="font-family:var(--fm);font-size:11px">${daysLeft}j restant${daysLeft>1?'s':''}</span>` : ''}
+      </div>
+
+      <div class="adm-sub-ovr-section-title">Définir un nouveau tier</div>
+      <div class="adm-sub-ovr-tiers">
+        ${TIERS_LIST.map(t => `
+          <button class="adm-sub-ovr-tier-btn ${t.key===currentTier?'current':''}"
+                  style="border-color:${t.color}55;color:${t.color}"
+                  ${t.key===currentTier?'disabled':''}
+                  onclick="applySubOverride('${userId}','${t.key}')">
+            ${t.label}${t.key===currentTier?' (actuel)':''}
+          </button>
+        `).join('')}
+      </div>
+
+      <div class="adm-sub-ovr-section-title">Actions rapides</div>
+      <div class="adm-sub-ovr-quick">
+        <button class="adm-sub-ovr-quick-btn" onclick="extendSubTrial('${userId}',7)">+7 jours d'essai</button>
+        <button class="adm-sub-ovr-quick-btn" onclick="extendSubTrial('${userId}',30)">+30 jours d'essai</button>
+        <button class="adm-sub-ovr-quick-btn" onclick="extendSubTrial('${userId}',90)">+90 jours d'essai</button>
+        <button class="adm-sub-ovr-quick-btn danger" onclick="resetSubToTrial('${userId}')">↺ Réinitialiser (essai 30j)</button>
+      </div>
+
+      <div class="adm-sub-ovr-section-title">💎 Add-on PREMIUM (+15 € HT/mois)</div>
+      <div class="adm-sub-ovr-note" style="margin-bottom:10px">
+        S'ajoute à Pro ou Cabinet. Débloque : optimisation CA avancée, détection CA sous-déclaré, protection médico-légale+, certificats forensiques, SLA < 2h, rapport juridique mensuel.
+      </div>
+      <div class="adm-sub-ovr-quick">
+        <button class="adm-sub-ovr-quick-btn" style="background:rgba(198,120,221,.12);border-color:rgba(198,120,221,.4);color:#c678dd" onclick="enablePremiumAddon('${userId}',1)">+ Activer 1 mois</button>
+        <button class="adm-sub-ovr-quick-btn" style="background:rgba(198,120,221,.12);border-color:rgba(198,120,221,.4);color:#c678dd" onclick="enablePremiumAddon('${userId}',6)">+ Activer 6 mois</button>
+        <button class="adm-sub-ovr-quick-btn" style="background:rgba(198,120,221,.12);border-color:rgba(198,120,221,.4);color:#c678dd" onclick="enablePremiumAddon('${userId}',12)">+ Activer 12 mois</button>
+        <button class="adm-sub-ovr-quick-btn danger" onclick="disablePremiumAddon('${userId}')">✕ Désactiver add-on</button>
+      </div>
+
+      <div class="adm-sub-ovr-note">
+        <b>ℹ️ Note :</b> Ces modifications sont appliquées immédiatement en base. L'infirmière verra le nouveau statut à sa prochaine connexion (ou après rafraîchissement).
+      </div>
+    </div>
+  `;
+  modal.classList.add('open');
+  setTimeout(() => modal.classList.add('visible'), 10);
+}
+
+function closeSubOverrideModal() {
+  const modal = $('adm-sub-override-modal');
+  if (!modal) return;
+  modal.classList.remove('visible');
+  setTimeout(() => modal.classList.remove('open'), 200);
+}
+
+/** Applique un override tier (set) */
+async function applySubOverride(userId, tier) {
+  if (!confirm(`Définir le tier "${tier}" pour cet utilisateur ?`)) return;
+  try {
+    const d = await wpost('/webhook/admin-subscription-override', {
+      infirmiere_id: userId,
+      action: 'set',
+      tier: tier
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    console.info('[admin-subscription-override] OK', { userId, tier, response: d });
+    admAlert(`✓ Tier "${tier}" appliqué avec succès.`, 'o');
+    closeSubOverrideModal();
+    loadAdmComptes();
+  } catch (e) {
+    console.error('[admin-subscription-override] FAILED', { userId, tier, error: e.message });
+    admAlert(`Échec override : ${e.message}. Vérifiez que les tables "subscriptions" et "app_config" existent dans Supabase (exécutez migration_subscriptions.sql).`, 'e');
+  }
+}
+
+/** Prolonge l'essai de N jours */
+async function extendSubTrial(userId, days) {
+  if (!confirm(`Prolonger l'essai de ${days} jours ?`)) return;
+  try {
+    const d = await wpost('/webhook/admin-subscription-override', {
+      infirmiere_id: userId,
+      action: 'extend_trial',
+      days: days
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    admAlert(`✓ Essai prolongé de ${days} jours. Nouvelle fin : ${new Date(d.trial_end).toLocaleDateString('fr-FR')}.`, 'o');
+    closeSubOverrideModal();
+    loadAdmComptes();
+  } catch (e) {
+    admAlert(e.message, 'e');
+  }
+}
+
+/** Réinitialise au trial 30j */
+async function resetSubToTrial(userId) {
+  if (!confirm(`Réinitialiser cet utilisateur à un essai gratuit de 30 jours ?\n\nCela écrase son abonnement actuel.`)) return;
+  try {
+    const d = await wpost('/webhook/admin-subscription-override', {
+      infirmiere_id: userId,
+      action: 'clear'
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    admAlert(`✓ Essai réinitialisé. Fin prévue : ${new Date(d.trial_end).toLocaleDateString('fr-FR')}.`, 'o');
+    closeSubOverrideModal();
+    loadAdmComptes();
+  } catch (e) {
+    admAlert(e.message, 'e');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   💎 ADD-ON PREMIUM (+15€ HT/mois)
+   ──────────────────────────────────────────────────────────
+   S'ajoute à un abonnement Pro ou Cabinet pour débloquer :
+     - Optimisation CA avancée
+     - Détection CA sous-déclaré
+     - Protection médico-légale renforcée
+     - Certificats forensiques horodatés
+     - SLA support prioritaire < 2h
+     - Rapport juridique mensuel
+══════════════════════════════════════════════════════════ */
+
+/** Active l'add-on PREMIUM pour N mois (défaut 1) */
+async function enablePremiumAddon(userId, months) {
+  months = months || 1;
+  const label = months === 1 ? '1 mois' : `${months} mois`;
+  if (!confirm(`Activer l'add-on PREMIUM pour ${label} sur cet utilisateur ?\n\n(Débloque les 6 fonctionnalités PREMIUM en plus de son forfait actuel.)`)) return;
+  try {
+    const d = await wpost('/webhook/admin-subscription-override', {
+      infirmiere_id: userId,
+      action: 'premium_addon_on',
+      months: months
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    const until = d.premium_addon_until
+      ? new Date(d.premium_addon_until).toLocaleDateString('fr-FR')
+      : 'sans limite';
+    admAlert(`✓ Add-on PREMIUM activé jusqu'au ${until}.`, 'o');
+    closeSubOverrideModal();
+    loadAdmComptes();
+  } catch (e) {
+    console.error('[admin-premium-addon-on] FAILED', { userId, error: e.message });
+    admAlert(`Échec activation add-on : ${e.message}`, 'e');
+  }
+}
+
+/** Désactive l'add-on PREMIUM */
+async function disablePremiumAddon(userId) {
+  if (!confirm(`Désactiver l'add-on PREMIUM pour cet utilisateur ?\n\n(Les 6 fonctionnalités PREMIUM ne seront plus accessibles.)`)) return;
+  try {
+    const d = await wpost('/webhook/admin-subscription-override', {
+      infirmiere_id: userId,
+      action: 'premium_addon_off'
+    });
+    if (!d.ok) throw new Error(d.error || 'Erreur');
+    admAlert(`✓ Add-on PREMIUM désactivé.`, 'o');
+    closeSubOverrideModal();
+    loadAdmComptes();
+  } catch (e) {
+    console.error('[admin-premium-addon-off] FAILED', { userId, error: e.message });
+    admAlert(`Échec désactivation : ${e.message}`, 'e');
+  }
+}
+
+/* Expose globalement pour onclick inline */
+window.loadAdmAppMode = loadAdmAppMode;
+window.toggleAppMode = toggleAppMode;
+window.openSubOverrideModal = openSubOverrideModal;
+window.closeSubOverrideModal = closeSubOverrideModal;
+window.applySubOverride = applySubOverride;
+window.extendSubTrial = extendSubTrial;
+window.resetSubToTrial = resetSubToTrial;
+window.enablePremiumAddon = enablePremiumAddon;
+window.disablePremiumAddon = disablePremiumAddon;
