@@ -52,6 +52,8 @@ window.admNgapLoad = async function() {
     _NG.originalJson = JSON.stringify(_NG.edit);
     _NG.loaded = true;
     _render();
+    // Charger le count de suggestions pending pour le badge
+    setTimeout(() => { try { window.admNgapSuggLoadCount(); } catch(_){} }, 200);
   } catch(e) {
     root.innerHTML = `<div class="ai er">⚠️ Impossible de charger le référentiel : ${_esc(e.message)}</div>`;
   }
@@ -92,6 +94,9 @@ function _render() {
       <button class="btn bs bsm" onclick="admNgapReset()" ${dirty ? '' : 'disabled style="opacity:.4;cursor:not-allowed"'} title="Annuler les modifications">↺ Annuler</button>
       <button class="btn bs bsm" onclick="admNgapToggleHistory()" title="Historique des versions">📜 Historique (${_NG.history.length})</button>
       <button class="btn bs bsm" onclick="admNgapAnalyze()" title="Détecter les anomalies du référentiel (tarifs aberrants, règles manquantes)">🔍 Analyser</button>
+      <button class="btn bs bsm" onclick="admNgapRunTests()" title="Rejouer les 58 tests (50 cliniques + 8 structurels) sur le référentiel en cours d'édition">🧪 Tests</button>
+      <button class="btn bs bsm" onclick="admNgapToggleInstruction()" title="Appliquer une correction en langage naturel (ex: 'Passe AMI14 à 45€')">🪄 Instruction</button>
+      <button class="btn bs bsm" onclick="admNgapSuggList()" title="Voir les suggestions des infirmières" id="adm-ngap-sugg-btn">📬 Suggestions <span id="adm-ngap-sugg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px"></span></button>
       <div style="flex:1"></div>
       <button class="btn bp bsm" onclick="admNgapSavePrompt()" ${dirty ? '' : 'disabled style="opacity:.4;cursor:not-allowed"'} title="Enregistrer une nouvelle version">
         💾 Enregistrer une nouvelle version
@@ -103,6 +108,15 @@ function _render() {
 
     <!-- Zone résultats analyseur (repliable) -->
     <div id="adm-ngap-analyze" style="display:none;margin-bottom:20px"></div>
+
+    <!-- Zone résultats tests (repliable) -->
+    <div id="adm-ngap-tests" style="display:none;margin-bottom:20px"></div>
+
+    <!-- Zone instruction langage naturel (repliable) -->
+    <div id="adm-ngap-instruction" style="display:none;margin-bottom:20px"></div>
+
+    <!-- Zone suggestions infirmières (repliable) -->
+    <div id="adm-ngap-sugg" style="display:none;margin-bottom:20px"></div>
 
     <!-- Résumé compteurs -->
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:20px">
@@ -765,5 +779,454 @@ window.admNgapApplyFix = function(fix) {
     _toast('error', 'Erreur application', e.message);
   }
 };
+
+/* ═══════════════════════════════════════════════════════════════
+   TESTS — Rejouer les 58 tests (50 cliniques + 8 structurels)
+═══════════════════════════════════════════════════════════════ */
+window.admNgapRunTests = async function() {
+  const panel = document.getElementById('adm-ngap-tests');
+  if (!panel) return;
+
+  if (panel.style.display === 'block' && panel.dataset.shown === '1') {
+    panel.style.display = 'none';
+    panel.dataset.shown = '0';
+    return;
+  }
+
+  panel.innerHTML = `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px">
+      <div class="spin spinw" style="width:22px;height:22px"></div>
+      <div>
+        <strong style="font-family:var(--fi);font-size:14px">Exécution des tests…</strong>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">50 tests cliniques + 8 structurels sur le référentiel en cours d'édition</div>
+      </div>
+    </div>`;
+  panel.style.display = 'block';
+  panel.dataset.shown = '1';
+
+  try {
+    const d = await wpost('/webhook/admin-ngap-test', { referentiel: _NG.edit });
+    if (!d.ok) throw new Error(d.error || 'Erreur backend');
+
+    const s = d.summary || {};
+    const struct = d.structural || {};
+    const clin = d.clinical || {};
+    const rate = s.success_rate || 0;
+    const allPass = (s.failed || 0) === 0;
+    const color = allPass ? '#10b981' : (rate >= 90 ? '#f59e0b' : '#ef4444');
+    const icon = allPass ? '✅' : (rate >= 90 ? '⚠️' : '🛑');
+
+    const renderFailures = (arr, title) => {
+      if (!arr || arr.length === 0) return '';
+      return `
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;margin-bottom:4px">${_esc(title)} (${arr.length})</div>
+          ${arr.slice(0, 10).map(f => `
+            <div style="padding:6px 10px;background:rgba(239,68,68,.06);border-left:3px solid #ef4444;border-radius:4px;margin-bottom:3px;font-size:11px;font-family:var(--fm);color:var(--t)">${_esc(f)}</div>
+          `).join('')}
+          ${arr.length > 10 ? `<div style="font-size:10px;color:var(--m);margin-top:4px">… et ${arr.length - 10} autres</div>` : ''}
+        </div>`;
+    };
+
+    panel.innerHTML = `
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--b)">
+          <span style="font-size:26px">${icon}</span>
+          <div style="flex:1">
+            <strong style="font-family:var(--fi);font-size:14px">Résultats des tests</strong>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">
+              <span style="color:${color};font-weight:600;font-family:var(--fm)">${s.passed}/${s.total} (${rate}%)</span>
+              &nbsp;· ${d.duration_ms}ms · ${_esc(d.ruleset_version)} · hash ${_esc((d.ruleset_hash||'').slice(0,8))}
+            </div>
+          </div>
+          <button class="btn bs" style="padding:4px 10px;font-size:11px" onclick="document.getElementById('adm-ngap-tests').style.display='none';document.getElementById('adm-ngap-tests').dataset.shown='0'">✕ Fermer</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px">
+          <div style="padding:10px;background:var(--ad,#0f172a);border-radius:8px;border-left:3px solid ${struct.failed === 0 ? '#10b981' : '#ef4444'}">
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm);letter-spacing:.5px">STRUCTURELS</div>
+            <div style="font-size:18px;font-weight:700;margin-top:2px;color:${struct.failed === 0 ? '#10b981' : '#ef4444'}">${struct.passed}/${struct.total}</div>
+          </div>
+          <div style="padding:10px;background:var(--ad,#0f172a);border-radius:8px;border-left:3px solid ${clin.failed === 0 ? '#10b981' : '#ef4444'}">
+            <div style="font-size:10px;color:var(--m);font-family:var(--fm);letter-spacing:.5px">CLINIQUES</div>
+            <div style="font-size:18px;font-weight:700;margin-top:2px;color:${clin.failed === 0 ? '#10b981' : '#ef4444'}">${clin.passed}/${clin.total}</div>
+          </div>
+        </div>
+        ${renderFailures(struct.failures, 'Échecs structurels')}
+        ${renderFailures(clin.failures, 'Échecs cliniques')}
+        ${allPass ? `
+          <div style="margin-top:12px;padding:10px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:6px;font-size:12px;color:#10b981">
+            ✅ Tous les tests passent — le référentiel est prêt à être sauvegardé.
+          </div>` : `
+          <div style="margin-top:12px;padding:10px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:6px;font-size:12px;color:#ef4444">
+            🚨 <strong>Ne pas sauvegarder</strong> tant que les échecs ne sont pas corrigés — risque de régression CPAM.
+          </div>`}
+      </div>`;
+  } catch(e) {
+    panel.innerHTML = `<div class="ai er">⚠️ Erreur exécution tests : ${_esc(e.message)}</div>`;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   INSTRUCTION LANGAGE NATUREL — Parse + preview + tests + apply
+═══════════════════════════════════════════════════════════════ */
+window.admNgapToggleInstruction = function() {
+  const panel = document.getElementById('adm-ngap-instruction');
+  if (!panel) return;
+
+  if (panel.style.display === 'block' && panel.dataset.shown === '1') {
+    panel.style.display = 'none';
+    panel.dataset.shown = '0';
+    return;
+  }
+
+  panel.innerHTML = `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--b)">
+        <span style="font-size:22px">🪄</span>
+        <div style="flex:1">
+          <strong style="font-family:var(--fi);font-size:14px">Correction en langage naturel</strong>
+          <div style="font-size:11px;color:var(--m);margin-top:2px">Regex d'abord, IA Grok en fallback. Validation obligatoire avant application.</div>
+        </div>
+        <button class="btn bs" style="padding:4px 10px;font-size:11px" onclick="document.getElementById('adm-ngap-instruction').style.display='none';document.getElementById('adm-ngap-instruction').dataset.shown='0'">✕</button>
+      </div>
+      <textarea id="adm-ngap-instr-input" placeholder="Exemples :&#10;  • Passe AMI14 à 45€&#10;  • Ajoute règle cumul interdit AMI14 + AMI15&#10;  • Ajoute dérogation AMI9 + AMI6 taux plein&#10;  • Supprime règle 7&#10;  • Renomme AMI14 en Forfait perfusion >1h" rows="4" style="width:100%;box-sizing:border-box;padding:10px;background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:8px;color:var(--t);font-family:var(--fm);font-size:13px;resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn bp bsm" onclick="admNgapParseInstruction()" style="flex:1">
+          🔍 Analyser l'instruction
+        </button>
+      </div>
+      <div id="adm-ngap-instr-result" style="margin-top:12px"></div>
+    </div>`;
+  panel.style.display = 'block';
+  panel.dataset.shown = '1';
+
+  // Focus sur le textarea
+  setTimeout(() => {
+    const inp = document.getElementById('adm-ngap-instr-input');
+    if (inp) inp.focus();
+  }, 50);
+};
+
+/* Étape 1 — Parse l'instruction côté worker (regex puis LLM fallback) */
+window.admNgapParseInstruction = async function() {
+  const inp = document.getElementById('adm-ngap-instr-input');
+  const out = document.getElementById('adm-ngap-instr-result');
+  if (!inp || !out) return;
+
+  const instr = (inp.value || '').trim();
+  if (instr.length < 3) {
+    _toast('warn', 'Instruction trop courte', 'Veuillez saisir au moins 3 caractères.');
+    return;
+  }
+
+  out.innerHTML = `
+    <div style="padding:10px;background:var(--ad,#0f172a);border-radius:8px;display:flex;align-items:center;gap:10px">
+      <div class="spin spinw" style="width:18px;height:18px"></div>
+      <div style="font-size:12px;color:var(--t)">Analyse de l'instruction…</div>
+    </div>`;
+
+  try {
+    const d = await wpost('/webhook/admin-ngap-parse-instruction', { instruction: instr, referentiel: _NG.edit });
+    if (!d.ok) throw new Error(d.error || 'Parsing échoué');
+
+    // Stocker le patch pour l'appliquer après
+    window._admNgapPendingPatch = d.patch;
+
+    const sourceLabel = d.source === 'regex' ? '🔧 Regex (déterministe)' : '🤖 IA Grok (LLM)';
+    const sourceColor = d.source === 'regex' ? '#10b981' : '#4fa8ff';
+
+    const opsHtml = (d.preview || []).map((op, i) => {
+      let desc = '';
+      if (op.op === 'set_tarif') desc = `💰 Modifier tarif <strong>${_esc(op.code)}</strong> → <strong style="color:#10b981">${op.value.toFixed(2)}€</strong>`;
+      else if (op.op === 'add_incompatibilite') desc = `🚫 Nouvelle règle : <strong>${_esc(op.groupe_a.join(', '))}</strong> + <strong>${_esc(op.groupe_b.join(', '))}</strong> <em>interdits</em>`;
+      else if (op.op === 'add_derogation') desc = `✅ Nouvelle dérogation : <strong>${_esc(op.codes_groupe_a.join(', '))}</strong> + <strong>${_esc(op.codes_groupe_b.join(', '))}</strong> <em>taux plein</em>`;
+      else if (op.op === 'remove_rule') desc = `🗑️ Supprimer ${_esc(op.target)} n°${op.index + 1}`;
+      else if (op.op === 'set_label') desc = `📝 Renommer <strong>${_esc(op.code)}</strong> en "<em>${_esc(op.value)}</em>"`;
+      else desc = `❓ Opération : ${_esc(JSON.stringify(op))}`;
+      return `<div style="padding:8px 10px;background:rgba(79,168,255,.06);border-left:3px solid #4fa8ff;border-radius:4px;margin-bottom:4px;font-size:12px;line-height:1.5;color:var(--t)">${desc}</div>`;
+    }).join('');
+
+    out.innerHTML = `
+      <div style="padding:12px;background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--b)">
+          <span style="font-size:11px;font-family:var(--fm);letter-spacing:.5px;color:${sourceColor}">${sourceLabel}</span>
+          <span style="font-size:11px;color:var(--m)">· ${(d.preview || []).length} opération(s) détectée(s)</span>
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">APERÇU DU PATCH</div>
+        ${opsHtml}
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn bs bsm" onclick="document.getElementById('adm-ngap-instr-result').innerHTML='';window._admNgapPendingPatch=null" style="flex:0 0 auto">
+            ↺ Annuler
+          </button>
+          <button class="btn bp bsm" onclick="admNgapValidatePatch()" style="flex:1">
+            🧪 Valider & rejouer les tests
+          </button>
+        </div>
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(245,158,11,.06);border-left:3px solid #f59e0b;border-radius:4px;font-size:11px;color:var(--t);line-height:1.4">
+          ⚠️ Le patch n'est <strong>pas</strong> encore appliqué. Il sera simulé sur un référentiel temporaire avec les 58 tests. Si tout passe, il sera appliqué en mémoire (non sauvegardé). Vous devrez ensuite cliquer sur 💾 Enregistrer pour le persister.
+        </div>
+      </div>`;
+  } catch(e) {
+    out.innerHTML = `
+      <div style="padding:10px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.3);border-radius:8px;color:#ef4444;font-size:12px">
+        ⚠️ ${_esc(e.message)}
+        <div style="margin-top:6px;font-size:11px;color:var(--m)">Essayez : <em>"Passe AMI14 à 45€"</em>, <em>"Ajoute règle cumul interdit AMI14 + AMI15"</em>, <em>"Supprime règle 7"</em></div>
+      </div>`;
+  }
+};
+
+/* Étape 2 — Appliquer le patch sur un ref temporaire + rejouer tests */
+window.admNgapValidatePatch = async function() {
+  const out = document.getElementById('adm-ngap-instr-result');
+  const patch = window._admNgapPendingPatch;
+  if (!patch || !patch.ops || patch.ops.length === 0) {
+    _toast('warn', 'Aucun patch', 'Commencez par analyser une instruction.');
+    return;
+  }
+  if (!out) return;
+
+  out.innerHTML = `
+    <div style="padding:10px;background:var(--ad,#0f172a);border-radius:8px;display:flex;align-items:center;gap:10px">
+      <div class="spin spinw" style="width:18px;height:18px"></div>
+      <div style="font-size:12px;color:var(--t)">Application du patch et exécution des 58 tests…</div>
+    </div>`;
+
+  try {
+    const d = await wpost('/webhook/admin-ngap-apply-patch', { referentiel: _NG.edit, patch });
+    if (d.blocked) {
+      // Tests échoués
+      const failures = [
+        ...((d.tests?.structural?.failures) || []),
+        ...((d.tests?.clinical?.failures) || [])
+      ].slice(0, 10);
+      out.innerHTML = `
+        <div style="padding:12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.3);border-radius:8px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:22px">🚨</span>
+            <div>
+              <strong style="color:#ef4444">Patch REJETÉ — Tests échoués</strong>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">${d.tests?.passed || 0}/${d.tests?.total || 58} tests passent (${d.tests?.success_rate || 0}%)</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--t);line-height:1.5">Le référentiel n'a <strong>pas</strong> été modifié. Corrigez l'instruction ou renoncez.</div>
+          ${failures.length > 0 ? `
+            <div style="margin-top:10px">
+              <div style="font-size:11px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;margin-bottom:4px">ÉCHECS (${failures.length})</div>
+              ${failures.map(f => `<div style="padding:6px 10px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;border-radius:4px;margin-bottom:3px;font-size:11px;font-family:var(--fm);color:var(--t)">${_esc(f)}</div>`).join('')}
+            </div>` : ''}
+          <button class="btn bs bsm" onclick="document.getElementById('adm-ngap-instr-result').innerHTML='';window._admNgapPendingPatch=null" style="margin-top:10px">↺ Annuler</button>
+        </div>`;
+      return;
+    }
+
+    if (!d.ok || !d.new_referentiel) {
+      throw new Error(d.error || 'Application impossible');
+    }
+
+    // Tests OK → appliquer en mémoire
+    _NG.edit = d.new_referentiel;
+    _render();
+    _toast('success', `Patch appliqué (${d.applied_ops.length} op.)`, `${d.tests.passed}/${d.tests.total} tests OK. Cliquez sur 💾 Enregistrer pour persister.`);
+
+    // Mettre à jour le panneau
+    out.innerHTML = `
+      <div style="padding:12px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:8px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:26px">✅</span>
+          <div style="flex:1">
+            <strong style="color:#10b981">Patch appliqué en mémoire</strong>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">${d.applied_ops.length}/${d.applied_ops.length + d.skipped_ops.length} opération(s) · ${d.tests.passed}/${d.tests.total} tests OK</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--t);line-height:1.5">
+          ⚠️ Les changements sont en mémoire uniquement. <strong>Cliquez sur 💾 Enregistrer</strong> (en haut) pour créer une nouvelle version en base.
+        </div>
+        ${d.skipped_ops.length > 0 ? `
+          <div style="margin-top:10px">
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;margin-bottom:4px">⚠️ ${d.skipped_ops.length} OPÉRATION(S) IGNORÉE(S)</div>
+            ${d.skipped_ops.slice(0,5).map(s => `<div style="padding:6px 10px;background:rgba(245,158,11,.06);border-left:3px solid #f59e0b;border-radius:4px;margin-bottom:3px;font-size:11px;font-family:var(--fm);color:var(--t)">${_esc(s.reason)}</div>`).join('')}
+          </div>` : ''}
+      </div>`;
+    window._admNgapPendingPatch = null;
+  } catch(e) {
+    out.innerHTML = `<div class="ai er">⚠️ ${_esc(e.message)}</div>`;
+  }
+};
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SUGGESTIONS INFIRMIÈRES — visualisation + décision admin
+═══════════════════════════════════════════════════════════════ */
+
+// Charge juste le count pour mettre à jour le badge (sans afficher la liste)
+window.admNgapSuggLoadCount = async function() {
+  try {
+    const d = await wpost('/webhook/ngap-suggest-list?status=pending', {});
+    if (d && d.ok) {
+      const badge = document.getElementById('adm-ngap-sugg-badge');
+      const cnt = d.pending_count || 0;
+      if (badge) {
+        if (cnt > 0) {
+          badge.textContent = cnt;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    }
+  } catch(_) {}
+};
+
+window.admNgapSuggList = async function() {
+  const panel = document.getElementById('adm-ngap-sugg');
+  if (!panel) return;
+  if (panel.style.display === 'block' && panel.dataset.shown === '1') {
+    panel.style.display = 'none'; panel.dataset.shown = '0'; return;
+  }
+
+  panel.innerHTML = `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px">
+      <div class="spin spinw" style="width:22px;height:22px"></div>
+      <div><strong style="font-family:var(--fi);font-size:14px">Chargement des suggestions…</strong></div>
+    </div>`;
+  panel.style.display = 'block'; panel.dataset.shown = '1';
+
+  try {
+    const d = await wpost('/webhook/ngap-suggest-list?status=pending', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur backend');
+    const arr = Array.isArray(d.suggestions) ? d.suggestions : [];
+
+    if (arr.length === 0) {
+      panel.innerHTML = `
+        <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--b)">
+            <span style="font-size:22px">📬</span>
+            <strong style="font-family:var(--fi);font-size:14px">Suggestions des infirmières</strong>
+            <button class="btn bs" style="margin-left:auto;padding:4px 10px;font-size:11px" onclick="document.getElementById('adm-ngap-sugg').style.display='none';document.getElementById('adm-ngap-sugg').dataset.shown='0'">✕</button>
+          </div>
+          <div class="empty" style="padding:20px 0;font-size:12px;color:var(--m);text-align:center">Aucune suggestion en attente.</div>
+        </div>`;
+      return;
+    }
+
+    const renderOne = (s) => {
+      const dup = s.live_duplicate_check || {};
+      const patch = s.parsed_patch && s.parsed_patch.ops && s.parsed_patch.ops[0];
+      let opDescr = '<em style="color:var(--m)">commentaire libre</em>';
+      let actionBtn = '';
+      if (patch) {
+        if (patch.op === 'set_tarif') opDescr = `💰 ${_esc(patch.code)} → <strong>${patch.value.toFixed(2)}€</strong>`;
+        else if (patch.op === 'add_incompatibilite') opDescr = `🚫 <strong>${_esc((patch.groupe_a||[]).join(','))}</strong> + <strong>${_esc((patch.groupe_b||[]).join(','))}</strong> interdits`;
+        else if (patch.op === 'add_derogation') opDescr = `✅ <strong>${_esc((patch.codes_groupe_a||[]).join(','))}</strong> + <strong>${_esc((patch.codes_groupe_b||[]).join(','))}</strong> taux plein`;
+        else if (patch.op === 'set_label') opDescr = `📝 ${_esc(patch.code)} → "${_esc(patch.value)}"`;
+
+        // Détection doublon
+        if (dup.exists && dup.same_value) {
+          actionBtn = `
+            <span style="display:inline-block;padding:6px 12px;background:rgba(107,114,128,.15);color:var(--m);border-radius:6px;font-size:11px;cursor:not-allowed" title="Cette règle existe déjà avec la même valeur">
+              ℹ️ Déjà présente
+            </span>`;
+        } else if (dup.exists && !dup.same_value) {
+          // Différent → bouton Éditer
+          if (patch.op === 'set_tarif') {
+            actionBtn = `
+              <button class="btn bp bsm" onclick='admNgapSuggDecide("${_esc(s.id)}","edit",${patch.value})' title="Appliquer la valeur suggérée (${patch.value.toFixed(2)}€) à la place de l'actuelle (${dup.current}€)">
+                ✏️ Remplacer ${dup.current}€ → ${patch.value.toFixed(2)}€
+              </button>`;
+          } else {
+            actionBtn = `
+              <button class="btn bp bsm" onclick='admNgapSuggDecide("${_esc(s.id)}","apply")'>
+                ✏️ Éditer la règle existante
+              </button>`;
+          }
+        } else {
+          // N'existe pas → bouton Ajouter
+          actionBtn = `
+            <button class="btn bp bsm" onclick='admNgapSuggDecide("${_esc(s.id)}","apply")' title="Appliquer cette suggestion au référentiel + rejouer 58 tests">
+              ➕ Ajouter au référentiel
+            </button>`;
+        }
+      }
+
+      return `
+        <div style="padding:12px;background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:8px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+            <div style="font-size:11px;color:var(--m);font-family:var(--fm)">
+              👤 ${_esc(s.infirmiere_nom)} · ${_fmtDate(s.created_at)}
+              ${s.parse_source === 'regex' ? '· 🔧 regex' : (s.parse_source === 'llm' ? '· 🤖 IA' : (s.parse_source === 'comment' ? '· 💬 commentaire' : ''))}
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--t);line-height:1.5;margin-bottom:6px;font-style:italic">"${_esc(s.raw_instruction)}"</div>
+          ${s.comment ? `<div style="margin-top:4px;padding:6px 8px;background:rgba(79,168,255,.05);border-left:2px solid #4fa8ff;border-radius:4px;font-size:11px;color:var(--t)">💬 ${_esc(s.comment)}</div>` : ''}
+          <div style="margin-top:8px;padding:8px 10px;background:rgba(0,212,170,.04);border-radius:6px;font-size:12px;color:var(--t)">
+            ${opDescr}
+            ${dup.exists ? `<div style="font-size:10px;color:var(--m);margin-top:4px">⚠️ Existe déjà : <code>${_esc(dup.path)}</code> = ${_esc(JSON.stringify(dup.current).slice(0,80))}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            ${actionBtn}
+            <button class="btn bs bsm" onclick='admNgapSuggReject("${_esc(s.id)}")' style="font-size:11px">🗑️ Rejeter</button>
+          </div>
+        </div>`;
+    };
+
+    panel.innerHTML = `
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--b)">
+          <span style="font-size:22px">📬</span>
+          <div style="flex:1">
+            <strong style="font-family:var(--fi);font-size:14px">Suggestions des infirmières</strong>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">${arr.length} en attente · réf. actuel ${_esc(d.ruleset_version || '')}</div>
+          </div>
+          <button class="btn bs" style="padding:4px 10px;font-size:11px" onclick="window.admNgapSuggList()">↻</button>
+          <button class="btn bs" style="padding:4px 10px;font-size:11px" onclick="document.getElementById('adm-ngap-sugg').style.display='none';document.getElementById('adm-ngap-sugg').dataset.shown='0'">✕</button>
+        </div>
+        ${arr.map(renderOne).join('')}
+      </div>`;
+  } catch(e) {
+    panel.innerHTML = `<div class="ai er">⚠️ ${_esc(e.message)}</div>`;
+  }
+};
+
+// Décision : apply/edit (pas reject — celui-là a sa fonction dédiée à cause du prompt)
+window.admNgapSuggDecide = async function(id, action, newValue) {
+  if (!id || !action) return;
+  if (!confirm(`Appliquer cette suggestion au référentiel ?\n\nLes 58 tests seront rejoués automatiquement.\nSi un test échoue, l'application sera bloquée.\nUne nouvelle version sera créée en base si tout passe.`)) return;
+
+  try {
+    const payload = { id, action };
+    if (newValue !== undefined && newValue !== null) payload.new_value = newValue;
+    const d = await wpost('/webhook/ngap-suggest-decide', payload);
+
+    if (d.blocked) {
+      _toast('error', '🚨 Tests échoués', `${d.tests?.passed || 0}/${d.tests?.total || 58} — application annulée.`);
+      alert(`Tests échoués (${d.tests?.passed}/${d.tests?.total}). Échecs :\n\n${(d.tests?.failures || []).slice(0, 5).join('\n')}`);
+      return;
+    }
+    if (!d.ok) throw new Error(d.error || 'Application échouée');
+
+    _toast('success', '✅ Suggestion appliquée', `Nouvelle version ${d.new_version} · ${d.tests.passed}/${d.tests.total} tests OK`);
+    // Recharger : le badge + la liste + le référentiel actif
+    await window.admNgapSuggLoadCount();
+    await window.admNgapSuggList();   // refresh la zone
+    await window.admNgapLoad();       // refresh le référentiel principal
+  } catch(e) {
+    _toast('error', 'Erreur', e.message);
+  }
+};
+
+window.admNgapSuggReject = async function(id) {
+  const reason = prompt('Raison du rejet (obligatoire, min 3 car.) :', '');
+  if (!reason || reason.trim().length < 3) return;
+  try {
+    const d = await wpost('/webhook/ngap-suggest-decide', { id, action: 'reject', reason: reason.trim() });
+    if (!d.ok) throw new Error(d.error || 'Rejet échoué');
+    _toast('success', 'Suggestion rejetée', '');
+    await window.admNgapSuggLoadCount();
+    await window.admNgapSuggList();
+  } catch(e) {
+    _toast('error', 'Erreur', e.message);
+  }
+};
+
 
 })();

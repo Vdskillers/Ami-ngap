@@ -2576,6 +2576,38 @@
           <div class="ar" style="background:rgba(0,212,170,.03);border-top:1px solid var(--b)"><div style="font-family:var(--fm);font-size:10px;color:var(--m);padding:6px 0">Lettre-clé AMI = 3,15 € · AIS = 2,65 € · Version NGAP 2026 métropole</div></div>
         </div>
       </div>
+
+      <!-- ══ Suggérer une modification ══ -->
+      <div class="card" style="margin-top:16px">
+        <div class="ct">💡 Suggérer une modification du référentiel</div>
+        <p style="font-size:13px;color:var(--m);margin-bottom:12px;line-height:1.5">
+          Vous avez repéré une erreur de tarif, une règle manquante, ou une incohérence ? Décrivez-la en français — l'admin sera notifié et pourra l'appliquer après validation. <strong>Limite : 5 suggestions par jour.</strong>
+        </p>
+        <textarea id="ngap-sugg-input" rows="3" placeholder="Exemples :
+  • Le tarif AMI14 devrait être 45€
+  • Ajouter règle cumul interdit AMI3.5 + AMI4
+  • Ajouter dérogation AMI9 + AMI6 taux plein
+  • Question : que faire pour un patient BSC le dimanche ?" style="width:100%;box-sizing:border-box;padding:10px;background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:8px;color:var(--t);font-family:var(--fm);font-size:13px;resize:vertical;margin-bottom:10px"></textarea>
+        <input type="text" id="ngap-sugg-comment" placeholder="Commentaire optionnel — précisions, contexte clinique, source documentaire…" style="width:100%;box-sizing:border-box;padding:10px;background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:8px;color:var(--t);font-family:var(--fm);font-size:12px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn bp bsm" onclick="ngapSuggestSubmit()" style="flex:0 0 auto">📤 Envoyer la suggestion</button>
+          <span id="ngap-sugg-status" style="font-size:12px;color:var(--m)"></span>
+        </div>
+        <div id="ngap-sugg-feedback" style="margin-top:12px"></div>
+      </div>
+
+      <!-- ══ Historique des suggestions ══ -->
+      <div class="card" style="margin-top:16px">
+        <div class="ct" style="display:flex;justify-content:space-between;align-items:center">
+          <span>📋 Mes suggestions</span>
+          <button class="btn bs bsm" onclick="ngapSuggestLoadMy()" style="font-size:11px;padding:4px 10px">↻ Actualiser</button>
+        </div>
+        <div id="ngap-sugg-my-list" style="margin-top:10px">
+          <div class="empty" style="padding:20px 0;font-size:12px;color:var(--m);text-align:center">
+            Cliquez sur ↻ pour charger l'historique de vos suggestions.
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- MONITORING SYSTÈME (admin) — aussi accessible aux nurses pour la transparence -->
@@ -3153,7 +3185,7 @@
 <script src="js/cabinet.js?v=3.9"></script><!-- Mode cabinet multi-IDE + sync sélective + 🛡️ consentements partagés -->
 <script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js?v=3.8"></script>
-<script src="js/admin-ngap.js?v=1.1"></script><!-- ⚖️ Édition référentiel NGAP (admin, versioning, rollback) -->
+<script src="js/admin-ngap.js?v=1.3"></script><!-- ⚖️ Édition référentiel NGAP (admin, versioning, rollback) -->
 <script src="js/profil.js?v=3.9"></script>
 <script src="js/cotation.js?v=3.9"></script><!-- ⚡ v3.9 : hook check consentement avant acte -->
 <script src="js/contact.js?v=3.8"></script>
@@ -3207,6 +3239,7 @@
 
 <!-- 🧠 NGAP Analyzer — détection anomalies + analyse pertes € + auto-correction temps réel -->
 <script src="js/ngap-analyzer.js?v=1.0"></script>
+<script src="js/ngap-suggest.js?v=1.0"></script><!-- 💡 Suggestions infirmière → admin -->
 
 <!-- ⚡ Chargement asynchrone du référentiel NGAP (source de vérité unique) -->
 <!-- Exposé via window.NGAP_REFERENTIEL — utilisé par cotation.js, tournee.js, ngap-analyzer.js -->
