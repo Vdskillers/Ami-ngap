@@ -127,16 +127,82 @@ window.renderNGAPSearch = function() {
     ${results.length > max ? '<div style="font-size:11px;color:var(--m);text-align:center;padding:8px">… affinez votre recherche pour plus de résultats</div>' : ''}`;
 };
 
-/* Rendu d'une ligne d'acte dans les résultats + l'explorateur */
+/* Rendu d'une ligne d'acte dans les résultats + l'explorateur
+   Affiche aussi : max/jour, max/an, prescription, incompatibles, subordonné à, dérogations, etc. */
 function _renderItemRow(it) {
   const meta = CAT_META[it.category] || { icon: '•', label: '?', color: 'var(--t)', bg: 'var(--ad,#0f172a)' };
   const tarif = (it.tarif != null && it.tarif !== '') 
     ? `${_fmt(it.tarif)} €${it.tarif_suffix || ''}` 
     : '—';
-  const lettre = it.raw && it.raw.lettre_cle ? ` · ${it.raw.lettre_cle}` : '';
-  const coef = it.raw && it.raw.coefficient ? ` × ${it.raw.coefficient}` : '';
-  const note = it.raw && (it.raw.note || it.raw.regle_cir9_2025) ? 
-    `<div style="font-size:10px;color:var(--m);margin-top:4px;font-style:italic;line-height:1.4">💡 ${_esc(it.raw.note || it.raw.regle_cir9_2025)}</div>` : '';
+  const r = it.raw || {};
+  const lettre = r.lettre_cle ? ` · ${r.lettre_cle}` : '';
+  const coef = r.coefficient ? ` × ${r.coefficient}` : '';
+  const article = r.chapitre && r.article ? ` · Chap ${r.chapitre} art ${r.article}` : '';
+  const note = (r.note || r.regle_cir9_2025) ? 
+    `<div style="font-size:10px;color:var(--m);margin-top:4px;font-style:italic;line-height:1.4">💡 ${_esc(r.note || r.regle_cir9_2025)}</div>` : '';
+
+  // ── Tags contraintes ──
+  const tags = [];
+  
+  // Max par période
+  if (r.max_par_jour) tags.push({ icon: '📅', text: `max ${r.max_par_jour}/jour`, color: '#f59e0b' });
+  if (r.max_par_semaine) tags.push({ icon: '📅', text: `max ${r.max_par_semaine}/semaine`, color: '#f59e0b' });
+  if (r.max_par_mois) tags.push({ icon: '📅', text: `max ${r.max_par_mois}/mois`, color: '#f59e0b' });
+  if (r.max_par_an) tags.push({ icon: '📅', text: `max ${r.max_par_an}/an`, color: '#f59e0b' });
+  if (r.max_par_episode) tags.push({ icon: '📅', text: `max ${r.max_par_episode}/épisode`, color: '#f59e0b' });
+  if (r.max_total) tags.push({ icon: '🔒', text: `max ${r.max_total} total`, color: '#f59e0b' });
+  if (r.max_par_intervention) tags.push({ icon: '🔒', text: `max ${r.max_par_intervention}/intervention`, color: '#f59e0b' });
+  if (r.max_par_passage) tags.push({ icon: '🔒', text: `max ${r.max_par_passage}/passage`, color: '#f59e0b' });
+  if (r.max_par_patient === true) tags.push({ icon: '🔒', text: 'max 1/patient', color: '#f59e0b' });
+  if (r.max_periodes_consecutives) tags.push({ icon: '🔒', text: `max ${r.max_periodes_consecutives} périodes consécutives`, color: '#f59e0b' });
+
+  // Prescription
+  if (r.prescription_required === true) tags.push({ icon: '📋', text: 'prescription requise', color: '#a78bfa' });
+  if (r.prescription_required === 'AP') tags.push({ icon: '📋', text: 'entente préalable (AP)', color: '#a78bfa' });
+
+  // Subordination (BSI préalable)
+  if (r.subordonne_a) tags.push({ icon: '⚠️', text: `nécessite ${r.subordonne_a}`, color: '#ef4444' });
+
+  // Renouvelable
+  if (r.renouvelable) tags.push({ icon: '🔄', text: `renouvelable : ${r.renouvelable}`, color: '#10b981' });
+
+  // Formation requise
+  if (r.formation_requise) tags.push({ icon: '🎓', text: 'formation requise', color: '#a78bfa' });
+
+  // Cumul taux plein (dérogations explicites)
+  if (r.cumul_taux_plein === true) tags.push({ icon: '✅', text: 'cumul taux plein', color: '#10b981' });
+  if (Array.isArray(r.cumul_taux_plein) && r.cumul_taux_plein.length) {
+    tags.push({ icon: '✅', text: `cumul taux plein : ${r.cumul_taux_plein.slice(0,2).join(', ')}${r.cumul_taux_plein.length>2?'…':''}`, color: '#10b981' });
+  }
+  if (Array.isArray(r.cumul_taux_plein_avec) && r.cumul_taux_plein_avec.length) {
+    tags.push({ icon: '✅', text: `+ ${r.cumul_taux_plein_avec.slice(0,2).join(', ')}${r.cumul_taux_plein_avec.length>2?'…':''} à taux plein`, color: '#10b981' });
+  }
+  if (Array.isArray(r.cumul_50pct) && r.cumul_50pct.length) {
+    tags.push({ icon: '½', text: `cumul 50% : ${r.cumul_50pct.slice(0,2).join(', ')}`, color: '#f59e0b' });
+  }
+
+  // Incompatibles
+  if (Array.isArray(r.incompatibles) && r.incompatibles.length) {
+    tags.push({ icon: '🚫', text: `incompatible : ${r.incompatibles.slice(0,4).join(', ')}${r.incompatibles.length>4?'…':''}`, color: '#ef4444' });
+  }
+  if (Array.isArray(r.incompatibles_avec) && r.incompatibles_avec.length) {
+    tags.push({ icon: '🚫', text: `incompatible : ${r.incompatibles_avec.slice(0,4).join(', ')}${r.incompatibles_avec.length>4?'…':''}`, color: '#ef4444' });
+  }
+
+  // Non cumulable
+  if (Array.isArray(r.non_cumulable_avec) && r.non_cumulable_avec.length) {
+    tags.push({ icon: '🚫', text: `non cumulable : ${r.non_cumulable_avec.slice(0,3).join(', ')}${r.non_cumulable_avec.length>3?'…':''}`, color: '#ef4444' });
+  }
+
+  // Dérogation texte
+  if (r.derogation && typeof r.derogation === 'string') {
+    tags.push({ icon: 'ℹ️', text: `dérog. ${r.derogation.slice(0, 50)}${r.derogation.length>50?'…':''}`, color: '#4fa8ff' });
+  }
+
+  const tagsHtml = tags.length ? `
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+      ${tags.map(t => `<span style="font-size:10px;padding:2px 6px;background:${t.color}15;color:${t.color};border-radius:10px;font-family:var(--fm);border:1px solid ${t.color}40">${t.icon} ${_esc(t.text)}</span>`).join('')}
+    </div>` : '';
 
   return `
     <div style="display:flex;gap:10px;padding:8px 10px;background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:6px;align-items:flex-start">
@@ -145,11 +211,12 @@ function _renderItemRow(it) {
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
           <div>
             <span style="font-family:var(--fm);font-weight:700;color:${meta.color};font-size:12px;background:${meta.bg};padding:2px 7px;border-radius:4px">${_esc(it.code)}</span>
-            <span style="font-size:11px;color:var(--m);margin-left:6px">${_esc(meta.label)}${lettre}${coef}</span>
+            <span style="font-size:11px;color:var(--m);margin-left:6px">${_esc(meta.label)}${lettre}${coef}${article}</span>
           </div>
           <div style="font-family:var(--fm);font-weight:700;color:#00d4aa;font-size:12px;flex-shrink:0">${tarif}</div>
         </div>
         <div style="font-size:12px;color:var(--t);margin-top:3px;line-height:1.4">${_esc(it.label || '')}</div>
+        ${tagsHtml}
         ${note}
       </div>
     </div>`;
@@ -319,6 +386,13 @@ window.renderNGAPExplorer = function() {
       <div style="font-family:var(--fm);font-size:11px;color:#4fa8ff;letter-spacing:.5px;margin-bottom:6px">📜 PRINCIPE GÉNÉRAL</div>
       <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(ref.regles_article_11B.principe || '')}</div>
     </div>
+    ${Array.isArray(ref.regles_article_11B.applicable_a) ? `
+      <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
+        <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🎯 S'APPLIQUE À</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${ref.regles_article_11B.applicable_a.map(l => `<code style="padding:2px 7px;background:rgba(167,139,250,.15);color:#a78bfa;border-radius:4px;font-family:var(--fm);font-size:11px">${_esc(l)}</code>`).join('')}
+        </div>
+      </div>` : ''}
     ${Array.isArray(ref.regles_article_11B.exceptions_taux_plein) ? `
       <div style="padding:10px;background:rgba(16,185,129,.05);border-left:3px solid #10b981;border-radius:6px;margin-bottom:10px">
         <div style="font-family:var(--fm);font-size:11px;color:#10b981;letter-spacing:.5px;margin-bottom:6px">✅ EXCEPTIONS À TAUX PLEIN</div>
@@ -327,11 +401,16 @@ window.renderNGAPExplorer = function() {
         </div>
       </div>` : ''}
     ${Array.isArray(ref.regles_article_11B.actes_non_decotables_jamais) ? `
-      <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px">
+      <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
         <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🛡️ JAMAIS DÉCOTÉS</div>
         <div style="font-size:12px;color:var(--t);line-height:1.6">
           ${ref.regles_article_11B.actes_non_decotables_jamais.map(e => `<code style="padding:2px 6px;background:var(--ad,#0f172a);border-radius:4px;font-family:var(--fm)">${_esc(e)}</code>`).join(' ')}
         </div>
+      </div>` : ''}
+    ${ref.note_5bis ? `
+      <div style="padding:10px;background:rgba(245,158,11,.05);border-left:3px solid #f59e0b;border-radius:6px">
+        <div style="font-family:var(--fm);font-size:11px;color:#f59e0b;letter-spacing:.5px;margin-bottom:6px">📌 NOTE ARTICLE 5BIS (diabète insulino-traité)</div>
+        <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(ref.note_5bis)}</div>
       </div>` : ''}` : '<p style="color:var(--m);font-size:12px">Règles article 11B non définies dans le référentiel.</p>';
 
   // CIR-9/2025
