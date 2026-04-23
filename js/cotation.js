@@ -520,6 +520,9 @@ async function cotationCabinet(txt) {
       preuve_soin: {
         type: 'auto_declaration', timestamp: new Date().toISOString(), certifie_ide: true, force_probante: 'STANDARD',
       },
+      // Autopilot N8N v13
+      user_profile: (typeof APP !== 'undefined' && APP.get?.('user')?.autopilot_profile) || 'balanced',
+      region:       (typeof APP !== 'undefined' && (APP.get?.('user')?.cp?.slice?.(0,2) || APP.get?.('user')?.departement)) || null,
     };
 
     const d = await apiCall('/webhook/cabinet-calcul', payload);
@@ -622,6 +625,13 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     invoice_number: _invNum,
     source:         _editRef ? 'cabinet_edit' : 'cabinet_form',
     cabinet_id:     APP.get('cabinet')?.id || null,
+    // Traçabilité moteur NGAP (audit CPAM + médico-légal)
+    fraud:             myCot.fraud             || null,
+    cpam_simulation:   myCot.cpam_simulation   || null,
+    infirmiere_scoring:myCot.infirmiere_scoring|| null,
+    patient_pattern:   myCot.patient_pattern   || null,
+    preuve_soin:       myCot.preuve_soin       || null,
+    autopilot:         myCot.autopilot         || null,
     _synced:        true,
   };
 
@@ -1159,6 +1169,9 @@ async function _cotationPipeline() {
         certifie_ide: true,
         force_probante: _preuveForce,
       },
+      // Autopilot N8N v13 — profil utilisateur + région CPAM
+      user_profile: (typeof APP !== 'undefined' && APP.get?.('user')?.autopilot_profile) || 'balanced',
+      region:       (typeof APP !== 'undefined' && (APP.get?.('user')?.cp?.slice?.(0,2) || APP.get?.('user')?.departement)) || null,
     });
     if (d.error) throw new Error(d.error);
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
@@ -1240,6 +1253,13 @@ async function _cotationPipeline() {
           soin:           txt.slice(0, 120),
           invoice_number: _invNum,
           source:         _editRef ? 'cotation_edit' : 'cotation_form',
+          // Traçabilité moteur NGAP (audit CPAM + médico-légal)
+          fraud:             d.fraud             || null,
+          cpam_simulation:   d.cpam_simulation   || null,
+          infirmiere_scoring:d.infirmiere_scoring|| null,
+          patient_pattern:   d.patient_pattern   || null,
+          preuve_soin:       d.preuve_soin       || null,
+          autopilot:         d.autopilot         || null,
           _synced:        true,
         };
 
@@ -1448,6 +1468,93 @@ function renderCot(d) {
     </div>`;
   })() : '';
 
+  // ── Autopilot (3 modes : AUTO / SEMI / MANUEL) ──────────────────────────────
+  // Alimenté par le node "Autopilot Engine" côté n8n.
+  // Badge synthétique + bloc détaillé avec gauges risque/confiance + raison.
+  const ap = d.autopilot || null;
+  const _APCFG = {
+    auto:   { bg:'rgba(34,197,94,.12)',  br:'#22c55e', icon:'🟢', label:'AUTO',    desc:'Validé automatiquement' },
+    semi:   { bg:'rgba(251,191,36,.15)', br:'#f59e0b', icon:'🟡', label:'SEMI',    desc:'Validation IDE requise' },
+    manual: { bg:'rgba(239,68,68,.12)',  br:'#ef4444', icon:'🔴', label:'MANUEL',  desc:'Vérification humaine obligatoire' }
+  };
+  const autopilotBadge = (ap && _APCFG[ap.mode]) ? (() => {
+    const c = _APCFG[ap.mode];
+    const conf = ap.confidence_score != null ? Math.round(ap.confidence_score * 100) : null;
+    return `<div title="${(ap.reason || c.desc).replace(/"/g,'&quot;')}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${c.bg};color:${c.br};border:1px solid ${c.br}40">
+      ${c.icon} Autopilot · ${c.label}${conf != null ? ` (${conf}%)` : ''}
+    </div>`;
+  })() : '';
+
+  const autopilotBloc = ap && _APCFG[ap.mode] ? (() => {
+    const c = _APCFG[ap.mode];
+    const conf = ap.confidence_score != null ? Math.round(ap.confidence_score * 100) : 0;
+    const risk = ap.final_risk != null ? Math.round(ap.final_risk * 100) : 0;
+    const thr  = ap.thresholds || {};
+    const subs = [
+      ap.predicted_risk != null ? `<span style="color:var(--m);font-size:10px">Risque ligne <strong style="color:var(--fg)">${Math.round(ap.predicted_risk*100)}%</strong></span>` : '',
+      ap.patient_risk   != null ? `<span style="color:var(--m);font-size:10px">Risque patient <strong style="color:var(--fg)">${Math.round(ap.patient_risk*100)}%</strong></span>` : '',
+      ap.user_risk      != null ? `<span style="color:var(--m);font-size:10px">Profil IDE <strong style="color:var(--fg)">${Math.round(ap.user_risk*100)}%</strong></span>` : ''
+    ].filter(Boolean).join('<span style="color:var(--b)">·</span>');
+
+    return `<div style="margin-top:14px;padding:14px 16px;border-radius:10px;background:${c.bg};border:1px solid ${c.br}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px;line-height:1">${c.icon}</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:${c.br}">Autopilot · Mode ${c.label}</div>
+            <div style="font-size:11px;color:var(--m);margin-top:1px">${ap.reason || c.desc}</div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1px">CONFIANCE</div>
+          <div style="font-size:20px;font-weight:700;color:${c.br};line-height:1">${conf}%</div>
+        </div>
+      </div>
+
+      <!-- Barres risque + confiance -->
+      <div style="display:flex;gap:10px;margin-bottom:8px">
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--m);margin-bottom:3px">
+            <span>Risque global</span><span style="color:var(--fg);font-weight:600">${risk}%</span>
+          </div>
+          <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden">
+            <div style="width:${risk}%;height:100%;background:linear-gradient(90deg,#22c55e,#f59e0b ${(thr.risk_threshold||0.2)*100}%,#ef4444)"></div>
+          </div>
+        </div>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--m);margin-bottom:3px">
+            <span>Confiance</span><span style="color:var(--fg);font-weight:600">${conf}%</span>
+          </div>
+          <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden">
+            <div style="width:${conf}%;height:100%;background:${c.br}"></div>
+          </div>
+        </div>
+      </div>
+
+      ${subs ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:10px">${subs}</div>` : ''}
+
+      ${ap.revenue_optimizer?.recommended ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(34,197,94,.08);border:1px solid #22c55e40;border-radius:6px;font-size:11px">
+        <div style="display:flex;align-items:center;gap:6px;font-weight:700;color:#16a34a;margin-bottom:3px">
+          💰 Gain possible : +${ap.revenue_optimizer.gain_euros != null ? ap.revenue_optimizer.gain_euros.toFixed(2) : '?'} €
+          <span style="font-weight:400;color:var(--m);font-size:10px">(code ${ap.revenue_optimizer.best_code || '?'})</span>
+        </div>
+        <div style="color:var(--m);font-size:10px">${(ap.revenue_optimizer.reason || '').replace(/</g,'&lt;')} — risque alt. ${Math.round((ap.revenue_optimizer.best_alt_risk||0)*100)}%</div>
+      </div>` : ''}
+
+      ${ap.hard_block ? `<div style="margin-top:10px;padding:6px 10px;background:rgba(239,68,68,.08);border-radius:5px;font-size:11px;color:#ef4444">
+        🛑 <strong>Blocage critique</strong> — envoi FSE suspendu jusqu'à correction manuelle.
+      </div>` : ''}
+
+      ${ap.traceability ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid ${c.br}30;font-size:9px;color:var(--m);font-family:var(--fm);display:flex;gap:8px;flex-wrap:wrap">
+        <span>engine:${ap.traceability.engine_version || 'autopilot_v1'}</span>
+        ${ap.traceability.ruleset ? `<span>ruleset:${ap.traceability.ruleset}</span>` : ''}
+        ${ap.traceability.user_profile ? `<span>profil:${ap.traceability.user_profile}</span>` : ''}
+        ${thr.auto_threshold != null ? `<span>seuil_auto:${Math.round(thr.auto_threshold*100)}%</span>` : ''}
+        ${thr.risk_threshold != null ? `<span>seuil_risque:${Math.round(thr.risk_threshold*100)}%</span>` : ''}
+      </div>` : ''}
+    </div>`;
+  })() : '';
+
   // ── Bandeau estimation automatique (A3) ────────────────────────────────────
   // Affiché quand : (1) mode fallback worker, OU (2) actes viennent du NLP local
   // sans détection réelle (flag _estimation sur le seul acte AMI1 retourné).
@@ -1512,6 +1619,7 @@ function renderCot(d) {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
         ${fraudBadge}
         ${preuveBadge}
+        ${autopilotBadge}
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;flex-shrink:0">
@@ -1554,8 +1662,9 @@ function renderCot(d) {
     : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}
   </div>
 
-  <!-- ══ ALERTES + OPTIMISATIONS + SUGGESTIONS + CPAM + SCORING ══ -->
+  <!-- ══ ALERTES + OPTIMISATIONS + SUGGESTIONS + CPAM + SCORING + AUTOPILOT ══ -->
   ${estimationBannerBloc}
+  ${autopilotBloc}
   ${alertsBloc}
   ${opBloc}
   ${suggBloc}
