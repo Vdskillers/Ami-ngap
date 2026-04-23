@@ -491,8 +491,31 @@ async function generatePlanningFromImport(){
   if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
+
+  // ⚡ Figer la date des patients qui n'en ont pas AVANT le rendu.
+  // Sinon : `new Date(null)` = jeudi 1er janvier 1970 → renderPlanning
+  // colle silencieusement tous les patients sans date sur jeudi (donne
+  // l'illusion d'un "glissement quotidien"). _savePlanning fixe la date
+  // en localStorage mais ne mute pas APP.importedData → on doit
+  // réinjecter explicitement la version datée dans la source que
+  // renderPlanning consomme (_planningData puis importedData).
+  const _todayFixed = new Date().toISOString().split('T')[0];
+  const patientsFixed = patients.map(p =>
+    (p.date || p.date_soin || p.date_prevue)
+      ? p
+      : { ...p, date: _todayFixed, _dateFixed: true }
+  );
+  if (APP.importedData.patients) APP.importedData.patients = patientsFixed;
+  if (APP.importedData.entries)  APP.importedData.entries  = patientsFixed;
+  window.APP._planningData = {
+    patients: patientsFixed,
+    total:    patientsFixed.length,
+    source:   'planning_genere',
+  };
+  try { _savePlanning(patientsFixed); } catch {}
+
   // Construire un texte structuré depuis l'import
-  const txt=patients.map((p,i)=>{
+  const txt=patientsFixed.map((p,i)=>{
     // ⚡ Enrichir avant envoi IA — "Diabète" seul ne génère pas d'actes NGAP.
     // Avec l'enrichissement, l'IA reçoit "Injection insuline SC, surveillance
     // glycémie capillaire, éducation thérapeutique" et peut coter correctement.
@@ -648,7 +671,11 @@ async function renderPlanning(d){
     if (!p.date) return _planningWeekOffset === 0;
     try {
       const pd = new Date(p.date);
-      if (isNaN(pd)) return _planningWeekOffset === 0;
+      // ⚡ getTime()===0 : `new Date(null)` ou `new Date(0)` renvoient l'époque
+      // Unix (jeudi 01/01/1970) — pas une date invalide. Sans ce check, ces
+      // patients seraient considérés "1970" et exclus arbitrairement de la
+      // semaine. Cohérent avec le check du forEach plus bas.
+      if (isNaN(pd) || pd.getTime() === 0) return _planningWeekOffset === 0;
       return pd >= weekStart && pd <= weekEnd;
     } catch { return true; }
   });
@@ -664,13 +691,20 @@ async function renderPlanning(d){
 
   patientsToShow.forEach((p, listIdx) => {
     let jourKey = null;
-    try {
-      const pd = new Date(p.date);
-      if (!isNaN(pd)) {
-        const nomJour = pd.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
-        jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
-      }
-    } catch {}
+    // ⚡ Guard impératif : `new Date(null)` renvoie Thu Jan 01 1970 (jeudi),
+    // PAS une date invalide → sans ce check, tous les patients sans date
+    // sont silencieusement collés sur jeudi (et donnent l'illusion d'un
+    // "glissement" quand jeudi devient le jour courant).
+    // Le check `getTime()===0` couvre aussi `new Date(0)` et `new Date('')`.
+    if (p.date) {
+      try {
+        const pd = new Date(p.date);
+        if (!isNaN(pd) && pd.getTime() !== 0) {
+          const nomJour = pd.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
+          jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
+        }
+      } catch {}
+    }
     if (!jourKey) {
       const desc = (p.description || p.texte || '').toLowerCase();
       jourKey = JOURS.find(j => desc.includes(j)) || null;
@@ -955,7 +989,10 @@ async function renderPlanning(d){
       if (p.date) {
         try {
           const pd = new Date(p.date);
-          if (!isNaN(pd)) {
+          // ⚡ Check epoch (jeudi 01/01/1970) : aligné sur le forEach
+          // principal de renderPlanning pour éviter les divergences entre
+          // vue solo et vue cabinet sur les patients sans date réelle.
+          if (!isNaN(pd) && pd.getTime() !== 0) {
             const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
             return JOURS.find(jj => nj.startsWith(jj)) || null;
           }
