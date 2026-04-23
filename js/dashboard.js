@@ -920,19 +920,22 @@ function forecastRevenue(daily) {
 ════════════════════════════════════════════════ */
 
 async function loadDashCabinet() {
+  // ⚡ Cette fonction peut être appelée depuis 2 contextes :
+  //   1. View-cabinet (l'ancien wrapper #dash-cabinet-section pour Objectif CA)
+  //   2. La modale Stats consolidées (depuis cabinet.js : openCabinetStatsModal)
+  //   On rend `section` optionnel : on gère son display si présent, sinon on continue.
   const section = document.getElementById('dash-cabinet-section');
-  if (!section) return;
 
   const cab = APP.get ? APP.get('cabinet') : null;
   if (!cab?.id) {
-    section.style.display = 'none';
+    if (section) section.style.display = 'none';
     return;
   }
-  section.style.display = 'block';
+  if (section) section.style.display = 'block';
 
   const kpisEl = document.getElementById('dash-cabinet-kpis');
   const revsEl = document.getElementById('dash-cabinet-ide-revenues');
-  if (!kpisEl) return;
+  if (!kpisEl) return;  // IDs absents (modale fermée + section cachée) → rien à faire
 
   let members = cab.members || [];
   const nbIDE     = members.length;
@@ -1255,7 +1258,19 @@ function _applyHistFilter() {
     }
   });
   // Réinsérer dans l'ordre trié (appendChild = move, pas copy)
-  sorted.forEach(r => tbody.appendChild(r));
+  // ⚡ OPTIMISATION CRITIQUE anti-boucle : si l'ordre est déjà correct,
+  // on saute les appendChild — sinon chaque appendChild déclenche une
+  // mutation, le MutationObserver re-fire, re-trie → boucle infinie qui
+  // fait clignoter les lignes en permanence et bloque les clics.
+  let _alreadySorted = sorted.length === rows.length;
+  if (_alreadySorted) {
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i] !== rows[i]) { _alreadySorted = false; break; }
+    }
+  }
+  if (!_alreadySorted) {
+    sorted.forEach(r => tbody.appendChild(r));
+  }
 
   // ── 2. FILTRE — selon _histFilter ───────────────────────────────────────
   sorted.forEach(row => {
@@ -1358,7 +1373,18 @@ async function _loadRapportKpis(period) {
     debounce = setTimeout(() => {
       tbody._sortingInProgress = true;
       try { _applyHistFilter(); } catch {}
-      tbody._sortingInProgress = false;
+      // ⚡ ANTI-BOUCLE INFINIE :
+      // Les appendChild() de _applyHistFilter() génèrent des mutations
+      // qui sont asynchrones (microtask). Si on remet le flag à false
+      // immédiatement, le callback du MutationObserver verra false et
+      // re-déclenchera un tri → boucle infinie (clignotement non-stop,
+      // clics annulés entre mousedown et mouseup).
+      // Solution :
+      //   1. takeRecords() consomme et jette les mutations en attente
+      //   2. setTimeout(0) attend la fin de la microtask actuelle avant
+      //      de remettre le flag à false (double sécurité).
+      obs.takeRecords();
+      setTimeout(() => { tbody._sortingInProgress = false; }, 0);
     }, 60);
   });
   obs.observe(tbody, { childList: true });
