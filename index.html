@@ -2577,6 +2577,20 @@
         </div>
       </div>
 
+      <!-- ══ 📚 Référentiel complet (tous les actes + règles) ══ -->
+      <div class="card" style="margin-top:16px">
+        <div class="ct">📚 Référentiel complet NGAP 2026</div>
+        <p style="font-size:13px;color:var(--m);margin-bottom:12px;line-height:1.5">
+          Tous les actes (112), majorations, règles article 11B, règles CIR-9/2025, incompatibilités et dérogations. Cliquez sur une section pour la déplier.
+        </p>
+        <div id="ngap-explorer">
+          <div class="empty" style="padding:30px 0;text-align:center">
+            <div class="spin spinw" style="width:24px;height:24px;margin:0 auto 8px"></div>
+            <p style="font-size:12px;color:var(--m)">Chargement du référentiel…</p>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ Suggérer une modification ══ -->
       <div class="card" style="margin-top:16px">
         <div class="ct">💡 Suggérer une modification du référentiel</div>
@@ -3240,6 +3254,7 @@
 <!-- 🧠 NGAP Analyzer — détection anomalies + analyse pertes € + auto-correction temps réel -->
 <script src="js/ngap-analyzer.js?v=1.0"></script>
 <script src="js/ngap-suggest.js?v=1.0"></script><!-- 💡 Suggestions infirmière → admin -->
+<script src="js/ngap-ref-explorer.js?v=1.0"></script><!-- 📚 Explorateur complet du référentiel NGAP -->
 
 <!-- ⚡ Chargement asynchrone du référentiel NGAP (source de vérité unique) -->
 <!-- Exposé via window.NGAP_REFERENTIEL — utilisé par cotation.js, tournee.js, ngap-analyzer.js -->
