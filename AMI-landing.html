@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>AMI — Cotation NGAP intelligente pour infirmières libérales</title>
+<meta name="description" content="AMI sécurise tes cotations NGAP, optimise tes tournées et te protège des contrôles CPAM. Le copilote des infirmières libérales.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   AMI — LANDING PAGE v2
+   Design system: dark medical SaaS · vert performance · violet IA
+   ═══════════════════════════════════════════════════════════ */
+
+:root{
+  --fs:'DM Serif Display',serif;
+  --fb:'Instrument Sans',sans-serif;
+  --fm:'DM Mono',monospace;
+
+  --bg:#0b0f14;
+  --bg-2:#0f1419;
+  --surface:#111827;
+  --surface-2:#0d141c;
+  --border:#1e2d3d;
+  --border-soft:rgba(0,212,170,.15);
+
+  --text:#ffffff;
+  --text-soft:#e2e8f0;
+  --muted:#94a3b8;
+  --muted-2:#64748b;
+
+  --green:#00d4aa;
+  --green-glow:rgba(0,212,170,.35);
+  --green-soft:rgba(0,212,170,.08);
+
+  --violet:#a78bfa;
+  --violet-2:#7c3aed;
+  --violet-soft:rgba(167,139,250,.12);
+
+  --pink:#FF7A85;
+  --gold:#fbbf24;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--fb);
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+
+/* ─── BACKGROUND ATMOSPHÉRIQUE ─── */
+.lp-bg{
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% -5%,rgba(0,212,170,.14) 0%,transparent 65%),
+    radial-gradient(ellipse 40% 40% at 85% 70%,rgba(124,58,237,.07) 0%,transparent 60%),
+    radial-gradient(ellipse 50% 30% at 10% 40%,rgba(79,168,255,.05) 0%,transparent 60%),
+    linear-gradient(rgba(0,212,170,.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,170,.018) 1px,transparent 1px);
+  background-size:100% 100%,100% 100%,100% 100%,52px 52px,52px 52px;
+}
+
+.lp-wrap{
+  position:relative;z-index:1;
+  max-width:760px;width:100%;
+  margin:0 auto;
+  padding:52px 28px 140px;
+}
+
+/* ═══ TOP BAR ═══ */
+.lp-logo{display:flex;align-items:center;gap:14px;margin-bottom:48px}
+.lp-mark{
+  width:50px;height:50px;
+  background:linear-gradient(135deg,#0b1a14,#102a1e);
+  border:2px solid rgba(0,212,170,.5);
+  border-radius:14px;
+  display:grid;place-items:center;
+  font-family:var(--fs);font-size:26px;color:var(--green);
+  text-shadow:0 0 16px var(--green-glow);
+  box-shadow:0 0 28px rgba(0,212,170,.3),inset 0 1px 0 rgba(0,212,170,.18);
+}
+.lp-app-name{font-family:var(--fs);font-size:25px;color:#fff;line-height:1}
+.lp-app-sub{font-family:var(--fm);font-size:9.5px;color:#fff;opacity:.65;letter-spacing:2.2px;text-transform:uppercase;margin-top:4px}
+
+/* ═══ HERO ═══ */
+.lp-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--green-soft);
+  border:1px solid rgba(0,212,170,.22);
+  border-radius:24px;
+  padding:6px 16px;
+  font-family:var(--fm);font-size:10px;letter-spacing:2px;color:var(--green);
+  text-transform:uppercase;margin-bottom:24px;
+}
+
+.lp-h1{
+  font-family:var(--fs);
+  font-size:clamp(34px,6.5vw,58px);
+  line-height:1.05;
+  color:#fff;
+  margin-bottom:20px;
+  letter-spacing:-.5px;
+}
+.lp-h1 em{font-style:italic;color:var(--green);text-shadow:0 0 30px var(--green-glow)}
+
+.lp-subtitle{
+  font-size:18px;color:var(--text-soft);
+  line-height:1.55;
+  margin-bottom:30px;
+  max-width:620px;
+}
+
+.lp-promise{display:flex;flex-direction:column;gap:10px;margin-bottom:32px}
+.lp-promise-item{
+  display:flex;align-items:center;gap:12px;
+  font-size:15px;color:var(--text-soft);
+  padding:12px 16px;
+  background:linear-gradient(90deg,rgba(0,212,170,.04),transparent);
+  border-left:2px solid var(--green);
+  border-radius:0 8px 8px 0;
+}
+.lp-promise-item::before{content:"✦";color:var(--green);font-family:var(--fs);font-size:18px}
+
+.lp-cta-wrap{margin-bottom:40px}
+.lp-cta{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:linear-gradient(135deg,#00d4aa,#00b894);
+  color:#0b1a14;
+  font-family:var(--fb);font-weight:600;font-size:16px;
+  padding:18px 32px;
+  border:none;border-radius:14px;
+  cursor:pointer;
+  box-shadow:0 8px 32px rgba(0,212,170,.35),inset 0 1px 0 rgba(255,255,255,.25);
+  transition:transform .2s,box-shadow .2s;
+  width:100%;max-width:480px;
+}
+.lp-cta:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,212,170,.5),inset 0 1px 0 rgba(255,255,255,.3)}
+.lp-cta-sub{
+  font-family:var(--fm);font-size:11px;color:var(--muted);
+  margin-top:10px;letter-spacing:.5px;
+}
+
+/* ═══ TOC ═══ */
+.lp-toc{
+  margin:36px 0 44px;
+  padding:14px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:12px;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.lp-toc-inner{display:flex;gap:8px;white-space:nowrap}
+.lp-toc-link{
+  display:inline-block;padding:6px 12px;
+  font-family:var(--fm);font-size:11px;color:var(--muted);
+  text-decoration:none;letter-spacing:.5px;
+  border:1px solid transparent;border-radius:8px;
+  transition:all .15s;
+}
+.lp-toc-link:hover{color:var(--green);border-color:var(--border-soft);background:var(--green-soft)}
+
+/* ═══ FOUNDER BADGE ═══ */
+.lp-founder{
+  display:flex;align-items:flex-start;gap:14px;
+  padding:18px 20px;
+  background:linear-gradient(135deg,rgba(167,139,250,.08),rgba(167,139,250,.02));
+  border:1px solid rgba(167,139,250,.25);
+  border-radius:14px;
+  margin-bottom:60px;
+}
+.lp-founder-badge{
+  font-family:var(--fm);font-size:10px;letter-spacing:1.5px;color:var(--violet);
+  text-transform:uppercase;font-weight:500;
+  white-space:nowrap;flex-shrink:0;
+  padding-top:2px;
+}
+.lp-founder-txt{font-size:13.5px;color:var(--text-soft);line-height:1.5}
+
+/* ═══ SECTION LABELS / TITRES ═══ */
+.lp-sec-label{
+  font-family:var(--fm);font-size:11px;letter-spacing:2.5px;color:var(--green);
+  text-transform:uppercase;
+  margin:80px 0 14px;
+}
+.lp-sec-h2{
+  font-family:var(--fs);font-size:clamp(26px,4.5vw,40px);line-height:1.15;
+  color:#fff;margin-bottom:36px;letter-spacing:-.3px;
+}
+.lp-sec-h2 em{font-style:italic;color:var(--green)}
+
+/* ═══ STEPS (3 étapes) ═══ */
+.lp-steps{display:grid;gap:14px}
+.lp-step{
+  display:flex;gap:18px;align-items:flex-start;
+  padding:22px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  transition:border-color .2s,transform .2s;
+}
+.lp-step:hover{border-color:rgba(0,212,170,.3);transform:translateX(4px)}
+.lp-step-num{
+  flex-shrink:0;
+  width:42px;height:42px;
+  background:var(--green-soft);
+  border:1px solid rgba(0,212,170,.3);
+  border-radius:10px;
+  display:grid;place-items:center;
+  font-family:var(--fs);font-size:22px;color:var(--green);
+}
+.lp-step-t{font-family:var(--fs);font-size:18px;color:#fff;margin-bottom:6px}
+.lp-step-d{font-size:14px;color:var(--muted);line-height:1.55}
+
+/* ═══ JOURNÉE TYPE (timeline) ═══ */
+.lp-day{
+  background:linear-gradient(180deg,var(--surface) 0%,var(--surface-2) 100%);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:32px 26px;
+}
+.lp-day-h{font-family:var(--fs);font-size:22px;color:#fff;margin-bottom:6px}
+.lp-day-sub{font-family:var(--fm);font-size:10px;color:var(--green);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:24px}
+.lp-day-timeline{display:flex;flex-direction:column;gap:14px;border-left:1px solid var(--border-soft);padding-left:18px;margin-left:6px}
+.lp-day-row{display:flex;flex-direction:column;gap:6px;position:relative}
+.lp-day-row::before{
+  content:"";position:absolute;left:-23px;top:6px;
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green);box-shadow:0 0 12px var(--green-glow);
+}
+.lp-day-time{font-family:var(--fm);font-size:10.5px;color:var(--green);letter-spacing:1.2px}
+.lp-day-event{font-size:14px;color:var(--text-soft);line-height:1.5}
+.lp-day-event strong{color:#fff}
+.lp-day-event em{color:var(--green);font-style:normal}
+
+/* ═══ PROBLEM ═══ */
+.lp-problem{
+  background:linear-gradient(135deg,rgba(255,122,133,.04),transparent);
+  border:1px solid rgba(255,122,133,.15);
+  border-radius:14px;
+  padding:24px;
+}
+.lp-prob-list{display:flex;flex-direction:column;gap:12px}
+.lp-prob-item{
+  display:flex;align-items:flex-start;gap:12px;
+  font-size:14.5px;color:var(--text-soft);line-height:1.55;
+}
+.lp-prob-item::before{
+  content:"✕";color:var(--pink);font-weight:700;
+  flex-shrink:0;width:22px;height:22px;
+  background:rgba(255,122,133,.1);border-radius:50%;
+  display:grid;place-items:center;font-size:11px;
+  margin-top:1px;
+}
+
+/* ═══ SOLUTION ═══ */
+.lp-solution{
+  background:linear-gradient(135deg,rgba(0,212,170,.05),transparent);
+  border:1px solid rgba(0,212,170,.2);
+  border-radius:14px;
+  padding:24px;
+}
+.lp-sol-list{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.lp-sol-item{
+  display:flex;align-items:flex-start;gap:12px;
+  font-size:14.5px;color:var(--text-soft);line-height:1.55;
+}
+.lp-sol-item::before{
+  content:"✓";color:var(--green);font-weight:700;
+  flex-shrink:0;width:22px;height:22px;
+  background:var(--green-soft);border-radius:50%;
+  display:grid;place-items:center;font-size:13px;
+  margin-top:1px;
+}
+.lp-sol-note{
+  margin-top:18px;
+  padding:14px 16px;
+  background:var(--green-soft);
+  border-radius:10px;
+  font-family:var(--fs);font-size:16px;color:var(--green);
+  font-style:italic;
+}
+
+/* ═══ FEATURES GRID ═══ */
+.lp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.lp-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:22px;
+  transition:border-color .2s,transform .2s;
+}
+.lp-card:hover{border-color:rgba(0,212,170,.3);transform:translateY(-3px)}
+.lp-card-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.lp-card-icon{font-size:24px}
+.lp-card-t{font-family:var(--fs);font-size:17px;color:#fff;line-height:1.2}
+.lp-card-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.lp-card-li{
+  font-size:13px;color:var(--text-soft);
+  padding-left:16px;position:relative;line-height:1.5;
+}
+.lp-card-li::before{
+  content:"▸";position:absolute;left:0;color:var(--green);font-size:11px;top:2px;
+}
+.lp-card-tag{
+  font-family:var(--fm);font-size:10px;color:var(--green);
+  letter-spacing:.5px;
+  padding-top:12px;border-top:1px solid var(--border);
+}
+
+/* ═══ SIMULATEUR (CONSERVÉ — IDs préservés) ═══ */
+.lp-sim-sec{margin-bottom:60px}
+.lp-sim-box{
+  background:linear-gradient(180deg,var(--surface) 0%,var(--surface-2) 100%);
+  border:1px solid rgba(0,212,170,.25);
+  border-radius:18px;
+  padding:28px;
+  box-shadow:0 0 60px rgba(0,212,170,.08);
+}
+.lp-sim-desc{
+  font-size:14px;color:var(--text-soft);line-height:1.6;
+  margin-bottom:20px;
+}
+.lp-sim-desc strong{color:var(--green)}
+
+.lp-sim-qp{margin-bottom:18px}
+.lp-sim-qp-label{
+  display:block;
+  font-family:var(--fm);font-size:10px;color:var(--muted);
+  letter-spacing:1.5px;text-transform:uppercase;
+  margin-bottom:10px;
+}
+.lp-sim-qp-btn{
+  display:inline-block;
+  margin:0 6px 6px 0;
+  padding:8px 12px;
+  background:rgba(0,212,170,.06);
+  border:1px solid rgba(0,212,170,.2);
+  border-radius:8px;
+  color:var(--text-soft);font-family:var(--fb);font-size:12px;
+  cursor:pointer;
+  transition:all .15s;
+}
+.lp-sim-qp-btn:hover{background:var(--green-soft);border-color:var(--green);color:var(--green)}
+
+#lp-sim-input{
+  width:100%;
+  min-height:90px;
+  padding:14px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:10px;
+  color:#fff;
+  font-family:var(--fb);font-size:14px;line-height:1.5;
+  resize:vertical;
+  margin-bottom:14px;
+}
+#lp-sim-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(0,212,170,.15)}
+
+.lp-sim-toggles{
+  display:flex;flex-wrap:wrap;gap:10px;
+  margin-bottom:18px;
+  padding:14px;background:var(--bg);border-radius:10px;
+}
+.lp-sim-tg{
+  display:flex;align-items:center;gap:6px;
+  font-size:12.5px;color:var(--text-soft);
+  cursor:pointer;
+}
+.lp-sim-tg input[type="checkbox"]{accent-color:var(--green)}
+.lp-sim-tg input[type="number"]{
+  width:50px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:4px 6px;color:#fff;font-family:var(--fm);font-size:12px;
+  margin:0 4px;
+}
+
+.lp-sim-btn{
+  width:100%;
+  padding:16px;
+  background:linear-gradient(135deg,var(--green),#00b894);
+  color:#0b1a14;
+  font-family:var(--fb);font-weight:600;font-size:15px;
+  border:none;border-radius:12px;
+  cursor:pointer;
+  box-shadow:0 4px 20px rgba(0,212,170,.3);
+  transition:transform .15s,box-shadow .15s;
+}
+.lp-sim-btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,212,170,.4)}
+
+.lp-sim-result{margin-top:20px;padding:20px;background:var(--bg);border-radius:12px}
+.lp-sim-steps{display:flex;flex-direction:column;gap:8px}
+.lp-sim-step{
+  font-family:var(--fm);font-size:12px;color:var(--muted);
+  padding:8px 12px;
+  background:var(--surface);
+  border-left:2px solid var(--border);border-radius:0 6px 6px 0;
+  transition:all .3s;
+}
+.lp-sim-step.active{color:var(--green);border-left-color:var(--green);background:var(--green-soft)}
+.lp-sim-out{margin-top:14px;font-size:13px;line-height:1.6}
+
+.lp-sim-disclaimer{
+  margin-top:14px;
+  font-family:var(--fm);font-size:11px;color:var(--muted);
+  line-height:1.5;text-align:center;
+}
+
+/* ═══ ROI CARDS ═══ */
+.lp-roi{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.lp-roi-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:22px;
+  position:relative;
+}
+.lp-roi-tag{
+  display:inline-block;
+  font-family:var(--fm);font-size:10px;color:var(--green);
+  letter-spacing:1.5px;text-transform:uppercase;
+  margin-bottom:12px;
+}
+.lp-roi-v{
+  font-family:var(--fs);font-size:32px;color:#fff;
+  line-height:1;margin-bottom:10px;
+  background:linear-gradient(135deg,#fff,var(--green));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.lp-roi-l{font-size:13px;color:var(--text-soft);line-height:1.55;margin-bottom:10px}
+.lp-roi-src{font-family:var(--fm);font-size:10px;color:var(--muted);font-style:italic}
+
+/* ═══ STATS ═══ */
+.lp-stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;
+  background:var(--bg-2);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:30px 20px;
+}
+.lp-stat{text-align:center}
+.lp-stat-v{
+  font-family:var(--fs);font-size:38px;color:var(--green);
+  line-height:1;margin-bottom:6px;
+  text-shadow:0 0 24px var(--green-glow);
+}
+.lp-stat-l{font-family:var(--fm);font-size:10.5px;color:var(--muted);letter-spacing:.5px}
+
+/* ═══ AUDIENCE ═══ */
+.lp-audience{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.lp-aud-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:24px;
+}
+.lp-aud-icon{font-size:32px;margin-bottom:12px}
+.lp-aud-t{font-family:var(--fs);font-size:20px;color:#fff;margin-bottom:14px}
+.lp-aud-list{display:flex;flex-direction:column;gap:8px}
+.lp-aud-item{
+  font-size:13.5px;color:var(--text-soft);
+  padding-left:16px;position:relative;line-height:1.55;
+}
+.lp-aud-item::before{content:"→";position:absolute;left:0;color:var(--green)}
+
+/* ═══ CABINET B2B ═══ */
+.lp-cabinet{
+  background:linear-gradient(135deg,rgba(167,139,250,.06),rgba(0,212,170,.04));
+  border:1px solid rgba(167,139,250,.25);
+  border-radius:18px;
+  padding:34px 28px;
+  margin:60px 0;
+}
+.lp-cab-badge{
+  display:inline-block;
+  font-family:var(--fm);font-size:10px;color:var(--violet);
+  letter-spacing:2px;text-transform:uppercase;
+  padding:5px 12px;
+  background:var(--violet-soft);
+  border:1px solid rgba(167,139,250,.3);
+  border-radius:20px;
+  margin-bottom:18px;
+}
+.lp-cab-h{font-family:var(--fs);font-size:clamp(24px,4vw,32px);line-height:1.2;color:#fff;margin-bottom:14px}
+.lp-cab-h em{color:var(--violet);font-style:italic}
+.lp-cab-p{font-size:14px;color:var(--text-soft);line-height:1.6;margin-bottom:24px}
+.lp-cab-grid{display:grid;gap:12px;margin-bottom:26px}
+.lp-cab-feat{
+  padding:14px 16px;
+  background:rgba(0,0,0,.2);
+  border-left:2px solid var(--violet);
+  border-radius:0 10px 10px 0;
+  font-size:13.5px;color:var(--text-soft);line-height:1.55;
+}
+.lp-cab-feat strong{color:#fff}
+.lp-cab-cta{display:flex;flex-wrap:wrap;gap:12px}
+.lp-cab-cta button{
+  flex:1;min-width:200px;
+  padding:14px 20px;
+  background:linear-gradient(135deg,var(--violet-2),#5b21b6);
+  color:#fff;
+  font-family:var(--fb);font-weight:600;font-size:14px;
+  border:none;border-radius:10px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(124,58,237,.3);
+  transition:transform .15s;
+}
+.lp-cab-cta button:hover{transform:translateY(-2px)}
+.lp-cab-cta-secondary{
+  background:transparent !important;
+  border:1px solid rgba(167,139,250,.3) !important;
+  color:var(--violet) !important;
+  box-shadow:none !important;
+}
+
+/* ════════════════════════════════════════════════
+   ✦ EXPERTISE COMPTABLE SANTÉ ✦
+   Cible : cabinets d'expertise comptable santé
+   ════════════════════════════════════════════════ */
+.lp-compta{
+  background:linear-gradient(135deg,rgba(255,122,133,.06),rgba(255,122,133,.02));
+  border:1px solid rgba(255,122,133,.25);
+  border-radius:18px;
+  padding:34px 28px;
+  margin:60px 0;
+  position:relative;
+  overflow:hidden;
+}
+.lp-compta::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--pink),transparent);
+}
+.lp-compta-badge{
+  display:inline-block;
+  font-family:var(--fm);font-size:10px;color:var(--pink);
+  letter-spacing:2px;text-transform:uppercase;
+  padding:5px 12px;
+  background:rgba(255,122,133,.1);
+  border:1px solid rgba(255,122,133,.3);
+  border-radius:20px;
+  margin-bottom:18px;
+}
+.lp-compta-h{font-family:var(--fs);font-size:clamp(24px,4vw,32px);line-height:1.2;color:#fff;margin-bottom:14px}
+.lp-compta-h em{color:var(--pink);font-style:italic}
+.lp-compta-p{font-size:14px;color:var(--text-soft);line-height:1.6;margin-bottom:24px}
+.lp-compta-p strong{color:#fff}
+
+/* Bloc douleur */
+.lp-compta-pain{
+  background:rgba(255,122,133,.04);
+  border-left:3px solid var(--pink);
+  border-radius:0 12px 12px 0;
+  padding:18px 20px;
+  margin-bottom:24px;
+}
+.lp-compta-pain-t{
+  font-family:var(--fm);font-size:11px;color:var(--pink);
+  letter-spacing:1.5px;text-transform:uppercase;
+  margin-bottom:12px;
+}
+.lp-compta-pain ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.lp-compta-pain li{
+  font-size:13.5px;color:var(--text-soft);line-height:1.5;
+  padding-left:20px;position:relative;
+}
+.lp-compta-pain li::before{
+  content:"✕";color:var(--pink);font-weight:700;
+  position:absolute;left:0;font-size:12px;
+}
+
+/* Grid 8 features */
+.lp-compta-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:12px;margin-bottom:26px;
+}
+.lp-compta-feat{
+  display:flex;gap:12px;align-items:flex-start;
+  padding:16px;
+  background:rgba(0,0,0,.25);
+  border:1px solid var(--border);
+  border-radius:12px;
+  transition:border-color .2s,transform .2s;
+}
+.lp-compta-feat:hover{border-color:rgba(255,122,133,.3);transform:translateY(-2px)}
+.lp-compta-feat-ic{
+  font-size:22px;flex-shrink:0;
+  width:36px;height:36px;
+  background:rgba(255,122,133,.08);
+  border-radius:10px;
+  display:grid;place-items:center;
+}
+.lp-compta-feat-txt{flex:1;font-size:13px;color:var(--text-soft);line-height:1.5}
+.lp-compta-feat-txt strong{display:block;color:#fff;font-weight:600;margin-bottom:4px;font-size:13.5px}
+
+/* ROI 4 chiffres */
+.lp-compta-roi{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;
+  background:linear-gradient(135deg,rgba(255,122,133,.08),rgba(255,122,133,.02));
+  border:1px solid rgba(255,122,133,.2);
+  border-radius:14px;
+  padding:22px 16px;
+  margin-bottom:24px;
+}
+.lp-compta-roi-item{text-align:center}
+.lp-compta-roi-val{
+  font-family:var(--fs);font-size:28px;color:var(--pink);
+  line-height:1;margin-bottom:6px;
+  text-shadow:0 0 18px rgba(255,122,133,.35);
+}
+.lp-compta-roi-lbl{
+  font-family:var(--fm);font-size:10px;color:var(--muted);
+  letter-spacing:.4px;line-height:1.4;
+}
+
+/* Pricing inline */
+.lp-compta-price{
+  display:flex;align-items:center;gap:18px;
+  padding:18px 20px;
+  background:rgba(0,0,0,.3);
+  border:1px solid var(--border);
+  border-radius:14px;
+  margin-bottom:24px;
+  flex-wrap:wrap;
+}
+.lp-compta-price-amt{
+  font-family:var(--fs);font-size:34px;color:#fff;line-height:1;
+  display:flex;align-items:baseline;gap:6px;
+}
+.lp-compta-price-amt span{font-family:var(--fm);font-size:12px;color:var(--muted)}
+.lp-compta-price-sep{
+  width:1px;height:38px;background:var(--border);
+}
+.lp-compta-price-info{
+  flex:1;min-width:200px;
+  font-size:13px;color:var(--text-soft);line-height:1.55;
+}
+.lp-compta-price-info strong{display:block;color:var(--pink);font-weight:600;margin-bottom:2px}
+
+/* CTA */
+.lp-compta-cta{display:flex;flex-wrap:wrap;gap:12px}
+.lp-compta-cta button{
+  flex:1;min-width:200px;
+  padding:14px 20px;
+  background:linear-gradient(135deg,var(--pink),#e63946);
+  color:#fff;
+  font-family:var(--fb);font-weight:600;font-size:14px;
+  border:none;border-radius:10px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(255,122,133,.3);
+  transition:transform .15s;
+}
+.lp-compta-cta button:hover{transform:translateY(-2px)}
+.lp-compta-cta-secondary{
+  background:transparent !important;
+  border:1px solid rgba(255,122,133,.4) !important;
+  color:var(--pink) !important;
+  box-shadow:none !important;
+}
+
+/* ════════════════════════════════════════════════
+   ✦ NOUVELLE SECTION PRICING ✦
+   4 tiers · Premium toggle · Le Pro mis en avant
+   ════════════════════════════════════════════════ */
+.lp-pricing{margin:80px 0 60px}
+
+.lp-price-toggle-wrap{
+  display:flex;justify-content:center;align-items:center;gap:14px;
+  margin-bottom:28px;
+  padding:14px 18px;
+  background:linear-gradient(135deg,rgba(251,191,36,.06),transparent);
+  border:1px solid rgba(251,191,36,.25);
+  border-radius:14px;
+}
+.lp-price-toggle-label{
+  font-family:var(--fb);font-size:14px;color:var(--text-soft);
+  display:flex;align-items:center;gap:8px;
+}
+.lp-price-toggle-label strong{color:var(--gold);font-weight:600}
+.lp-price-toggle{
+  position:relative;width:52px;height:28px;cursor:pointer;flex-shrink:0;
+}
+.lp-price-toggle input{opacity:0;width:0;height:0;position:absolute}
+.lp-price-toggle-slider{
+  position:absolute;inset:0;
+  background:var(--border);
+  border-radius:28px;
+  transition:.25s;
+}
+.lp-price-toggle-slider::before{
+  content:"";position:absolute;
+  height:22px;width:22px;left:3px;top:3px;
+  background:#fff;border-radius:50%;
+  transition:.25s;
+  box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
+.lp-price-toggle input:checked + .lp-price-toggle-slider{
+  background:linear-gradient(135deg,var(--gold),#f59e0b);
+}
+.lp-price-toggle input:checked + .lp-price-toggle-slider::before{
+  transform:translateX(24px);
+}
+
+.lp-price-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:16px;
+  align-items:stretch;
+}
+
+.lp-plan{
+  position:relative;
+  display:flex;flex-direction:column;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:26px 22px;
+  transition:transform .25s,border-color .25s,box-shadow .25s;
+}
+.lp-plan:hover{transform:translateY(-4px)}
+
+.lp-plan-tag{
+  font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
+  margin-bottom:8px;
+}
+.lp-plan-t{
+  font-family:var(--fs);font-size:22px;color:#fff;
+  margin-bottom:4px;line-height:1.1;
+}
+.lp-plan-tagline{
+  font-size:13px;color:var(--muted);font-style:italic;
+  margin-bottom:18px;line-height:1.4;min-height:36px;
+}
+.lp-plan-price{
+  display:flex;align-items:baseline;gap:6px;
+  margin-bottom:6px;
+}
+.lp-plan-amount{font-family:var(--fs);font-size:42px;color:#fff;line-height:1}
+.lp-plan-period{font-family:var(--fm);font-size:12px;color:var(--muted)}
+.lp-plan-subprice{
+  font-family:var(--fm);font-size:11px;color:var(--muted);
+  margin-bottom:20px;min-height:16px;
+}
+.lp-plan-feats{
+  display:flex;flex-direction:column;gap:10px;
+  margin-bottom:22px;flex:1;
+}
+.lp-plan-feat{
+  display:flex;align-items:flex-start;gap:10px;
+  font-size:13.5px;color:var(--text-soft);line-height:1.45;
+}
+.lp-plan-feat::before{
+  content:"✓";color:var(--green);font-weight:700;
+  flex-shrink:0;width:18px;height:18px;
+  background:var(--green-soft);border-radius:50%;
+  display:grid;place-items:center;font-size:11px;
+  margin-top:1px;
+}
+.lp-plan-roi{
+  padding:10px 12px;
+  background:linear-gradient(135deg,rgba(0,212,170,.1),rgba(0,212,170,.02));
+  border:1px solid rgba(0,212,170,.25);
+  border-radius:8px;
+  font-family:var(--fm);font-size:11.5px;color:var(--green);
+  text-align:center;letter-spacing:.3px;
+  margin-bottom:18px;
+}
+
+.lp-plan-cta{
+  width:100%;
+  padding:14px;
+  font-family:var(--fb);font-weight:600;font-size:14px;
+  border:none;border-radius:10px;cursor:pointer;
+  transition:transform .15s,box-shadow .15s;
+}
+.lp-plan-cta:hover{transform:translateY(-1px)}
+
+/* ─── STARTER ─── */
+.lp-plan-starter .lp-plan-tag{color:var(--green)}
+.lp-plan-starter .lp-plan-cta{
+  background:transparent;
+  border:1px solid var(--green);
+  color:var(--green);
+}
+.lp-plan-starter .lp-plan-cta:hover{background:var(--green-soft)}
+
+/* ─── PRO (highlight) ─── */
+.lp-plan-pro{
+  background:linear-gradient(180deg,#0f1f1a 0%,var(--surface) 100%);
+  border:2px solid var(--green);
+  box-shadow:0 0 50px rgba(0,212,170,.2),inset 0 1px 0 rgba(0,212,170,.15);
+  transform:scale(1.02);
+}
+.lp-plan-pro:hover{transform:scale(1.02) translateY(-4px);box-shadow:0 0 70px rgba(0,212,170,.3)}
+.lp-plan-pro .lp-plan-tag{color:var(--green)}
+.lp-plan-pro .lp-plan-amount{
+  background:linear-gradient(135deg,#fff,var(--green));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.lp-plan-pro .lp-plan-cta{
+  background:linear-gradient(135deg,var(--green),#00b894);
+  color:#0b1a14;
+  box-shadow:0 4px 20px rgba(0,212,170,.4);
+}
+.lp-plan-pro .lp-plan-cta:hover{box-shadow:0 8px 28px rgba(0,212,170,.55)}
+
+.lp-plan-badge{
+  position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 14px;
+  background:linear-gradient(135deg,var(--green),#00b894);
+  color:#0b1a14;
+  font-family:var(--fm);font-size:10px;font-weight:600;
+  letter-spacing:1px;text-transform:uppercase;
+  border-radius:20px;
+  box-shadow:0 4px 16px rgba(0,212,170,.4);
+  white-space:nowrap;
+}
+
+/* ─── CABINET ─── */
+.lp-plan-cabinet .lp-plan-tag{color:var(--violet)}
+.lp-plan-cabinet{
+  background:linear-gradient(180deg,#171229 0%,var(--surface) 100%);
+  border-color:rgba(167,139,250,.3);
+}
+.lp-plan-cabinet .lp-plan-amount{color:var(--violet)}
+.lp-plan-cabinet-tiers{
+  font-family:var(--fm);font-size:10.5px;color:var(--muted);
+  margin-bottom:6px;line-height:1.6;
+}
+.lp-plan-cabinet-tiers span{color:var(--violet);font-weight:500}
+.lp-plan-cabinet .lp-plan-cta{
+  background:linear-gradient(135deg,var(--violet-2),#5b21b6);
+  color:#fff;
+  box-shadow:0 4px 18px rgba(124,58,237,.3);
+}
+
+/* ─── PREMIUM (overlay) ─── */
+.lp-plan-premium{
+  display:none;
+  background:linear-gradient(180deg,#1f1810 0%,var(--surface) 100%);
+  border-color:rgba(251,191,36,.35);
+  box-shadow:0 0 40px rgba(251,191,36,.12);
+}
+.lp-plan-premium.active{display:flex;animation:slideIn .35s ease}
+@keyframes slideIn{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.lp-plan-premium .lp-plan-tag{color:var(--gold)}
+.lp-plan-premium .lp-plan-amount{color:var(--gold)}
+.lp-plan-premium .lp-plan-cta{
+  background:linear-gradient(135deg,var(--gold),#f59e0b);
+  color:#1a1208;
+  box-shadow:0 4px 20px rgba(251,191,36,.35);
+}
+
+.lp-price-note{
+  margin-top:24px;
+  text-align:center;
+  font-family:var(--fm);font-size:11.5px;color:var(--muted);
+  line-height:1.6;
+}
+.lp-price-note strong{color:var(--green)}
+
+/* ═══ FAQ ═══ */
+.lp-faq{display:flex;flex-direction:column;gap:10px}
+.lp-faq-item{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:0 18px;
+  transition:border-color .2s;
+}
+.lp-faq-item[open]{border-color:rgba(0,212,170,.3)}
+.lp-faq-q{
+  cursor:pointer;
+  font-family:var(--fb);font-weight:500;font-size:14.5px;color:#fff;
+  padding:18px 0;
+  list-style:none;
+  display:flex;justify-content:space-between;align-items:center;gap:14px;
+}
+.lp-faq-q::after{
+  content:"+";font-family:var(--fs);font-size:22px;color:var(--green);
+  transition:transform .2s;flex-shrink:0;
+}
+.lp-faq-item[open] .lp-faq-q::after{transform:rotate(45deg)}
+.lp-faq-q::-webkit-details-marker{display:none}
+.lp-faq-a{
+  font-size:14px;color:var(--text-soft);line-height:1.6;
+  padding-bottom:18px;
+}
+.lp-faq-a strong{color:var(--green)}
+
+/* ═══ SECURITY PILLS ═══ */
+.lp-sec-rgpd{margin:60px 0}
+.lp-pill-row{display:flex;flex-wrap:wrap;gap:8px}
+.lp-pill{
+  display:inline-block;
+  padding:7px 14px;
+  background:var(--green-soft);
+  border:1px solid rgba(0,212,170,.2);
+  border-radius:20px;
+  font-family:var(--fm);font-size:11px;color:var(--green);
+  letter-spacing:.3px;
+}
+
+/* ═══ CTA FINAL ═══ */
+.lp-final{
+  margin:80px 0 40px;
+  text-align:center;
+  padding:50px 28px;
+  background:radial-gradient(ellipse at top,rgba(0,212,170,.12) 0%,transparent 70%),var(--surface-2);
+  border:1px solid rgba(0,212,170,.25);
+  border-radius:22px;
+}
+.lp-final-h{
+  font-family:var(--fs);font-size:clamp(26px,5vw,38px);
+  color:#fff;line-height:1.2;margin-bottom:14px;
+}
+.lp-final-h em{color:var(--green);font-style:italic}
+.lp-final-sub{
+  font-size:15px;color:var(--text-soft);
+  margin-bottom:28px;line-height:1.55;
+  max-width:480px;margin-left:auto;margin-right:auto;
+}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width:640px){
+  .lp-wrap{padding:36px 20px 100px}
+  .lp-plan-pro{transform:scale(1)}
+  .lp-plan-pro:hover{transform:translateY(-4px)}
+  .lp-cta{font-size:15px;padding:16px 24px}
+  .lp-promise-item{font-size:14px}
+  .lp-step{flex-direction:column;gap:12px}
+  .lp-day-h{font-size:18px}
+  .lp-cab-cta button{min-width:100%}
+  .lp-price-toggle-wrap{flex-direction:column;gap:10px;text-align:center}
+}
+
+/* ═══ STICKY MOBILE CTA ═══ */
+.lp-sticky-cta{
+  display:none;
+  position:fixed;bottom:14px;left:14px;right:14px;z-index:50;
+  padding:16px;
+  background:linear-gradient(135deg,var(--green),#00b894);
+  color:#0b1a14;
+  font-family:var(--fb);font-weight:600;font-size:15px;
+  border:none;border-radius:14px;
+  box-shadow:0 8px 28px rgba(0,212,170,.4);
+  cursor:pointer;
+}
+@media (max-width:640px){.lp-sticky-cta{display:block}}
+
+</style>
+</head>
+<body>
+
+<div class="lp-bg"></div>
+
+<div class="lp-wrap">
+
+  <!-- ═══ LOGO ═══ -->
+  <div class="lp-logo">
+    <div class="lp-mark">A</div>
+    <div>
+      <div class="lp-app-name">AMI</div>
+      <div class="lp-app-sub">Système expert médico-légal prédictif</div>
+    </div>
+  </div>
+
+  <!-- ═══ HERO ═══ -->
+  <div><span class="lp-badge">✦ Assistant Médical Infirmier · IDEL & Cabinets</span></div>
+
+  <h1 class="lp-h1">Tu fais le soin.<br><em>AMI sécurise, optimise<br>et facture à ta place.</em></h1>
+
+  <p class="lp-subtitle">
+    Combien d'argent laisses-tu à la CPAM chaque mois sans le savoir ?
+    AMI détecte tes erreurs NGAP, optimise tes cotations en temps réel
+    et te protège des contrôles. Le copilote des infirmières libérales.
+  </p>
+
+  <div class="lp-promise">
+    <div class="lp-promise-item">Écris ton soin → AMI fait le reste</div>
+    <div class="lp-promise-item">Plus de revenus. Moins de stress. Zéro erreur.</div>
+  </div>
+
+  <div class="lp-cta-wrap">
+    <button class="lp-cta" onclick="closeLanding()">🚀 Essayer gratuitement — aucune carte requise</button>
+    <div class="lp-cta-sub">Connexion · Création de compte · Sans engagement</div>
+  </div>
+
+  <!-- ═══ TOC ═══ -->
+  <nav class="lp-toc" aria-label="Sommaire">
+    <div class="lp-toc-inner">
+      <a class="lp-toc-link" href="#lp-steps">Comment ça marche</a>
+      <a class="lp-toc-link" href="#lp-day">Journée type</a>
+      <a class="lp-toc-link" href="#lp-features">Fonctionnalités</a>
+      <a class="lp-toc-link" href="#lp-sim">✦ Essayer</a>
+      <a class="lp-toc-link" href="#lp-roi">Ce que tu gagnes</a>
+      <a class="lp-toc-link" href="#lp-pricing-sec">Tarifs</a>
+      <a class="lp-toc-link" href="#lp-cabinet-sec">Cabinets</a>
+      <a class="lp-toc-link" href="#lp-compta-sec" style="color:#FF7A85">🧑‍💼 Experts-comptables</a>
+      <a class="lp-toc-link" href="#lp-faq-sec">FAQ</a>
+      <a class="lp-toc-link" href="#lp-security">Sécurité</a>
+    </div>
+  </nav>
+
+  <!-- ═══ FOUNDER BADGE ═══ -->
+  <div class="lp-founder">
+    <span class="lp-founder-badge">✦ Accès fondateur</span>
+    <div class="lp-founder-txt"><strong>Phase de lancement privée.</strong> Tarif préférentiel garanti à vie pour les 100 premières infirmières et 10 premiers cabinets inscrits. Ton retour pèse directement sur la v1.</div>
+  </div>
+
+  <!-- ═══ HOW IT WORKS ═══ -->
+  <div id="lp-steps" class="lp-sec-label">⚙ Comment ça marche</div>
+  <div class="lp-sec-h2">3 étapes. <em>1 minute par patient.</em></div>
+  <div class="lp-steps">
+    <div class="lp-step">
+      <div class="lp-step-num">1</div>
+      <div>
+        <div class="lp-step-t">Tu dictes ou tu écris</div>
+        <div class="lp-step-d">« Mme Durand, insuline + pansement escarre stade 2, nuit. » Voix ou clavier, une phrase suffit.</div>
+      </div>
+    </div>
+    <div class="lp-step">
+      <div class="lp-step-num">2</div>
+      <div>
+        <div class="lp-step-t">AMI analyse et cote</div>
+        <div class="lp-step-d">NLP médical + moteur NGAP hybride : actes détectés, majorations ajoutées, cumuls vérifiés, risque CPAM simulé.</div>
+      </div>
+    </div>
+    <div class="lp-step">
+      <div class="lp-step-num">3</div>
+      <div>
+        <div class="lp-step-t">Tu télétransmets sereine</div>
+        <div class="lp-step-d">Preuve médico-légale horodatée, FSE générée, trésorerie mise à jour. Tu passes au patient suivant.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ JOURNÉE TYPE ═══ -->
+  <div id="lp-day" class="lp-sec-label">🕐 Journée type</div>
+  <div class="lp-sec-h2">Ton quotidien avec <em>AMI</em></div>
+  <div class="lp-day">
+    <div class="lp-day-h">Mardi, 20h17. Tu rentres de tournée.</div>
+    <div class="lp-day-sub">— Scénario réel —</div>
+    <div class="lp-day-timeline">
+      <div class="lp-day-row">
+        <span class="lp-day-time">20H17</span>
+        <div class="lp-day-event">Tu ouvres AMI, tu dictes : <strong>« Mme Le Gall, pansement lourd et complexe, jambe gauche, avec compression. »</strong></div>
+      </div>
+      <div class="lp-day-row">
+        <span class="lp-day-time">20H17 · +4s</span>
+        <div class="lp-day-event">AMI détecte <em>AMI4 + IFD</em>, applique la majoration dimanche, calcule les IK d'après la distance réelle. <strong>Total : 28,40 €.</strong></div>
+      </div>
+      <div class="lp-day-row">
+        <span class="lp-day-time">20H17 · +7s</span>
+        <div class="lp-day-event">Le moteur de conformité détecte un <strong>cumul risqué</strong> avec la cotation de ce matin. Il te propose la correction et simule l'impact CPAM.</div>
+      </div>
+      <div class="lp-day-row">
+        <span class="lp-day-time">20H18</span>
+        <div class="lp-day-event">Signature patient capturée cet après-midi → <em>hash SHA-256</em> stocké, géozone validée. Preuve médico-légale archivée.</div>
+      </div>
+      <div class="lp-day-row">
+        <span class="lp-day-time">20H18</span>
+        <div class="lp-day-event">FSE générée. Trésorerie actualisée. Rapport mensuel enrichi automatiquement.</div>
+      </div>
+      <div class="lp-day-row">
+        <span class="lp-day-time">20H19</span>
+        <div class="lp-day-event"><strong>Tu fermes l'app.</strong> Tu passes au patient suivant ou tu vas dîner. <em>1 min 42 s</em> pour 14 patients.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PROBLÈME ═══ -->
+  <div class="lp-sec-label">⚡ Le problème</div>
+  <div class="lp-sec-h2">Aujourd'hui, tu fais <em>tout à la main</em></div>
+  <div class="lp-problem">
+    <div class="lp-prob-list">
+      <div class="lp-prob-item">Cotation NGAP complexe, règles qui changent, peur de l'erreur</div>
+      <div class="lp-prob-item">Risque permanent de redressement CPAM — <strong style="color:#fff">coût moyen : 3 000 à 8 000 €</strong></div>
+      <div class="lp-prob-item">Majorations nuit, dimanche, IK souvent oubliées — perte sèche</div>
+      <div class="lp-prob-item">Tournées mal optimisées → kilomètres inutiles et fatigue</div>
+      <div class="lp-prob-item">Paperasse dispersée, preuves de soins introuvables en cas de contrôle</div>
+      <div class="lp-prob-item">Aucun pilotage réel de ton CA, aucune prévision</div>
+    </div>
+  </div>
+
+  <!-- ═══ SOLUTION ═══ -->
+  <div class="lp-sec-label">💎 La solution</div>
+  <div class="lp-sec-h2">AMI = ton <em>copilote intelligent</em> infirmier</div>
+  <div class="lp-solution">
+    <div class="lp-sol-list">
+      <div class="lp-sol-item">IA médicale + moteur NGAP hybride</div>
+      <div class="lp-sol-item">Optimisation économique terrain</div>
+      <div class="lp-sol-item">Protection médico-légale intégrée</div>
+      <div class="lp-sol-item">Organisation cabinet multi-IDE</div>
+    </div>
+    <div class="lp-sol-note">👉 Tout dans une seule app.</div>
+  </div>
+
+  <!-- ═══ FEATURES GRID ═══ -->
+  <div id="lp-features" class="lp-sec-label">🚀 Fonctionnalités clés</div>
+  <div class="lp-sec-h2">Ce qui te <em>différencie</em></div>
+  <div class="lp-grid">
+
+    <div class="lp-card">
+      <div class="lp-card-head"><span class="lp-card-icon">🧠</span><div class="lp-card-t">Cotation NGAP automatique</div></div>
+      <div class="lp-card-list">
+        <div class="lp-card-li">Analyse NLP de tes soins</div>
+        <div class="lp-card-li">Sélection + ordonnancement des actes</div>
+        <div class="lp-card-li">Optimisation majorations (nuit, dimanche, IK)</div>
+        <div class="lp-card-li">Tarifs NGAP 2026 officiels (BSB 18,20 €…)</div>
+      </div>
+      <div class="lp-card-tag">Moteur hybride IA + règles + ML</div>
+    </div>
+
+    <div class="lp-card">
+      <div class="lp-card-head"><span class="lp-card-icon">🛡️</span><div class="lp-card-t">Protection CPAM temps réel</div></div>
+      <div class="lp-card-list">
+        <div class="lp-card-li">Simulation d'audit CPAM intégrée</div>
+        <div class="lp-card-li">Détection fraude / patterns suspects</div>
+        <div class="lp-card-li">Blocage intelligent des cotations risquées</div>
+        <div class="lp-card-li">Checklist conformité avant envoi de lot</div>
+      </div>
+      <div class="lp-card-tag">Tu es protégée avant facturation</div>
+    </div>
+
+    <div class="lp-card">
+      <div class="lp-card-head"><span class="lp-card-icon">✍️</span><div class="lp-card-t">Preuve médico-légale</div></div>
+      <div class="lp-card-list">
+        <div class="lp-card-li">Signature patient → hash SHA-256</div>
+        <div class="lp-card-li">Photo non stockée (RGPD by design)</div>
+        <div class="lp-card-li">Horodatage + géozone GPS</div>
+        <div class="lp-card-li">Consentements versionnés archivés</div>
+      </div>
+      <div class="lp-card-tag">Défense prête en cas de contrôle</div>
+    </div>
+
+    <div class="lp-card">
+      <div class="lp-card-head"><span class="lp-card-icon">🗺️</span><div class="lp-card-t">Tournée IA + Mode Uber</div></div>
+      <div class="lp-card-list">
+        <div class="lp-card-li">VRPTW : clustering + 2-opt + Or-opt</div>
+        <div class="lp-card-li">GPS temps réel, patient suivant auto</div>
+        <div class="lp-card-li">Prédiction retards / fatigue par zone</div>
+        <div class="lp-card-li">Cartes offline (zones blanches OK)</div>
+      </div>
+      <div class="lp-card-tag">Moins de km, plus de CA</div>
+    </div>
+
+    <div class="lp-card">
+      <div class="lp-card-head"><span class="lp-card-icon">🎙️</span><div class="lp-card-t">Dictée médicale vocale</div></div>
+      <div class="lp-card-list">
+        <div class="lp-card-li">Terminologie médicale normalisée</div>
+        <div class="lp-card-li">Commandes vocales dans la voiture</div>
+        <div class="lp-card-li">Dictée de transmissions SOAP/DAR</div>
+        <div class="lp-card-li">Mains libres de A à Z</div>
+      </div>
+      <div class="lp-card-tag">Coter entre deux patients, sans le clavier</div>
+    </div>
+
+    <div class="lp-card">
+      <div class="lp-card-head"><span class="lp-card-icon">💬</span><div class="lp-card-t">Copilote IA 24h/24</div></div>
+      <div class="lp-card-list">
+        <div class="lp-card-li">Expert NGAP disponible en chat</div>
+        <div class="lp-card-li">Réponses contextualisées à ta cotation</div>
+        <div class="lp-card-li">Suggestions proactives de majoration</div>
+        <div class="lp-card-li">Mode vocal optionnel</div>
+      </div>
+      <div class="lp-card-tag">Tu n'es plus jamais seule face à la NGAP</div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       ✦ SIMULATEUR (CONSERVÉ — IDs préservés pour ton JS)
+       ═══════════════════════════════════════════════════ -->
+  <div id="lp-sim" class="lp-sec-label">✦ Essaie maintenant</div>
+  <div class="lp-sec-h2">Teste la cotation IA en <em>temps réel</em></div>
+  <div class="lp-sim-sec">
+    <div class="lp-sim-box">
+      <div class="lp-sim-desc">Décris un soin en langage naturel. AMI détecte les actes, applique les cumuls NGAP, calcule majorations et IK, simule le contrôle CPAM. <strong>100 % client-side — aucune donnée envoyée.</strong></div>
+
+      <div class="lp-sim-qp">
+        <span class="lp-sim-qp-label">Exemples</span>
+        <button type="button" class="lp-sim-qp-btn" data-soin="Mme Durand, injection insuline + pansement escarre stade 2, jambe gauche">💉 Diabétique escarre</button>
+        <button type="button" class="lp-sim-qp-btn" data-soin="M. Le Gall, perfusion antibiotique + surveillance, visite de nuit">🌙 Perfusion nuit</button>
+        <button type="button" class="lp-sim-qp-btn" data-soin="Mme Morel, toilette complète + pansement simple, dimanche matin">☀️ Toilette dimanche</button>
+        <button type="button" class="lp-sim-qp-btn" data-soin="M. Blanc, prise de sang à jeun + contrôle glycémie">🩸 Prise de sang</button>
+        <button type="button" class="lp-sim-qp-btn" data-soin="Mme Faure, pose sonde urinaire + pansement complexe">🩹 Sondage + pansement</button>
+      </div>
+
+      <textarea id="lp-sim-input" placeholder="Ex : Mme Durand, insuline + pansement escarre stade 2, visite de nuit"></textarea>
+
+      <div class="lp-sim-toggles">
+        <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit"> 🌙 Nuit (20h–23h)</label>
+        <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit2"> 🌘 Nuit profonde (23h–5h)</label>
+        <label class="lp-sim-tg"><input type="checkbox" id="sim-dim"> 🗓 Dimanche / férié</label>
+        <label class="lp-sim-tg">📍 Distance : <input type="number" id="sim-km" value="5" min="0" max="80" step="1"> km</label>
+      </div>
+
+      <button type="button" class="lp-sim-btn" id="lp-sim-run">✦ Coter avec l'IA</button>
+
+      <div class="lp-sim-result" id="lp-sim-result" style="display:none">
+        <div class="lp-sim-steps" id="lp-sim-steps">
+          <div class="lp-sim-step" data-step="1">Analyse NLP médicale du soin</div>
+          <div class="lp-sim-step" data-step="2">Sélection des actes NGAP 2026</div>
+          <div class="lp-sim-step" data-step="3">Vérification cumuls &amp; majorations</div>
+          <div class="lp-sim-step" data-step="4">Simulation audit CPAM prédictif</div>
+        </div>
+        <div class="lp-sim-out" id="lp-sim-out" style="display:none"></div>
+      </div>
+    </div>
+    <div class="lp-sim-disclaimer">⚠️ Démo simplifiée du moteur NLP. La version complète analyse 350+ actes NGAP, applique toutes les règles officielles 2026 et intègre le BSI, les consentements et la preuve médico-légale.</div>
+  </div>
+
+  <!-- ═══ ROI ═══ -->
+  <div id="lp-roi" class="lp-sec-label">💰 Combien tu gagnes concrètement</div>
+  <div class="lp-sec-h2">Le retour sur investissement <em>en chiffres</em></div>
+  <div class="lp-roi">
+    <div class="lp-roi-card">
+      <span class="lp-roi-tag">Erreurs évitées</span>
+      <div class="lp-roi-v">3 000 – 8 000 €</div>
+      <div class="lp-roi-l">Coût moyen d'un redressement CPAM. AMI simule le contrôle avant envoi et bloque les cumuls risqués.</div>
+      <div class="lp-roi-src">Source CNAM · rapports contrôle IDEL</div>
+    </div>
+    <div class="lp-roi-card">
+      <span class="lp-roi-tag">Majorations oubliées</span>
+      <div class="lp-roi-v">~ 2 000 €/an</div>
+      <div class="lp-roi-l">Majorations nuit, dimanche et IK fréquemment oubliées en saisie manuelle. AMI les applique automatiquement.</div>
+      <div class="lp-roi-src">Estimation sur 15 patients/jour en moyenne</div>
+    </div>
+    <div class="lp-roi-card">
+      <span class="lp-roi-tag">Temps récupéré</span>
+      <div class="lp-roi-v">+ 18 h/mois</div>
+      <div class="lp-roi-l">45 min/jour de cotation manuelle évitées. Soit plus de 2 semaines de travail gagnées dans l'année.</div>
+      <div class="lp-roi-src">Étude temps administratif IDEL 2024</div>
+    </div>
+  </div>
+
+  <!-- ═══ STATS ═══ -->
+  <div class="lp-sec-label">📈 Ce que change AMI</div>
+  <div class="lp-sec-h2">Concrètement, dans <em>ton quotidien</em></div>
+  <div class="lp-stats">
+    <div class="lp-stat"><div class="lp-stat-v">−80%</div><div class="lp-stat-l">d'erreurs de cotation</div></div>
+    <div class="lp-stat"><div class="lp-stat-v">+25%</div><div class="lp-stat-l">de revenus potentiels</div></div>
+    <div class="lp-stat"><div class="lp-stat-v">0</div><div class="lp-stat-l">redressement CPAM</div></div>
+    <div class="lp-stat"><div class="lp-stat-v">+2h</div><div class="lp-stat-l">gagnées par jour</div></div>
+  </div>
+
+  <!-- ═══ POUR QUI ═══ -->
+  <div class="lp-sec-label">⚡ Pour qui ?</div>
+  <div class="lp-audience">
+    <div class="lp-aud-card">
+      <div class="lp-aud-icon">👩‍⚕️</div>
+      <div class="lp-aud-t">Infirmière libérale</div>
+      <div class="lp-aud-list">
+        <div class="lp-aud-item">Sécuriser ta facturation</div>
+        <div class="lp-aud-item">Gagner du temps chaque jour</div>
+        <div class="lp-aud-item">Augmenter ton chiffre d'affaires</div>
+        <div class="lp-aud-item">Dormir tranquille face aux contrôles</div>
+      </div>
+    </div>
+    <div class="lp-aud-card">
+      <div class="lp-aud-icon">🏥</div>
+      <div class="lp-aud-t">Cabinet infirmier</div>
+      <div class="lp-aud-list">
+        <div class="lp-aud-item">Coordination multi-IDE fluide</div>
+        <div class="lp-aud-item">Sync sélective RGPD-safe</div>
+        <div class="lp-aud-item">Vision business + KPI consolidés</div>
+        <div class="lp-aud-item">Répartition intelligente des tournées</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       ✦ NOUVELLE SECTION PRICING ✦
+       ═══════════════════════════════════════════════════ -->
+  <div id="lp-pricing-sec" class="lp-sec-label">💎 Tarifs</div>
+  <div class="lp-sec-h2">Choisis ton niveau d'<em>optimisation</em></div>
+
+  <div class="lp-pricing">
+
+    <!-- Toggle Premium -->
+    <label class="lp-price-toggle-wrap">
+      <span class="lp-price-toggle-label">
+        <span>Activer l'option <strong>💎 Premium</strong> · +29 €/mois</span>
+      </span>
+      <span class="lp-price-toggle">
+        <input type="checkbox" id="lp-premium-toggle" onchange="togglePremium(this)">
+        <span class="lp-price-toggle-slider"></span>
+      </span>
+    </label>
+
+    <div class="lp-price-grid">
+
+      <!-- ─── STARTER ─── -->
+      <div class="lp-plan lp-plan-starter">
+        <div class="lp-plan-tag">🟢 Starter</div>
+        <div class="lp-plan-t">Essentiel</div>
+        <div class="lp-plan-tagline">« Arrête de perdre de l'argent »</div>
+        <div class="lp-plan-price">
+          <span class="lp-plan-amount">29</span>
+          <span class="lp-plan-period">€ / mois</span>
+        </div>
+        <div class="lp-plan-subprice">Sans engagement</div>
+        <div class="lp-plan-feats">
+          <div class="lp-plan-feat">Cotation intelligente</div>
+          <div class="lp-plan-feat">Alertes erreurs</div>
+          <div class="lp-plan-feat">Journal des actes</div>
+          <div class="lp-plan-feat">Support standard</div>
+        </div>
+        <button class="lp-plan-cta" onclick="selectPlan('starter')">Commencer</button>
+      </div>
+
+      <!-- ─── PRO (highlight) ─── -->
+      <div class="lp-plan lp-plan-pro">
+        <span class="lp-plan-badge">⭐ Le plus choisi</span>
+        <div class="lp-plan-tag">🔵 Pro</div>
+        <div class="lp-plan-t">Pro</div>
+        <div class="lp-plan-tagline">« Optimise tes revenus sans effort »</div>
+        <div class="lp-plan-price">
+          <span class="lp-plan-amount">49</span>
+          <span class="lp-plan-period">€ / mois</span>
+        </div>
+        <div class="lp-plan-subprice">Sans engagement · ROI dès le 1<sup>er</sup> mois</div>
+        <div class="lp-plan-feats">
+          <div class="lp-plan-feat"><strong>Tout Starter, plus :</strong></div>
+          <div class="lp-plan-feat">Dashboard &amp; statistiques</div>
+          <div class="lp-plan-feat">Simulateur CPAM</div>
+          <div class="lp-plan-feat">Alertes avancées</div>
+          <div class="lp-plan-feat">Suggestions d'optimisation IA</div>
+        </div>
+        <div class="lp-plan-roi">💸 +150 à +300 € / mois récupérés</div>
+        <button class="lp-plan-cta" onclick="selectPlan('pro')">Choisir ce plan</button>
+      </div>
+
+      <!-- ─── CABINET ─── -->
+      <div class="lp-plan lp-plan-cabinet">
+        <div class="lp-plan-tag">🟣 Cabinet</div>
+        <div class="lp-plan-t">Cabinet</div>
+        <div class="lp-plan-tagline">« Gère ton cabinet comme un pro »</div>
+        <div class="lp-plan-price">
+          <span class="lp-plan-amount" style="font-size:34px">Dégressif</span>
+        </div>
+        <div class="lp-plan-cabinet-tiers">
+          1–2 IDE → <span>49 €</span> · 3–5 IDE → <span>39 €</span> · 6+ IDE → <span>29 €</span>
+        </div>
+        <div class="lp-plan-subprice">par IDE / mois</div>
+        <div class="lp-plan-feats">
+          <div class="lp-plan-feat"><strong>Tout Pro, plus :</strong></div>
+          <div class="lp-plan-feat">Multi-IDE (sync sélective)</div>
+          <div class="lp-plan-feat">Statistiques globales</div>
+          <div class="lp-plan-feat">Gestion des tournées</div>
+          <div class="lp-plan-feat">Accès manager / planning</div>
+        </div>
+        <button class="lp-plan-cta" onclick="selectPlan('cabinet')">Démarrer mon cabinet</button>
+      </div>
+
+      <!-- ─── PREMIUM (overlay) ─── -->
+      <div class="lp-plan lp-plan-premium" id="lp-plan-premium">
+        <div class="lp-plan-tag">🟡 Premium</div>
+        <div class="lp-plan-t">Option Premium</div>
+        <div class="lp-plan-tagline">« Zéro stress. Zéro contrôle surprise. »</div>
+        <div class="lp-plan-price">
+          <span class="lp-plan-amount">+29</span>
+          <span class="lp-plan-period">€ / mois</span>
+        </div>
+        <div class="lp-plan-subprice">À ajouter à ton plan actuel</div>
+        <div class="lp-plan-feats">
+          <div class="lp-plan-feat">Détection des pertes invisibles</div>
+          <div class="lp-plan-feat">Optimisation IA avancée</div>
+          <div class="lp-plan-feat">Protection juridique renforcée</div>
+          <div class="lp-plan-feat">Audit mensuel automatique</div>
+        </div>
+        <div class="lp-plan-roi" style="background:linear-gradient(135deg,rgba(251,191,36,.12),rgba(251,191,36,.02));border-color:rgba(251,191,36,.3);color:var(--gold)">💎 Chaque mois, tu récupères plus que ce que ça coûte</div>
+        <button class="lp-plan-cta" onclick="selectPlan('premium')">Activer Premium</button>
+      </div>
+
+    </div>
+
+    <div class="lp-price-note">
+      <strong>✓ Sans engagement</strong> · Annulation en 1 clic · Données 100 % récupérables<br>
+      Tarif préférentiel garanti à vie pour les 100 premières inscrites.
+    </div>
+  </div>
+
+  <!-- ═══ CABINET B2B ═══ -->
+  <div id="lp-cabinet-sec" class="lp-cabinet">
+    <span class="lp-cab-badge">✦ Édition cabinet</span>
+    <div class="lp-cab-h">Tu diriges un cabinet ?<br><em>AMI pense cabinet par défaut.</em></div>
+    <p class="lp-cab-p">Les logiciels IDEL sont pensés pour une seule infirmière. AMI a été conçu dès le départ pour la coordination multi-IDE, avec le respect RGPD au cœur du modèle.</p>
+    <div class="lp-cab-grid">
+      <div class="lp-cab-feat"><strong>Sync sélective RGPD-safe</strong> — chaque IDE choisit quelles données elle partage et avec quels membres du cabinet.</div>
+      <div class="lp-cab-feat"><strong>Transmissions SOAP / DAR</strong> — horodatées, signées, avec niveau d'urgence et accusé de lecture.</div>
+      <div class="lp-cab-feat"><strong>BSI &amp; consentements partagés</strong> — versionnés, hash SHA-256, trace médico-légale complète.</div>
+      <div class="lp-cab-feat"><strong>Planning + répartition des tournées</strong> — vue globale, équilibrage charge, gestion congés.</div>
+      <div class="lp-cab-feat"><strong>KPI consolidés multi-IDE</strong> — CA par infirmière, performance, objectifs, forecast.</div>
+      <div class="lp-cab-feat"><strong>Audit &amp; conformité cabinet</strong> — scoring 4 piliers (NGAP, consentements, BSI, traçabilité).</div>
+    </div>
+    <div class="lp-cab-cta">
+      <button onclick="closeLanding()">🚀 Démarrer avec mon cabinet</button>
+      <button class="lp-cab-cta-secondary" onclick="window.location.href='mailto:contact@ami-ngap.fr?subject=Démo%20cabinet%20AMI'">✉ Demander une démo dédiée</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       🧑‍💼 EXPERTISE COMPTABLE SANTÉ — Section dédiée AMI Comptable
+       Cible : cabinets d'expertise comptable avec portefeuille IDEL
+       ════════════════════════════════════════════════════════════════ -->
+  <div id="lp-compta-sec" class="lp-compta">
+    <span class="lp-compta-badge">🧑‍💼 Édition expertise comptable santé</span>
+    <div class="lp-compta-h">Gérez 20 IDEL comme <em>1 seul dossier.</em><br>Sans erreur fiscale. Sans Excel. Sans perte de temps.</div>
+    <p class="lp-compta-p">
+      AMI Comptable automatise vos liasses 2035, détecte les risques CPAM en amont
+      et transforme votre portefeuille infirmier en machine rentable. Conçu pour
+      les cabinets d'expertise comptable santé qui veulent <strong>scaler sans recruter</strong>.
+    </p>
+
+    <!-- BLOC DOULEUR -->
+    <div class="lp-compta-pain">
+      <div class="lp-compta-pain-t">⚠ Vous perdez du temps là où vous devriez en gagner</div>
+      <ul>
+        <li>Retraitement Excel interminable pour chaque IDEL cliente</li>
+        <li>Risques CPAM invisibles jusqu'au contrôle (et là, c'est trop tard)</li>
+        <li>Dossiers hétérogènes, impossibles à standardiser à l'échelle</li>
+        <li>Liasses 2035 et 2042 répétitives qui pompent vos collaborateurs</li>
+        <li>Aucune vision globale du portefeuille en temps réel</li>
+      </ul>
+    </div>
+
+    <!-- BLOC BÉNÉFICES (8 features) -->
+    <div class="lp-compta-grid">
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">📊</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Pilotage 20 IDEL en un seul écran</strong>
+          CA, actes, anomalies et conformité — vision instantanée du portefeuille.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">📁</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Liasses 2035 en 1 clic</strong>
+          FEC normé DGFiP + liasse BNC pré-remplie. Plus aucun retraitement manuel.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">🧾</div>
+        <div class="lp-compta-feat-txt">
+          <strong>2042-C-PRO · URSSAF · CARPIMKO</strong>
+          Pré-remplissage automatique des déclarations sociales et fiscales par client.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">⚠️</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Risque CPAM anticipé</strong>
+          Scoring intelligent par cliente — détectez les anomalies AVANT le contrôle.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">🚨</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Anomalies NGAP en masse</strong>
+          Analyse batch sur tout le portefeuille. Erreurs détectées en 10 secondes.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">🔗</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Connecteurs Cegid · EBP · Quadra</strong>
+          Export direct vers les principaux logiciels comptables. Zéro retraitement.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">🔒</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Vue anonymisée RGPD-safe</strong>
+          Pseudo-FEC : aucune donnée patient exposée. Conforme art. 4.5 et 25 RGPD.
+        </div>
+      </div>
+      <div class="lp-compta-feat">
+        <div class="lp-compta-feat-ic">📈</div>
+        <div class="lp-compta-feat-txt">
+          <strong>Rapports trimestriels automatiques</strong>
+          Générés et prêts à envoyer à chaque cliente IDEL — chaque trimestre.
+        </div>
+      </div>
+    </div>
+
+    <!-- BLOC ROI CHIFFRÉ -->
+    <div class="lp-compta-roi">
+      <div class="lp-compta-roi-item">
+        <div class="lp-compta-roi-val">+6 à 10h</div>
+        <div class="lp-compta-roi-lbl">économisées / mois<br>par collaborateur</div>
+      </div>
+      <div class="lp-compta-roi-item">
+        <div class="lp-compta-roi-val">−80 %</div>
+        <div class="lp-compta-roi-lbl">d'erreurs fiscales<br>détectées en amont</div>
+      </div>
+      <div class="lp-compta-roi-item">
+        <div class="lp-compta-roi-val">×3</div>
+        <div class="lp-compta-roi-lbl">de capacité de traitement<br>sans recruter</div>
+      </div>
+      <div class="lp-compta-roi-item">
+        <div class="lp-compta-roi-val">0 €</div>
+        <div class="lp-compta-roi-lbl">de perte sur contrôle<br>CPAM anticipé</div>
+      </div>
+    </div>
+
+    <!-- PRICING INLINE -->
+    <div class="lp-compta-price">
+      <div class="lp-compta-price-amt">99 €<span> HT / mois</span></div>
+      <div class="lp-compta-price-sep"></div>
+      <div class="lp-compta-price-info">
+        <strong>20 IDEL incluses</strong>
+        +5 € HT par IDEL supplémentaire · Moins cher qu'1 heure de collaborateur
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="lp-compta-cta">
+      <button onclick="closeLanding()">🚀 Démarrer mon cabinet d'expertise</button>
+      <button class="lp-compta-cta-secondary" onclick="window.location.href='mailto:contact@ami-ngap.fr?subject=Démo%20AMI%20Comptable%20-%20cabinet%20d%27expertise%20santé&amp;body=Bonjour,%0A%0AJe souhaite voir AMI Comptable sur mon portefeuille IDEL actuel.%0A%0ANombre d%27IDEL au portefeuille : %0ALogiciel comptable utilisé : %0A%0AMerci.'">✉ Démo sur mon portefeuille</button>
+    </div>
+  </div>
+
+  <!-- ═══ FAQ ═══ -->
+  <div id="lp-faq-sec" class="lp-sec-label">❓ Questions fréquentes</div>
+  <div class="lp-sec-h2">Tout ce que tu veux <em>savoir</em></div>
+  <div class="lp-faq">
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">Est-ce que ça vaut vraiment le coup ?</summary>
+      <div class="lp-faq-a">Si AMI te fait récupérer ne serait-ce que <strong>200 €/mois</strong> en majorations oubliées et erreurs évitées, alors 49 € est un investissement, pas un coût. La plupart des IDE rentabilisent l'abonnement dès la première semaine.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">Est-ce compliqué à prendre en main ?</summary>
+      <div class="lp-faq-a">Non. Tu utilises AMI comme tu travailles déjà : tu décris tes soins, AMI s'occupe du reste. <strong>Aucune formation NGAP requise</strong>, l'IA t'assiste en permanence.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">AMI est-il compatible SESAM-Vitale et FSE ?</summary>
+      <div class="lp-faq-a">Oui. AMI génère les FSE (Feuilles de Soins Électroniques) conformes et s'intègre dans le workflow SESAM-Vitale. La cotation est poussée automatiquement après validation.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">Et si ça ne marche pas pour moi ?</summary>
+      <div class="lp-faq-a"><strong>Sans engagement, annulation en 1 clic.</strong> Tu peux exporter toutes tes données à tout moment (patients, cotations, preuves de soin, trésorerie) en JSON et CSV.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">Qu'en est-il de mes données patients ?</summary>
+      <div class="lp-faq-a">Les données de santé sont <strong>stockées exclusivement sur ton terminal</strong> (navigateur, IndexedDB chiffrée). Elles ne transitent jamais par nos serveurs. Chiffrement AES-256-GCM, conformité RGPD by design, architecture prête pour l'hébergement HDS.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">Est-ce que je peux l'utiliser en zone blanche ou sans réseau ?</summary>
+      <div class="lp-faq-a">Oui. AMI est une PWA complète avec <strong>mode hors-ligne natif</strong>. Tes cotations sont mises en file d'attente, les cartes sont téléchargées en cache, et la synchronisation se fait dès que le réseau revient.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">Puis-je migrer depuis mon logiciel actuel (Albus, Vega, Agathe YOU…) ?</summary>
+      <div class="lp-faq-a">Oui. AMI accepte les imports CSV/Excel du carnet patient. Pour les cabinets, un accompagnement migration dédié est inclus. Contacte-nous pour un audit gratuit.</div>
+    </details>
+    <details class="lp-faq-item">
+      <summary class="lp-faq-q">La cotation IA est-elle vraiment fiable ?</summary>
+      <div class="lp-faq-a">Le moteur est hybride : IA médicale + règles NGAP officielles 2026 + simulation CPAM + ML d'apprentissage. <strong>La validation finale revient toujours à l'IDE</strong> — AMI est une aide à la décision, jamais une automatisation totale. Chaque cotation est auditable.</div>
+    </details>
+  </div>
+
+  <!-- ═══ SÉCURITÉ ═══ -->
+  <div id="lp-security" class="lp-sec-rgpd">
+    <div class="lp-sec-label">🔒 Sécurité &amp; confidentialité — certifié RGPD</div>
+    <div class="lp-pill-row">
+      <span class="lp-pill">Données stockées sur ton appareil uniquement</span>
+      <span class="lp-pill">Chiffrement AES-256-GCM</span>
+      <span class="lp-pill">Mots de passe bcrypt</span>
+      <span class="lp-pill">HTTPS partout</span>
+      <span class="lp-pill">Consentement explicite</span>
+      <span class="lp-pill">Droit à l'effacement</span>
+      <span class="lp-pill">Export de tes données</span>
+      <span class="lp-pill">Logs d'accès tracés</span>
+      <span class="lp-pill">Architecture HDS-ready</span>
+      <span class="lp-pill">Notification CNIL &lt; 72 h</span>
+    </div>
+  </div>
+
+  <!-- ═══ CTA FINAL ═══ -->
+  <div class="lp-final">
+    <div class="lp-final-h">Tu veux continuer à perdre de l'argent…<br>ou commencer à en <em>récupérer</em> ?</div>
+    <div class="lp-final-sub">Arrête de subir la NGAP. Commence à l'exploiter. Aucune carte requise — résultats dès les premiers jours.</div>
+    <button class="lp-cta" onclick="closeLanding()">🚀 Essayer gratuitement maintenant</button>
+    <div class="lp-cta-sub" style="margin-top:14px">Sans engagement · Données 100 % privées</div>
+  </div>
+
+</div>
+
+<!-- Sticky CTA mobile -->
+<button class="lp-sticky-cta" onclick="closeLanding()">🚀 Essayer gratuitement</button>
+
+<script>
+// ═══ TOGGLE PREMIUM ═══
+function togglePremium(el){
+  const card = document.getElementById('lp-plan-premium');
+  if(el.checked){
+    card.classList.add('active');
+    setTimeout(() => card.scrollIntoView({behavior:'smooth',block:'center'}), 100);
+  } else {
+    card.classList.remove('active');
+  }
+}
+
+// ═══ SELECT PLAN (à brancher sur ton flow d'inscription) ═══
+function selectPlan(plan){
+  console.log('Plan sélectionné :', plan);
+  // → ouvrir auth + pré-sélectionner le plan
+  if(typeof closeLanding === 'function') closeLanding();
+}
+
+// ═══ STUB closeLanding (pour la démo standalone) ═══
+function closeLanding(){
+  console.log('closeLanding() appelée — branche sur ton handler existant');
+  alert('CTA cliqué. Dans ton app, closeLanding() ferme le lp-ov.');
+}
+
+// ═══ EXEMPLES SIMULATEUR — quick-prefill ═══
+document.querySelectorAll('.lp-sim-qp-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('lp-sim-input').value = btn.dataset.soin;
+    document.getElementById('lp-sim-input').focus();
+  });
+});
+
+// ═══ STUB SIMULATEUR (à remplacer par ton vrai moteur) ═══
+document.getElementById('lp-sim-run')?.addEventListener('click', () => {
+  const result = document.getElementById('lp-sim-result');
+  const out = document.getElementById('lp-sim-out');
+  const steps = document.querySelectorAll('.lp-sim-step');
+  result.style.display = 'block';
+  out.style.display = 'none';
+  steps.forEach(s => s.classList.remove('active'));
+
+  let i = 0;
+  const interval = setInterval(() => {
+    if(i < steps.length){
+      steps[i].classList.add('active');
+      i++;
+    } else {
+      clearInterval(interval);
+      out.style.display = 'block';
+      out.innerHTML = `
+        <div style="padding:14px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.25);border-radius:10px">
+          <div style="font-family:'DM Mono',monospace;font-size:11px;color:#00d4aa;letter-spacing:1.5px;margin-bottom:10px">RÉSULTAT</div>
+          <div style="color:#fff;font-size:14px;margin-bottom:8px">→ Branche ton vrai moteur de cotation ici</div>
+          <div style="color:#94a3b8;font-size:12.5px;line-height:1.55">Le simulateur affiche : actes détectés, majorations, total NGAP, IK, score de risque CPAM.</div>
+        </div>
+      `;
+    }
+  }, 450);
+});
+</script>
+
+</body>
+</html>
