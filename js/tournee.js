@@ -491,31 +491,8 @@ async function generatePlanningFromImport(){
   if(!APP.importedData){alert('Aucune donnée importée. Utilisez le Carnet patients ou l\'Import calendrier.');return;}
   const patients=APP.importedData.patients||APP.importedData.entries||[];
   if(!patients.length){alert('Aucun patient dans les données importées.');return;}
-
-  // ⚡ Figer la date des patients qui n'en ont pas AVANT le rendu.
-  // Sinon : `new Date(null)` = jeudi 1er janvier 1970 → renderPlanning
-  // colle silencieusement tous les patients sans date sur jeudi (donne
-  // l'illusion d'un "glissement quotidien"). _savePlanning fixe la date
-  // en localStorage mais ne mute pas APP.importedData → on doit
-  // réinjecter explicitement la version datée dans la source que
-  // renderPlanning consomme (_planningData puis importedData).
-  const _todayFixed = new Date().toISOString().split('T')[0];
-  const patientsFixed = patients.map(p =>
-    (p.date || p.date_soin || p.date_prevue)
-      ? p
-      : { ...p, date: _todayFixed, _dateFixed: true }
-  );
-  if (APP.importedData.patients) APP.importedData.patients = patientsFixed;
-  if (APP.importedData.entries)  APP.importedData.entries  = patientsFixed;
-  window.APP._planningData = {
-    patients: patientsFixed,
-    total:    patientsFixed.length,
-    source:   'planning_genere',
-  };
-  try { _savePlanning(patientsFixed); } catch {}
-
   // Construire un texte structuré depuis l'import
-  const txt=patientsFixed.map((p,i)=>{
+  const txt=patients.map((p,i)=>{
     // ⚡ Enrichir avant envoi IA — "Diabète" seul ne génère pas d'actes NGAP.
     // Avec l'enrichissement, l'IA reçoit "Injection insuline SC, surveillance
     // glycémie capillaire, éducation thérapeutique" et peut coter correctement.
@@ -671,11 +648,7 @@ async function renderPlanning(d){
     if (!p.date) return _planningWeekOffset === 0;
     try {
       const pd = new Date(p.date);
-      // ⚡ getTime()===0 : `new Date(null)` ou `new Date(0)` renvoient l'époque
-      // Unix (jeudi 01/01/1970) — pas une date invalide. Sans ce check, ces
-      // patients seraient considérés "1970" et exclus arbitrairement de la
-      // semaine. Cohérent avec le check du forEach plus bas.
-      if (isNaN(pd) || pd.getTime() === 0) return _planningWeekOffset === 0;
+      if (isNaN(pd)) return _planningWeekOffset === 0;
       return pd >= weekStart && pd <= weekEnd;
     } catch { return true; }
   });
@@ -691,20 +664,13 @@ async function renderPlanning(d){
 
   patientsToShow.forEach((p, listIdx) => {
     let jourKey = null;
-    // ⚡ Guard impératif : `new Date(null)` renvoie Thu Jan 01 1970 (jeudi),
-    // PAS une date invalide → sans ce check, tous les patients sans date
-    // sont silencieusement collés sur jeudi (et donnent l'illusion d'un
-    // "glissement" quand jeudi devient le jour courant).
-    // Le check `getTime()===0` couvre aussi `new Date(0)` et `new Date('')`.
-    if (p.date) {
-      try {
-        const pd = new Date(p.date);
-        if (!isNaN(pd) && pd.getTime() !== 0) {
-          const nomJour = pd.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
-          jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
-        }
-      } catch {}
-    }
+    try {
+      const pd = new Date(p.date);
+      if (!isNaN(pd)) {
+        const nomJour = pd.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
+        jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
+      }
+    } catch {}
     if (!jourKey) {
       const desc = (p.description || p.texte || '').toLowerCase();
       jourKey = JOURS.find(j => desc.includes(j)) || null;
@@ -989,10 +955,7 @@ async function renderPlanning(d){
       if (p.date) {
         try {
           const pd = new Date(p.date);
-          // ⚡ Check epoch (jeudi 01/01/1970) : aligné sur le forEach
-          // principal de renderPlanning pour éviter les divergences entre
-          // vue solo et vue cabinet sur les patients sans date réelle.
-          if (!isNaN(pd) && pd.getTime() !== 0) {
+          if (!isNaN(pd)) {
             const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
             return JOURS.find(jj => nj.startsWith(jj)) || null;
           }
@@ -3168,8 +3131,23 @@ function autoCotationLocale(texte) {
   if (/injection|insuline|piquer|hbpm|lovenox|fragmine|anticoagul|sc|im/.test(t)) {
     actes.push({ code:'AMI1', nom:'Injection SC/IM', total:3.15 }); total += 3.15;
   }
-  if (/perfusion|perf|intraveineux|iv|antibio|chimio/.test(t)) {
-    actes.push({ code:'AMI5', nom:'Perfusion à domicile', total:15.75 }); total += 15.75;
+  if (/perfusion|baxter|chambre implantable|\bpicc\b|midline|diffuseur|perf\b|intraveineux|iv\b|antibio|chimio/.test(t)) {
+    const _isCancerCtx = /cancer|canc[éé]reux|chimio|immunod[eé]prim|mucoviscidose/.test(t);
+    const _isRetrait   = /(retrait|retir[eé])\s+(d[eé]finiti|du\s+dispositif|de\s+(la\s+)?(picc|midline|chambre|perfusion))|d[eé]branchement\s+d[eé]finiti|fin\s+de\s+(traitement|chimio|perfusion)/.test(t);
+    const _is2ePassage = /(changement\s+(?:de\s+)?flacon|rebranche|rebranchement|2\s*[èe]?me?\s+perfusion|deuxi[èe]me\s+perfusion|branchement\s+en\s+y|changement\s+de\s+baxter)/.test(t);
+    const _isCourte    = /(perfusion\s+courte|perfusion\s+[≤<=]\s*1\s*h|perfusion\s+(30|45|60)\s*min|perfusion\s+d['eu]?\s*(une?\s+)?demi\s*[-\s]?heure|perfusion\s+inf[eé]rieure?\s+[aà]\s+(une?\s+heure|1\s*h))/.test(t);
+
+    if (_isRetrait) {
+      actes.push({ code:'AMI5', nom:'Retrait définitif dispositif ≥24h', total:15.75 }); total += 15.75;
+    } else if (_is2ePassage) {
+      actes.push({ code:'AMI4_1', nom:'Changement flacon / 2e branchement même jour', total:6.30 }); total += 6.30;
+    } else if (_isCourte) {
+      if (_isCancerCtx) { actes.push({ code:'AMI10', nom:'Perfusion courte ≤1h — immunodéprimé/cancéreux', total:31.50 }); total += 31.50; }
+      else              { actes.push({ code:'AMI9',  nom:'Perfusion courte ≤1h sous surveillance', total:28.35 }); total += 28.35; }
+    } else {
+      if (_isCancerCtx) { actes.push({ code:'AMI15', nom:'Forfait perfusion longue — immunodéprimé/cancéreux (1x/jour)', total:47.25 }); total += 47.25; }
+      else              { actes.push({ code:'AMI14', nom:'Forfait perfusion longue >1h (1x/jour)', total:44.10 }); total += 44.10; }
+    }
   } else if (/pansement.*(complexe|escarre|n[eé]crose|chirurgical|plaie)|escarre|ulc[eè]re|d[eé]tersion/.test(t)) {
     actes.push({ code:'AMI4', nom:'Pansement complexe', total:12.60 }); total += 12.60;
   } else if (/pansement|plaie/.test(t)) {
@@ -4197,11 +4175,17 @@ function _renderCotModal(patient, cotationOriginal) {
   const heureIsReelle = !!heureReelle;
   const desc  = (patient.description || patient.texte || 'Soin infirmier').slice(0, 100);
 
-  /* Catalogue d'actes courants pour ajout rapide — Tarifs NGAP 2026 */
+  /* Catalogue d'actes courants pour ajout rapide — Tarifs NGAP 2026 (CIR-9/2025) */
   const ACTES_RAPIDES = [
     { code:'AMI1',      nom:'Soin infirmier',         total: 3.15 },
     { code:'AMI2',      nom:'Acte infirmier ×2',      total: 6.30 },
     { code:'AMI4',      nom:'Pansement complexe',     total:12.60 },
+    { code:'AMI4_1',    nom:'Changement flacon / 2e perf. même jour', total: 6.30 },
+    { code:'AMI5',      nom:'Retrait définitif dispositif ≥24h',      total:15.75 },
+    { code:'AMI9',      nom:'Perfusion courte ≤1h surveillance',      total:28.35 },
+    { code:'AMI10',     nom:'Perfusion courte — cancer/immunodépr.',  total:31.50 },
+    { code:'AMI14',     nom:'Forfait perfusion longue >1h (1x/jour)', total:44.10 },
+    { code:'AMI15',     nom:'Forfait perfusion — cancer/immunodépr.', total:47.25 },
     { code:'BSA',       nom:'Bilan soins A (dép. légère)',   total:13.00 },
     { code:'BSB',       nom:'Bilan soins B (dép. modérée)',  total:18.20 },
     { code:'BSC',       nom:'Bilan soins C (dép. lourde)',   total:28.70 },

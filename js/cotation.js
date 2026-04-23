@@ -48,8 +48,19 @@ const _COT_NLP_PATTERNS = [
   { rx: /intraveineuse|ivd|iv directe/i,                                code:'AMI2', label:'Injection IV directe', group:'acte' },
   { rx: /injection|insuline|anticoagulant|héparine|fragmine|lovenox|piqûre/i, code:'AMI1', label:'Injection SC/IM', group:'acte' },
   { rx: /prélèvement|prise de sang|bilan sanguin/i,                     code:'AMI1', label:'Prélèvement veineux', group:'acte' },
-  { rx: /perfusion.*(?:>|plus d[eu]|longue|>1h)/i,                     code:'AMI6', label:'Perfusion longue >1h', group:'acte' },
-  { rx: /perfusion|perf\b/i,                                            code:'AMI5', label:'Perfusion', group:'acte' },
+  // Perfusions — CIR-9/2025 (applicable depuis 25/06/2025)
+  { rx: /(retrait|retir[eé])\s+(d[eé]finiti|du\s+dispositif|de\s+(la\s+)?(picc|midline|chambre|perfusion))|d[eé]branchement\s+d[eé]finiti/i,
+    code:'AMI5',   label:'Retrait définitif dispositif ≥24h', group:'acte' },
+  { rx: /(changement\s+(?:de\s+)?flacon|rebranche(ment)?|2\s*[èe]?me?\s+perfusion|deuxi[èe]me\s+perfusion|branchement\s+en\s+y)/i,
+    code:'AMI4_1', label:'Changement flacon / 2e branchement même jour', group:'acte' },
+  { rx: /perfusion.*(?:cancer|canc[ée]reux|chimio|immunod[eé]prim|mucoviscidose)|(?:cancer|canc[ée]reux|chimio|immunod[eé]prim|mucoviscidose).*perfusion/i,
+    code:'AMI15',  label:'Forfait perfusion longue — immunodéprimé/cancéreux (1x/jour)', group:'acte' },
+  { rx: /perfusion.*(?:courte|≤\s*1\s*h|<\s*1\s*h|30\s*min|45\s*min|60\s*min|surveillance\s+continue|inf[eé]rieure?\s+[aà]\s+1\s*h)/i,
+    code:'AMI9',   label:'Perfusion courte ≤1h sous surveillance', group:'acte' },
+  { rx: /perfusion.*(?:12\s*h|24\s*h|longue|>\s*1\s*h|plus d[eu]?\s*une\s+heure|baxter|chambre\s+implantable)|baxter|chambre\s+implantable|\bpicc\b|midline|diffuseur/i,
+    code:'AMI14',  label:'Forfait perfusion longue >1h (1x/jour)', group:'acte' },
+  { rx: /perfusion|perf\b/i,
+    code:'AMI14',  label:'Forfait perfusion longue (1x/jour)', group:'acte' },
   { rx: /pansement.*(?:complexe|escarre|nécrose|chirurgical|post.op|ulcère)/i, code:'AMI4', label:'Pansement complexe', group:'acte' },
   { rx: /pansement|plaie/i,                                             code:'AMI1', label:'Pansement simple', group:'acte' },
   { rx: /ecg|électrocardiogramme/i,                                     code:'AMI3', label:'ECG', group:'acte' },
@@ -606,13 +617,8 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     } else if (!_editRef || _isForceNew) {
       // Pas de _editRef OU choix explicite "Nouvelle cotation" → push
       _pat.cotations.push(_newCot);
-    } else if (_editRef?._forceAttachToPatient) {
-      // Patient existant + mode édition explicite (✏️ Historique) mais
-      // cotation absente du cotations[] local — ré-attache au patient connu
-      _pat.cotations.push(_newCot);
     }
-    // Sinon (_editRef avec cotationIdx/invoice_number mais pas d'index ET
-    // pas de _forceAttachToPatient) → ne rien faire (évite doublons)
+    // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite doublons)
 
     _pat.updated_at = new Date().toISOString();
     const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
@@ -1232,16 +1238,8 @@ async function _cotationPipeline() {
           } else if (!_editRef || _isForceNewSolo) {
             // Pas en mode édition OU choix explicite "Nouvelle cotation" → push
             _pat.cotations.push(_newCot);
-          } else if (_editRef?._forceAttachToPatient) {
-            // Patient existant + mode édition explicite (✏️ depuis Historique)
-            // mais cotation introuvable dans cotations[] (IDB fraîchement
-            // synchronisée côté admin, ou cotation créée par un autre device).
-            // → ré-attacher la cotation au patient connu (PAS de fiche fantôme,
-            //   le patient existe vraiment dans l'IDB).
-            _pat.cotations.push(_newCot);
           }
-          // Sinon (_editRef avec cotationIdx/invoice_number mais pas d'index
-          // trouvé ET pas de _forceAttachToPatient) → ne rien faire (évite les doublons)
+          // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite les doublons)
 
           _pat.updated_at = new Date().toISOString();
           const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
