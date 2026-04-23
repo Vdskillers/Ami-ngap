@@ -822,6 +822,7 @@
       <button class="adm-tab-btn"    data-tab="stats"    onclick="admTab('stats')"    style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">📊 Statistiques</button>
       <button class="adm-tab-btn"    data-tab="logs"     onclick="admTab('logs')"     style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🔍 Logs d'audit</button>
       <button class="adm-tab-btn"    data-tab="sante"    onclick="admTab('sante')"    style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🖥️ Santé système</button>
+      <button class="adm-tab-btn"    data-tab="ngap"     onclick="admTab('ngap')"     style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">⚖️ NGAP</button>
       <button class="adm-tab-btn"    data-tab="messages" onclick="admTab('messages')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">💬 Messages <span id="adm-msg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></button>
     </div>
 
@@ -953,6 +954,13 @@
       </div>
       <div id="adm-system-logs-body" style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;max-height:360px;overflow-y:auto;font-family:var(--fm)">
         <div class="ai in">Cliquez sur ↻ pour charger les logs système.</div>
+      </div>
+    </div>
+
+    <!-- ═══ ONGLET : NGAP (Modification du référentiel) ═══ -->
+    <div class="adm-tab-section" data-tab="ngap" style="display:none">
+      <div id="adm-ngap-root">
+        <div class="ai in">Chargement du module NGAP…</div>
       </div>
     </div>
 
@@ -3145,6 +3153,7 @@
 <script src="js/cabinet.js?v=3.9"></script><!-- Mode cabinet multi-IDE + sync sélective + 🛡️ consentements partagés -->
 <script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js?v=3.8"></script>
+<script src="js/admin-ngap.js?v=1.0"></script><!-- ⚖️ Édition référentiel NGAP (admin, versioning, rollback) -->
 <script src="js/profil.js?v=3.9"></script>
 <script src="js/cotation.js?v=3.9"></script><!-- ⚡ v3.9 : hook check consentement avant acte -->
 <script src="js/contact.js?v=3.8"></script>
@@ -3201,11 +3210,12 @@
 
 <!-- ⚡ Chargement asynchrone du référentiel NGAP (source de vérité unique) -->
 <!-- Exposé via window.NGAP_REFERENTIEL — utilisé par cotation.js, tournee.js, ngap-analyzer.js -->
+<!-- Chemin repo GitHub : Ami-ngap/ngap-engine/ngap_referentiel_2026.json -->
 <script>
 (function loadNGAPRef() {
   if (window.NGAP_REFERENTIEL) return; // déjà chargé
-  // ⚡ Tentative 1 : endpoint worker (source embarquée dans worker.js)
-  fetch('/api/ngap/referentiel', { cache: 'force-cache' })
+  // Chemin relatif robuste : fonctionne sur GitHub Pages (/Ami-ngap/) et en dev local
+  fetch('ngap-engine/ngap_referentiel_2026.json', { cache: 'force-cache' })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(data => {
       if (data && (data.actes_chapitre_I || data.version)) {
@@ -3214,21 +3224,10 @@
         if (window.console && console.info) console.info('[NGAP] Référentiel chargé :', data.version || 'inconnu');
       }
     })
-    .catch(e => {
-      // ⚡ Tentative 2 : fichier statique à la racine
-      fetch('/ngap_referentiel_2026.json', { cache: 'force-cache' })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data) {
-            window.NGAP_REFERENTIEL = data;
-            document.dispatchEvent(new CustomEvent('ngap:ref_loaded', { detail: { version: data.version } }));
-          }
-        })
-        .catch(() => {
-          // Non bloquant : les modules fonctionnent via le worker côté serveur,
-          // cotation.js/tournee.js utilisent window.NGAP_REFERENTIEL en enrichissement
-          if (window.console && console.warn) console.warn('[NGAP] Référentiel non chargé côté front — fallback serveur actif.');
-        });
+    .catch(() => {
+      // Non bloquant : les modules back (worker) continuent de fonctionner sans le référentiel côté client.
+      // Seules les fonctionnalités d'enrichissement front (suggestions live, analyzer) sont affectées.
+      if (window.console && console.warn) console.warn('[NGAP] Référentiel non chargé côté front — fonctionnalités serveur actives.');
     });
 })();
 </script>

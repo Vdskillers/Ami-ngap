@@ -47,6 +47,7 @@ function admTab(tab) {
   if (tab === 'logs')     { loadAdmLogs(); }
   if (tab === 'sante')    { loadSystemHealth(); }
   if (tab === 'messages') { loadAdmMessages(); }
+  if (tab === 'ngap')     { if (typeof admNgapLoad === 'function') admNgapLoad(); }
 }
 
 /* ════════════════════════════════════════════════
