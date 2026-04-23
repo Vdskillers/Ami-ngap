@@ -1250,6 +1250,17 @@
         <!-- Bannière RGPD -->
         <div class="priv" id="priv-cot"><span style="font-size:16px;flex-shrink:0;margin-top:1px">⚠️</span><p><strong>Données protégées :</strong> Nom, Prénom, N° Sécu ne sont <em>jamais</em> transmis à l'IA ni aux admins.</p></div>
 
+        <!-- ══ Bannière lien vers Référentiel NGAP + suggestion ══ -->
+        <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;margin:10px 0 16px;background:linear-gradient(135deg,rgba(79,168,255,.06),rgba(0,212,170,.03));border:1px solid rgba(79,168,255,.25);border-radius:10px">
+          <span style="font-size:20px;flex-shrink:0;line-height:1.2">📚</span>
+          <div style="flex:1;min-width:0;font-size:13px;color:var(--t);line-height:1.5">
+            Consultez le <a href="#" onclick="navTo('ngap-ref',null);return false;" style="color:#4fa8ff;font-weight:600;text-decoration:none;border-bottom:1px dashed rgba(79,168,255,.5)">Référentiel NGAP 2026</a> pour vérifier un code, un tarif ou une règle de cumul.
+            <div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--b);font-size:12px;color:var(--m)">
+              💡 Une valeur vous semble erronée ou une règle manque ? <a href="#" onclick="navTo('ngap-ref',null);setTimeout(()=>{const el=document.getElementById('ngap-sugg-input');if(el){el.focus();el.scrollIntoView({behavior:'smooth',block:'center'});}},400);return false;" style="color:#00d4aa;font-weight:600;text-decoration:none;border-bottom:1px dashed rgba(0,212,170,.5)">Proposez une amélioration</a> — l'admin l'examinera et pourra la valider.
+            </div>
+          </div>
+        </div>
+
         <!-- ══ SECTION 1 : PRESCRIPTEUR ══ -->
         <div class="cot-section-header">
           <div class="cot-section-icon">👨‍⚕️</div>
