@@ -136,6 +136,9 @@ function _admInjectNgapButton() {
     <button class="btn bs bsm" onclick="admOpenNgapAnomalies()" title="Détecte les anomalies dans le référentiel NGAP">
       🔍 Vérifier référentiel
     </button>
+    <button id="adm-ngap-autocorrect-btn" class="btn bp bsm" onclick="admAutoCorrectSuggestions()" title="Envoie les suggestions de correction aux infirmières concernées via leur messagerie" style="display:none;background:linear-gradient(135deg,#00d4aa,#10b981);color:#fff">
+      🔧 Corriger automatiquement
+    </button>
     <span style="font-size:11px;color:var(--m)">Données anonymisées · lecture seule · audit-safe</span>
   `;
   host.parentElement?.appendChild(wrap);
@@ -150,6 +153,9 @@ function _admInjectNgapButton() {
 }
 
 /* Lance l'analyse des cotations réelles */
+// ⚠️ On garde les détails de la dernière analyse en mémoire pour alimenter la correction auto
+window._ADM_NGAP_LAST_ANALYSIS = null;
+
 async function admOpenNgapAnalysis() {
   const res = document.getElementById('adm-ngap-result');
   if (!res) return;
@@ -157,8 +163,29 @@ async function admOpenNgapAnalysis() {
     res.innerHTML = '<div class="ai er">⚠️ Module NGAPAnalyzer non chargé.</div>';
     return;
   }
-  // Délègue à ngap-analyzer.js qui gère le rendu complet
+  // Délègue à ngap-analyzer.js qui gère le rendu complet (utilise la route /webhook/admin-ngap-analyze-real)
   await NGAPAnalyzer.runRealLossAnalysis('adm-ngap-result');
+
+  // Rappel direct de la route pour stocker les détails (ngap-analyzer fait un appel, mais ne stocke pas le JSON brut)
+  try {
+    if (typeof wpost === 'function') {
+      const d = await wpost('/webhook/admin-ngap-analyze-real', {});
+      if (d && d.ok && Array.isArray(d.details) && d.details.length > 0) {
+        window._ADM_NGAP_LAST_ANALYSIS = d;
+        // Afficher le bouton correction auto (gain > 0 seulement)
+        const gainPositif = d.details.filter(x => (x.perte || 0) > 0).length;
+        const autoBtn = document.getElementById('adm-ngap-autocorrect-btn');
+        if (autoBtn && gainPositif > 0) {
+          autoBtn.style.display = '';
+          autoBtn.title = `Envoyer ${gainPositif} suggestion(s) de correction aux infirmières concernées`;
+        }
+      } else {
+        // Rien à corriger — cacher le bouton
+        const autoBtn = document.getElementById('adm-ngap-autocorrect-btn');
+        if (autoBtn) autoBtn.style.display = 'none';
+      }
+    }
+  } catch(e) { console.warn('[adm-ngap] load details KO:', e.message); }
 
   // Attacher handlers pour les éventuels boutons "Appliquer fix" générés
   res.querySelectorAll('[data-ngap-fix]').forEach(btn => {
@@ -172,6 +199,80 @@ async function admOpenNgapAnalysis() {
       } catch(e) { console.warn('[NGAP] Fix parse KO:', e.message); }
     });
   });
+}
+
+/* Envoie les suggestions de correction aux infirmières via la messagerie */
+async function admAutoCorrectSuggestions() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+
+  const last = window._ADM_NGAP_LAST_ANALYSIS;
+  if (!last || !Array.isArray(last.details) || last.details.length === 0) {
+    if (typeof showToast === 'function') showToast('warning', 'Aucune analyse', 'Lance d\'abord "💸 Analyse pertes NGAP".');
+    return;
+  }
+
+  // Filtrer aux gains positifs (pas de sur-cotations à "corriger")
+  const gains = last.details.filter(d => (d.perte || 0) > 0);
+  if (!gains.length) {
+    if (typeof showToast === 'function') showToast('info', 'Rien à envoyer', 'Aucune cotation avec gain potentiel détectée.');
+    return;
+  }
+
+  const nurses = new Set(gains.map(d => d.infirmiere_id)).size;
+  const gainTotal = gains.reduce((s,d) => s + (d.perte || 0), 0);
+  const ok = confirm(
+    `Envoyer ${gains.length} suggestion(s) de correction à ${nurses} infirmière(s) concernée(s) ?\n\n` +
+    `Gain cumulé potentiel : +${gainTotal.toFixed(2)} €\n\n` +
+    `Les infirmières recevront un message dans leur messagerie avec les codes actuels, suggérés et le gain. Elles choisissent d'accepter ou de refuser.\n\n` +
+    `Aucune donnée patient n'est transmise.`
+  );
+  if (!ok) return;
+
+  // Loader
+  const btn = document.getElementById('adm-ngap-autocorrect-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Envoi en cours…'; }
+
+  try {
+    const resp = await wpost('/webhook/admin-ngap-auto-correct', { details: gains });
+    if (!resp || !resp.ok) throw new Error(resp?.error || 'Envoi impossible');
+
+    const summary = Array.isArray(resp.summary) ? resp.summary : [];
+    // Append un bloc résumé au résultat existant
+    const summaryHtml = `
+      <div class="card" style="margin-top:16px;padding:16px;background:linear-gradient(135deg,rgba(0,212,170,.08),transparent);border:1px solid rgba(0,212,170,.3)">
+        <div style="font-size:13px;font-weight:700;color:#00d4aa;margin-bottom:8px">
+          ✅ ${resp.total_suggestions} suggestion(s) envoyée(s) à ${resp.nurses_notified} infirmière(s)
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-bottom:12px">
+          Gain cumulé potentiel : <strong style="color:#00d4aa">+${(resp.total_gain||0).toFixed(2)} €</strong>
+          · Les infirmières décident d'accepter ou non les corrections.
+        </div>
+        ${summary.length ? `
+          <div style="max-height:280px;overflow-y:auto;border:1px solid var(--b);border-radius:8px">
+            ${summary.map(s => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--b);font-size:12px">
+                <span><strong>${_escAdm(s.prenom || '')} ${_escAdm(s.nom || '')}</strong></span>
+                <span style="color:var(--m);font-family:var(--fm)">${s.count} suggestion(s) · <strong style="color:#00d4aa">+${(s.gain_total||0).toFixed(2)} €</strong></span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+    res.insertAdjacentHTML('beforeend', summaryHtml);
+
+    if (btn) {
+      btn.style.background = 'var(--ad,#0f172a)';
+      btn.innerHTML = '✅ Envoyé';
+      btn.disabled = true;
+    }
+    if (typeof showToast === 'function') showToast('success', 'Suggestions envoyées', `${resp.total_suggestions} message(s) · ${resp.nurses_notified} infirmière(s)`);
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '🔧 Corriger automatiquement'; }
+    if (typeof showToast === 'function') showToast('error', 'Envoi KO', e.message || 'Erreur inattendue');
+    console.warn('[admAutoCorrect]', e);
+  }
 }
 
 /* Affiche les anomalies détectées dans le référentiel */

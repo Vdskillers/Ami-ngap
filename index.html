@@ -1244,7 +1244,10 @@
 
       <div class="card cot-form-premium">
 
-        <!-- Notice admin -->
+        <!-- Container badge suggestions NGAP (rempli dynamiquement par ngap-correction-hints.js, vide par défaut) -->
+      <div id="ngap-hints-badge" class="nurse-only"></div>
+
+      <!-- Notice admin -->
         <div id="admin-cot-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — test fonctionnel</strong> · Vous saisissez vos propres données de test · Les données des infirmières sont inaccessibles.</div>
 
         <!-- Bannière RGPD -->
@@ -3266,6 +3269,8 @@
 <script src="js/ngap-analyzer.js?v=1.0"></script>
 <script src="js/ngap-suggest.js?v=1.0"></script><!-- 💡 Suggestions infirmière → admin -->
 <script src="js/ngap-ref-explorer.js?v=1.0"></script><!-- 📚 Explorateur complet du référentiel NGAP -->
+<script src="js/ngap-correction-hints.js?v=1.0"></script><!-- 💡 Badge suggestions AMI côté infirmière -->
+<script src="js/notif-messages.js?v=1.0"></script><!-- 🔔 Panneau notifications enrichi -->
 
 <!-- ⚡ Chargement asynchrone du référentiel NGAP (source de vérité unique) -->
 <!-- Exposé via window.NGAP_REFERENTIEL — utilisé par cotation.js, tournee.js, ngap-analyzer.js -->

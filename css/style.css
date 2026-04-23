@@ -598,7 +598,11 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .top-sep{ display:none !important; }
   #top-sync-status{ display:none !important; }
   .top-search-btn{ display:none !important; }
-  #top-notif-btn{ display:none !important; }
+  /* Cloche notifications visible en mobile, compactée dans le header */
+  #top-notif-btn{
+    width:34px !important;height:34px !important;font-size:15px !important;
+    flex-shrink:0;
+  }
   .tr{gap:5px}
   .bout{font-size:10px;padding:4px 10px}
   .buser{font-size:10px;padding:4px 10px}
