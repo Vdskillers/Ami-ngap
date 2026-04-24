@@ -1983,6 +1983,28 @@ async function coterDepuisPatient(id) {
     const fAmc= $('f-amc'); if(fAmc && p.amc) fAmc.value = p.amc;
     const fExo= $('f-exo'); if(fExo && p.exo) fExo.value = p.exo;
     const fPr = $('f-pr'); if(fPr && p.medecin) fPr.value = p.medecin;
+
+    // ── Date et heure du soin : pré-remplir avec les valeurs courantes ────
+    // Si on est en mode édition d'une cotation existante (_editingCotation posé
+    // ci-dessus), reprendre la date/heure de l'ancienne cotation. Sinon → maintenant.
+    const fDs = $('f-ds');
+    const fHs = $('f-hs');
+    const _editRef = window._editingCotation;
+    const _existCotForDate = (_editRef && _editRef._fromPatient && Array.isArray(p.cotations))
+      ? p.cotations[_editRef.cotationIdx] : null;
+    if (fDs && !fDs.value) {
+      fDs.value = (_existCotForDate?.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    }
+    if (fHs && !fHs.value) {
+      const _heureExist = (_existCotForDate?.heure || '').trim().slice(0, 5);
+      if (_heureExist && /^\d{1,2}:\d{2}$/.test(_heureExist)) {
+        fHs.value = _heureExist;
+      } else {
+        const _now = new Date();
+        fHs.value = String(_now.getHours()).padStart(2,'0') + ':' + String(_now.getMinutes()).padStart(2,'0');
+      }
+    }
+
     // Pré-remplir la description : actes_recurrents en priorité,
     // sinon pathologies converties en actes NGAP applicables
     const fTxt = $('f-txt');

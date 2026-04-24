@@ -1230,6 +1230,11 @@ async function _cotationPipeline() {
     const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
     const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
 
+    // Si on est passé par le FAB « Re-coter avec les ajouts », on force N8N :
+    // l'utilisateur a explicitement cliqué pour AVOIR une vraie correction IA,
+    // pas un fallback local.
+    const _viaFab = !!window._cotFromReCoteFAB;
+
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
@@ -1248,6 +1253,8 @@ async function _cotationPipeline() {
       ...(_prePatientId ? { patient_id: _prePatientId } : {}),
       // invoice_number existant → le worker fera un PATCH au lieu d'un POST
       ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
+      // Drapeau FAB : force N8N (bypass cache / circuit breaker / fallback worker)
+      ...(_viaFab ? { _force_n8n: true, _from_fab: true } : {}),
       // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
       preuve_soin: {
         type:         _preuveType,
@@ -1685,13 +1692,9 @@ function _cotHideReCoteBar() {
    Appelé quand N8N renvoie 0 acte technique (cold start, texte sans verbe…).
    ═══════════════════════════════════════════════════════════════════════════ */
 function _cotEnrichWithLocalEngine(d, txt) {
-  // Pré-conditions : moteur + référentiel chargés
+  // Pré-conditions : moteur + référentiel chargés (de préférence)
   const Engine = window.NGAPEngine || (typeof NGAPEngine !== 'undefined' ? NGAPEngine : null);
   const ref    = window.NGAP_REFERENTIEL;
-  if (!Engine || !ref) {
-    console.warn('[cotation] NGAPEngine ou référentiel non chargé → pas de fallback local');
-    return null;
-  }
 
   // Extraire tous les codes du textarea (codes seuls + combos AMI4 + MCI)
   const chips = _cotExtractNgapChips(txt || '');
@@ -1714,42 +1717,129 @@ function _cotEnrichWithLocalEngine(d, txt) {
   }
   if (!codes.length) return null;
 
-  // Appel du moteur local
-  try {
-    const engine = new Engine(ref);
-    const result = engine.compute({
-      codes,
-      date_soin:  gv('f-ds') || new Date().toISOString().slice(0,10),
-      heure_soin: gv('f-hs') || '',
-      mode:       'permissif', // tolérant pour ne pas bloquer
-    });
-    if (!result || !result.ok || !Array.isArray(result.actes_finaux) || !result.actes_finaux.length) {
-      return null;
+  // ── Cas 1 : moteur déclaratif chargé → l'utiliser ──────────────────────
+  if (Engine && ref) {
+    try {
+      const engine = new Engine(ref);
+      const result = engine.compute({
+        codes,
+        date_soin:  gv('f-ds') || new Date().toISOString().slice(0,10),
+        heure_soin: gv('f-hs') || '',
+        mode:       'permissif', // tolérant pour ne pas bloquer
+      });
+      if (result && result.ok && Array.isArray(result.actes_finaux) && result.actes_finaux.length) {
+        const actes = result.actes_finaux.map(a => ({
+          code:        a.code || a.code_facturation || '?',
+          nom:         a.nom || a.libelle || '',
+          coefficient: a.coefficient || 1,
+          total:       parseFloat(a.tarif || a.total || 0),
+          description: a.description || '',
+        }));
+        const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
+        const pAmo  = parseFloat(d.part_amo) || (total * 0.60);
+        const pAmc  = parseFloat(d.part_amc) || 0;
+        const pPat  = parseFloat(d.part_patient) || (total - pAmo - pAmc);
+        return {
+          actes,
+          total:        +total.toFixed(2),
+          part_amo:     +pAmo.toFixed(2),
+          part_amc:     +pAmc.toFixed(2),
+          part_patient: +pPat.toFixed(2),
+        };
+      }
+    } catch (e) {
+      console.warn('[cotation] NGAPEngine.compute KO → fallback minimal:', e.message);
     }
-    // Adapter le format au schéma attendu par renderCot
-    const actes = result.actes_finaux.map(a => ({
-      code:        a.code || a.code_facturation || '?',
-      nom:         a.nom || a.libelle || '',
-      coefficient: a.coefficient || 1,
-      total:       parseFloat(a.tarif || a.total || 0),
-      description: a.description || '',
-    }));
-    const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
-    // Préserver la part patient si renseignée par d ; sinon répartition par défaut 60/40
-    const pAmo  = parseFloat(d.part_amo) || (total * 0.60);
-    const pAmc  = parseFloat(d.part_amc) || 0;
-    const pPat  = parseFloat(d.part_patient) || (total - pAmo - pAmc);
-    return {
-      actes,
-      total:        +total.toFixed(2),
-      part_amo:     +pAmo.toFixed(2),
-      part_amc:     +pAmc.toFixed(2),
-      part_patient: +pPat.toFixed(2),
-    };
-  } catch (e) {
-    console.warn('[cotation] NGAPEngine.compute KO:', e.message);
+  }
+
+  // ── Cas 2 : fallback minimal — utilise juste _COT_TARIFS ─────────────────
+  // Marche même si NGAPEngine n'est pas chargé. Pas de gestion fine des
+  // cumuls interdits, mais permet d'avoir une cotation visible et chiffrée
+  // au lieu d'« aucun acte détecté ».
+  return _cotMinimalLocalCalc(codes, d);
+}
+
+/* Fallback minimal : calcule une cotation à partir des codes extraits en
+   utilisant uniquement la table _COT_TARIFS (toujours disponible).
+   Applique les actes au tarif officiel et somme. Aucune règle de cumul. */
+function _cotMinimalLocalCalc(codes, d) {
+  // Récupérer la table des tarifs (déjà construite au chargement)
+  const tarifs = (typeof _COT_TARIFS !== 'undefined' && _COT_TARIFS)
+    ? _COT_TARIFS
+    : (typeof _buildCotTarifs === 'function' ? _buildCotTarifs() : null);
+  if (!tarifs) {
+    console.warn('[cotation] _COT_TARIFS indisponible → pas de fallback minimal');
     return null;
   }
+  // Libellés courants (fallback texte si non fournis)
+  const libelles = {
+    AMI1:  'Acte technique AMI 1',
+    AMI2:  'Acte technique AMI 2',
+    AMI3:  'Acte technique AMI 3',
+    AMI4:  'Pansement complexe / acte AMI 4',
+    'AMI4.1': 'Pansement complexe (2ème passage)',
+    AMI5:  'Acte AMI 5',
+    AMI9:  'Perfusion courte (≤1h)',
+    AMI10: 'Acte AMI 10',
+    AMI14: 'Forfait perfusion >1h avec organisation surveillance',
+    AMI15: 'Perfusion >1h avec surveillance continue',
+    BSA:   'BSI Bilan Soins Infirmiers (autonome)',
+    BSB:   'BSI Bilan Soins Infirmiers (légère perte)',
+    BSC:   'BSI Bilan Soins Infirmiers (lourde perte)',
+    MCI:   'Majoration coordination infirmière',
+    MIE:   'Majoration enfant <7 ans',
+    IFD:   'Indemnité forfaitaire de déplacement',
+    IFI:   'Indemnité forfaitaire infirmier',
+    NUIT:  'Majoration nuit (20h-23h / 5h-8h)',
+    NUIT_PROF: 'Majoration nuit profonde (23h-5h)',
+    DIM:   'Majoration dimanche / férié',
+    DI:    'Démarche infirmière',
+  };
+
+  const actes = [];
+  const seen = new Set();
+  for (const c of codes) {
+    const code = String(c.code || '').toUpperCase();
+    if (!code) continue;
+    // Dédoublonnage simple (pas le même code 2x)
+    if (seen.has(code)) continue;
+    seen.add(code);
+    // Lookup tarif : essai direct, puis variantes (point/underscore)
+    let tarif = tarifs[code]
+             || tarifs[code.replace('.', '_')]
+             || tarifs[code.replace('_', '.')]
+             || tarifs[code.replace('/', '_')];
+    // Variante AMI14/15 : on prend le 1er nombre (AMI14)
+    if (tarif === undefined && code.includes('/')) {
+      const firstNum = code.split('/')[0];
+      tarif = tarifs[firstNum];
+    }
+    if (tarif === undefined || tarif === null) {
+      console.warn('[cotation] code sans tarif:', code);
+      continue;
+    }
+    actes.push({
+      code,
+      nom:         libelles[code] || code,
+      coefficient: 1,
+      total:       parseFloat(tarif),
+      description: '',
+    });
+  }
+
+  if (!actes.length) return null;
+
+  const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
+  const pAmo  = parseFloat(d?.part_amo) || (total * 0.60);
+  const pAmc  = parseFloat(d?.part_amc) || 0;
+  const pPat  = parseFloat(d?.part_patient) || (total - pAmo - pAmc);
+  return {
+    actes,
+    total:        +total.toFixed(2),
+    part_amo:     +pAmo.toFixed(2),
+    part_amc:     +pAmc.toFixed(2),
+    part_patient: +pPat.toFixed(2),
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1798,6 +1888,32 @@ function _cotPrewarmN8N_FullPipeline() {
   } catch (_) {}
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AUTO-REMPLISSAGE DATE / HEURE COURANTES
+   À l'ouverture de la page cotation, si f-ds (date) ou f-hs (heure) sont vides
+   et que l'utilisateur n'est pas en mode édition (_editingCotation), on les
+   pré-remplit avec maintenant. Évite que l'utilisateur ait à les saisir.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function _cotAutoFillDateHeure() {
+  try {
+    const fDs = document.getElementById('f-ds');
+    const fHs = document.getElementById('f-hs');
+    if (!fDs && !fHs) return;
+    // En mode édition (_editingCotation posé) → on respecte la valeur existante
+    // (la cotation à modifier a déjà été chargée avec sa date/heure)
+    const isEditing = !!(window._editingCotation && (window._editingCotation.cotationIdx !== undefined || window._editingCotation.invoice_number));
+    const now = new Date();
+    if (fDs && !fDs.value) {
+      fDs.value = now.toISOString().slice(0, 10);
+    }
+    if (fHs && !fHs.value && !isEditing) {
+      fHs.value = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    }
+  } catch (_e) {
+    // Non bloquant
+  }
+}
+
 /* Hook sur navTo : déclencher le pré-warm dès qu'on entre sur la page cotation */
 if (typeof window !== 'undefined' && !window._cotPrewarmHookInstalled) {
   window._cotPrewarmHookInstalled = true;
@@ -1834,9 +1950,11 @@ if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
         // Pré-warm N8N quand l'utilisateur arrive sur la page cotation
         // - _cotPrewarmN8N : ping léger (réveille le conteneur Render)
         // - _cotPrewarmN8N_FullPipeline : vrai appel N8N (réveille l'IA en entier)
+        // - Auto-fill date/heure : si vides, mettre maintenant
         if (section === 'cot') {
           try { setTimeout(_cotPrewarmN8N, 300); } catch (_) {}
           try { setTimeout(_cotPrewarmN8N_FullPipeline, 800); } catch (_) {}
+          try { setTimeout(_cotAutoFillDateHeure, 200); } catch (_) {}
         }
         return _origNavTo.apply(this, [section, ...rest]);
       };
@@ -1998,8 +2116,10 @@ if (typeof window !== 'undefined') {
   window._cotShowReCoteBar       = _cotShowReCoteBar;
   window._cotHideReCoteBar       = _cotHideReCoteBar;
   window._cotEnrichWithLocalEngine = _cotEnrichWithLocalEngine;
+  window._cotMinimalLocalCalc    = _cotMinimalLocalCalc;
   window._cotPrewarmN8N          = _cotPrewarmN8N;
   window._cotPrewarmN8N_FullPipeline = _cotPrewarmN8N_FullPipeline;
+  window._cotAutoFillDateHeure   = _cotAutoFillDateHeure;
   // Bouton « Vérifier & corriger » (handlers inline du HTML)
   if (typeof openVerify       === 'function') window.openVerify       = openVerify;
   if (typeof applyVerify      === 'function') window.applyVerify      = applyVerify;
