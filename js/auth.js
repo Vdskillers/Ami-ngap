@@ -32,7 +32,7 @@ function clientHasPermission(permission){
 }
 
 /* ── AUTH ─────────────────────────────────────── */
-function checkAuth(){
+async function checkAuth(){
   /* Vérifier consentement RGPD avant tout */ 
   if(typeof checkConsent==='function' && !checkConsent()) return;
   const session = ss.load();
@@ -40,10 +40,31 @@ function checkAuth(){
     S = session; // hydratation obligatoire avant showApp()
     if(typeof initSecurity==='function') initSecurity(S.token);
     showApp();
-  }else{
-    ss.clear();
-    showAuthOv();
+    return;
   }
+
+  /* ── Boot hors-ligne : session absente mais creds offline valides ?
+     On propose direct l'écran PIN sans passer par login classique. ──── */
+  if (!navigator.onLine && window.offlineAuth) {
+    const info = window.offlineAuth.getLastUserInfo();
+    if (info && info.session_valid) {
+      const sess = await window.offlineAuth.showUnlockScreen();
+      if (sess) {
+        ss.save(sess.token, sess.role, sess.user);
+        if (typeof initSecurity === 'function') initSecurity(sess.token);
+        window.APP = window.APP || {};
+        window.APP._offlineRestored = true;
+        if (typeof wpost === 'function') window.offlineAuth.installOnlineRefresh(wpost);
+        window.offlineAuth.showOfflineBadge();
+        showApp();
+        if (typeof initCabinet === 'function') setTimeout(() => initCabinet(), 300);
+        return;
+      }
+    }
+  }
+
+  ss.clear();
+  showAuthOv();
 }
 function showAuthOv(){$('auth-ov').classList.remove('hide');$('adm').classList.remove('show');$('app').style.display='none';}
 function showAdm(){$('auth-ov').classList.add('hide');$('adm').classList.add('show');$('app').style.display='none';loadAdm();if(typeof loadSystemHealth==='function')loadSystemHealth();}
@@ -325,10 +346,56 @@ async function login(){
     ss.save(d.token,d.role,d.user);
     /* ── Sécurité RGPD : chiffrement + audit ── */
     if(typeof initSecurity==='function') initSecurity(d.token);
+
+    /* ── Mode hors-ligne : création PIN au 1er login, ou refresh des creds ── */
+    if (window.offlineAuth) {
+      ld('btn-l', false);
+      try {
+        const alreadyHasPin = window.offlineAuth.hasPIN(d.user.id);
+        if (!alreadyHasPin) {
+          // 1er login sur cet appareil → PIN obligatoire pour activer le mode offline
+          const pin = await window.offlineAuth.showPinCreationModal();
+          if (pin) {
+            await window.offlineAuth.saveCredentials(d.user, d.token, d.role, pin);
+          }
+        } else {
+          // PIN déjà configuré → on ne peut pas rechiffrer sans connaître le PIN,
+          // mais on peut rafraîchir last_online_check (expire_at repoussé de 7j)
+          window.offlineAuth.touchLastOnlineCheck(d.user.id);
+        }
+      } catch (offErr) {
+        console.warn('[auth] PIN setup skipped:', offErr?.message);
+      }
+      ld('btn-l', true);
+    }
+
     showApp();
     /* ── Initialiser le cabinet (mode multi-IDE) ── */
     if (typeof initCabinet === 'function') setTimeout(() => initCabinet(), 300);
-  }catch(e){showM('le',e.message);}finally{ld('btn-l',false);}
+  }catch(e){
+    /* ── Fallback offline : si pas de réseau ET session offline existante pour ce user ── */
+    if (!navigator.onLine && window.offlineAuth) {
+      const lastInfo = window.offlineAuth.getLastUserInfo();
+      if (lastInfo && lastInfo.email && lastInfo.email.toLowerCase() === em.toLowerCase() && lastInfo.session_valid) {
+        ld('btn-l', false);
+        const sess = await window.offlineAuth.showUnlockScreen();
+        if (sess) {
+          ss.save(sess.token, sess.role, sess.user);
+          if (typeof initSecurity === 'function') initSecurity(sess.token);
+          window.APP = window.APP || {};
+          window.APP._offlineRestored = true;
+          if (typeof wpost === 'function') window.offlineAuth.installOnlineRefresh(wpost);
+          window.offlineAuth.showOfflineBadge();
+          showApp();
+          if (typeof initCabinet === 'function') setTimeout(() => initCabinet(), 300);
+          return;
+        }
+      }
+      showM('le','📡 Pas de réseau — impossible de se connecter pour la première fois sans internet.');
+    } else {
+      showM('le', e.message);
+    }
+  }finally{ld('btn-l',false);}
 }
 async function register(){
   hideM('re','ro');
@@ -346,6 +413,19 @@ async function register(){
   }catch(e){showM('re',e.message);}finally{ld('btn-r',false);}
 }
 function logout(){
+  /* ── Option offline : proposer de conserver l'accès PIN ou tout effacer ── */
+  if (window.offlineAuth && S?.user?.id && window.offlineAuth.hasPIN(S.user.id)) {
+    const keepPin = confirm(
+      '🔐 Déconnexion\n\n' +
+      'Souhaitez-vous CONSERVER votre PIN sur cet appareil\n' +
+      'pour pouvoir vous reconnecter rapidement en mode hors-ligne ?\n\n' +
+      '  • OK  = conserver le PIN (reconnexion PIN possible)\n' +
+      '  • Annuler = effacer le PIN et la session offline'
+    );
+    if (!keepPin) {
+      window.offlineAuth.clearForUser(S.user.id);
+    }
+  }
   ss.clear();
   APP.startPoint=null;
   APP.userPos=null;
