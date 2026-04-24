@@ -2101,7 +2101,9 @@ async function openVerify() {
   VM_DATA = null;
   try {
     const d = await apiCall('/webhook/ami-calcul', {
-      mode: 'verify', texte: txt, ddn: gv('f-ddn'),
+      mode: 'verify',
+      _force_n8n: true,       // ⚡ force l'appel N8N — bypass moteur local + cache + circuit breaker
+      texte: txt, ddn: gv('f-ddn'),
       date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
       exo: gv('f-exo'), regl: gv('f-regl')
     });
@@ -2141,7 +2143,7 @@ async function verifyStandalone() {
   ld('btn-ver', true);
   $('res-ver').classList.remove('show');
   try {
-    const d = await apiCall('/webhook/ami-calcul', { mode: 'verify', texte: txt, date_soin: gv('v-ds'), heure_soin: gv('v-hs'), exo: gv('v-exo') });
+    const d = await apiCall('/webhook/ami-calcul', { mode: 'verify', _force_n8n: true, texte: txt, date_soin: gv('v-ds'), heure_soin: gv('v-hs'), exo: gv('v-exo') });
     const corrige = d.texte_corrige || '', fixes = d.corrections || [], alerts = d.alerts || [], sugg = d.optimisations || [];
     $('vbody').innerHTML = `<div class="card"><div class="ct">🔍 Résultat</div>
     ${corrige ? `<div style="margin-bottom:16px"><div class="lbl" style="color:var(--ok)">Texte normalisé</div><div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;font-style:italic;font-size:14px;line-height:1.7">${corrige}</div></div>` : ''}
