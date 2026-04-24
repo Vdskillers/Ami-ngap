@@ -145,6 +145,39 @@
     .admin-mode-badge .amb-ic {
       font-size: 13px !important;
     }
+
+    /* ── Bouton "⏻ Déconnexion" en icône seule sur mobile étroit ──
+       Sur viewport ≤420px, le texte "Déconnexion" débordait et
+       s'affichait coupé ("Déconnexi"). On garde l'icône uniquement,
+       le bouton reste pleinement cliquable. */
+    #admin-header-controls .bout {
+      font-size: 0 !important;
+      padding: 5px 9px !important;
+      min-width: 32px !important;
+      white-space: nowrap !important;
+    }
+    #admin-header-controls .bout::before {
+      content: "⏻";
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    /* Pill nom admin plus compacte — tronque si trop long */
+    #mobile-admin-name {
+      font-size: 10px !important;
+      padding: 3px 9px !important;
+      max-width: 100px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+  }
+
+  /* Mobile très étroit (≤360px, ex. petits Android) :
+     on masque carrément la pill "Bastien Admin" pour garder
+     seulement [A][🤖][🎤] [🛡️] [⏻] qui tiennent sur 1 ligne. */
+  @media (max-width: 360px) {
+    #mobile-admin-name { display: none !important; }
   }
 
   /* ── BOTTOM NAV ── */

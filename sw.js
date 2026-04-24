@@ -6,29 +6,39 @@
    ✅ Préfixe cache isolé (amitest-) pour ne pas entrer en conflit avec la PWA prod
 */
 
-const CACHE_VERSION = 'amitest-v3.9';
+const CACHE_VERSION = 'amitest-v4.0';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
+/* ⚠️ Les fichiers sont à la racine du projet (pas dans /css/ ou /js/).
+   Les anciens chemins ./css/... et ./js/... échouaient silencieusement
+   au précache → rien n'était caché → au prochain offline l'app ne se
+   chargeait pas et Chrome affichait ERR_INTERNET_DISCONNECTED. */
 const STATIC_ASSETS = [
+  './',
   './index.html',
-  './css/style.css',
-  './js/utils.js',
-  './js/auth.js',
-  './js/admin.js',
-  './js/profil.js',
-  './js/cotation.js',
-  './js/voice.js',
-  './js/dashboard.js',
-  './js/ui.js',
-  './js/map.js',
-  './js/uber.js',
-  './js/ai-tournee.js',
-  './js/tournee.js',
-  './js/ai-assistant.js',
-  './js/pwa.js',
-  './js/security.js',
+  './style.css',
+  './mobile-premium.css',
+  './desktop-premium.css',
+  './notes.css',
   './manifest.json',
+  './utils.js',
+  './auth.js',
+  './admin.js',
+  './profil.js',
+  './cotation.js',
+  './voice.js',
+  './dashboard.js',
+  './ui.js',
+  './map.js',
+  './uber.js',
+  './ai-tournee.js',
+  './tournee.js',
+  './ai-assistant.js',
+  './pwa.js',
+  './security.js',
+  './offline-auth.js',
+  './offline-queue.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
 ];
@@ -116,6 +126,15 @@ async function networkFirst(req, cacheName) {
     // Offline → fallback cache
     var cached = await caches.match(req);
     if (cached) return cached;
+    // ⚠️ CRITIQUE : pour toute navigation (PWA lancée hors-ligne,
+    // URL avec hash #xxx, query params inattendus, etc.), on retombe
+    // toujours sur l'index.html caché — sinon Chrome affiche sa page
+    // dinosaure et l'utilisateur croit que l'app est cassée.
+    if (req.mode === 'navigate') {
+      var fallback = await caches.match('./index.html')
+                  || await caches.match('./');
+      if (fallback) return fallback;
+    }
     return new Response('Hors ligne', { status: 503 });
   }
 }

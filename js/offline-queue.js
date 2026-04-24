@@ -126,16 +126,10 @@ function _updateQueueBadge() {
     badge.textContent = q.length > 0 ? q.length : '';
     badge.style.display = q.length > 0 ? 'inline' : 'none';
   }
-  // Afficher le bandeau
-  const banner = document.getElementById('offline-banner');
-  if (banner) {
-    if (!navigator.onLine) {
-      banner.style.display = 'flex';
-      banner.innerHTML = `<span>📡 Mode hors-ligne</span>${q.length > 0 ? `<span style="font-family:var(--fm);font-size:11px">${q.length} cotation(s) en attente de sync</span>` : ''}`;
-    } else {
-      banner.style.display = 'none';
-    }
-  }
+  // ⚠️ Bannière #offline-banner volontairement NON manipulée ici :
+  // la bannière orange haute (#oa-offline-badge, offline-auth.js:418)
+  // est la source unique de vérité pour le statut hors-ligne.
+  // L'ancien doublon gris créait 2 barres empilées sur mobile.
 }
 
 /* Écouter la reconnexion */

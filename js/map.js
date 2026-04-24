@@ -850,6 +850,13 @@ async function useLiveMyLocation() {
         withCoords.forEach(function(p) { allPts.push([p.lat, p.lng]); });
 
         if (allPts.length >= 2) {
+          // ⚠️ MOBILE FIX : sur mobile, le conteneur Leaflet a souvent
+          // une taille 0×0 au premier paint (layout pas stabilisé).
+          // Sans invalidateSize() AVANT fitBounds, la map calcule ses
+          // bounds contre un viewport nul → la polyline OSRM atterrit
+          // hors-champ et l'utilisateur ne voit que les markers.
+          try { APP.map.invalidateSize(); } catch(_) {}
+
           // Toujours afficher une polyline droite immédiatement (fallback visible)
           APP._routePolyline = L.polyline(allPts, {
             color: '#00d4aa', weight: 2.5, opacity: 0.35, dashArray: '5,7'
@@ -857,6 +864,16 @@ async function useLiveMyLocation() {
 
           // Ajuster la vue dès maintenant avec les points connus
           APP.map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 });
+
+          // Re-invalidateSize après le premier repaint pour rattraper
+          // les cas où le container n'était toujours pas mesuré
+          // (observé sur Chrome Android avec header sticky + safe-area).
+          setTimeout(function() {
+            try {
+              APP.map.invalidateSize();
+              APP.map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 });
+            } catch(_) {}
+          }, 150);
 
           // Puis charger la géométrie routière réelle depuis OSRM en arrière-plan
           (async function() {
@@ -879,6 +896,12 @@ async function useLiveMyLocation() {
                 APP._routePolyline = null;
               }
 
+              // ⚠️ Re-invalidateSize AVANT d'ajouter la vraie route :
+              // sur mobile, le container peut avoir été redimensionné
+              // entre le premier rendu et l'arrivée de la réponse OSRM
+              // (ex : header qui se stabilise, bannière offline qui apparaît).
+              try { APP.map.invalidateSize(); } catch(_) {}
+
               // Dessiner la vraie route sur les routes
               APP._routePolyline = L.polyline(latlngs, {
                 color:   '#00d4aa',
@@ -895,9 +918,17 @@ async function useLiveMyLocation() {
           })();
         }
 
-        // Forcer recalcul taille Leaflet (évite la carte grise après navigation)
-        setTimeout(function() { try { APP.map.invalidateSize(); } catch(_){} }, 150);
-        setTimeout(function() { try { APP.map.invalidateSize(); } catch(_){} }, 400);
+        // Dernier filet de sécurité : repaint forcé après stabilisation
+        // du layout (surtout mobile). Si la route est arrivée entre-temps,
+        // on re-cale la vue dessus.
+        setTimeout(function() {
+          try {
+            APP.map.invalidateSize();
+            if (APP._routePolyline) {
+              APP.map.fitBounds(APP._routePolyline.getBounds(), { padding: [40, 40], maxZoom: 15 });
+            }
+          } catch(_){}
+        }, 400);
 
         resolve();
       } catch(e) {

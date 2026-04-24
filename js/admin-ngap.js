@@ -1374,8 +1374,11 @@ function _renderA11Panel(panel, status, preview) {
         </div>
         <div>
           <div style="color:var(--m)">Moteur NGAPEngine</div>
-          <div style="color:${status.engine_loaded ? '#10b981' : '#ef4444'};font-weight:600">
-            ${status.engine_loaded ? '✅ chargé' : '❌ absent'}
+          <div style="color:${status.engine_loaded ? '#10b981' : 'var(--m)'};font-weight:600"
+               title="${status.engine_loaded ? 'Moteur v2 installé en mémoire navigateur (après push)' : 'Normal : le moteur est côté serveur (worker.js) et ne se charge sur le front qu\u0027après un push de la v2'}">
+            ${status.engine_loaded
+              ? '✅ v2 en mémoire'
+              : '⚪ Serveur uniquement'}
           </div>
         </div>
         <div>
@@ -1387,6 +1390,9 @@ function _renderA11Panel(panel, status, preview) {
       </div>
       ${meta.note ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(0,0,0,.2);border-radius:6px;font-size:11px;color:var(--t);font-style:italic">"${_esc(meta.note)}"</div>` : ''}
       ${meta.forced_before_scheduled_date ? `<div style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.1);border-radius:6px;font-size:11px;color:#ef4444">⚠️ Activation forcée avant la date prévue (${_esc(meta.forced_before_scheduled_date)})</div>` : ''}
+      ${!status.engine_loaded ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(79,168,255,.06);border-left:3px solid #4fa8ff;border-radius:4px;font-size:10px;color:var(--m);line-height:1.5">
+        <strong style="color:#4fa8ff">ℹ️ Architecture :</strong> le moteur <code>NGAPEngine</code> s'exécute côté serveur (worker.js / n8n). Il n'est chargé en mémoire navigateur qu'après un <strong>Push</strong> ou un <strong>Apply en session</strong>. C'est le comportement normal.
+      </div>` : ''}
     </div>`;
 
   // Bloc aperçu payload embarqué
