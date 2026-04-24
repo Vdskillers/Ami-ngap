@@ -1,0 +1,250 @@
+[
+  {
+    "id": "ngap_tarif_ami",
+    "text": "AMI = 3,15 €. Acte infirmier technique hors dépendance : injections, perfusions, pansements, prélèvements. Cotation AMI × coefficient selon complexité."
+  },
+  {
+    "id": "ngap_tarif_amx",
+    "text": "AMX = 3,15 €. Équivalent AMI mais appliqué aux actes réalisés au cours d\\u2019une prise en charge BSI (BSA/BSB/BSC) ou AIS. Soumis à la règle du 50% sauf dérogations listées au titre XVI chapitre I article A12 (perfusions, pansements complexes, diabète insulino)."
+  },
+  {
+    "id": "ngap_tarif_ais",
+    "text": "AIS = 2,65 €. Acte infirmier de surveillance, éducation, sans geste technique. Forfait BSA/BSB/BSC prioritaire si dépendance documentée."
+  },
+  {
+    "id": "ngap_tarif_ifd",
+    "text": "IFD = 2,75 € par passage à domicile. Une seule IFD par passage, même si plusieurs actes. Pour patient BSI : utiliser IFI (même tarif)."
+  },
+  {
+    "id": "ngap_tarif_ifi",
+    "text": "IFI = 2,75 € par passage à domicile chez patient BSI (BSA/BSB/BSC). Cumulable avec IK, nuit, dimanche, MCI, MIE."
+  },
+  {
+    "id": "ngap_tarif_ik",
+    "text": "IK = 0,35 €/km plaine (×2 aller-retour obligatoire). Zone montagne/île : 0,50 €/km. Distance doit être explicitement documentée."
+  },
+  {
+    "id": "ngap_tarif_bsa",
+    "text": "BSA = 13,00 €. Dépendance légère. Forfait journalier BSI. Patient partiellement autonome."
+  },
+  {
+    "id": "ngap_tarif_bsb",
+    "text": "BSB = 18,20 €. Dépendance intermédiaire à modérée. Forfait journalier BSI. Inclut évaluation + soins de base."
+  },
+  {
+    "id": "ngap_tarif_bsc",
+    "text": "BSC = 28,70 €. Dépendance lourde à totale. Forfait journalier BSI. Patient alité, nursing intégral."
+  },
+  {
+    "id": "ngap_tarif_mci",
+    "text": "MCI = 5,00 €. Majoration coordination infirmière. Soins complexes : pansement complexe, post-opératoire, plaies chroniques, soins palliatifs. Une fois par intervention. Non cumulable avec BSI/AMX/IFI/TLS."
+  },
+  {
+    "id": "ngap_tarif_mie",
+    "text": "MIE = 3,15 €. Majoration enfant de moins de 7 ans. Obligatoire si acte sur enfant < 7 ans."
+  },
+  {
+    "id": "ngap_tarif_nuit",
+    "text": "Majoration nuit NUIT = 9,15 € entre 20h-23h et 5h-8h. Non cumulable avec majoration dimanche."
+  },
+  {
+    "id": "ngap_tarif_nuit_profonde",
+    "text": "Majoration nuit profonde NUIT_PROF = 18,30 € entre 23h et 5h. Non cumulable avec majoration dimanche."
+  },
+  {
+    "id": "ngap_tarif_dimanche",
+    "text": "Majoration dimanche et jours fériés DIM = 8,50 €. Non cumulable avec majorations nuit ou nuit profonde."
+  },
+  {
+    "id": "ngap_perf_cir_9_2025",
+    "text": "CIR-9/2025 (Circulaire CNAM du 25/06/2025) — Nouvelles règles de cotation des perfusions : Les forfaits AMI 14 et AMI 15 (perfusions longues >1h) sont JOURNALIERS. Un seul AMI 14 ou AMI 15 par jour par patient, même en cas de deux perfusions distinctes ou sur deux voies d\\u2019abord. La deuxième perfusion longue de la même journée (changement flacon, rebranchement) se cote désormais AMI 4.1 (6,30 €)."
+  },
+  {
+    "id": "ngap_perf_ami9",
+    "text": "AMI 9 = 28,35 €. Séance de perfusion courte ≤1h sous surveillance continue, par voie veineuse périphérique ou sous-cutanée. Inclut préparation, pose, surveillance, arrêt, retrait, pansement. Au-delà d\\u20191h : supplément AMI 6 par heure (max 5h)."
+  },
+  {
+    "id": "ngap_perf_ami10",
+    "text": "AMI 10 = 31,50 €. Séance de perfusion courte ≤1h sous surveillance continue pour patient immunodéprimé, cancéreux ou atteint de mucoviscidose."
+  },
+  {
+    "id": "ngap_perf_ami14",
+    "text": "AMI 14 = 44,10 €. Forfait perfusion longue >1h avec organisation de surveillance (hors surveillance continue). Inclut préparation, pose, surveillance, débranchement, pansement. FORFAIT JOURNALIER depuis CIR-9/2025 : 1× par jour par patient maximum."
+  },
+  {
+    "id": "ngap_perf_ami15",
+    "text": "AMI 15 = 47,25 €. Forfait perfusion longue >1h pour patient immunodéprimé, cancéreux ou atteint de mucoviscidose. FORFAIT JOURNALIER depuis CIR-9/2025 : 1× par jour par patient maximum."
+  },
+  {
+    "id": "ngap_perf_ami4_1",
+    "text": "AMI 4.1 = 6,30 €. Changement de flacon, branchement en Y, déplacement du dispositif, contrôle débit pour perfusion sans surveillance continue, en dehors de la séance de pose. Depuis CIR-9/2025 : cote la 2ème perfusion longue dans la journée (la 1ère est AMI 14 ou 15)."
+  },
+  {
+    "id": "ngap_perf_ami5",
+    "text": "AMI 5 = 15,75 €. Arrêt définitif de perfusion de plus de 24h. Retrait définitif de dispositif type MidLine, PiccLine, chambre implantable (avec si besoin pansement et changement de valve). Cas typiques : fin de chimio, fin d\\u2019une pompe, dernier jour de traitement."
+  },
+  {
+    "id": "ngap_perf_ami6_supp",
+    "text": "AMI 6 = 18,90 €. Supplément horaire au-delà de la 1ère heure d\\u2019une perfusion courte sous surveillance continue (AMI 9 ou 10), par heure supplémentaire, maximum 5 heures. À ne PAS confondre avec la perfusion longue qui est AMI 14/15."
+  },
+  {
+    "id": "ngap_perf_exemple1",
+    "text": "Exemple type perfusion 12h matin + 12h soir pendant 7 jours (patient non cancéreux) : J1→J6 matin AMI 14 (44,10 €), soir AMI 4.1 (6,30 €). J7 matin AMI 14, J7 soir AMI 5 (retrait définitif 15,75 €). + Majorations NUIT à chaque passage entre 5h et 8h ou 20h et 23h. + IFD chaque passage."
+  },
+  {
+    "id": "ngap_perf_exemple2",
+    "text": "Exemple perfusion 12h sur 1 jour : matin AMI 14 (44,10 €), soir AMI 5 (retrait définitif 15,75 €)."
+  },
+  {
+    "id": "ngap_perf_exemple3",
+    "text": "Exemple patient cancéreux PICC-line 3 jours : Matin AMI 10 (antalgique) + AMI 15 (NaCl 12h) à taux plein (perfusions cumulables taux plein entre elles). Soir AMI 10 + AMI 4.1. Dernier soir : AMI 5 pour retrait."
+  },
+  {
+    "id": "ngap_perf_interdit_multi",
+    "text": "INTERDIT — Deux cotations AMI 14 (ou AMI 15) le même jour pour le même patient = SANCTION CPAM. La deuxième perfusion du jour se cote AMI 4.1, pas AMI 14."
+  },
+  {
+    "id": "ngap_pansement_simple",
+    "text": "Pansement simple = AMI 1 (3,15 €). Couvre la réfection quotidienne d\\u2019un pansement sans critères de complexité."
+  },
+  {
+    "id": "ngap_pansement_complexe",
+    "text": "Pansement lourd et complexe = AMI 4 (12,60 €). Critères : escarre, ulcère chronique, plaie chirurgicale, détersion, nécrose, pied diabétique. Cumulable MCI (+5,00 €). Cumulable taux plein avec analgésie topique AMI 1.1 (3,47 €)."
+  },
+  {
+    "id": "ngap_pansement_stomie",
+    "text": "Pansement stomie = AMI 3 (9,45 €). Pansement trachéotomie = AMI 3 (9,45 €)."
+  },
+  {
+    "id": "ngap_analgesie_topique",
+    "text": "Analgésie topique préalable (EMLA) = AMI 1.1 (3,47 €). Cumulable taux plein avec pansement complexe AMI 4. Max 8 par épisode de cicatrisation."
+  },
+  {
+    "id": "ngap_sonde_ng",
+    "text": "Pose sonde naso-gastrique = AMI 3 (9,45 €)."
+  },
+  {
+    "id": "ngap_sonde_vf",
+    "text": "Pose sonde vésicale femme = AMI 3 (9,45 €). Cathétérisme urétral homme = AMI 4 (12,60 €). Retrait sonde urinaire = AMI 2 (6,30 €)."
+  },
+  {
+    "id": "ngap_alim_enterale",
+    "text": "Alimentation entérale par gavage ou nutri-pompe = AMI 3 (9,45 €) par séance. Alimentation entérale voie jéjunale = AMI 4 (12,60 €)."
+  },
+  {
+    "id": "ngap_postop_ami39",
+    "text": "Surveillance clinique et accompagnement post-opératoire à domicile = AMI 3.9 (12,29 €). Avenant 6. Cumulable taux plein avec retrait sonde urinaire (AMI 2), retrait drain redon (AMI 2.8), changement flacon redon."
+  },
+  {
+    "id": "ngap_postop_drain",
+    "text": "Retrait drain de redon ou surveillance drain = AMI 2.8 (8,82 €)."
+  },
+  {
+    "id": "ngap_postop_cath",
+    "text": "Séance et/ou retrait de cathéter périveineux pour analgésie post-op = AMI 4.2 (13,23 €). Cumulable taux plein avec retrait sonde et surveillance drain."
+  },
+  {
+    "id": "ngap_bpco_surv",
+    "text": "Surveillance clinique hebdomadaire patient BPCO / Insuffisance Cardiaque = AMI 5.8 (18,27 €). Forfait hebdomadaire."
+  },
+  {
+    "id": "ngap_diabete_5bis",
+    "text": "Article 5bis NGAP — Patient diabétique insulino-traité : les actes cumulent à taux plein entre eux. Surveillance glycémique capillaire + injection insuline + pansement pied diabétique = tous à 100%. Article 11B ne s\\u2019applique pas entre ces actes."
+  },
+  {
+    "id": "ngap_diabete_75ans",
+    "text": "Patient insulino-traité >75 ans : séance de surveillance clinique hebdomadaire dédiée. Non facturable en dehors du cadre 5bis."
+  },
+  {
+    "id": "ngap_regle_principal",
+    "text": "Article 11B — Un seul acte principal par passage coté à coefficient 1 (tarif plein). Les actes secondaires sont cotés à coefficient 0,5 (demi-tarif). Les majorations sont toujours à coefficient 1. Le principal est l\\u2019acte au coefficient le plus ÉLEVÉ."
+  },
+  {
+    "id": "ngap_interdit_ais_bs",
+    "text": "AIS et BSA/BSB/BSC ne peuvent JAMAIS être cotés ensemble au même passage. Le forfait BS remplace AIS."
+  },
+  {
+    "id": "ngap_interdit_bs_cumul",
+    "text": "BSA, BSB et BSC sont exclusifs. Un seul forfait dépendance par jour. Choisir le plus élevé correspondant au niveau documenté."
+  },
+  {
+    "id": "ngap_interdit_nuit_dim",
+    "text": "Majorations nuit et dimanche non cumulables entre elles. En cas de conflit, conserver la plus avantageuse (NUIT_PROF > NUIT > DIM)."
+  },
+  {
+    "id": "ngap_interdit_ifd_multi",
+    "text": "Une seule IFD (ou IFI) par passage, même si plusieurs actes sont réalisés."
+  },
+  {
+    "id": "ngap_interdit_ami14_15",
+    "text": "AMI 14 + AMI 15 interdits le même jour (CIR-9/2025). Si patient immunodéprimé/cancéreux : garder uniquement AMI 15."
+  },
+  {
+    "id": "ngap_interdit_mci_bsi",
+    "text": "MCI non cumulable avec BSI (BSA/BSB/BSC) ni avec AMX ni avec IFI — remplacée par la coordination incluse dans BSI."
+  },
+  {
+    "id": "ngap_interdit_mau_bsi",
+    "text": "MAU non cumulable avec BSI, AMX, ou supplément vaccination grippe."
+  },
+  {
+    "id": "ngap_derog_perf",
+    "text": "Dérogation article 11B : Forfaits de perfusions (AMI/AMX 9, 10, 14, 15, 5, 4, 4.1, 6) cumulent à taux plein avec BSI. Exemple : BSI + AMX 14 + AMX 9/2 (2ème perfusion courte à 50%)."
+  },
+  {
+    "id": "ngap_derog_pansement",
+    "text": "Dérogation article 11B : Pansements lourds et complexes (AMI/AMX 4, 11, 5.1, 1.1, 4.6, 2.1) cumulent à taux plein avec BSI."
+  },
+  {
+    "id": "ngap_derog_diabete",
+    "text": "Dérogation article 5bis : Surveillance glycémique + injection insuline + pansement pied diabétique cumulent à taux plein ENTRE EUX (chez insulino-traité). Avec BSI : les 1er et 2ème actes à 100%, 3ème à 50%."
+  },
+  {
+    "id": "ngap_derog_postop",
+    "text": "Dérogation avenant 6 : Surveillance clinique post-op (AMI 3.9) + retrait sonde urinaire (AMI 2) = cumul taux plein. + Retrait drain redon (AMI 2.8) = cumul taux plein."
+  },
+  {
+    "id": "ngap_derog_ponction",
+    "text": "Ponction veineuse AMX 1.5 (4,73 €) : cumulable avec BSI à 50%. Hors BSI, 1er acte si unique."
+  },
+  {
+    "id": "ngap_derog_analgesie",
+    "text": "Analgésie topique AMI 1.1 (EMLA) cumulable taux plein avec pansement complexe AMI 4 (douleur). Max 8 par épisode."
+  },
+  {
+    "id": "ngap_regle_ifd",
+    "text": "IFD doit être appliquée si le soin est réalisé au domicile du patient. Toujours inclure si domicile mentionné. Une seule par passage."
+  },
+  {
+    "id": "ngap_regle_ik",
+    "text": "IK = distance cabinet→domicile × 2 (aller-retour) × 0,35 €. Obligation de documenter la distance dans le dossier."
+  },
+  {
+    "id": "ngap_regle_mci",
+    "text": "MCI applicable en 1 fois par intervention pour : pansement lourd et complexe, soins palliatifs. Pas de prescription médicale spécifique requise."
+  },
+  {
+    "id": "ngap_regle_mie",
+    "text": "MIE = 3,15 € si acte sur enfant <7 ans. Obligatoire. Cumulable avec toutes majorations."
+  },
+  {
+    "id": "ngap_fraude_perf_double",
+    "text": "FRAUDE TYPE CPAM : Coter deux AMI 14 le même jour pour un patient avec 2 perfusions longues = refus + contrôle. Corriger en AMI 14 + AMI 4.1."
+  },
+  {
+    "id": "ngap_fraude_perf_court",
+    "text": "ERREUR FRÉQUENTE : Coter une perfusion longue en AMI 5 (15,75 €) au lieu d\\u2019AMI 14 (44,10 €) = sous-cotation de 28,35 € par passage. AMI 5 est exclusivement le retrait définitif depuis CIR-9/2025."
+  },
+  {
+    "id": "ngap_fraude_perf_ami6",
+    "text": "ERREUR FRÉQUENTE : Coter une perfusion longue en AMI 6 (18,90 €) au lieu d\\u2019AMI 14 (44,10 €) = sous-cotation de 25,20 € par passage. AMI 6 est uniquement le supplément horaire d\\u2019une perfusion courte AMI 9/10."
+  },
+  {
+    "id": "ngap_fraude_pansement",
+    "text": "ERREUR FRÉQUENTE : Coter un pansement d\\u2019escarre ou de plaie chronique en AMI 1 (3,15 €) au lieu d\\u2019AMI 4 (12,60 €) + MCI (5 €) = sous-cotation de 14,45 €."
+  },
+  {
+    "id": "ngap_fraude_bsi_manque",
+    "text": "ERREUR FRÉQUENTE : Patient dépendant traité en AIS au lieu de BSI/BSA/BSB/BSC = sous-cotation importante (13 à 28,70 € perdus par passage)."
+  }
+]
