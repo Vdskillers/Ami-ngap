@@ -945,6 +945,11 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
         invoice_number: _existCot.invoice_number || null,
         _userChose:     true, // choix explicite utilisateur → bypass la modale au prochain appel
         _fromTournee:   (window._editingCotation || {})._fromTournee || false,
+        // Mémoriser les codes de l'ancienne cotation pour détecter régressions
+        // (ex: AMI4 disparu après re-cotation avec une description incomplète)
+        _prevActes:     (_existCot.actes || []).map(a => ({
+          code: a.code, nom: a.nom || '', total: a.total || 0,
+        })),
       };
       onUpdate();
     };
@@ -1139,6 +1144,10 @@ async function _cotationPipeline() {
                   cotationIdx:  _existIdx,
                   invoice_number: _existCot.invoice_number || null,
                   _autoDetected: true, // flag : positionné automatiquement (pas par l'utilisateur)
+                  // Mémoriser les codes de l'ancienne cotation pour détecter régressions
+                  _prevActes:   (_existCot.actes || []).map(a => ({
+                    code: a.code, nom: a.nom || '', total: a.total || 0,
+                  })),
                 };
               }
             }
@@ -1220,6 +1229,9 @@ async function _cotationPipeline() {
         cotationIdx:    _existRef?.cotationIdx     ?? -1,
         invoice_number: d.invoice_number,
         _autoDetected:  _existRef?._autoDetected   || false,
+        // Préserver _prevActes pour que renderCot puisse continuer à détecter
+        // les régressions d'acte principal entre les re-cotations successives
+        _prevActes:     _existRef?._prevActes      || null,
       };
     }
     // ── Mémoriser l'heure de soin dans le cache persistant (analyse horaire Dashboard) ──
@@ -1591,50 +1603,148 @@ if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
   } catch (_) {}
 }
 
-/* Extraction des codes NGAP (AMI, BSB, BSC, BSA, BSI, MIE, IFD, IFI, IK, DI,
-   AIS, MAU, MCI, NUIT, DIM...) dans une chaîne libre.
-   Conserve le libellé court qui suit le code si présent (ex: "AMI 14 longue"). */
-function _cotExtractNgapCodes(text) {
+/* Détecte si une suggestion est purement informative (non-actionnable).
+   Ex: PROTECTION, RGPD, AUDIT, INFO, VIGILANCE — pas de code à ajouter. */
+function _cotIsInfoSuggestion(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  // Mots-clés d'en-tête en MAJUSCULES indiquant une info (pas une action cotation)
+  const infoKeywords = [
+    'PROTECTION',
+    'RGPD',
+    'INFO',
+    'NOTE',
+    'AUDIT',
+    'VIGILANCE',
+    'TRACABILITE',
+    'TRAÇABILITÉ',
+    'CONFORMITÉ',
+    'CONFORMITE',
+    'SIGNATURE',
+    'PREUVE',
+  ];
+  // Détection : "MOTCLE — " ou "MOTCLE : " ou "MOTCLE - " en début de chaîne
+  const reHeader = new RegExp('^(' + infoKeywords.join('|') + ')\\s*[—\\-:·]', 'i');
+  if (reHeader.test(s)) return true;
+  // Ou action orientée UI/outil plutôt que cotation (ex: "Activer preuve forte")
+  const actionInfo = /\bactiver\s+(preuve|signature|photo|tra[cç]abilit)/i;
+  if (actionInfo.test(s)) return true;
+  return false;
+}
+
+/* Extraction des codes NGAP en GROUPES (chaque groupe = 1 chip).
+   Les codes reliés par "+" forment un groupe unique (combinaison).
+   Les séparateurs forts (→, , ou, vs, puis) délimitent les groupes distincts.
+   Ex: "AMI1 → AMI4 + MCI"              → [ {insert:"AMI 1"}, {insert:"AMI 4 + MCI"} ]
+       "AMI 14 longue, AMI 9 courte"    → [ {insert:"AMI 14 longue"}, {insert:"AMI 9 courte"} ]
+       "AMI 14 + BSA + IFD"             → [ {insert:"AMI 14 + BSA + IFD"} ] */
+function _cotExtractNgapChips(text) {
   const s = String(text || '');
   if (!s) return [];
-  const found = [];
-  const seen = new Set();
 
-  // 1) Codes AMI / AIS / SFI / SF avec coefficient numérique optionnel
+  // 1) Collecter tous les tokens (codes NGAP) avec leur position dans la chaîne
+  const tokens = [];
+
+  // Codes avec coefficient : AMI/AIS/SFI/SF
   const reCoef = /\b(AMI|AIS|SFI|SF)\s*(\d{1,2}(?:\.\d{1,2})?(?:\/\d{1,2})?)\b/gi;
   let m;
   while ((m = reCoef.exec(s)) !== null) {
     const codeNorm    = m[1].toUpperCase() + m[2];
     const codeDisplay = m[1].toUpperCase() + ' ' + m[2];
-    // Libellé court qui suit (max 3 mots), sans ponctuation
+    // Libellé court qui suit (max 3 mots)
     const after = s.slice(m.index + m[0].length, m.index + m[0].length + 60);
-    const labelM = after.match(/^\s*([a-zàâéèêëïîôùûüç]+(?:\s+[a-zàâéèêëïîôùûüç]+){0,2})/i);
+    const labelM = after.match(/^\s*([\wàâéèêëïîôùûüçÀÂÉÈÊËÏÎÔÙÛÜÇ]+(?:\s+[\wàâéèêëïîôùûüçÀÂÉÈÊËÏÎÔÙÛÜÇ]+){0,2})/);
     const label = labelM ? labelM[1].trim() : '';
-    const key = codeNorm + '|' + label.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
     const insert = codeDisplay + (label ? ' ' + label : '');
-    found.push({ code: codeNorm, display: insert, insert });
+    const endPos = m.index + m[0].length + (label ? (labelM[0].length) : 0);
+    tokens.push({
+      code:    codeNorm,
+      display: insert,
+      insert,
+      start:   m.index,
+      end:     endPos,
+    });
   }
 
-  // 2) Codes forfaits/majorations sans coefficient
+  // Codes simples (sans coef) : BSB, BSC, MIE, IFD, NUIT_PROF…
   const simpleCodes = [
+    'NUIT_PROF',                         // Doit être testé AVANT 'NUIT' (longest-first)
     'BSB', 'BSC', 'BSA', 'BSI',
     'MIE', 'MAU', 'MCI',
     'IFD', 'IFI', 'IFSD',
-    'DI', 'DIP', 'DIE',
-    'NUIT_PROF', 'NUIT', 'DIM',
+    'DIP', 'DIE', 'DI',
+    'NUIT', 'DIM',
   ];
   for (const c of simpleCodes) {
     const re = new RegExp('\\b' + c + '\\b', 'gi');
-    if (re.test(s)) {
-      const key = c + '|';
-      if (seen.has(key)) continue;
-      seen.add(key);
-      found.push({ code: c, display: c, insert: c });
+    let mm;
+    while ((mm = re.exec(s)) !== null) {
+      // Skip si déjà capturé par un code plus long (ex: NUIT_PROF contient NUIT)
+      const overlap = tokens.some(t => mm.index < t.end && mm.index + c.length > t.start);
+      if (overlap) continue;
+      tokens.push({
+        code:    c,
+        display: c,
+        insert:  c,
+        start:   mm.index,
+        end:     mm.index + c.length,
+      });
     }
   }
-  return found;
+
+  if (!tokens.length) return [];
+
+  // 2) Trier par position pour pouvoir examiner le texte entre 2 codes consécutifs
+  tokens.sort((a, b) => a.start - b.start);
+
+  // 3) Regrouper : les codes reliés par "+" (avec éventuellement espaces/parenthèses)
+  //    appartiennent au même groupe. Les séparateurs forts (→, ,, ou, vs, puis, ;)
+  //    terminent un groupe.
+  const reSepSoft = /^[\s(]*\+[\s)]*$/;                              // " + " entre codes
+  const reSepHard = /[→←⇒,;]|\b(ou|vs|puis|alors|sinon|plut[ôo]t)\b/i; // vrais séparateurs
+  const groups = [];
+  let current = [tokens[0]];
+  for (let i = 1; i < tokens.length; i++) {
+    const prev = tokens[i - 1];
+    const cur  = tokens[i];
+    const between = s.slice(prev.end, cur.start);
+    if (reSepHard.test(between)) {
+      // Séparateur fort → nouveau groupe
+      groups.push(current);
+      current = [cur];
+    } else if (reSepSoft.test(between)) {
+      // "+" → combo dans le même groupe
+      current.push(cur);
+    } else {
+      // Autre cas (espace simple, parenthèse…) → par défaut nouveau groupe
+      // (évite qu'une phrase continue agrège trop de codes)
+      groups.push(current);
+      current = [cur];
+    }
+  }
+  groups.push(current);
+
+  // 4) Dédupliquer (même combinaison de codes → 1 seul chip)
+  const seenKeys = new Set();
+  const chips = [];
+  for (const g of groups) {
+    const insert  = g.map(t => t.insert).join(' + ');
+    const display = g.map(t => t.display).join(' + ');
+    const key     = g.map(t => t.code).join('+').toLowerCase();
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    chips.push({ insert, display, codes: g.map(t => t.code) });
+  }
+  return chips;
+}
+
+/* Compat : ancienne API — renvoie un code par chip (pas de combo "+"). */
+function _cotExtractNgapCodes(text) {
+  return _cotExtractNgapChips(text).map(c => ({
+    code:    c.codes[0],
+    display: c.display,
+    insert:  c.insert,
+  }));
 }
 
 /* Expose en global pour usage depuis les handlers inline onclick="" */
@@ -1642,6 +1752,8 @@ if (typeof window !== 'undefined') {
   window._cotAppendDesc       = _cotAppendDesc;
   window._cotClickAppend      = _cotClickAppend;
   window._cotExtractNgapCodes = _cotExtractNgapCodes;
+  window._cotExtractNgapChips = _cotExtractNgapChips;
+  window._cotIsInfoSuggestion = _cotIsInfoSuggestion;
   window._cotShowReCoteBar    = _cotShowReCoteBar;
   window._cotHideReCoteBar    = _cotHideReCoteBar;
 }
@@ -1709,19 +1821,29 @@ function renderCot(d) {
   const suggBloc = sugg.length ? `<div style="margin-top:12px">
     <div class="lbl" style="font-size:10px;margin-bottom:6px;color:#22c55e">💰 Suggestions de valorisation</div>
     <div class="aic">${sugg.map((s, i) => {
-      // Texte brut de la suggestion (pour clic sur la ligne entière)
       const reason = s.reason || '';
       const action = s.action || '';
       const gain   = s.gain   || '';
-      // Texte complet utilisé pour extraire les codes NGAP
       const fullTxt = [reason, action].filter(Boolean).join(' ');
-      let codes = [];
-      try { codes = _cotExtractNgapCodes(fullTxt); } catch (_) {}
-      // Fragment ajouté si clic sur la bulle entière = reason seule
+
+      // Détection info/protection → non-cliquable, pas de chips
+      const isInfo = _cotIsInfoSuggestion(reason) || _cotIsInfoSuggestion(fullTxt) || (s.type && /info|protection|audit/i.test(s.type));
+
+      if (isInfo) {
+        // Rendu purement informatif — aucune interaction, aucune flèche "+"
+        return `<div class="ai su" style="border-left:3px solid #6366f1;cursor:default">
+          ${gain ? `<strong style="color:var(--a)">${gain}</strong> — ` : ''}${reason}
+          ${action ? `<span style="font-size:10px;opacity:.7"> → ${action}</span>` : ''}
+        </div>`;
+      }
+
+      // Cliquable : extraction des groupes (codes reliés par "+" → 1 chip combo)
+      let chips = [];
+      try { chips = _cotExtractNgapChips(fullTxt); } catch (_) {}
       const frag = (reason || action || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      const chipsHtml = codes.length
-        ? `<div class="ngap-chip-lbl">💡 Ajouter un code à la description :</div>
-           <div class="ngap-chips">${codes.map(c => {
+      const chipsHtml = chips.length
+        ? `<div class="ngap-chip-lbl">💡 Ajouter à la description :</div>
+           <div class="ngap-chips">${chips.map(c => {
              const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
              const dsp = c.display.replace(/"/g, '&quot;');
              return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}')" title="Ajouter « ${dsp} » à la description">${dsp}</span>`;
@@ -1799,12 +1921,19 @@ function renderCot(d) {
     <div class="aic">${op.map((o, i) => {
       const msg = typeof o === 'string' ? o : (o.msg || JSON.stringify(o));
       const msgEsc = msg.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      // Extraction des codes NGAP éventuels pour proposer une insertion ciblée
-      let codes = [];
-      try { codes = _cotExtractNgapCodes(msg); } catch (_) {}
-      const chipsHtml = codes.length
-        ? `<div class="ngap-chip-lbl">💡 Ajouter un code à la description :</div>
-           <div class="ngap-chips">${codes.map(c => {
+
+      // Info/protection au milieu des optims → non-cliquable
+      const isInfo = _cotIsInfoSuggestion(msg);
+      if (isInfo) {
+        return `<div class="ai su" style="border-left:3px solid #6366f1;cursor:default">💡 ${msg}</div>`;
+      }
+
+      // Extraction des groupes (codes reliés par "+" → 1 chip combo)
+      let chips = [];
+      try { chips = _cotExtractNgapChips(msg); } catch (_) {}
+      const chipsHtml = chips.length
+        ? `<div class="ngap-chip-lbl">💡 Ajouter à la description :</div>
+           <div class="ngap-chips">${chips.map(c => {
              const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
              const dsp = c.display.replace(/"/g, '&quot;');
              return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}')" title="Ajouter « ${dsp} » à la description">${dsp}</span>`;
@@ -1897,6 +2026,47 @@ function renderCot(d) {
       }).join('')
     : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}
   </div>
+
+  ${(() => {
+    // ══ BANDEAU RÉGRESSION D'ACTES ══
+    // Détecte les actes présents dans l'ancienne cotation (_prevActes) qui ont
+    // disparu de la nouvelle. Arrive typiquement quand une re-cotation utilise
+    // une description incomplète (ex: AMI4 n'est plus dans f-txt).
+    try {
+      const editRef = window._editingCotation;
+      const prevActes = editRef?._prevActes;
+      if (!Array.isArray(prevActes) || !prevActes.length) return '';
+      // Codes présents dans la nouvelle cotation (normalisation MAJ sans espaces)
+      const normNew = new Set((a || []).map(x => String(x.code || '').toUpperCase().replace(/\s+/g, '')));
+      const missing = prevActes.filter(p => {
+        const k = String(p.code || '').toUpperCase().replace(/\s+/g, '');
+        return k && !normNew.has(k);
+      });
+      if (!missing.length) return '';
+      // Chip pour chaque acte manquant : clic = ajoute "CODE NOM" à f-txt
+      const missChips = missing.map(p => {
+        const code   = String(p.code || '').trim();
+        const nom    = String(p.nom  || '').trim();
+        const short  = nom.split(/[—–\-:()]/)[0].trim().slice(0, 40);
+        const insTxt = (code + (short ? ' ' + short : '')).trim();
+        const insEsc = insTxt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const dspEsc = code.replace(/"/g, '&quot;');
+        return `<span class="ngap-chip warn" onclick="window._cotClickAppend(this,'${insEsc}','${dspEsc}')" title="Remettre « ${dspEsc} » dans la description">${dspEsc}</span>`;
+      }).join('');
+      return `
+      <div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid #f59e0b">
+        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:4px;display:flex;align-items:center;gap:6px">
+          ⚠️ Acte${missing.length > 1 ? 's' : ''} principal${missing.length > 1 ? 'aux' : ''} disparu${missing.length > 1 ? 's' : ''} depuis la re-cotation
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-bottom:8px">
+          La cotation précédente contenait ${missing.length} acte${missing.length > 1 ? 's' : ''} qui ne figure${missing.length > 1 ? 'nt' : ''} plus dans celle-ci.
+          Si vous validez « Mettre à jour », il${missing.length > 1 ? 's' : ''} sera${missing.length > 1 ? 'nt' : ''} perdu${missing.length > 1 ? 's' : ''}.
+        </div>
+        <div class="ngap-chip-lbl" style="margin-top:0">💡 Remettre dans la description et re-coter :</div>
+        <div class="ngap-chips">${missChips}</div>
+      </div>`;
+    } catch (_) { return ''; }
+  })()}
 
   <!-- ══ ALERTES + OPTIMISATIONS + SUGGESTIONS + CPAM + SCORING ══ -->
   ${estimationBannerBloc}

@@ -334,6 +334,10 @@ select option{background:var(--s)}
 .ngap-chip.added::before{content:"✓ "}
 .ngap-chip::before{content:"+ "}
 .ngap-chip.added::before{content:""}
+/* Variante "warning" (ambre) — utilisée pour le bandeau de régression d'actes */
+.ngap-chip.warn{background:rgba(251,191,36,.12);color:#f59e0b;border-color:rgba(251,191,36,.45)}
+.ngap-chip.warn:hover{background:rgba(251,191,36,.25);border-color:#f59e0b}
+.ngap-chip.warn.added{background:#f59e0b;color:#1a1a1a;border-color:#f59e0b}
 .ngap-chip-lbl{font-size:10px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase;margin-top:10px;margin-bottom:4px;display:block}
 /* ── FAB flottant « Re-coter avec les ajouts » ────────────────────────── */
 .recote-fab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:9999;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:50px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#001f18;font-family:var(--fs,inherit);font-size:14px;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s,opacity .2s;animation:recoteFabIn .35s cubic-bezier(.34,1.56,.64,1)}
