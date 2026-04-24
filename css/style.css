@@ -338,13 +338,36 @@ select option{background:var(--s)}
 .ngap-chip.warn{background:rgba(251,191,36,.12);color:#f59e0b;border-color:rgba(251,191,36,.45)}
 .ngap-chip.warn:hover{background:rgba(251,191,36,.25);border-color:#f59e0b}
 .ngap-chip.warn.added{background:#f59e0b;color:#1a1a1a;border-color:#f59e0b}
+
+/* ── Actions cliquables dans la modale Verify + alertes carte résultat ───── */
+.vm-clickable{cursor:pointer;transition:background .15s,border-color .15s;position:relative}
+.vm-clickable:hover{filter:brightness(1.15)}
+.vm-clickable:active{transform:scale(.99)}
+.vm-applied{background:rgba(0,212,170,.2) !important;border-color:var(--a) !important;animation:vmApplyFlash .4s}
+@keyframes vmApplyFlash{0%{background:var(--a);color:#000}100%{background:rgba(0,212,170,.2)}}
+.vm-act{display:inline-flex;align-items:center;gap:4px;font-family:var(--fm);font-size:10px;color:var(--a);background:var(--ad);border:1px solid rgba(0,212,170,.3);padding:2px 8px;border-radius:20px;margin-left:8px;opacity:.7;transition:opacity .15s;white-space:nowrap}
+.vm-clickable:hover .vm-act{opacity:1}
+.vm-applied .vm-act{background:var(--a);color:#000;opacity:1}
+.vm-applied .vm-act::before{content:"✓ Fait "}
+/* Rangée d'actions sous une alerte */
+.vm-actions-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.vm-act-btn{display:inline-flex;align-items:center;gap:4px;font-family:var(--fm);font-size:11px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.35);padding:5px 10px;border-radius:20px;cursor:pointer;transition:all .15s;user-select:none;font-weight:600}
+.vm-act-btn:hover{background:rgba(0,212,170,.25);border-color:var(--a);transform:translateY(-1px)}
+.vm-act-btn:active{transform:translateY(0)}
+.vm-act-btn.sec{background:rgba(99,102,241,.12);color:#a5a6f6;border-color:rgba(99,102,241,.35);font-weight:500}
+.vm-act-btn.sec:hover{background:rgba(99,102,241,.22);border-color:#6366f1}
+.vm-act-btn.vm-applied{background:var(--a);color:#000}
+/* Dans la carte résultat : alertes avec actions */
+.ai.ai-has-actions{flex-direction:column;align-items:flex-start;gap:0;padding:10px 14px}
+.ai.ai-has-actions > div:first-child{margin-bottom:4px}
 .ngap-chip-lbl{font-size:10px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase;margin-top:10px;margin-bottom:4px;display:block}
 /* ── FAB flottant « Re-coter avec les ajouts » ────────────────────────── */
-/* Position : décalée vers la gauche pour ne pas chevaucher le bouton vocal
-   (FAB vocal ≈ 60px de large à right:20px → on s'écarte de ~96px) */
-.recote-fab{position:fixed;right:96px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:9998;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:50px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#001f18;font-family:var(--fs,inherit);font-size:14px;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s,opacity .2s;animation:recoteFabIn .35s cubic-bezier(.34,1.56,.64,1);pointer-events:auto}
-.recote-fab:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 12px 32px rgba(0,212,170,.6),0 4px 12px rgba(0,0,0,.3)}
-.recote-fab:active{transform:translateY(0) scale(.98)}
+/* Position : suffisamment à gauche pour ne pas chevaucher le bouton vocal
+   (vocal ≈ 56px à right:20px). On se place largement au-delà.
+   Alternative : centre-bas si Bastien préfère. */
+.recote-fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));right:auto;z-index:9998;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:50px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#001f18;font-family:var(--fs,inherit);font-size:14px;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s,opacity .2s;animation:recoteFabIn .35s cubic-bezier(.34,1.56,.64,1);pointer-events:auto}
+.recote-fab:hover{transform:translateX(-50%) translateY(-2px) scale(1.03);box-shadow:0 12px 32px rgba(0,212,170,.6),0 4px 12px rgba(0,0,0,.3)}
+.recote-fab:active{transform:translateX(-50%) translateY(0) scale(.98)}
 .recote-fab-ico{font-size:18px;line-height:1;display:inline-block;animation:recoteFabSpin 3s ease-in-out infinite}
 .recote-fab-lbl{letter-spacing:.2px}
 .recote-fab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:20px;background:rgba(0,31,24,.22);color:#001f18;font-family:var(--fm,monospace);font-size:11px;font-weight:700}
@@ -353,11 +376,11 @@ select option{background:var(--s)}
 .recote-fab-close:active{transform:scale(.95)}
 .recote-fab.loading{pointer-events:none;opacity:.85}
 .recote-fab.loading .recote-fab-ico{animation:recoteFabSpin .8s linear infinite}
-@keyframes recoteFabIn{0%{opacity:0;transform:translateY(16px) scale(.88)}100%{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes recoteFabOut{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(16px) scale(.88)}}
+@keyframes recoteFabIn{0%{opacity:0;transform:translateX(-50%) translateY(16px) scale(.88)}100%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+@keyframes recoteFabOut{0%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}100%{opacity:0;transform:translateX(-50%) translateY(16px) scale(.88)}}
 @keyframes recoteFabSpin{0%{transform:rotate(0)}50%{transform:rotate(180deg)}100%{transform:rotate(360deg)}}
 .recote-fab.out{animation:recoteFabOut .25s ease-in forwards}
-@media(max-width:640px){.recote-fab{right:80px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:10px 14px;font-size:12px;gap:8px}.recote-fab-lbl{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.recote-fab-ico{font-size:16px}.recote-fab-badge{min-width:18px;height:18px;font-size:10px}.recote-fab-close{width:18px;height:18px;font-size:12px}}
+@media(max-width:640px){.recote-fab{left:50%;right:auto;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:10px 14px;font-size:12px;gap:8px}.recote-fab-lbl{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.recote-fab-ico{font-size:16px}.recote-fab-badge{min-width:18px;height:18px;font-size:10px}.recote-fab-close{width:18px;height:18px;font-size:12px}.recote-fab:hover{transform:translateX(-50%) translateY(-2px) scale(1.03)}.recote-fab:active{transform:translateX(-50%) translateY(0) scale(.98)}}
 .dreb{display:inline-flex;align-items:center;gap:6px;background:rgba(79,168,255,.12);border:1px solid rgba(79,168,255,.3);color:var(--a2);font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px}
 .rag-c{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .rag-ch{font-family:var(--fm);font-size:10px;color:var(--m);background:var(--s);border:1px solid var(--b);padding:2px 8px;border-radius:20px}

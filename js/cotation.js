@@ -1775,6 +1775,29 @@ function _cotPrewarmN8N() {
   } catch (_) {}
 }
 
+/* Version « forte » : envoie un vrai appel N8N avec un texte factice pour
+   garantir que tout le pipeline IA est chaud (parsing, Grok, NGAPEngine côté
+   worker). Appelée quand l'utilisateur arrive sur la page cotation — plus
+   agressif que _cotPrewarmN8N() qui ne fait qu'un ping. Non bloquant.
+   Une fois par session uniquement. */
+function _cotPrewarmN8N_FullPipeline() {
+  if (window._cotN8NFullPrewarmed) return;
+  window._cotN8NFullPrewarmed = true;
+  try {
+    if (typeof apiCall !== 'function') return;
+    // Texte factice standard — le worker ne le persiste pas car _prewarm:true
+    Promise.resolve(apiCall('/webhook/ami-calcul', {
+      mode: 'ngap',
+      texte: 'injection insuline',
+      _prewarm: true,          // drapeau : pas de sauvegarde Supabase/IDB
+      _no_local_fallback: true, // on veut vraiment N8N pour le réveil complet
+    }, { silent: true })).catch(() => {
+      // Ignorer — c'est juste un warm-up
+    });
+    console.info('[cotation] Pré-warm N8N complet envoyé (pipeline IA)');
+  } catch (_) {}
+}
+
 /* Hook sur navTo : déclencher le pré-warm dès qu'on entre sur la page cotation */
 if (typeof window !== 'undefined' && !window._cotPrewarmHookInstalled) {
   window._cotPrewarmHookInstalled = true;
@@ -1782,6 +1805,7 @@ if (typeof window !== 'undefined' && !window._cotPrewarmHookInstalled) {
   try {
     if (typeof location !== 'undefined' && /[?&#]p=cot|#cot/.test(location.href)) {
       setTimeout(_cotPrewarmN8N, 800);
+      setTimeout(_cotPrewarmN8N_FullPipeline, 1500);
     }
   } catch (_) {}
   // Pré-warm général au chargement de l'app (3s après DOMContentLoaded ou immédiat)
@@ -1807,9 +1831,12 @@ if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
     if (typeof _origNavTo === 'function') {
       window.navTo = function patchedNavTo(section, ...rest) {
         if (section && section !== 'cot') _cotHideReCoteBar();
-        // Pré-warm N8N au moment où l'utilisateur arrive sur la page cotation
+        // Pré-warm N8N quand l'utilisateur arrive sur la page cotation
+        // - _cotPrewarmN8N : ping léger (réveille le conteneur Render)
+        // - _cotPrewarmN8N_FullPipeline : vrai appel N8N (réveille l'IA en entier)
         if (section === 'cot') {
           try { setTimeout(_cotPrewarmN8N, 300); } catch (_) {}
+          try { setTimeout(_cotPrewarmN8N_FullPipeline, 800); } catch (_) {}
         }
         return _origNavTo.apply(this, [section, ...rest]);
       };
@@ -1972,6 +1999,12 @@ if (typeof window !== 'undefined') {
   window._cotHideReCoteBar       = _cotHideReCoteBar;
   window._cotEnrichWithLocalEngine = _cotEnrichWithLocalEngine;
   window._cotPrewarmN8N          = _cotPrewarmN8N;
+  window._cotPrewarmN8N_FullPipeline = _cotPrewarmN8N_FullPipeline;
+  // Bouton « Vérifier & corriger » (handlers inline du HTML)
+  if (typeof openVerify       === 'function') window.openVerify       = openVerify;
+  if (typeof applyVerify      === 'function') window.applyVerify      = applyVerify;
+  if (typeof closeVM          === 'function') window.closeVM          = closeVM;
+  if (typeof verifyStandalone === 'function') window.verifyStandalone = verifyStandalone;
 }
 
 function renderCot(d) {
@@ -2123,11 +2156,20 @@ function renderCot(d) {
     : '';
 
   // ── Alertes NGAP ────────────────────────────────────────────────────────────
+  // Les alertes de type "cumul interdit" ou "code non reconnu" deviennent cliquables :
+  // elles ouvrent une ligne d'actions (remplacer/supprimer/préciser) directement dans la carte.
   const alertsBloc = al.length
-    ? `<div class="aic" style="margin-top:12px">${al.map(x => {
+    ? `<div class="aic" style="margin-top:12px">${al.map((x, i) => {
         const isErr = x.startsWith('🚨') || x.startsWith('❌');
         const isOk  = x.startsWith('✅');
-        return `<div class="ai ${isErr ? 'er' : isOk ? 'su' : 'wa'}">${x}</div>`;
+        const isInfo = x.startsWith('ℹ️');
+        const cls = isErr ? 'er' : isOk ? 'su' : isInfo ? 'in' : 'wa';
+        // Pas d'actions sur les messages OK / Info
+        const actionsHtml = (isOk || isInfo) ? '' : _vmBuildAlertActions(x);
+        return `<div class="ai ${cls}${actionsHtml ? ' ai-has-actions' : ''}">
+          <div>${x}</div>
+          ${actionsHtml}
+        </div>`;
       }).join('')}</div>`
     : `<div class="ai su" style="margin-top:12px">✅ Aucune alerte NGAP</div>`;
 
@@ -2756,25 +2798,85 @@ ${sigHtml || ''}
 async function openVerify() {
   const txt = gv('f-txt');
   if (!txt) { alert("Saisissez d'abord une description du soin."); return; }
+
+  // Loading visuel sur le bouton lui-même (en plus de la modale)
+  const _btnVerify = $('btn-verify');
+  const _origLabel = _btnVerify ? _btnVerify.innerHTML : null;
+  if (_btnVerify) {
+    _btnVerify.innerHTML = '<span class="spin spinw" style="width:14px;height:14px;display:inline-block;vertical-align:middle"></span> Analyse en cours…';
+    _btnVerify.disabled = true;
+  }
+
   $('vm').classList.add('open');
   $('vm-loading').style.display = 'block';
   $('vm-result').style.display = 'none';
   $('vm-apply').style.display = 'none';
   $('vm-cotate').style.display = 'none';
   VM_DATA = null;
+
+  // ── Pré-warm N8N en parallèle (au cas où le worker dort) ──
+  // Ne bloque pas — le vrai appel est verify ci-dessous
+  try { if (typeof _cotPrewarmN8N === 'function') _cotPrewarmN8N(); } catch (_) {}
+
+  // ── Feedback progressif si N8N est lent (cold-start Render ~30s) ──
+  const _slowMsgs = [
+    { delay: 6000,  msg: '🤖 N8N analyse votre description…' },
+    { delay: 18000, msg: '🤖 Service en cours de réveil — patientez…' },
+    { delay: 35000, msg: '🤖 Démarrage du service N8N (cold-start)…' },
+  ];
+  const _slowTimers = [];
+  const _vmLoadingMsg = $('vm-loading')?.querySelector('p');
+  const _origMsg = _vmLoadingMsg ? _vmLoadingMsg.textContent : null;
+  _slowMsgs.forEach(({ delay, msg }) => {
+    _slowTimers.push(setTimeout(() => {
+      if (_vmLoadingMsg) _vmLoadingMsg.textContent = msg;
+    }, delay));
+  });
+  const _clearVerifyTimers = () => {
+    _slowTimers.forEach(t => clearTimeout(t));
+    if (_vmLoadingMsg && _origMsg) _vmLoadingMsg.textContent = _origMsg;
+    if (_btnVerify) {
+      if (_origLabel) _btnVerify.innerHTML = _origLabel;
+      _btnVerify.disabled = false;
+    }
+  };
+
   try {
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'verify',
       _force_n8n: true,       // ⚡ force l'appel N8N — bypass moteur local + cache + circuit breaker
+      _no_local_fallback: true, // pas de fallback NGAPEngine ici : on VEUT N8N pour la vérif
       texte: txt, ddn: gv('f-ddn'),
       date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
-      exo: gv('f-exo'), regl: gv('f-regl')
+      exo: gv('f-exo'), regl: gv('f-regl'),
     });
+    _clearVerifyTimers();
     VM_DATA = d;
     renderVM(d);
   } catch (e) {
+    _clearVerifyTimers();
     $('vm-loading').style.display = 'none';
-    $('vm-result').innerHTML = `<div class="vm-item warn">⚠️ Erreur : ${e.message}</div>`;
+    // Message d'erreur plus parlant selon le type
+    let errMsg = e.message || 'Erreur inconnue';
+    let errIcon = '⚠️';
+    let errAdvice = '';
+    if (/timeout|aborted|signal/i.test(errMsg)) {
+      errIcon = '⏱️';
+      errMsg = 'N8N n\'a pas répondu dans les temps (cold-start probable)';
+      errAdvice = '<div style="margin-top:10px;font-size:12px;color:var(--m)">💡 Réessayez dans 15-30 secondes — le service est en cours de démarrage.</div>';
+    } else if (/network|fetch|failed/i.test(errMsg)) {
+      errIcon = '📡';
+      errMsg = 'Connexion réseau impossible';
+      errAdvice = '<div style="margin-top:10px;font-size:12px;color:var(--m)">💡 Vérifiez votre connexion internet.</div>';
+    }
+    $('vm-result').innerHTML = `
+      <div class="vm-item warn">${errIcon} ${errMsg}</div>
+      ${errAdvice}
+      <div style="margin-top:14px;display:flex;gap:8px">
+        <button class="btn bp bsm" onclick="closeVM();setTimeout(openVerify,500)">🔄 Réessayer</button>
+        <button class="btn bs bsm" onclick="closeVM();setTimeout(cotation,100)">⚡ Coter quand même</button>
+      </div>
+    `;
     $('vm-result').style.display = 'block';
   }
 }
@@ -2790,11 +2892,239 @@ function renderVM(d) {
     $('vm-corrected-text').textContent = corrige;
     $('vm-apply').style.display = 'flex';
   } else { $('vm-corr-wrap').style.display = 'none'; }
-  if (fixes.length)  { $('vm-fixes-wrap').style.display = 'block';  $('vm-fixes').innerHTML  = fixes.map(f  => `<div class="vm-item fix">✏️ ${f}</div>`).join(''); } else { $('vm-fixes-wrap').style.display  = 'none'; }
-  if (alerts.length) { $('vm-alerts-wrap').style.display = 'block'; $('vm-alerts').innerHTML = alerts.map(a => `<div class="vm-item warn">⚠️ ${a}</div>`).join(''); } else { $('vm-alerts-wrap').style.display = 'none'; }
-  if (sugg.length)   { $('vm-sugg-wrap').style.display   = 'block'; $('vm-sugg').innerHTML   = sugg.map(s   => `<div class="vm-item sugg">💡 ${s}</div>`).join(''); } else { $('vm-sugg-wrap').style.display   = 'none'; }
+
+  // ── Corrections : cliquables pour appliquer directement le fix au textarea ──
+  if (fixes.length) {
+    $('vm-fixes-wrap').style.display = 'block';
+    $('vm-fixes').innerHTML = fixes.map((f, i) => {
+      const txt = typeof f === 'string' ? f : (f.msg || f.text || JSON.stringify(f));
+      const esc = txt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      return `<div class="vm-item fix vm-clickable" onclick="window._vmApplyFix('${esc}',this)" title="Cliquer pour appliquer cette correction dans la description">✏️ ${txt} <span class="vm-act">+ Appliquer</span></div>`;
+    }).join('');
+  } else { $('vm-fixes-wrap').style.display = 'none'; }
+
+  // ── Incohérences NGAP : actions contextuelles ──
+  // Ex: "NUIT + NUIT_PROF non cumulables — appliquer NUIT_PROF si après 23h"
+  //     → boutons "Remplacer NUIT par NUIT_PROF" et "Garder NUIT"
+  // Ex: "Code AMI non reconnu dans le référentiel"
+  //     → boutons "Supprimer AMI" et "Corriger en AMI 1"
+  if (alerts.length) {
+    $('vm-alerts-wrap').style.display = 'block';
+    $('vm-alerts').innerHTML = alerts.map((a, i) => {
+      const txt = typeof a === 'string' ? a : (a.msg || a.text || JSON.stringify(a));
+      const actionsHtml = _vmBuildAlertActions(txt);
+      return `<div class="vm-item warn" data-alert-idx="${i}">
+        <div>⚠️ ${txt}</div>
+        ${actionsHtml}
+      </div>`;
+    }).join('');
+  } else { $('vm-alerts-wrap').style.display = 'none'; }
+
+  // ── Suggestions : cliquables (ajout du code extrait ou de la suggestion entière) ──
+  if (sugg.length) {
+    $('vm-sugg-wrap').style.display = 'block';
+    $('vm-sugg').innerHTML = sugg.map((s, i) => {
+      const txt = typeof s === 'string' ? s : (s.msg || s.text || JSON.stringify(s));
+      // Extraire les codes NGAP éventuels pour créer des chips
+      let chips = [];
+      try { chips = _cotExtractNgapChips(txt); } catch (_) {}
+      const chipsHtml = chips.length
+        ? `<div class="ngap-chips" style="margin-top:6px">${chips.map(c => {
+            const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const dsp = c.display.replace(/"/g, '&quot;');
+            return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}');window.closeVM&&setTimeout(window.closeVM,300)" title="Ajouter « ${dsp} » à la description puis fermer">${dsp}</span>`;
+          }).join('')}</div>`
+        : '';
+      const esc = txt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      return `<div class="vm-item sugg vm-clickable" onclick="window._vmApplySuggestion('${esc}',this)" title="Cliquer pour ajouter à la description">
+        <div>💡 ${txt} <span class="vm-act">+ Ajouter</span></div>
+        ${chipsHtml}
+      </div>`;
+    }).join('');
+  } else { $('vm-sugg-wrap').style.display = 'none'; }
+
   $('vm-ok-wrap').style.display = hasChanges ? 'none' : 'block';
   $('vm-cotate').style.display = 'flex';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Handlers pour les éléments cliquables dans la modale « Vérifier & corriger »
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Applique une correction proposée : ajoute le texte à f-txt */
+function _vmApplyFix(fix, el) {
+  if (typeof _cotAppendDesc === 'function') _cotAppendDesc(fix);
+  if (el && el.classList) {
+    el.classList.add('vm-applied');
+    setTimeout(() => { try { el.classList.remove('vm-applied'); } catch(_){} }, 2000);
+  }
+  // Pas de fermeture automatique — on laisse l'utilisateur enchaîner
+}
+
+/* Applique une suggestion : ajoute le texte et ferme la modale */
+function _vmApplySuggestion(sug, el) {
+  if (typeof _cotAppendDesc === 'function') _cotAppendDesc(sug);
+  if (el && el.classList) {
+    el.classList.add('vm-applied');
+  }
+  setTimeout(() => { try { closeVM(); } catch(_) {} }, 400);
+}
+
+/* Construit les boutons d'action pour une alerte NGAP selon son contenu */
+function _vmBuildAlertActions(alertTxt) {
+  const s = String(alertTxt || '');
+  const actions = [];
+
+  // ── Pattern 1 : cumul interdit "X + Y non cumulables — appliquer Y si …" ──
+  //   Ex: NUIT + NUIT_PROF non cumulables — appliquer NUIT_PROF si après 23h
+  const cumul = s.match(/\b([A-Z][A-Z_0-9]*)\s*\+\s*([A-Z][A-Z_0-9]*)\s+non\s+cumulables?\s*[—\-:]+\s*appliquer\s+([A-Z][A-Z_0-9]*)/i);
+  if (cumul) {
+    const codeA = cumul[1].toUpperCase();
+    const codeB = cumul[2].toUpperCase();
+    const codeKeep = cumul[3].toUpperCase();
+    const codeDrop = codeKeep === codeA ? codeB : codeA;
+    actions.push({
+      label: `→ Remplacer par ${codeKeep} seul`,
+      action: `_vmReplaceCode('${codeDrop}','${codeKeep}',this)`,
+      title: `Supprimer ${codeDrop} et conserver ${codeKeep} dans la description`,
+    });
+    actions.push({
+      label: `Supprimer ${codeDrop}`,
+      action: `_vmRemoveCode('${codeDrop}',this)`,
+      title: `Retirer ${codeDrop} de la description`,
+      secondary: true,
+    });
+  }
+
+  // ── Pattern 2 : "Code X non reconnu dans le référentiel — accepté tel quel" ──
+  // Ex: Code "AMI" non reconnu dans le référentiel — accepté tel quel
+  const unknown = s.match(/code\s*["«]?\s*([A-Z][A-Z_0-9]*)\s*["»]?\s+non\s+reconnu/i);
+  if (unknown && !cumul) {
+    const code = unknown[1].toUpperCase();
+    actions.push({
+      label: `Supprimer "${code}"`,
+      action: `_vmRemoveCode('${code}',this)`,
+      title: `Retirer "${code}" de la description (code incomplet)`,
+    });
+    // Propose des remplacements courants si c'est "AMI" seul
+    if (code === 'AMI') {
+      ['AMI 1', 'AMI 4', 'AMI 9', 'AMI 14'].forEach(sug => {
+        actions.push({
+          label: `→ ${sug}`,
+          action: `_vmReplaceCode('${code}','${sug}',this)`,
+          title: `Remplacer "${code}" par "${sug}"`,
+          secondary: true,
+        });
+      });
+    }
+    if (code === 'AIS') {
+      ['AIS 3', 'AIS 4'].forEach(sug => {
+        actions.push({
+          label: `→ ${sug}`,
+          action: `_vmReplaceCode('${code}','${sug}',this)`,
+          secondary: true,
+        });
+      });
+    }
+  }
+
+  // ── Pattern 3 : "Coefficient manquant pour X" / "coefficient requis" ──
+  const coefMiss = s.match(/coefficient\s+(?:manquant|requis|obligatoire)\s*(?:pour\s*)?([A-Z][A-Z_0-9]*)?/i);
+  if (coefMiss && !cumul && !unknown) {
+    const code = (coefMiss[1] || '').toUpperCase();
+    if (code) {
+      actions.push({
+        label: `Préciser ${code}…`,
+        action: `_vmPromptCoef('${code}',this)`,
+        title: `Saisir le coefficient correct pour ${code}`,
+      });
+    }
+  }
+
+  // ── Pattern 4 : "Acte X requis" / "manque X" ──
+  const missReq = s.match(/(?:manque|requis|ajouter)\s+([A-Z][A-Z_0-9]*\s*\d*(?:[._/]\d+)?)/i);
+  if (missReq && !cumul && !unknown && !coefMiss) {
+    const code = missReq[1].trim();
+    actions.push({
+      label: `+ Ajouter ${code}`,
+      action: `_vmAppendCode('${code}',this)`,
+      title: `Ajouter ${code} à la description`,
+    });
+  }
+
+  // ── Extraction générique : tout code NGAP mentionné dans l'alerte ──
+  // (si aucun pattern spécifique n'a matché, on propose d'extraire les codes)
+  if (!actions.length) {
+    try {
+      const chips = _cotExtractNgapChips(s);
+      chips.forEach(c => {
+        const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const dsp = c.display.replace(/"/g, '&quot;');
+        actions.push({
+          label: `+ ${dsp}`,
+          action: `_vmAppendCode('${ins}',this)`,
+          title: `Ajouter « ${dsp} » à la description`,
+          secondary: true,
+        });
+      });
+    } catch (_) {}
+  }
+
+  if (!actions.length) return '';
+  return `<div class="vm-actions-row">${actions.map(a =>
+    `<button type="button" class="vm-act-btn${a.secondary ? ' sec' : ''}" onclick="event.stopPropagation();window.${a.action}" title="${a.title || ''}">${a.label}</button>`
+  ).join('')}</div>`;
+}
+
+/* Retire toutes les occurrences d'un code de la description (f-txt) */
+function _vmRemoveCode(code, btn) {
+  const el = $('f-txt'); if (!el) return;
+  const cur = el.value || '';
+  // Regex insensible à la casse, frontière mot, gère le "+" séparateur
+  const reCode = new RegExp('\\s*\\+?\\s*\\b' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b(?:\\s+[a-zàâéèêëïîôùûüç0-9éè]+(?:\\s+[a-zàâéèêëïîôùûüç0-9éè]+){0,2})?', 'gi');
+  const cleaned = cur.replace(reCode, '').replace(/\s{2,}/g, ' ').replace(/^\s*\+?\s*|\s*\+?\s*$/g, '').trim();
+  el.value = cleaned;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  if (btn && btn.classList) btn.classList.add('vm-applied');
+  if (typeof showToast === 'function') showToast(`✅ "${code}" retiré de la description`, 'su');
+  // Active le FAB pour que l'utilisateur puisse relancer
+  if (typeof _cotShowReCoteBar === 'function') _cotShowReCoteBar();
+}
+
+/* Remplace un code par un autre dans la description */
+function _vmReplaceCode(oldCode, newCode, btn) {
+  const el = $('f-txt'); if (!el) return;
+  const cur = el.value || '';
+  const reCode = new RegExp('\\b' + oldCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+  if (reCode.test(cur)) {
+    // Remplacement direct
+    const replaced = cur.replace(reCode, newCode);
+    el.value = replaced;
+  } else {
+    // oldCode n'était pas présent → append newCode
+    const sep = cur && !/[,+]\s*$/.test(cur) ? ' + ' : ' ';
+    el.value = cur.trim() + sep + newCode;
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  if (btn && btn.classList) btn.classList.add('vm-applied');
+  if (typeof showToast === 'function') showToast(`✅ Remplacé par "${newCode}"`, 'su');
+  if (typeof _cotShowReCoteBar === 'function') _cotShowReCoteBar();
+}
+
+/* Ajoute un code à la description */
+function _vmAppendCode(code, btn) {
+  if (typeof _cotAppendDesc === 'function') _cotAppendDesc(code);
+  if (btn && btn.classList) btn.classList.add('vm-applied');
+  if (typeof showToast === 'function') showToast(`✅ "${code}" ajouté`, 'su');
+  if (typeof _cotShowReCoteBar === 'function') _cotShowReCoteBar();
+}
+
+/* Prompt pour préciser le coefficient d'un code */
+function _vmPromptCoef(code, btn) {
+  const coef = prompt(`Coefficient pour ${code} ? (ex: 1, 4, 4.1, 9, 14/15)`);
+  if (!coef) return;
+  const cleaned = String(coef).trim().replace(/,/g, '.');
+  _vmReplaceCode(code, code + ' ' + cleaned, btn);
 }
 
 function applyVerify() { if (VM_DATA?.texte_corrige) $('f-txt').value = VM_DATA.texte_corrige; closeVM(); }
@@ -2864,4 +3194,25 @@ function coterDepuisRoute(desc, nomPatient) {
     const elTxt = $('f-txt'); if (elTxt) { elTxt.value = desc; elTxt.focus(); }
     const elPt  = $('f-pt');  if (elPt && nomPatient) elPt.value = nomPatient;
   }, 150);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Exposition globale (fin de fichier) des fonctions appelées par les
+   handlers inline `onclick=""` du HTML. Doit être après la définition
+   des fonctions concernées.
+   ═══════════════════════════════════════════════════════════════════════════ */
+if (typeof window !== 'undefined') {
+  if (typeof openVerify       === 'function') window.openVerify       = openVerify;
+  if (typeof applyVerify      === 'function') window.applyVerify      = applyVerify;
+  if (typeof closeVM          === 'function') window.closeVM          = closeVM;
+  if (typeof verifyStandalone === 'function') window.verifyStandalone = verifyStandalone;
+  if (typeof renderVM         === 'function') window.renderVM         = renderVM;
+  // Handlers pour les actions des alertes de la modale Verify + carte résultat
+  if (typeof _vmApplyFix        === 'function') window._vmApplyFix        = _vmApplyFix;
+  if (typeof _vmApplySuggestion === 'function') window._vmApplySuggestion = _vmApplySuggestion;
+  if (typeof _vmBuildAlertActions === 'function') window._vmBuildAlertActions = _vmBuildAlertActions;
+  if (typeof _vmRemoveCode      === 'function') window._vmRemoveCode      = _vmRemoveCode;
+  if (typeof _vmReplaceCode     === 'function') window._vmReplaceCode     = _vmReplaceCode;
+  if (typeof _vmAppendCode      === 'function') window._vmAppendCode      = _vmAppendCode;
+  if (typeof _vmPromptCoef      === 'function') window._vmPromptCoef      = _vmPromptCoef;
 }
