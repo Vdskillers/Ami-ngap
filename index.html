@@ -3615,7 +3615,6 @@ async function resetAllHist() {
    → bypass de la modale doublon, mode upsert garanti.
    ═══════════════════════════════════════════════════════════ */
 async function editFromHist(data) {
-  console.log('[editFromHist] Démarrage avec data:', data);
   if (!data) { console.warn('[editFromHist] data null/undefined → abort'); return; }
 
   const invNum   = data.invoice_number || null;
@@ -3764,12 +3763,10 @@ window.editFromHistBtn = function(btn) {
   // Anti-double-déclenchement (mousedown + click sur le même bouton)
   const now = Date.now();
   if (now - _editFromHistBtnLastCall < 500) {
-    console.log('[editFromHistBtn] Doublon ignoré (mousedown + click)');
     return;
   }
   _editFromHistBtnLastCall = now;
 
-  console.log('[editFromHistBtn] Clic ✏️ détecté sur:', btn);
   if (!btn || !btn.dataset) {
     console.warn('[editFromHistBtn] bouton ou dataset invalide');
     return;
@@ -3793,7 +3790,6 @@ document.addEventListener('click', function(e) {
   if (!btn) return;
   // Si onclick inline est déjà présent, il a déjà été appelé → ne pas re-déclencher
   if (btn.hasAttribute('onclick')) return;
-  console.log('[editFromHist délégué] Fallback déclenché');
   window.editFromHistBtn(btn);
 });
 
