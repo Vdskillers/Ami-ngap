@@ -733,6 +733,86 @@ async function saveSignature() {
     }
   } catch (_) {}
 
+  // ⚡ 6-bis) Création AUTOMATIQUE des consentements pré-remplis ──────────────
+  //    Si la cotation a détecté un consentement manquant (toast "Consentement à
+  //    compléter" → warning), les types requis ont été mémorisés côté cotation.js.
+  //    On crée ici le(s) consentement(s) avec la signature qui vient d'être saisie,
+  //    le type détecté depuis l'acte, la date et le nom du patient.
+  //    Résultat : un consentement valide apparaît automatiquement dans l'onglet
+  //    Consentements du patient, sans aucune action supplémentaire.
+  try {
+    // Purge TTL : si un pending a plus de 2h sans signature, on le nettoie
+    // (évite qu'une signature tardive sur un autre invoice créé une semaine plus
+    // tard recrée un consentement fantôme). Seuil 2h largement au-dessus d'une
+    // tournée normale.
+    const _TTL = 2 * 3600 * 1000;
+    const _now = Date.now();
+    if (window._pendingConsentsByInvoice) {
+      for (const [_k, _v] of Object.entries(window._pendingConsentsByInvoice)) {
+        if (_v?.created_at && (_now - _v.created_at) > _TTL) {
+          delete window._pendingConsentsByInvoice[_k];
+        }
+      }
+    }
+    if (window._pendingConsentsForPatient) {
+      for (const [_k, _v] of Object.entries(window._pendingConsentsForPatient)) {
+        if (_v?.created_at && (_now - _v.created_at) > _TTL) {
+          delete window._pendingConsentsForPatient[_k];
+        }
+      }
+    }
+
+    const _pending = window._pendingConsentsByInvoice?.[_currentInvoiceId];
+    // _consentCreateOrUpdate est déclaré au top-level dans consentements.js (portée globale)
+    const _createFn = (typeof _consentCreateOrUpdate === 'function')
+      ? _consentCreateOrUpdate
+      : (typeof window._consentCreateOrUpdate === 'function' ? window._consentCreateOrUpdate : null);
+
+    if (_pending && Array.isArray(_pending.types) && _pending.types.length
+        && _createFn && _pending.patient_id) {
+      const _dateSoin = _pending.date_soin || signedAt.slice(0, 10);
+      const _createdLabels = [];
+      for (const _type of _pending.types) {
+        try {
+          await _createFn({
+            patient_id:       _pending.patient_id,
+            type:             _type,
+            signatureDataUrl: png,                // même signature que l'invoice
+            patient_nom:      _pending.patient_nom || '',
+            qualite:          'Patient',
+            date:             _dateSoin,
+          });
+          const _tplMap = (typeof CONSENT_TEMPLATES !== 'undefined') ? CONSENT_TEMPLATES
+                        : (typeof window.CONSENT_TEMPLATES !== 'undefined' ? window.CONSENT_TEMPLATES : {});
+          const _lbl = _tplMap[_type]?.label || _type;
+          _createdLabels.push(_lbl);
+        } catch (_cErr) {
+          console.warn('[sig→consent] création KO pour', _type, ':', _cErr.message);
+        }
+      }
+      // Nettoyer l'état partagé
+      delete window._pendingConsentsByInvoice[_currentInvoiceId];
+      if (_pending.patient_id && window._pendingConsentsForPatient) {
+        delete window._pendingConsentsForPatient[_pending.patient_id];
+      }
+      // Feedback utilisateur
+      if (_createdLabels.length && typeof showToast === 'function') {
+        showToast('ok', '✅ Consentement(s) enregistré(s)',
+          _createdLabels.join(', ') + ' — signé le ' + _dateSoin);
+      }
+      // Rafraîchir la vue consentements si elle est affichée
+      // Fonction exposée depuis consentements.js : renderConsentements (pas consentRenderList)
+      const _renderFn = (typeof renderConsentements === 'function')
+        ? renderConsentements
+        : (typeof window.renderConsentements === 'function' ? window.renderConsentements : null);
+      if (_renderFn) {
+        try { _renderFn(); } catch(_) {}
+      }
+    }
+  } catch (_autoConsentErr) {
+    console.warn('[sig→consent] flow global KO:', _autoConsentErr.message);
+  }
+
   closeSignatureModal();
 
   // ── Feedback visuel sur le bouton d'impression si présent ──

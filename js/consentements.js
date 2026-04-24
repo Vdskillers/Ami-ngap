@@ -763,6 +763,11 @@ window.consentPullFromCabinet = consentPullFromCabinet;
 window._consentGetActive      = _consentGetActive;
 window._consentGetAllRaw      = _consentGetAllRaw;
 window.CONSENT_TEMPLATES      = CONSENT_TEMPLATES;
+// ⚡ Exposés pour le chaînage depuis signature.js (création auto de
+// consentement à la signature patient d'une cotation + refresh UI après).
+window._consentCreateOrUpdate = _consentCreateOrUpdate;
+window.renderConsentements    = renderConsentements;
+window.consentSelectPatient   = consentSelectPatient;
 
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'consentements') renderConsentements();

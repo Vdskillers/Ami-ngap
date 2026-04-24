@@ -1021,6 +1021,21 @@ async function _cotationPipeline() {
               `${(_ck.types_label || []).join(', ')} — acte loggé pour traçabilité`);
           if (typeof auditLog === 'function')
             auditLog('ACT_WITHOUT_CONSENT', { patient_id: _patIdForCheck, types: _ck.types });
+
+          // ⚡ Mémoriser les consentements manquants pour auto-création à la signature.
+          //    Quand l'infirmière cliquera sur "Faire signer le patient" après cotation,
+          //    signature.js créera automatiquement le(s) consentement(s) pré-rempli(s)
+          //    avec la signature saisie, le type détecté, et la date du soin.
+          //    Pas de signature pour le moment → pas de consentement créé (juste mémorisé).
+          window._pendingConsentsForPatient = window._pendingConsentsForPatient || {};
+          window._pendingConsentsForPatient[_patIdForCheck] = {
+            patient_id:  _patIdForCheck,
+            patient_nom: _patNom,
+            types:       _ck.types || [],
+            types_label: _ck.types_label || [],
+            actes_text:  txt,
+            created_at:  Date.now(),
+          };
         }
       }
     }
@@ -1326,18 +1341,58 @@ async function _cotationPipeline() {
     // Dispatch ami:cotation_done pour signature.js + injection directe du bouton
     const _invoiceId = d.invoice_number || null;
     if (_invoiceId) {  // admin inclus — peut tester et démontrer la signature
+
+      // ⚡ Transférer les consentements en attente (patient → invoice) pour que
+      //    saveSignature puisse créer automatiquement le(s) consentement(s)
+      //    pré-rempli(s) avec la signature, le type d'acte et la date.
+      //    Extrait le _patIdForCheck mémorisé plus haut dans le scope.
+      let _patIdResolved = null;
+      try {
+        const _pnCurrent = (gv('f-pt') || '').trim();
+        if (_pnCurrent && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          const _rows2 = await _idbGetAll(PATIENTS_STORE);
+          const _lowC = _pnCurrent.toLowerCase();
+          const _m2 = _rows2.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_lowC) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_lowC)
+          );
+          if (_m2) _patIdResolved = _m2.id;
+        }
+      } catch (_) {}
+
+      const _pendingForPatient = _patIdResolved
+        ? window._pendingConsentsForPatient?.[_patIdResolved]
+        : null;
+
+      if (_pendingForPatient) {
+        window._pendingConsentsByInvoice = window._pendingConsentsByInvoice || {};
+        window._pendingConsentsByInvoice[_invoiceId] = {
+          ..._pendingForPatient,
+          invoice_number: _invoiceId,
+          date_soin:      d.date_soin || new Date().toISOString().slice(0, 10),
+          created_at:     Date.now(),  // utilisé par le TTL de signature.js
+        };
+      }
+
       // Injection directe du bouton de signature dans la card résultat
       const _cbody = $('cbody');
       if (_cbody && !_cbody.querySelector('.sig-btn-wrap')) {
         const _wrap = document.createElement('div');
         _wrap.className = 'sig-btn-wrap';
         _wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+
+        // Badge visible si consentement(s) à créer à la signature
+        const _consentBadge = _pendingForPatient
+          ? `<span style="font-size:10px;background:rgba(255,181,71,.12);color:var(--w);border:1px solid rgba(255,181,71,.3);padding:3px 8px;border-radius:20px;font-family:var(--fm)">📄 Consentement sera ajouté : ${(_pendingForPatient.types_label || []).join(', ')}</span>`
+          : '';
+
         _wrap.innerHTML = `
           <button class="btn bv bsm" id="sig-btn-${_invoiceId}" data-sig="${_invoiceId}"
-            onclick="openSignatureModal('${_invoiceId}')">
+            onclick="openSignatureModal('${_invoiceId}', { patient_id: '${_patIdResolved || ''}', invoice_number: '${_invoiceId}' })">
             ✍️ Faire signer le patient
           </button>
-          <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>`;
+          <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>
+          ${_consentBadge}`;
         _cbody.querySelector('.card')?.appendChild(_wrap);
       }
       // Dispatch pour tout listener externe
