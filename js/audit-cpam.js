@@ -1698,9 +1698,14 @@ function auditCheckMonthlyReminder() {
   const hasThisMonth = history.some(h => h.month === monthKey);
   if (hasThisMonth) return; // déjà fait ce mois-ci
 
-  // Rappel : on lance l'audit en fond automatiquement le 1er jour disponible du mois
-  // pour alimenter l'historique de conformité (preuve juridique).
-  // Si showToast dispo → notifier l'IDE.
+  // DÉDUP : une seule notification par mois + par session de navigation
+  // (évite les doublons quand l'utilisateur re-rentre dans l'onglet audit)
+  const DEDUP_KEY = `ami_audit_reminder_${monthKey}`;
+  try {
+    if (sessionStorage.getItem(DEDUP_KEY)) return;
+    sessionStorage.setItem(DEDUP_KEY, String(Date.now()));
+  } catch(_) {}
+
   if (typeof showToast === 'function') {
     setTimeout(() => {
       showToast('info',

@@ -126,9 +126,72 @@ function _renderMyMessages(messages) {
       </div>
       <div style="font-size:13px;color:var(--m);line-height:1.6;white-space:pre-wrap">${_escHtml(m.message)}</div>
       ${replyBloc}
+      ${_renderMessageActions(m)}
     </div>`;
   }).join('');
 }
+
+/* Boutons d'action contextuels selon la catégorie du message */
+function _renderMessageActions(m) {
+  const actions = [];
+
+  // Suggestion de correction en attente → Accepter / Refuser
+  if (m.categorie === 'ngap_correction' && m.status === 'sent') {
+    actions.push(`<button class="btn bp bsm" onclick="contactAcceptSuggestion('${_escHtml(m.id)}')" style="background:#00d4aa;color:#fff">✅ Accepter la correction</button>`);
+    actions.push(`<button class="btn bs bsm" onclick="contactRejectSuggestion('${_escHtml(m.id)}')">✕ Refuser</button>`);
+  }
+  // Correction auto déjà appliquée → info seulement, pas d'action
+  if (m.categorie === 'ngap_auto_applied' && m.status === 'sent') {
+    actions.push(`<span style="font-size:11px;color:#10b981;font-family:var(--fm);padding:6px 12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:6px">✓ Correction déjà appliquée dans votre historique</span>`);
+  }
+  // Bouton supprimer pour TOUS les messages
+  actions.push(`<button class="btn bs bsm" onclick="contactDeleteMessage('${_escHtml(m.id)}')" title="Supprimer ce message définitivement" style="color:var(--d)">🗑️ Supprimer</button>`);
+
+  if (actions.length === 0) return '';
+  return `
+    <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--b);flex-wrap:wrap">
+      ${actions.join('')}
+    </div>`;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   ACTIONS SUR LES MESSAGES (Accepter / Refuser / Supprimer)
+────────────────────────────────────────────────────────────── */
+
+window.contactAcceptSuggestion = async function(msgId) {
+  try {
+    const d = await apiCall('/webhook/ngap-correction-action', { message_id: msgId, action: 'accept' });
+    if (!d || !d.ok) throw new Error(d?.error || 'Action impossible');
+    if (typeof showToast === 'function') showToast('success', 'Suggestion acceptée', 'Rendez-vous dans votre historique pour appliquer la correction.');
+    if (typeof loadMyMessages === 'function') loadMyMessages();
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', e.message);
+  }
+};
+
+window.contactRejectSuggestion = async function(msgId) {
+  if (!confirm('Refuser cette suggestion de correction ?\n\nElle sera marquée comme refusée dans votre historique.')) return;
+  try {
+    const d = await apiCall('/webhook/ngap-correction-action', { message_id: msgId, action: 'reject' });
+    if (!d || !d.ok) throw new Error(d?.error || 'Action impossible');
+    if (typeof showToast === 'function') showToast('info', 'Suggestion refusée', 'Message archivé.');
+    if (typeof loadMyMessages === 'function') loadMyMessages();
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', e.message);
+  }
+};
+
+window.contactDeleteMessage = async function(msgId) {
+  if (!confirm('Supprimer définitivement ce message ?\n\nCette action est irréversible.')) return;
+  try {
+    const d = await apiCall('/webhook/contact-message-delete', { message_id: msgId });
+    if (!d || !d.ok) throw new Error(d?.error || 'Suppression impossible');
+    if (typeof showToast === 'function') showToast('success', 'Message supprimé', '');
+    if (typeof loadMyMessages === 'function') loadMyMessages();
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', e.message);
+  }
+};
 
 /* ════════════════════════════════════════════════
    UTILITAIRES INTERNES

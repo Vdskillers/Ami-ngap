@@ -662,28 +662,41 @@ async function renderPlanning(d){
   const byDay = {};
   JOURS.forEach((j, i) => { byDay[j] = { label: j, date: weekDates[i], patients: [] }; });
 
-  patientsToShow.forEach((p, listIdx) => {
+  // ⚡ Distribution STRICTE par date explicite : un patient n'apparaît QUE
+  //    le jour où il a été explicitement planifié (via sa date).
+  //    Plus de fallback hash qui faisait "glisser" les patients d'un jour à l'autre.
+  //    Si pas de date valide ET pas de jour dans la description → zone "non_planifies".
+  const nonPlanifies = [];
+  patientsToShow.forEach((p) => {
     let jourKey = null;
+    // 1) Priorité absolue : la date du patient doit tomber dans la semaine affichée
     try {
       const pd = new Date(p.date);
       if (!isNaN(pd)) {
-        const nomJour = pd.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase();
-        jourKey = JOURS.find(j => nomJour.startsWith(j)) || null;
+        // Vérifier que la date appartient bien à la semaine affichée (évite les leftovers
+        // d'une autre semaine qui se retrouveraient collés sur un jour au hasard)
+        const pdKey = pd.toISOString().slice(0, 10);
+        const matchIdx = weekDates.findIndex(d => d === pdKey);
+        if (matchIdx >= 0) {
+          jourKey = JOURS[matchIdx];
+        }
       }
     } catch {}
-    if (!jourKey) {
+    // 2) Fallback : mot-clé jour explicite dans la description ("mardi matin")
+    //    → uniquement si on est sur la semaine courante (sinon risque de mauvaise assignation)
+    if (!jourKey && _planningWeekOffset === 0) {
       const desc = (p.description || p.texte || '').toLowerCase();
-      jourKey = JOURS.find(j => desc.includes(j)) || null;
+      jourKey = JOURS.find(j => new RegExp(`\\b${j}\\b`).test(desc)) || null;
     }
-    // ⚡ Fallback stable : hash basé sur patient_id/nom, pas sur listIdx (qui change)
+    // 3) Sinon → zone "non planifiés" (visible mais hors des jours)
     if (!jourKey) {
-      const stableKey = (p.patient_id || p.id || p.nom || String(listIdx));
-      let hash = 0;
-      for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
-      jourKey = JOURS[hash % JOURS.length];
+      nonPlanifies.push(p);
+      return;
     }
     byDay[jourKey].patients.push(p);
   });
+  // Exposer les non-planifiés pour le rendu
+  byDay._nonPlanifies = nonPlanifies;
 
   // ── Cabinet : calcul répartition multi-IDE ───────────────────────────────
   const cab = APP.get ? APP.get('cabinet') : null;
@@ -962,14 +975,10 @@ async function renderPlanning(d){
         } catch {}
       }
       const desc = (p.description || p.texte || '').toLowerCase();
-      const fromDesc = JOURS.find(jj => desc.includes(jj));
+      const fromDesc = JOURS.find(jj => new RegExp('\\b' + jj + '\\b').test(desc));
       if (fromDesc) return fromDesc;
-      const stableKey = String(p.patient_id || p.id || p.nom || p._nomAff || '');
-      if (stableKey) {
-        let hash = 0;
-        for (let ci = 0; ci < stableKey.length; ci++) hash = (hash * 31 + stableKey.charCodeAt(ci)) & 0x7fffffff;
-        return JOURS[hash % JOURS.length];
-      }
+      // FIX : plus de fallback hash — un patient sans date explicite ni mot-clé jour
+      //       ne doit PAS apparaître sur un jour au hasard (bug "patients qui glissent").
       return null;
     }
 
@@ -1131,6 +1140,7 @@ async function renderPlanning(d){
           <div style="font-size:10px;color:var(--m);font-family:var(--fm)">${dateStr}</div>
           ${isToday ? '<div style="font-size:9px;color:var(--a);font-family:var(--fm)">Aujourd\'hui</div>' : ''}
           ${pDay.length ? `<div style="font-size:9px;font-family:var(--fm);background:rgba(0,212,170,.1);color:var(--a);padding:1px 6px;border-radius:10px;display:inline-block;margin-top:4px;text-align:center">${pDay.length}</div>` : ''}
+          ${pDay.length ? `<button onclick="planningImportDayToTour('${j}', '${_djY2}-${_djM2}-${_djD2}')" title="Importer les ${pDay.length} patient(s) de ${jourCap} dans la Tournée IA" style="margin-top:6px;padding:4px 6px;font-size:10px;font-family:var(--fm);background:linear-gradient(135deg,var(--a),#10b981);border:none;color:#fff;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:3px;justify-content:center">⚡<span style="font-size:9px">Tournée IA</span></button>` : ''}
         </div>
         <div style="padding:6px 8px;min-height:44px">
           ${pDay.length
@@ -1350,6 +1360,77 @@ window._planningToggleIDE = function(ideId, patientIdx, checked) {
   _savePlanning(arr);
   _syncPlanningToServer(arr).catch(() => {});
   renderPlanning({}).catch(() => {});
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   Importer les patients d'un jour du planning hebdo dans la Tournée IA
+   Appelé par le bouton "⚡ Tournée IA" de chaque ligne jour.
+   jourKey : 'lundi', 'mardi', ... (utilisé pour le libellé du toast)
+   dateISO : 'YYYY-MM-DD' (date du jour pour filtrer)
+════════════════════════════════════════════════════════════════════════ */
+window.planningImportDayToTour = async function(jourKey, dateISO) {
+  try {
+    // Récupérer tous les patients du planning hebdomadaire
+    const allPatients = (window.APP?._planningData?.patients) ||
+                         (window.APP?._planningData?.entries) ||
+                         (window.APP?.importedData?.patients) ||
+                         (window.APP?.importedData?.entries) ||
+                         [];
+    if (!allPatients.length) {
+      if (typeof showToast === 'function') showToast('warning', 'Aucun patient', 'Le planning est vide.');
+      return;
+    }
+
+    // Filtrer les patients du jour spécifié (même logique que la distribution hebdo)
+    const patientsDuJour = allPatients.filter(p => {
+      try {
+        const pd = new Date(p.date);
+        if (!isNaN(pd)) {
+          const pdKey = pd.toISOString().slice(0, 10);
+          return pdKey === dateISO;
+        }
+      } catch {}
+      // Fallback : mot-clé jour dans la description (uniquement si date manquante)
+      const desc = (p.description || p.texte || '').toLowerCase();
+      return new RegExp('\\b' + jourKey + '\\b').test(desc);
+    });
+
+    if (patientsDuJour.length === 0) {
+      if (typeof showToast === 'function') showToast('info', 'Aucun patient', `Pas de patient planifié pour ${jourKey}.`);
+      return;
+    }
+
+    // Confirmation
+    const jourCap = jourKey.charAt(0).toUpperCase() + jourKey.slice(1);
+    const ok = confirm(
+      `Importer ${patientsDuJour.length} patient(s) du ${jourCap} dans la Tournée IA ?\n\n` +
+      `Cela remplacera la tournée actuelle (si présente).`
+    );
+    if (!ok) return;
+
+    // Construire la structure importedData attendue par la tournée
+    const importData = {
+      patients: patientsDuJour,
+      entries:  patientsDuJour,
+      source:   'planning_hebdo',
+      day:      jourKey,
+      date:     dateISO,
+      imported_at: new Date().toISOString(),
+    };
+    // Stocker et notifier
+    storeImportedData(importData);
+    if (typeof showToast === 'function') {
+      showToast('success', `${patientsDuJour.length} patient(s) importé(s)`,
+                `Tournée IA prête — ouvrez "Tournée IA" pour l'optimiser.`, 4500);
+    }
+    // Option : naviguer vers la tournée
+    setTimeout(() => {
+      if (typeof navTo === 'function') navTo('tur', null);
+    }, 800);
+  } catch(e) {
+    console.warn('[planningImportDayToTour] KO:', e.message);
+    if (typeof showToast === 'function') showToast('error', 'Import KO', e.message);
+  }
 };
 
 /* Effacer tout le planning hebdomadaire */
