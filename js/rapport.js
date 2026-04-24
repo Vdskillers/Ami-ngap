@@ -542,51 +542,97 @@ async function purgeLocalCache() {
   }
 }
 
-/* Diagnostic : affiche la version locale vs serveur */
+/* Diagnostic : affiche la version locale vs serveur, SW, caches.
+   - Force un check temps réel à chaque appel (jamais de cache)
+   - Distingue clairement "injoignable" de "jamais vérifié"
+   - Expose l'URL du worker utilisée (utile quand on debug un mauvais endpoint) */
 async function showSWVersionInfo() {
   const infoEls = document.querySelectorAll('#sw-version-info');
-  infoEls.forEach(el => { el.style.display = 'block'; el.style.color = 'var(--m)'; el.textContent = '⏳ Récupération des versions…'; });
+  if (!infoEls.length) return;
+  infoEls.forEach(el => {
+    el.style.display = 'block';
+    el.style.color = 'var(--m)';
+    el.textContent = '⏳ Récupération des versions…';
+  });
+
+  // Helper : joli timestamp relatif
+  const fmtRel = (ts) => {
+    if (!ts) return '(jamais)';
+    const diff = Date.now() - ts;
+    if (diff < 60000) return 'il y a < 1 min';
+    if (diff < 3600000) return `il y a ${Math.round(diff / 60000)} min`;
+    if (diff < 86400000) return `il y a ${Math.round(diff / 3600000)} h`;
+    return new Date(ts).toLocaleString('fr-FR');
+  };
 
   try {
-    let info = { local: '(non disponible)', server: '(non disponible)', synced: false };
-    if (window.AMI_SW_CHECK && typeof window.AMI_SW_CHECK.getInfo === 'function') {
-      info = await window.AMI_SW_CHECK.getInfo();
-    } else {
-      const d = await wpost('/webhook/sw-version', {}, { method: 'GET' }).catch(() => null);
-      if (d && d.version) info.server = String(d.version);
-      try { info.local = localStorage.getItem('ami_sw_ver_ack') || '(jamais vérifié)'; } catch (_) {}
-      info.synced = info.local === info.server;
+    if (!window.AMI_SW_CHECK || typeof window.AMI_SW_CHECK.getInfo !== 'function') {
+      throw new Error('Module sw-version-check.js non chargé — rechargez la page.');
     }
 
-    // Liste aussi les caches en place et les SW enregistrés (diagnostic)
-    let cachesInfo = '(non supporté)';
-    try {
-      if ('caches' in window) {
-        const names = await caches.keys();
-        cachesInfo = names.length ? names.join(', ') : '(aucun)';
-      }
-    } catch(_) {}
+    const info = await window.AMI_SW_CHECK.getInfo();
+    const now  = Date.now();
 
-    let swCount = 0;
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        swCount = regs.length;
-      }
-    } catch(_) {}
+    // Choix du statut et de la couleur
+    let statusIcon, statusTxt, color;
+    if (info.unreachable) {
+      statusIcon = '📡';
+      statusTxt  = 'Serveur injoignable (hors-ligne ou worker KO)';
+      color      = 'var(--d)';
+    } else if (info.synced) {
+      statusIcon = '✅';
+      statusTxt  = 'Synchronisé — aucune purge nécessaire';
+      color      = 'var(--a)';
+    } else if (!info.local || /premier lancement/.test(info.local)) {
+      statusIcon = 'ℹ️';
+      statusTxt  = 'Première vérification — alignement en cours';
+      color      = 'var(--a)';
+    } else {
+      statusIcon = '⚠️';
+      statusTxt  = 'Désynchronisé — purge PWA recommandée';
+      color      = 'var(--w)';
+    }
 
-    const statusIcon = info.synced ? '✅' : '⚠️';
+    const cachesTxt = info.cacheNames && info.cacheNames.length
+      ? info.cacheNames.join(', ')
+      : '(aucun)';
+
     infoEls.forEach(el => {
-      el.style.color = info.synced ? 'var(--a)' : 'var(--w)';
+      el.style.color = color;
       el.textContent =
-        `${statusIcon} Statut : ${info.synced ? 'synchronisé' : 'désynchronisé — purge requise'}\n` +
-        `Version locale  : ${info.local}\n` +
-        `Version serveur : ${info.server}\n` +
-        `Service Workers : ${swCount} enregistré(s)\n` +
-        `Caches actifs   : ${cachesInfo}`;
+        `${statusIcon} Statut : ${statusTxt}\n` +
+        `Version locale   : ${info.local}\n` +
+        `Version serveur  : ${info.server}\n` +
+        `Service Workers  : ${info.swCount} enregistré(s)\n` +
+        `Caches actifs    : ${cachesTxt}\n` +
+        `Dernière vérif.  : ${fmtRel(info.lastCheck)}\n` +
+        `Worker URL       : ${info.workerBase}`;
     });
+
+    // Si injoignable : tenter aussi un wpost authentifié — ça fonctionne peut-être
+    // même si la route publique fail (ex: proxy bloquant les GET anonymes)
+    if (info.unreachable) {
+      try {
+        const d = await wpost('/webhook/sw-version', {});
+        if (d && d.version) {
+          infoEls.forEach(el => {
+            el.style.color = 'var(--a)';
+            el.textContent +=
+              `\n\n✅ Récupération via appel authentifié : version=${d.version}` +
+              `\n   (la route publique peut être bloquée par un proxy — vérifiez CORS worker)`;
+          });
+        }
+      } catch (_) {
+        infoEls.forEach(el => {
+          el.textContent += `\n\n⚠️ Le worker ne répond pas, même en appel authentifié.`;
+        });
+      }
+    }
   } catch (e) {
-    infoEls.forEach(el => { el.style.color = 'var(--d)'; el.textContent = '⚠️ ' + e.message; });
+    infoEls.forEach(el => {
+      el.style.color = 'var(--d)';
+      el.textContent = '⚠️ ' + e.message;
+    });
   }
 }
 

@@ -29,10 +29,14 @@
    */
   function getWorkerBase() {
     if (WORKER_URL) return WORKER_URL.replace(/\/+$/, '');
+    // utils.js expose W mais en const top-level (pas sur window)
+    // → on tente via différents chemins d'accès
+    try { if (typeof W !== 'undefined' && W) return String(W).replace(/\/+$/, ''); } catch(_) {}
+    if (window.W)          return String(window.W).replace(/\/+$/, '');
     if (window.API_URL)    return String(window.API_URL).replace(/\/+$/, '');
     if (window.WORKER_URL) return String(window.WORKER_URL).replace(/\/+$/, '');
     // Valeur par défaut projet AMI (production)
-    return 'https://ami-worker.vdskillers.workers.dev';
+    return 'https://raspy-tooth-1a2f.vdskillers.workers.dev';
   }
 
   /**
@@ -179,12 +183,44 @@
     },
     /** Force un check immédiat (après un bump serveur) */
     checkNow: function(silent = false) { return checkAndPurgeIfNeeded({ silent }); },
-    /** Renvoie la version locale et serveur (diagnostic) */
+    /**
+     * Renvoie un diagnostic complet — jamais de null/undefined pour l'UI.
+     * @returns {Object} { local, server, synced, unreachable, workerBase, swCount, cacheNames, lastCheck }
+     */
     getInfo: async function() {
       let localVer = '';
       try { localVer = localStorage.getItem(LS_KEY) || ''; } catch(_) {}
-      const serverVer = await fetchServerVersion();
-      return { local: localVer, server: serverVer, synced: localVer === serverVer };
+
+      let lastCheck = 0;
+      try { lastCheck = parseInt(localStorage.getItem(LS_LAST_CHECK) || '0', 10) || 0; } catch(_) {}
+
+      const workerBase = getWorkerBase();
+      const serverVer  = await fetchServerVersion();
+      const unreachable = serverVer === null;
+
+      // SW + caches (diagnostic)
+      let swCount = 0, cacheNames = [];
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          swCount = regs.length;
+        }
+      } catch(_) {}
+      try {
+        if ('caches' in window) cacheNames = await caches.keys();
+      } catch(_) {}
+
+      return {
+        local:       localVer || '(aucune — premier lancement après purge)',
+        server:      unreachable ? '(injoignable — vérifiez la connexion)' : String(serverVer),
+        server_raw:  serverVer,                // null si injoignable
+        synced:      !unreachable && !!localVer && localVer === serverVer,
+        unreachable,
+        workerBase,                            // pour debug : quelle URL est utilisée
+        swCount,
+        cacheNames,
+        lastCheck:   lastCheck || 0,
+      };
     },
   };
 
