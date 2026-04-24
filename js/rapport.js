@@ -370,6 +370,28 @@ async function loadSystemHealth() {
         <div class="kpi"><div class="kpi-v ${fraudAlerts>0?'r':'g'}">${fraudAlerts}</div><div class="kpi-l">Alertes fraude</div></div>
       </div>
 
+      <!-- Maintenance PWA -->
+      <div class="lbl" style="margin-bottom:10px">🛠️ Maintenance PWA</div>
+      <div style="background:var(--c);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-bottom:20px">
+        <div style="font-size:12px;color:var(--m);line-height:1.6;margin-bottom:12px">
+          La purge globale incrémente la version du cache PWA : tous les utilisateurs téléchargeront
+          automatiquement la dernière version des fichiers (JS/CSS/HTML) à leur prochaine connexion
+          ou dans les 5 minutes suivantes. La purge locale n'affecte que votre propre appareil.
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn bsm" onclick="bumpSWVersionGlobal()" id="btn-bump-sw" style="background:linear-gradient(135deg,rgba(0,212,170,.15),rgba(0,212,170,.05));border:1px solid rgba(0,212,170,.35);color:var(--a);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;font-weight:600">
+            🔄 Forcer la purge du cache (tous les utilisateurs)
+          </button>
+          <button class="btn bsm" onclick="purgeLocalCache()" style="background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.3);color:var(--w);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">
+            🧹 Purger mon cache local
+          </button>
+          <button class="btn bsm" onclick="showSWVersionInfo()" style="background:transparent;border:1px solid var(--b);color:var(--m);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer">
+            ℹ️ Voir versions
+          </button>
+        </div>
+        <div id="sw-version-info" style="margin-top:10px;display:none;font-family:var(--fm);font-size:11px;color:var(--m);background:var(--s);border-radius:8px;padding:10px;white-space:pre-wrap"></div>
+      </div>
+
       <!-- Logs système récents -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
         <div class="lbl">Logs système récents (${sl.length})</div>
@@ -429,6 +451,148 @@ async function resetSystemLogs() {
 }
 
 window.resetSystemLogs = resetSystemLogs;
+
+/* ═══════════════════════════════════════════════
+   MAINTENANCE PWA — BUMP VERSION + PURGE CACHE
+   Déclenche une purge forcée du cache PWA pour tous
+   les utilisateurs (via incrément de la version serveur)
+   ou uniquement pour l'admin courant (local).
+   ═══════════════════════════════════════════════ */
+
+/* Bump de la version SW côté serveur → purge globale
+   Tous les clients détectent le changement au prochain
+   check (dans les 5 min suivantes ou à leur retour sur l'app). */
+async function bumpSWVersionGlobal() {
+  const confirmMsg =
+    '🔄 PURGE GLOBALE DU CACHE PWA\n\n' +
+    'Tous les utilisateurs vont télécharger la dernière version des fichiers\n' +
+    '(JS, CSS, HTML) à leur prochaine connexion ou dans les 5 minutes.\n\n' +
+    'Cette action est utile après un déploiement important pour s\'assurer\n' +
+    'que personne ne reste bloqué sur une ancienne version.\n\n' +
+    'Continuer ?';
+  if (!confirm(confirmMsg)) return;
+
+  const btn = document.querySelector('button[onclick="bumpSWVersionGlobal()"]');
+  const origTxt = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Bump en cours…'; }
+
+  try {
+    const d = await wpost('/webhook/admin-bump-sw-version', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur serveur');
+
+    const newVer = d.version || '(inconnue)';
+    if (typeof showToast === 'function') {
+      showToast(`✅ Purge globale déclenchée — nouvelle version : ${newVer}`, 'ok');
+    }
+
+    // Feedback visible sur le panneau info
+    const infoEls = document.querySelectorAll('#sw-version-info');
+    infoEls.forEach(el => {
+      el.style.display = 'block';
+      el.style.color = 'var(--a)';
+      el.textContent =
+        `✅ Bump effectué à ${new Date().toLocaleTimeString('fr-FR')}\n` +
+        `Nouvelle version serveur : ${newVer}\n` +
+        `Les utilisateurs se mettront à jour automatiquement dans les 5 minutes.`;
+    });
+
+    if (btn) { btn.textContent = '✅ Purge globale déclenchée'; }
+    setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = origTxt; } }, 3000);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('⚠️ ' + e.message, 'err');
+    alert('Erreur : ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = origTxt; }
+  }
+}
+
+/* Purge locale uniquement — n'affecte que l'admin connecté.
+   Utile pour tester rapidement un déploiement côté admin sans impact global. */
+async function purgeLocalCache() {
+  const confirmMsg =
+    '🧹 PURGE LOCALE DU CACHE PWA\n\n' +
+    'Cette action va :\n' +
+    '  • Vider tous les caches de votre navigateur pour cette app\n' +
+    '  • Désenregistrer le Service Worker actuel\n' +
+    '  • Recharger la page avec les fichiers les plus récents\n\n' +
+    'Vos identifiants et données locales (patients, cotations) sont préservés.\n\n' +
+    'Continuer ?';
+  if (!confirm(confirmMsg)) return;
+
+  if (typeof showToast === 'function') showToast('🔄 Purge en cours…', 'ok');
+
+  try {
+    if (window.AMI_SW_CHECK && typeof window.AMI_SW_CHECK.purgeLocal === 'function') {
+      await window.AMI_SW_CHECK.purgeLocal();
+      return; // purgeLocal fait lui-même le reload
+    }
+    // Fallback si sw-version-check.js n'est pas chargé
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n).catch(() => {})));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister().catch(() => {})));
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('_swpurge', Date.now().toString());
+    window.location.replace(url.toString());
+  } catch (e) {
+    alert('Erreur purge locale : ' + e.message);
+  }
+}
+
+/* Diagnostic : affiche la version locale vs serveur */
+async function showSWVersionInfo() {
+  const infoEls = document.querySelectorAll('#sw-version-info');
+  infoEls.forEach(el => { el.style.display = 'block'; el.style.color = 'var(--m)'; el.textContent = '⏳ Récupération des versions…'; });
+
+  try {
+    let info = { local: '(non disponible)', server: '(non disponible)', synced: false };
+    if (window.AMI_SW_CHECK && typeof window.AMI_SW_CHECK.getInfo === 'function') {
+      info = await window.AMI_SW_CHECK.getInfo();
+    } else {
+      const d = await wpost('/webhook/sw-version', {}, { method: 'GET' }).catch(() => null);
+      if (d && d.version) info.server = String(d.version);
+      try { info.local = localStorage.getItem('ami_sw_ver_ack') || '(jamais vérifié)'; } catch (_) {}
+      info.synced = info.local === info.server;
+    }
+
+    // Liste aussi les caches en place et les SW enregistrés (diagnostic)
+    let cachesInfo = '(non supporté)';
+    try {
+      if ('caches' in window) {
+        const names = await caches.keys();
+        cachesInfo = names.length ? names.join(', ') : '(aucun)';
+      }
+    } catch(_) {}
+
+    let swCount = 0;
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        swCount = regs.length;
+      }
+    } catch(_) {}
+
+    const statusIcon = info.synced ? '✅' : '⚠️';
+    infoEls.forEach(el => {
+      el.style.color = info.synced ? 'var(--a)' : 'var(--w)';
+      el.textContent =
+        `${statusIcon} Statut : ${info.synced ? 'synchronisé' : 'désynchronisé — purge requise'}\n` +
+        `Version locale  : ${info.local}\n` +
+        `Version serveur : ${info.server}\n` +
+        `Service Workers : ${swCount} enregistré(s)\n` +
+        `Caches actifs   : ${cachesInfo}`;
+    });
+  } catch (e) {
+    infoEls.forEach(el => { el.style.color = 'var(--d)'; el.textContent = '⚠️ ' + e.message; });
+  }
+}
+
+window.bumpSWVersionGlobal = bumpSWVersionGlobal;
+window.purgeLocalCache     = purgeLocalCache;
+window.showSWVersionInfo   = showSWVersionInfo;
 
 /* ═══════════════════════════════════════════════
    NOMENCLATURE NGAP 2026 COMPLÈTE
