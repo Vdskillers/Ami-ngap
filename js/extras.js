@@ -582,29 +582,106 @@ function generatePlanningLocal(){
     return;
   }
 
+  /* ⚡ Helper : convertir Date → 'YYYY-MM-DD' en timezone LOCALE
+     (évite le décalage UTC qui fait basculer d'un jour le matin / soir). */
+  const _toLocalISO = (dt) => {
+    if(!(dt instanceof Date) || isNaN(dt)) return null;
+    return [
+      dt.getFullYear(),
+      String(dt.getMonth()+1).padStart(2,'0'),
+      String(dt.getDate()).padStart(2,'0'),
+    ].join('-');
+  };
+
+  /* ⚡ Extraction robuste de la date : reconnaît tous les champs possibles
+     issus de la tournée IA, du pilotage, de l'import calendrier ou du carnet. */
+  const _extractPatientDate = (ev) => {
+    const candidates = [
+      ev.date, ev.day, ev.date_soin, ev.date_prevue,
+      ev.date_soin_iso, ev.dateSoin, ev.scheduled_date,
+      ev._done_at_iso, ev.created_at,
+    ];
+    for(const c of candidates){
+      if(!c) continue;
+      /* Format direct YYYY-MM-DD déjà bon */
+      if(typeof c === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c)) return c.slice(0,10);
+      /* Sinon essayer new Date() */
+      try {
+        const dt = new Date(c);
+        const iso = _toLocalISO(dt);
+        if(iso) return iso;
+      } catch {}
+    }
+    /* Mot-clé jour dans la description → laisser tel quel pour le regroupement texte */
+    const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+    const desc = (ev.description || ev.texte || '').toLowerCase();
+    const foundDay = JOURS.find(j => new RegExp(`\\b${j}\\b`).test(desc));
+    if(foundDay) return foundDay;
+    return null;
+  };
+
+  /* ⚡ Calcul des dates de la semaine courante (lundi → dimanche) */
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=dim, 1=lun…
+  const mondayThis = new Date(today);
+  mondayThis.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+  mondayThis.setHours(0,0,0,0);
+  const weekDates = Array.from({length:7},(_,i)=>{
+    const d2 = new Date(mondayThis);
+    d2.setDate(mondayThis.getDate()+i);
+    return d2;
+  });
+  const weekKeys = weekDates.map(_toLocalISO);
+  const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+  const todayKey = _toLocalISO(today);
+
   /* Regrouper par jour */
   const days = {};
+  JOURS.forEach(j => days[j] = []);
+  const nonDates = [];
+
   data.forEach(ev => {
-    const day = ev.date || ev.day || ev.date_soin || 'Non daté';
-    if(!days[day]) days[day] = [];
-    days[day].push(ev);
+    const rawDate = _extractPatientDate(ev);
+    if(!rawDate){
+      /* ⚡ Sans date → assigné au JOUR D'AUJOURD'HUI par défaut (patients du pilotage
+         qui viennent d'être créés). Évite le piège "Non daté" qui masquait le patient. */
+      const todayIdx = weekKeys.indexOf(todayKey);
+      if(todayIdx >= 0) days[JOURS[todayIdx]].push(ev);
+      else nonDates.push(ev);
+      return;
+    }
+    /* Format ISO YYYY-MM-DD : chercher dans la semaine courante */
+    if(/^\d{4}-\d{2}-\d{2}$/.test(rawDate)){
+      const idx = weekKeys.indexOf(rawDate);
+      if(idx >= 0){
+        days[JOURS[idx]].push(ev);
+      } else {
+        /* Date hors semaine courante → zone "non planifié cette semaine" */
+        nonDates.push(ev);
+      }
+      return;
+    }
+    /* Mot-clé jour (lundi, mardi…) */
+    if(JOURS.includes(rawDate)){
+      days[rawDate].push(ev);
+      return;
+    }
+    nonDates.push(ev);
   });
 
-  const ordre = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
-  const sortedKeys = Object.keys(days).sort((a,b)=>{
-    const ai = ordre.indexOf(a.toLowerCase());
-    const bi = ordre.indexOf(b.toLowerCase());
-    if(ai>=0 && bi>=0) return ai-bi;
-    return a.localeCompare(b);
-  });
-
-  let html = `<div class="card"><div class="ct">📅 Planning hebdomadaire — ${data.length} patients</div>
+  let html = `<div class="card"><div class="ct">📅 Planning hebdomadaire — ${data.length} patient${data.length>1?'s':''}</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px">`;
 
-  sortedKeys.forEach(day=>{
+  /* Un bloc par jour de la semaine dans l'ordre */
+  JOURS.forEach((day, idx) => {
     const pts = days[day];
+    if(!pts.length) return; // n'affiche que les jours qui ont des patients
+    const dateStr = weekDates[idx].toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+    const isToday = weekKeys[idx] === todayKey;
     /* CA estimé par jour */
     const ca = pts.reduce((s,p)=>{
+      const cotTotal = parseFloat(p._cotation?.total || p.total || p.montant || 0);
+      if(cotTotal > 0) return s + cotTotal;
       const a=(p.actes_recurrents||p.acte||p.description||'').toLowerCase();
       if(a.includes('insuline')) return s+26.35;
       if(a.includes('pansement complexe')) return s+22;
@@ -615,20 +692,37 @@ function generatePlanningLocal(){
       if(a.includes('perfusion')) return s+28;
       return s+15;
     }, 0);
-    html += `<div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px">
-      <div style="font-weight:600;text-transform:capitalize;margin-bottom:4px;font-size:14px">${day}</div>
+    html += `<div style="background:var(--s);border:1px solid ${isToday?'var(--p)':'var(--b)'};border-radius:var(--r);padding:14px">
+      <div style="font-weight:600;text-transform:capitalize;margin-bottom:4px;font-size:14px">${day} <span style="font-size:11px;color:var(--a);font-weight:400">${dateStr}${isToday?' · aujourd\'hui':''}</span></div>
       <div style="font-size:11px;color:var(--a);margin-bottom:10px">${pts.length} patient(s) · ~${ca.toFixed(0)} €</div>
       ${pts.map(p=>{
         const soinAff = p.actes_recurrents || p.acte || p.description || 'Patient';
         const isActes = !!p.actes_recurrents;
+        const patNom = p.patient || [p.prenom,p.nom].filter(Boolean).join(' ') || 'Patient';
         return `<div class="route-item" style="padding:6px 0;border-bottom:1px solid var(--b)">
-          <div class="route-info" style="font-size:12px">${p.patient||[p.prenom,p.nom].filter(Boolean).join(' ')||'Patient'}</div>
-          ${isActes ? `<div style="font-size:11px;color:var(--a);font-family:var(--fm);margin-top:2px">💊 ${soinAff.slice(0,60)}</div>` : (soinAff !== 'Patient' ? `<div style="font-size:11px;color:var(--m);margin-top:2px">${soinAff.slice(0,60)}</div>` : '')}
-          ${p.time||p.heure?`<div class="route-time" style="font-size:11px">⏰ ${p.time||p.heure}</div>`:''}
+          <div class="route-info" style="font-size:12px">${patNom}</div>
+          ${isActes ? `<div style="font-size:11px;color:var(--a);font-family:var(--fm);margin-top:2px">💊 ${String(soinAff).slice(0,60)}</div>` : (soinAff !== 'Patient' ? `<div style="font-size:11px;color:var(--m);margin-top:2px">${String(soinAff).slice(0,60)}</div>` : '')}
+          ${p.time||p.heure||p.heure_soin?`<div class="route-time" style="font-size:11px">⏰ ${p.time||p.heure||p.heure_soin}</div>`:''}
         </div>`;
       }).join('')}
     </div>`;
   });
+
+  /* Bloc "hors semaine courante" uniquement si nécessaire */
+  if(nonDates.length){
+    html += `<div style="background:var(--s);border:1px dashed var(--b);border-radius:var(--r);padding:14px;opacity:0.85">
+      <div style="font-weight:600;margin-bottom:4px;font-size:14px;color:var(--a)">Hors semaine</div>
+      <div style="font-size:11px;color:var(--a);margin-bottom:10px">${nonDates.length} patient(s)</div>
+      ${nonDates.map(p=>{
+        const soinAff = p.actes_recurrents || p.acte || p.description || 'Patient';
+        const patNom = p.patient || [p.prenom,p.nom].filter(Boolean).join(' ') || 'Patient';
+        return `<div class="route-item" style="padding:6px 0;border-bottom:1px solid var(--b)">
+          <div class="route-info" style="font-size:12px">${patNom}</div>
+          <div style="font-size:11px;color:var(--m);margin-top:2px">${String(soinAff).slice(0,60)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
 
   html += `</div></div>`;
   const pbody = $('pbody');
@@ -813,15 +907,35 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(typeof _origLiveAction==='function') await _origLiveAction(action);
   };
 
-  /* generatePlanningFromImport — si non présente, utiliser la version locale */
+  /* generatePlanningFromImport — préserver tournee.js qui sait gérer
+     le filtrage par semaine + dates ISO. generatePlanningLocal = fallback
+     uniquement si renderPlanning n'est pas disponible (ancien flux). */
   if(typeof generatePlanningFromImport === 'function'){
     const _origGenPlanning = generatePlanningFromImport;
     window.generatePlanningFromImport = function(){
-      /* Essayer d'abord la version locale (plus rapide, sans réseau) */
       const data = APP.get('importedData')?.patients || window.IMPORTED_DATA || [];
-      if(data.length){
+      /* ⚡ Priorité au vrai renderPlanning (tournee.js) qui gère la semaine + dates.
+         Sans ça, les patients issus de la tournée IA tombent dans "Non daté". */
+      if (data.length && typeof window.renderPlanning === 'function') {
+        /* Injecter les données importées dans _planningData pour que renderPlanning
+           les voie immédiatement (évite le délai d'hydratation). */
+        try {
+          window.APP._planningData = {
+            patients: data,
+            total:    data.length,
+            source:   'import_direct'
+          };
+          if (typeof _savePlanning === 'function') _savePlanning(data);
+        } catch(_) {}
+        /* Basculer la vue sur l'onglet Planning puis rendre */
+        try { window.renderPlanning({}).catch(() => { generatePlanningLocal(); }); }
+        catch { generatePlanningLocal(); }
+        return;
+      }
+      /* Fallback : pas de data → laisser l'original essayer (appel API) */
+      if (data.length) {
         generatePlanningLocal();
-      }else{
+      } else {
         _origGenPlanning();
       }
     };

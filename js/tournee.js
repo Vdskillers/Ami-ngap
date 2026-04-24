@@ -666,17 +666,38 @@ async function renderPlanning(d){
   //    le jour où il a été explicitement planifié (via sa date).
   //    Plus de fallback hash qui faisait "glisser" les patients d'un jour à l'autre.
   //    Si pas de date valide ET pas de jour dans la description → zone "non_planifies".
+  // Helper : convertir un Date en string YYYY-MM-DD en timezone LOCALE
+  // (évite le décalage UTC qui fait glisser d'un jour en soirée / matin)
+  const _toLocalISO = (d) => {
+    if (!(d instanceof Date) || isNaN(d)) return null;
+    return [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0'),
+    ].join('-');
+  };
+
+  // Pré-calcul des clés ISO locales des 7 jours affichés — permet comparaison string===string
+  const weekDateKeys = weekDates.map(_toLocalISO);
+
   const nonPlanifies = [];
   patientsToShow.forEach((p) => {
     let jourKey = null;
     // 1) Priorité absolue : la date du patient doit tomber dans la semaine affichée
     try {
-      const pd = new Date(p.date);
-      if (!isNaN(pd)) {
-        // Vérifier que la date appartient bien à la semaine affichée (évite les leftovers
-        // d'une autre semaine qui se retrouveraient collés sur un jour au hasard)
-        const pdKey = pd.toISOString().slice(0, 10);
-        const matchIdx = weekDates.findIndex(d => d === pdKey);
+      // ⚡ Si la date est déjà au format 'YYYY-MM-DD', l'utiliser directement sans
+      //    passer par new Date() (qui décale en UTC → lundi 23h FR devient mardi)
+      let pdKey = null;
+      if (typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(p.date)) {
+        pdKey = p.date.slice(0, 10);
+      } else {
+        const pd = new Date(p.date);
+        if (!isNaN(pd)) pdKey = _toLocalISO(pd);
+      }
+      if (pdKey) {
+        // ⚡ FIX: weekDates contient des Date (objets), pas des strings.
+        //        weekDateKeys contient les YYYY-MM-DD correspondants → comparaison string==string
+        const matchIdx = weekDateKeys.findIndex(k => k === pdKey);
         if (matchIdx >= 0) {
           jourKey = JOURS[matchIdx];
         }
