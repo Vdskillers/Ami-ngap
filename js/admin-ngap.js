@@ -1266,9 +1266,24 @@ window.admNgapPushAvenant11 = async function() {
       window.NGAPUpdateManager.previewPayload(),
     ]);
     _renderA11Panel(panel, status, preview);
-    // Badge "ACTIF" si override actif
     const badge = document.getElementById('adm-ngap-a11-badge');
-    if (badge) badge.style.display = status.active_source === 'idb_override' ? 'inline-block' : 'none';
+    if (badge) {
+      if (status.active_source === 'idb_override') {
+        badge.textContent = 'ACTIF';
+        badge.style.background = '#10b981';
+        badge.style.display = 'inline-block';
+      } else if (status.scheduling?.status === 'scheduled_future') {
+        badge.textContent = `J-${status.scheduling.days_until_activation}`;
+        badge.style.background = '#f59e0b';
+        badge.style.display = 'inline-block';
+      } else if (status.scheduling?.status === 'scheduled_ready') {
+        badge.textContent = 'PRÊT';
+        badge.style.background = '#a855f7';
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
   } catch (e) {
     panel.innerHTML = `<div class="ai er">⚠️ ${_esc(e.message)}</div>`;
   }
@@ -1276,6 +1291,9 @@ window.admNgapPushAvenant11 = async function() {
 
 function _renderA11Panel(panel, status, preview) {
   const active = status.active_source === 'idb_override';
+  const scheduling = status.scheduling;
+  const isScheduled = !!scheduling && scheduling.status === 'scheduled_future';
+  const isScheduledReady = !!scheduling && scheduling.status === 'scheduled_ready';
   const meta = status.override_meta || {};
   const ref = preview.ref_summary || {};
   const eng = preview.engine_summary || {};
@@ -1295,9 +1313,44 @@ function _renderA11Panel(panel, status, preview) {
           <br>
           <em>Les nouveaux codes (CIA, CIB, RKD, MSG, MSD, MIR, AMI 3.48, AMI 3.77, AMI 1.35, AMI 1.48…) sont disponibles dès le push,
           mais leur facturation dépend de la parution au JO de chaque arrêté d'application (accès direct plaies au 01/01/2027, surveillance hebdo au 01/01/2028, etc.).</em>
+          <br>
+          <strong style="color:#f59e0b">🔒 Mode "Programmé" recommandé :</strong> le payload est stocké sans activation immédiate et ne bascule qu'au jour J.
         </div>
       </div>
     </div>`;
+
+  // Bandeau statut programmé (si applicable)
+  const scheduledBanner = isScheduled ? `
+    <div class="adm-notice" style="background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(16,185,129,.02));border-color:rgba(16,185,129,.4);margin-bottom:14px">
+      <span style="font-size:24px;flex-shrink:0">📅</span>
+      <div style="flex:1;min-width:0">
+        <div style="color:#10b981;font-family:var(--fm);font-weight:600;margin-bottom:4px">
+          Mise à jour PROGRAMMÉE — J-${scheduling.days_until_activation}
+        </div>
+        <div style="font-size:12px;color:var(--t);line-height:1.5">
+          La v2 Avenant 11 est stockée en IndexedDB mais <strong>non active</strong>.
+          Activation automatique prévue le <strong style="color:#10b981">${_esc(scheduling.activation_date)}</strong>
+          au prochain chargement de la PWA après cette date.
+          <br>
+          <em style="color:var(--m)">Les fichiers statiques actuels restent actifs jusqu'à cette date — aucun changement visible pour les IDELs.</em>
+        </div>
+      </div>
+    </div>` : '';
+
+  // Bandeau "prêt à activer" (date atteinte mais activation pas encore appliquée)
+  const readyBanner = isScheduledReady ? `
+    <div class="adm-notice" style="background:linear-gradient(135deg,rgba(168,85,247,.12),rgba(168,85,247,.02));border-color:rgba(168,85,247,.4);margin-bottom:14px">
+      <span style="font-size:24px;flex-shrink:0">🔔</span>
+      <div style="flex:1;min-width:0">
+        <div style="color:#a855f7;font-family:var(--fm);font-weight:600;margin-bottom:4px">
+          Date d'activation atteinte — activation au prochain reload
+        </div>
+        <div style="font-size:12px;color:var(--t);line-height:1.5">
+          La v2 sera automatiquement activée au prochain chargement de la PWA.
+          Tu peux aussi recharger la page maintenant pour déclencher l'activation.
+        </div>
+      </div>
+    </div>` : '';
 
   // Bloc statut actuel
   const statusBlock = `
@@ -1306,8 +1359,11 @@ function _renderA11Panel(panel, status, preview) {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:12px">
         <div>
           <div style="color:var(--m)">Source référentiel</div>
-          <div style="color:${active ? '#10b981' : 'var(--a)'};font-weight:600">
-            ${active ? '🟢 Override IDB (v2 actif)' : '⚪ Fichier statique'}
+          <div style="color:${active ? '#10b981' : (isScheduled ? '#f59e0b' : 'var(--a)')};font-weight:600">
+            ${active ? '🟢 Override IDB (v2 actif)'
+              : isScheduled ? `🟡 Programmé (J-${scheduling.days_until_activation})`
+              : isScheduledReady ? '🔔 Prêt à activer'
+              : '⚪ Fichier statique'}
           </div>
         </div>
         <div>
@@ -1323,13 +1379,14 @@ function _renderA11Panel(panel, status, preview) {
           </div>
         </div>
         <div>
-          <div style="color:var(--m)">Dernier push</div>
+          <div style="color:var(--m)">${isScheduled ? 'Activation prévue' : 'Dernier push'}</div>
           <div style="color:var(--t);font-size:11px">
-            ${meta.pushed_at ? _fmtDate(meta.pushed_at) : '—'}
+            ${isScheduled ? `📅 ${_esc(scheduling.activation_date)}` : (meta.pushed_at ? _fmtDate(meta.pushed_at) : '—')}
           </div>
         </div>
       </div>
       ${meta.note ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(0,0,0,.2);border-radius:6px;font-size:11px;color:var(--t);font-style:italic">"${_esc(meta.note)}"</div>` : ''}
+      ${meta.forced_before_scheduled_date ? `<div style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.1);border-radius:6px;font-size:11px;color:#ef4444">⚠️ Activation forcée avant la date prévue (${_esc(meta.forced_before_scheduled_date)})</div>` : ''}
     </div>`;
 
   // Bloc aperçu payload embarqué
@@ -1388,29 +1445,36 @@ function _renderA11Panel(panel, status, preview) {
       </details>
     </div>`;
 
-  // Bloc actions
+  // Bloc actions — boutons conditionnels selon l'état
+  const pushBtnLabel = (isScheduled || isScheduledReady || active) ? '🔄 Re-programmer / modifier' : '🚀 Pousser la v2';
   const actionsBlock = `
     <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:14px">
       <div style="font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px;margin-bottom:10px">ACTIONS</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn bp bsm" onclick="admNgapA11DoPush()"
                 style="background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border-color:#7c3aed"
-                title="Stocker la v2 en IndexedDB + hot-swap mémoire (persistant)">
-          🚀 Pousser la v2 (persistant)
+                title="Choisir quand activer la v2 (maintenant, 01/11/2026, 01/11/2027)">
+          ${pushBtnLabel}
         </button>
+        ${isScheduled ? `
+          <button class="btn bs bsm" onclick="admNgapA11ForceActivate()"
+                  style="color:#f59e0b;border-color:rgba(245,158,11,.4)"
+                  title="Activer immédiatement un push programmé (AVANT la date prévue) — pour test uniquement">
+            ⚡ Forcer l'activation maintenant
+          </button>` : ''}
         <button class="btn bs bsm" onclick="admNgapA11ApplyNow()"
                 title="Appliquer en mémoire pour cette session uniquement, sans persister">
-          ⚡ Appliquer en session
+          ⚡ Appliquer en session (test)
         </button>
         <button class="btn bs bsm" onclick="admNgapA11Export()"
                 title="Télécharger ngap_referentiel_2026.json + ngap_engine.js pour commit GitHub">
           💾 Exporter pour GitHub
         </button>
-        ${active ? `
+        ${(active || isScheduled || isScheduledReady) ? `
           <button class="btn bs bsm" onclick="admNgapA11Rollback()"
                   style="color:#ef4444;border-color:rgba(239,68,68,.4)"
-                  title="Supprimer l'override IndexedDB et revenir aux fichiers statiques">
-            ↩️ Rollback
+                  title="${isScheduled ? 'Supprimer le push programmé' : 'Supprimer l override IndexedDB et revenir aux fichiers statiques'}">
+            ↩️ ${isScheduled ? 'Annuler la programmation' : 'Rollback'}
           </button>` : ''}
         <div style="flex:1"></div>
         <button class="btn bs bsm" onclick="admNgapA11ShowAudit()"
@@ -1440,41 +1504,136 @@ function _renderA11Panel(panel, status, preview) {
                 <td style="padding:4px 6px;font-family:var(--fm);color:var(--t);font-size:10px">${_fmtDate(l.ts)}</td>
                 <td style="padding:4px 6px;font-family:var(--fm);color:var(--a)">${_esc(l.action || '')}</td>
                 <td style="padding:4px 6px">${l.ok ? '<span style="color:#10b981">✅ OK</span>' : '<span style="color:#ef4444">❌</span>'}</td>
-                <td style="padding:4px 6px;color:var(--m);font-size:10px">${_esc(l.version || l.error || '').slice(0, 60)}</td>
+                <td style="padding:4px 6px;color:var(--m);font-size:10px">${_esc(l.version || l.error || l.activation_date || '').slice(0, 60)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
       </div>
     </details>` : '';
 
-  panel.innerHTML = dateWarningBanner + statusBlock + previewBlock + actionsBlock + auditBlock;
+  panel.innerHTML = dateWarningBanner + scheduledBanner + readyBanner + statusBlock + previewBlock + actionsBlock + auditBlock;
 }
 
-/** Exécute le push complet (IDB + hot-swap) */
+/** Exécute le push complet avec choix de date d'activation (par défaut : programmé 01/11/2026) */
 window.admNgapA11DoPush = async function() {
   if (!window.NGAPUpdateManager) { _toast('error', 'Module absent', 'ngap-update-manager.js non chargé'); return; }
   const c = window.NGAPUpdateManager._constants;
-  if (!confirm(
-    `Pousser la v2 Avenant 11 ?\n\n` +
-    `Version : ${c.PAYLOAD_VERSION}\n` +
-    `Compilée le : ${c.PAYLOAD_DATE_COMPIL}\n\n` +
-    `✓ Stockage IndexedDB (persistant)\n` +
-    `✓ Hot-swap mémoire immédiat\n` +
-    `✓ Les consumer modules rechargeront leurs caches\n\n` +
-    `⚠️ Les revalorisations AMI :\n` +
-    `  • 3.35 € à partir du ${c.AMI_EFFECTIVE_STEP_1}\n` +
-    `  • 3.45 € à partir du ${c.AMI_EFFECTIVE_STEP_2}\n\n` +
-    `Le moteur applique automatiquement le bon tarif\n` +
-    `selon la date du soin. Aucune action manuelle requise.`
-  )) return;
 
-  const note = prompt('Note / changelog (optionnel) :', 'Avenant 11 du 31/03/2026 — CIA/CIB, MSG, MSD, MIR, AMI3.48/3.77, accès direct plaies');
-  const r = await window.NGAPUpdateManager.pushUpdate({ note: note || '' });
+  // Modal HTML avec 3 options de programmation
+  const modalHTML = `
+    <div id="a11-push-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--ad,#0f172a);border:1px solid var(--b);border-radius:12px;max-width:580px;width:100%;max-height:90vh;overflow-y:auto">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--b);display:flex;align-items:baseline;gap:10px">
+          <span style="font-size:22px">🚀</span>
+          <h2 style="margin:0;font-size:16px;font-family:var(--fs);color:var(--t)">Push Avenant 11 — Quand activer ?</h2>
+        </div>
+        <div style="padding:16px 20px">
+          <div style="padding:10px 12px;background:rgba(245,158,11,.1);border-left:3px solid #f59e0b;border-radius:6px;margin-bottom:16px;font-size:12px;color:var(--t);line-height:1.6">
+            ⚠️ <strong>Les tarifs et actes Avenant 11 ne sont pas opposables à la CPAM avant novembre 2026.</strong>
+            Choisis quand activer la v2 pour ne pas exposer les IDELs à des cotations non encore officielles.
+          </div>
+
+          <div style="font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.3px;margin-bottom:10px">CHOIX D'ACTIVATION</div>
+
+          <label class="a11-opt" data-choice="scheduled_step1" style="display:block;padding:14px;border:1px solid var(--b);border-radius:10px;margin-bottom:10px;cursor:pointer;background:var(--s);transition:all .15s" onmouseenter="this.style.borderColor='#10b981'" onmouseleave="this.style.borderColor='var(--b)'">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <input type="radio" name="a11-choice" value="scheduled_step1" checked style="accent-color:#10b981">
+              <strong style="color:#10b981;font-size:13px">📅 Programmé — ${c.AMI_EFFECTIVE_STEP_1} (recommandé)</strong>
+            </div>
+            <div style="font-size:11px;color:var(--m);margin-top:6px;line-height:1.5;padding-left:22px">
+              Payload stocké en IDB dès maintenant. <strong style="color:var(--t)">Les fichiers statiques actuels restent actifs</strong> jusqu'au 01/11/2026.
+              L'override v2 s'activera <strong style="color:var(--t)">automatiquement</strong> au prochain chargement de la PWA après cette date.
+            </div>
+          </label>
+
+          <label class="a11-opt" data-choice="scheduled_step2" style="display:block;padding:14px;border:1px solid var(--b);border-radius:10px;margin-bottom:10px;cursor:pointer;background:var(--s);transition:all .15s" onmouseenter="this.style.borderColor='#4fa8ff'" onmouseleave="this.style.borderColor='var(--b)'">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <input type="radio" name="a11-choice" value="scheduled_step2" style="accent-color:#4fa8ff">
+              <strong style="color:#4fa8ff;font-size:13px">📅 Programmé — ${c.AMI_EFFECTIVE_STEP_2} (étape 2)</strong>
+            </div>
+            <div style="font-size:11px;color:var(--m);margin-top:6px;line-height:1.5;padding-left:22px">
+              Attendre la 2ᵉ étape de revalorisation AMI (3,45 €). Utile si tu veux éviter le saut intermédiaire 3,35 €.
+            </div>
+          </label>
+
+          <label class="a11-opt" data-choice="immediate" style="display:block;padding:14px;border:1px solid rgba(239,68,68,.3);border-radius:10px;margin-bottom:10px;cursor:pointer;background:rgba(239,68,68,.04);transition:all .15s">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <input type="radio" name="a11-choice" value="immediate" style="accent-color:#ef4444">
+              <strong style="color:#ef4444;font-size:13px">⚡ Immédiat (test / démo uniquement)</strong>
+            </div>
+            <div style="font-size:11px;color:var(--m);margin-top:6px;line-height:1.5;padding-left:22px">
+              Les tarifs AMI restent à 3,15 € (moteur date-aware) mais <strong style="color:#ef4444">les nouveaux codes deviennent visibles et cotables immédiatement</strong> (CIA, CIB, MSG, RKD, AMI 3.48…) — <em>risque de cotation non opposable CPAM</em>.
+              Utile uniquement pour démonstration interne ou test en pré-prod.
+            </div>
+          </label>
+
+          <div style="margin-top:16px">
+            <label style="font-size:11px;color:var(--m);font-family:var(--fm);letter-spacing:.3px">NOTE / CHANGELOG (optionnel)</label>
+            <input type="text" id="a11-note" value="Avenant 11 du 31/03/2026 — activation programmée"
+              style="width:100%;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:6px;color:var(--t);font-size:12px;margin-top:4px">
+          </div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--b);display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn bs bsm" onclick="document.getElementById('a11-push-modal').remove()">Annuler</button>
+          <button class="btn bp bsm" onclick="admNgapA11ConfirmPush()" style="background:linear-gradient(135deg,#a855f7,#7c3aed)">✓ Confirmer</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+};
+
+/** Appelé par le bouton "Confirmer" de la modal push */
+window.admNgapA11ConfirmPush = async function() {
+  const modal = document.getElementById('a11-push-modal');
+  if (!modal) return;
+  const choice = modal.querySelector('input[name="a11-choice"]:checked')?.value || 'scheduled_step1';
+  const note = (modal.querySelector('#a11-note')?.value || '').trim();
+  const c = window.NGAPUpdateManager._constants;
+
+  let activation_date = null;
+  let friendlyLabel = '';
+  if (choice === 'scheduled_step1') {
+    activation_date = c.AMI_EFFECTIVE_STEP_1;
+    friendlyLabel = `programmée pour le ${c.AMI_EFFECTIVE_STEP_1}`;
+  } else if (choice === 'scheduled_step2') {
+    activation_date = c.AMI_EFFECTIVE_STEP_2;
+    friendlyLabel = `programmée pour le ${c.AMI_EFFECTIVE_STEP_2}`;
+  } else {
+    // immédiat : on n'envoie pas d'activation_date → utilise today
+    friendlyLabel = 'immédiate (session en cours incluse)';
+  }
+
+  modal.remove();
+  const r = await window.NGAPUpdateManager.pushUpdate({
+    note,
+    activation_date  // null pour 'immediate' → bootstrap applique immédiatement
+  });
+
   if (r.ok) {
-    // Rafraîchir le panneau + badge
+    _toast('success',
+      r.is_scheduled ? '📅 Push programmé' : '⚡ Push actif',
+      `Version ${r.version} ${friendlyLabel}`);
+    // Rafraîchir le panneau
     await window.admNgapPushAvenant11();   // toggle off
     setTimeout(() => window.admNgapPushAvenant11(), 100);  // reopen
   }
+};
+
+/** Active immédiatement un push programmé (avant la date prévue) */
+window.admNgapA11ForceActivate = async function() {
+  if (!window.NGAPUpdateManager) return;
+  const c = window.NGAPUpdateManager._constants;
+  if (!confirm(
+    `⚠️ Activer la v2 AVANT la date programmée ?\n\n` +
+    `Les tarifs AMI restent à 3,15 € (moteur date-aware) mais\n` +
+    `les nouveaux codes (CIA, CIB, MSG, RKD, AMI 3.48…) deviennent\n` +
+    `immédiatement visibles et cotables par les IDELs.\n\n` +
+    `⚠️ Ces cotations ne sont PAS encore opposables à la CPAM.\n\n` +
+    `Recommandé uniquement pour test / démonstration.`
+  )) return;
+  const r = await window.NGAPUpdateManager.forceActivateNow();
+  if (r.ok) setTimeout(() => window.admNgapPushAvenant11(), 100);
 };
 
 /** Applique sans persister (session uniquement) */

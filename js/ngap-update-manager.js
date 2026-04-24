@@ -241,16 +241,60 @@ async function _applyEngineToMemory(src) {
 
 /**
  * Bootstrap : appelé au démarrage de l'app.
- * Si un override est présent en IDB, l'applique en mémoire AVANT le fetch
- * statique — garantit que le front utilise la v2 si déjà push.
+ * Si un override est présent en IDB ET que sa date d'activation est passée,
+ * l'applique en mémoire AVANT le fetch statique.
+ * Si l'activation est programmée dans le futur, ne fait RIEN (fichiers statiques actifs).
+ * Si la date d'activation vient juste de passer, active automatiquement.
  */
 async function bootstrap() {
   try {
     const meta = await _idbGet(KEY_METADATA);
-    if (!meta || !meta.enabled) {
-      _log('debug', 'Bootstrap : aucun override actif — fichiers statiques utilisés');
+    if (!meta) {
+      _log('debug', 'Bootstrap : aucun push enregistré — fichiers statiques utilisés');
       return { active_source: 'static', bootstrap: false };
     }
+
+    const today = _now().slice(0, 10);
+    const activationDate = (meta.activation_date || today).slice(0, 10);
+    const isScheduledFuture = activationDate > today;
+    const isScheduledNowReady = meta.scheduled && activationDate <= today && !meta.enabled;
+
+    // Cas 1 : activation programmée mais date PAS encore atteinte → on ne fait rien
+    if (isScheduledFuture) {
+      const daysLeft = Math.ceil((new Date(activationDate) - new Date(today)) / 864e5);
+      _log('info',
+        `Bootstrap : override v2 programmé pour le ${activationDate} (J-${daysLeft}). Fichiers statiques actifs jusqu'à cette date.`);
+      return {
+        active_source: 'static',
+        bootstrap: false,
+        scheduled_for: activationDate,
+        days_until_activation: daysLeft
+      };
+    }
+
+    // Cas 2 : activation programmée dont la date vient d'arriver → on active automatiquement
+    if (isScheduledNowReady) {
+      _log('info',
+        `Bootstrap : date d'activation atteinte (${activationDate}) — activation automatique de l'override v2`);
+      meta.enabled = true;
+      meta.scheduled = false;
+      meta.activated_at = _now();
+      meta.activated_by = 'auto_bootstrap';
+      await _idbSet(KEY_METADATA, meta);
+      await _appendAuditLog({
+        action: 'auto_activation',
+        version: meta.version,
+        activation_date: activationDate,
+        ok: true,
+      });
+    }
+
+    // Cas 3 : override actif — on applique
+    if (!meta.enabled) {
+      _log('debug', 'Bootstrap : override présent mais désactivé (rollback?) — fichiers statiques utilisés');
+      return { active_source: 'static', bootstrap: false };
+    }
+
     const [refObj, engSrc] = await Promise.all([
       _idbGet(KEY_REF),
       _idbGet(KEY_ENGINE),
@@ -270,9 +314,13 @@ async function bootstrap() {
 /**
  * Push Update : stocke la nouvelle version en IDB + hot-swap mémoire
  * @param {object} [opts]
- * @param {object} [opts.refJson]    — si absent, utilise le payload embarqué
- * @param {string} [opts.engineSrc]  — si absent, utilise le payload embarqué
- * @param {string} [opts.note]       — note/changelog
+ * @param {object} [opts.refJson]         — si absent, utilise le payload embarqué
+ * @param {string} [opts.engineSrc]       — si absent, utilise le payload embarqué
+ * @param {string} [opts.note]            — note/changelog
+ * @param {string} [opts.activation_date] — ISO 'YYYY-MM-DD' — active seulement à partir
+ *                                          de cette date (défaut : immédiat).
+ *                                          Si future → payload stocké mais PAS hot-swap.
+ *                                          Le bootstrap() activera automatiquement le jour J.
  */
 async function pushUpdate(opts = {}) {
   const startTs = _now();
@@ -289,41 +337,57 @@ async function pushUpdate(opts = {}) {
     const refHash = await _sha256(JSON.stringify(refObj));
     const engHash = await _sha256(engSrc);
 
-    // 4. Persistance IDB
+    // 4. Résolution activation_date : immédiat vs programmé
+    const today = _now().slice(0, 10);
+    const activationDate = (opts.activation_date || today).slice(0, 10);
+    const isScheduled = activationDate > today;
+
+    // 5. Persistance IDB (toujours)
     await _idbSet(KEY_REF, refObj);
     await _idbSet(KEY_ENGINE, engSrc);
     await _idbSet(KEY_METADATA, {
-      enabled: true,
+      enabled: !isScheduled,        // activation différée si date future
+      scheduled: isScheduled,
+      activation_date: activationDate,
       version: refObj.version,
       ref_hash: refHash,
       engine_hash: engHash,
       note: (opts.note || '').slice(0, 500),
       pushed_at: _now(),
+      activated_at: isScheduled ? null : _now(),
       ami_effective_dates: {
         step_1: AMI_EFFECTIVE_STEP_1,
         step_2: AMI_EFFECTIVE_STEP_2,
       }
     });
 
-    // 5. Hot-swap mémoire
-    await _applyRefToMemory(refObj);
-    await _applyEngineToMemory(engSrc);
+    // 6. Hot-swap mémoire UNIQUEMENT si activation immédiate
+    if (!isScheduled) {
+      await _applyRefToMemory(refObj);
+      await _applyEngineToMemory(engSrc);
+    }
 
-    // 6. Audit
+    // 7. Audit
     await _appendAuditLog({
-      action: 'push_update',
+      action: isScheduled ? 'push_scheduled' : 'push_active',
       version: refObj.version,
       ref_hash: refHash,
       engine_hash: engHash,
+      activation_date: activationDate,
       ok: true,
       note: opts.note || '',
     });
 
-    _toast('success', 'Mise à jour appliquée',
-      `Version ${refObj.version} active. Les nouveaux tarifs AMI s'appliqueront dès le 01/11/2026.`);
+    if (isScheduled) {
+      _toast('info', 'Mise à jour programmée',
+        `v2 stockée en IndexedDB. Activation automatique le ${activationDate}. Les fichiers statiques restent actifs jusqu'à cette date.`);
+    } else {
+      _toast('success', 'Mise à jour appliquée',
+        `Version ${refObj.version} active immédiatement. Tarifs AMI appliqués selon date_soin (3,35 € à partir du 01/11/2026).`);
+    }
     return {
       ok: true, version: refObj.version, ref_hash: refHash, engine_hash: engHash,
-      pushed_at: _now()
+      pushed_at: _now(), activation_date: activationDate, is_scheduled: isScheduled
     };
   } catch (e) {
     _log('error', 'Push update failed:', e);
@@ -364,13 +428,70 @@ async function rollback() {
   }
 }
 
+/** Force l'activation d'un push programmé, avant la date prévue.
+ *  Utile si l'admin veut tester la v2 immédiatement après l'avoir programmée. */
+async function forceActivateNow() {
+  try {
+    const meta = await _idbGet(KEY_METADATA);
+    if (!meta) return { ok: false, error: 'Aucun push enregistré' };
+    if (meta.enabled) return { ok: true, info: 'Déjà actif', version: meta.version };
+
+    const [refObj, engSrc] = await Promise.all([
+      _idbGet(KEY_REF),
+      _idbGet(KEY_ENGINE),
+    ]);
+    if (!refObj || !engSrc) return { ok: false, error: 'Payloads IDB introuvables' };
+
+    meta.enabled = true;
+    meta.scheduled = false;
+    meta.activated_at = _now();
+    meta.activated_by = 'force_manual';
+    meta.forced_before_scheduled_date = meta.activation_date;
+    await _idbSet(KEY_METADATA, meta);
+
+    await _applyRefToMemory(refObj);
+    await _applyEngineToMemory(engSrc);
+
+    await _appendAuditLog({
+      action: 'force_activate',
+      version: meta.version,
+      originally_scheduled_for: meta.activation_date,
+      ok: true,
+    });
+    _toast('warn', 'Activation forcée',
+      `v2 activée avant la date programmée (${meta.activation_date}). Note : les actes Avenant 11 ne sont pas encore opposables CPAM.`);
+    return { ok: true, version: meta.version };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 /** Status actuel du système */
 async function getStatus() {
   try {
     const meta = await _idbGet(KEY_METADATA);
     const audit = (await _idbGet(KEY_AUDIT)) || [];
+    const today = _now().slice(0, 10);
+
+    let active_source = 'static';
+    let scheduling = null;
+
+    if (meta) {
+      if (meta.enabled) {
+        active_source = 'idb_override';
+      } else if (meta.scheduled && meta.activation_date) {
+        const daysLeft = Math.ceil((new Date(meta.activation_date) - new Date(today)) / 864e5);
+        scheduling = {
+          status: daysLeft > 0 ? 'scheduled_future' : 'scheduled_ready',
+          activation_date: meta.activation_date,
+          days_until_activation: Math.max(0, daysLeft),
+        };
+      }
+    }
+
     return {
-      active_source: meta && meta.enabled ? 'idb_override' : 'static',
+      active_source,
+      scheduling,
       version_active: (window.NGAP_REFERENTIEL || {}).version || 'non chargé',
       engine_loaded: typeof window.NGAPEngine === 'function',
       override_meta: meta || null,
@@ -481,6 +602,7 @@ window.NGAPUpdateManager = {
   bootstrap,
   pushUpdate,
   applyNow,
+  forceActivateNow,   // ← NEW : active un push programmé immédiatement (avant sa date)
   rollback,
   getStatus,
   previewPayload,
