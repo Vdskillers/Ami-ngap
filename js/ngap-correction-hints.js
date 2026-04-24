@@ -25,17 +25,27 @@ function _esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* ── Gardes : ce module ne tourne QUE pour les infirmières connectées ── */
+function _isNurse() {
+  if (typeof S === 'undefined' || !S || !S.user) return false;
+  if (S.role === 'admin') return false;
+  return true;
+}
+
 /* ── Charger les suggestions pending depuis contact_messages ── */
 async function _loadPendingHints() {
-  if (typeof wpost !== 'function') return [];
+  // Gardes : module infirmière uniquement + wpost disponible
+  if (!_isNurse() || typeof wpost !== 'function') return [];
   try {
     const d = await wpost('/webhook/contact-mes-messages', {});
     if (!d || !d.ok) return [];
     const all = Array.isArray(d.messages) ? d.messages : [];
-    // Filtrer : catégorie ngap_correction + status 'sent' (pas encore traité)
     return all.filter(m => m.categorie === 'ngap_correction' && m.status === 'sent');
   } catch(e) {
-    console.warn('[ngap-hints] load KO:', e.message);
+    // Session expirée / non connecté : silencieux (pas de pollution console)
+    const msg = String(e.message || '');
+    if (msg.includes('Session') || msg.includes('401') || msg.includes('403') || msg.includes('Accès')) return [];
+    console.warn('[ngap-hints] load KO:', msg);
     return [];
   }
 }
@@ -189,9 +199,9 @@ window.ngapHintAction = async function(msgId, action) {
 window.renderNgapHintsBadge = renderNgapHintsBadge;
 window.loadNgapHints        = _loadPendingHints;
 
-/* ── Auto-init : afficher le badge dans le dashboard si présent ── */
+/* ── Auto-init : afficher le badge dans le dashboard si présent (infirmière uniquement) ── */
 function _autoInit() {
-  // Le dashboard infirmière peut fournir un container #ngap-hints-badge
+  if (!_isNurse()) return;  // skip silencieux en admin ou non connecté
   const target = document.getElementById('ngap-hints-badge');
   if (target) renderNgapHintsBadge(target);
 }

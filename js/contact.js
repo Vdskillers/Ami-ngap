@@ -77,8 +77,8 @@ function _renderMyMessages(messages) {
     return;
   }
 
-  const catLabel  = { bug:'🐛 Bug', amelioration:'💡 Amélioration', question:'❓ Question', ngap:'📋 Cotation NGAP', autre:'📩 Autre' };
-  const catColors = { bug:'var(--d)', amelioration:'#f59e0b', question:'var(--a)', ngap:'#8b5cf6', autre:'var(--m)' };
+  const catLabel  = { bug:'🐛 Bug', amelioration:'💡 Amélioration', question:'❓ Question', ngap:'📋 Cotation NGAP', ngap_correction:'🔧 Suggestion AMI', ngap_auto_applied:'✅ Correction auto', autre:'📩 Autre' };
+  const catColors = { bug:'var(--d)', amelioration:'#f59e0b', question:'var(--a)', ngap:'#8b5cf6', ngap_correction:'#00d4aa', ngap_auto_applied:'#10b981', autre:'var(--m)' };
 
   el.innerHTML = messages.map(m => {
     const date    = new Date(m.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });

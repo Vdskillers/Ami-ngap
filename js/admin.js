@@ -136,8 +136,11 @@ function _admInjectNgapButton() {
     <button class="btn bs bsm" onclick="admOpenNgapAnomalies()" title="Détecte les anomalies dans le référentiel NGAP">
       🔍 Vérifier référentiel
     </button>
-    <button id="adm-ngap-autocorrect-btn" class="btn bp bsm" onclick="admAutoCorrectSuggestions()" title="Envoie les suggestions de correction aux infirmières concernées via leur messagerie" style="display:none;background:linear-gradient(135deg,#00d4aa,#10b981);color:#fff">
-      🔧 Corriger automatiquement
+    <button id="adm-ngap-autocorrect-btn" class="btn bp bsm" onclick="admAutoCorrectSuggestions()" title="Envoie les suggestions de correction aux infirmières concernées via leur messagerie (elles valident)" style="display:none;background:linear-gradient(135deg,#00d4aa,#10b981);color:#fff">
+      🔧 Corriger via l'infirmière
+    </button>
+    <button id="adm-ngap-autocorrect-direct-btn" class="btn bp bsm" onclick="admAutoCorrectDirect()" title="Applique immédiatement les corrections dans l'historique des soins — l'infirmière reçoit juste une notification" style="display:none;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff">
+      ⚡ Corriger directement
     </button>
     <span style="font-size:11px;color:var(--m)">Données anonymisées · lecture seule · audit-safe</span>
   `;
@@ -179,10 +182,18 @@ async function admOpenNgapAnalysis() {
           autoBtn.style.display = '';
           autoBtn.title = `Envoyer ${gainPositif} suggestion(s) de correction aux infirmières concernées`;
         }
+        // Afficher aussi le bouton "Corriger directement"
+        const directBtn = document.getElementById('adm-ngap-autocorrect-direct-btn');
+        if (directBtn && gainPositif > 0) {
+          directBtn.style.display = '';
+          directBtn.title = `Appliquer immédiatement ${gainPositif} correction(s) — l'infirmière recevra juste une notification`;
+        }
       } else {
-        // Rien à corriger — cacher le bouton
+        // Rien à corriger — cacher les 2 boutons
         const autoBtn = document.getElementById('adm-ngap-autocorrect-btn');
         if (autoBtn) autoBtn.style.display = 'none';
+        const directBtn = document.getElementById('adm-ngap-autocorrect-direct-btn');
+        if (directBtn) directBtn.style.display = 'none';
       }
     }
   } catch(e) { console.warn('[adm-ngap] load details KO:', e.message); }
@@ -272,6 +283,88 @@ async function admAutoCorrectSuggestions() {
     if (btn) { btn.disabled = false; btn.innerHTML = '🔧 Corriger automatiquement'; }
     if (typeof showToast === 'function') showToast('error', 'Envoi KO', e.message || 'Erreur inattendue');
     console.warn('[admAutoCorrect]', e);
+  }
+}
+
+/* ⚡ Correction DIRECTE : applique les corrections sans validation infirmière */
+async function admAutoCorrectDirect() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+
+  const last = window._ADM_NGAP_LAST_ANALYSIS;
+  if (!last || !Array.isArray(last.details) || last.details.length === 0) {
+    if (typeof showToast === 'function') showToast('warning', 'Aucune analyse', 'Lance d\'abord "💸 Analyse pertes NGAP".');
+    return;
+  }
+
+  const gains = last.details.filter(d => (d.perte || 0) > 0);
+  if (!gains.length) {
+    if (typeof showToast === 'function') showToast('info', 'Rien à corriger', 'Aucune cotation avec gain potentiel.');
+    return;
+  }
+
+  const nurses    = new Set(gains.map(d => d.infirmiere_id)).size;
+  const gainTotal = gains.reduce((s,d) => s + (d.perte || 0), 0);
+  const ok = confirm(
+    `⚡ CORRECTION DIRECTE\n\n` +
+    `${gains.length} cotation(s) vont être RÉÉCRITES dans l'historique des soins de ${nurses} infirmière(s).\n\n` +
+    `Gain récupéré : +${gainTotal.toFixed(2)} €\n\n` +
+    `⚠️ Cette action est IMMÉDIATE et ne demande pas la validation des infirmières.\n` +
+    `Elles recevront juste une notification listant les corrections appliquées.\n\n` +
+    `À leur prochaine synchronisation, leur carnet patient + historique seront automatiquement à jour.\n\n` +
+    `Confirmer ?`
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById('adm-ngap-autocorrect-direct-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Application en cours…'; }
+
+  try {
+    const resp = await wpost('/webhook/admin-ngap-auto-correct-direct', { details: gains });
+    if (!resp || !resp.ok) throw new Error(resp?.error || 'Application impossible');
+
+    const summary = Array.isArray(resp.summary) ? resp.summary : [];
+    const summaryHtml = `
+      <div class="card" style="margin-top:16px;padding:16px;background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border:1px solid rgba(245,158,11,.3)">
+        <div style="font-size:13px;font-weight:700;color:#f59e0b;margin-bottom:8px">
+          ⚡ ${resp.total_applied} correction(s) appliquée(s) directement
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-bottom:12px">
+          Gain récupéré : <strong style="color:#00d4aa">+${(resp.total_gain||0).toFixed(2)} €</strong>
+          · ${resp.nurses_notified} infirmière(s) notifiée(s)
+          ${resp.errors > 0 ? ` · <span style="color:#ef4444">${resp.errors} erreur(s)</span>` : ''}
+        </div>
+        ${summary.length ? `
+          <div style="max-height:280px;overflow-y:auto;border:1px solid var(--b);border-radius:8px">
+            ${summary.map(s => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--b);font-size:12px">
+                <span><strong>${_escAdm(s.prenom || '')} ${_escAdm(s.nom || '')}</strong></span>
+                <span style="color:var(--m);font-family:var(--fm)">${s.count} corrigée(s) · <strong style="color:#00d4aa">+${(s.gain_total||0).toFixed(2)} €</strong></span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        <div style="font-size:10px;color:var(--m);margin-top:10px;line-height:1.5">
+          🛡️ Les infirmières ont reçu une notification détaillant les corrections appliquées. À leur prochaine synchronisation, leur carnet patient et leur historique des soins afficheront les versions corrigées.
+        </div>
+      </div>
+    `;
+    res.insertAdjacentHTML('beforeend', summaryHtml);
+
+    if (btn) {
+      btn.style.background = 'var(--ad,#0f172a)';
+      btn.innerHTML = '✅ Appliqué';
+      btn.disabled = true;
+    }
+    // Masquer aussi le bouton "via infirmière" (corrections déjà appliquées)
+    const viaBtn = document.getElementById('adm-ngap-autocorrect-btn');
+    if (viaBtn) viaBtn.style.display = 'none';
+
+    if (typeof showToast === 'function') showToast('success', 'Corrections appliquées', `${resp.total_applied} cotation(s) · +${(resp.total_gain||0).toFixed(2)} €`);
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '⚡ Corriger directement'; }
+    if (typeof showToast === 'function') showToast('error', 'Correction directe KO', e.message || 'Erreur inattendue');
+    console.warn('[admAutoCorrectDirect]', e);
   }
 }
 

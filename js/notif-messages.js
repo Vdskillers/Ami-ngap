@@ -34,11 +34,41 @@ async function _fetchMessages() {
     if (!d || !d.ok) return [];
     _cachedMessages = Array.isArray(d.messages) ? d.messages : [];
     _lastPoll = Date.now();
+    // Déclencher resync IDB si des corrections auto viennent d'arriver (infirmière uniquement)
+    _triggerResyncIfNeeded(_cachedMessages);
     return _cachedMessages;
   } catch(e) {
     console.warn('[notif-messages] fetch KO:', e.message);
     return [];
   }
+}
+
+/* ── Déclencher une resync IDB quand une correction auto arrive ── */
+async function _triggerResyncIfNeeded(messages) {
+  if (_isAdmin() || !Array.isArray(messages)) return;
+  // Cherche un message ngap_auto_applied non encore déclenché (marqueur localStorage)
+  const applied = messages.filter(m => m.categorie === 'ngap_auto_applied');
+  if (applied.length === 0) return;
+  const seenKey = 'ami_ngap_auto_applied_seen';
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(seenKey) || '[]'); } catch {}
+  const newOnes = applied.filter(m => !seen.includes(m.id));
+  if (newOnes.length === 0) return;
+  // Il y a au moins une nouvelle correction auto → resync
+  try {
+    if (typeof syncCotationsFromServer === 'function') {
+      console.info('[notif-messages] %d correction(s) auto détectée(s) → resync IDB', newOnes.length);
+      await syncCotationsFromServer();
+      // Marquer comme vues
+      const allIds = [...new Set([...seen, ...newOnes.map(m => m.id)])].slice(-200); // cap à 200
+      try { localStorage.setItem(seenKey, JSON.stringify(allIds)); } catch {}
+      // Toast pour informer l'infirmière
+      if (typeof showToast === 'function') {
+        const totalApplied = newOnes.length;
+        showToast('success', `${totalApplied} correction(s) NGAP appliquée(s)`, 'Votre historique et carnet patient ont été mis à jour automatiquement.', 5000);
+      }
+    }
+  } catch(e) { console.warn('[notif-messages] resync KO:', e.message); }
 }
 
 /* ── Compteur des messages non lus (pour le dot rouge) ── */

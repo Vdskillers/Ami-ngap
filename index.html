@@ -1167,8 +1167,7 @@
       <div class="slbl">Cabinet</div>
       <div class="ni nurse-only" id="nav-cabinet-item" data-v="cabinet"><span class="nic">🏥</span> Cabinet &amp; synchronisation <span id="cabinet-nav-badge" style="display:none;background:rgba(0,212,170,.2);color:var(--a);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></div>
       <div class="ni" data-v="transmissions"><span class="nic">📝</span> Transmissions infirmières</div>
-      <div class="ni" data-v="compliance"><span class="nic">🧠</span> Conformité cabinet</div>
-    </div>
+          </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Système</div>
       <div class="ni nurse-only" data-v="ngap-ref"><span class="nic">📚</span> Référentiel NGAP</div>
@@ -3069,8 +3068,7 @@
         Vous choisissez <em>quoi</em> partager et <em>avec qui</em>. Aucune donnée patient identifiable ne quitte votre appareil sans votre accord explicite.</p>
       </div>
 
-      <!-- ── 🛡️ Widget Conformité cabinet (v3.9) — déplacé depuis Dashboard ── -->
-      <div id="dash-compliance-widget" style="display:none;margin:4px 0 16px"></div>
+
 
       <!-- Contenu dynamique rendu par cabinet.js -->
       <div id="cabinet-root">
@@ -3192,10 +3190,6 @@
     <!-- ══════════════════════════════════════════
          CONFORMITÉ CABINET — scoring + auto-correction + risque prédictif
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-compliance">
-      <div id="admin-compliance-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le moteur de conformité. Le score et les actions sont calculés depuis votre compte de démo. En production, chaque infirmière voit uniquement son propre cabinet.</div>
-      <div id="compliance-root"></div>
-    </section>
 
   </main>
 </div>
@@ -3261,7 +3255,7 @@
 <script src="js/bsi-engine.js?v=3.9"></script><!-- 🆕 Moteurs BSI : suggestion, cohérence, impact €, risque CPAM, score confiance -->
 <script src="js/bsi.js?v=3.9"></script>
 <script src="js/consentements.js?v=3.9"></script><!-- 🛡️ v2.0 : cabinet sync + versionning + hash SHA-256 + check avant acte -->
-<script src="js/compliance-engine.js?v=3.9"></script><!-- 🧠 Scoring 4 piliers + auto-correction + risque prédictif + ranking patients -->
+<!-- <script src="js/compliance-engine.js?v=3.9"></script> (onglet Conformité cabinet retiré) --><!-- 🧠 Scoring 4 piliers + auto-correction + risque prédictif + ranking patients -->
 <script src="js/alertes-medicaments.js?v=3.8"></script>
 <script src="js/audit-cpam.js?v=3.9"></script>
 
@@ -3807,14 +3801,16 @@ document.addEventListener('click', function(e) {
 
 <script>
 (function(){
-  // Déplacer voicebtn dans le header mobile (mobile uniquement)
-  if(window.innerWidth > 768) return;
+  // Hook showApp — doit s'exécuter sur DESKTOP ET MOBILE (la cloche + autres extras doivent apparaître partout)
   document.addEventListener('DOMContentLoaded', function(){
-    var wrap = document.getElementById('mobile-header-fabs');
-    var vbtn = document.getElementById('voicebtn');
-    if(wrap && vbtn) wrap.appendChild(vbtn);
+    // Déplacer voicebtn dans le header mobile (mobile uniquement)
+    if (window.innerWidth <= 768) {
+      var wrap = document.getElementById('mobile-header-fabs');
+      var vbtn = document.getElementById('voicebtn');
+      if(wrap && vbtn) wrap.appendChild(vbtn);
+    }
 
-    // Hook showApp pour initialiser les extras topbar + toast de bienvenue
+    // Hook showApp pour initialiser les extras topbar (desktop + mobile) + toast de bienvenue
     var _origShowApp = window.showApp;
     window.showApp = function() {
       if (typeof _origShowApp === 'function') _origShowApp.apply(this, arguments);
