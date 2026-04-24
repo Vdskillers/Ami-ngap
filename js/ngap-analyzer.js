@@ -35,7 +35,16 @@
   if (window.NGAPAnalyzer) return;
 
   /* ─── Constantes internes ─────────────────────── */
-  const _MAJ_CODES = new Set(['DIM','NUIT','NUIT_PROF','IFD','IFI','MIE','MCI','MAU','IK','ISD','ISN_NUIT','ISN_NUIT_PROFONDE']);
+  // Majorations + indemnités + consultations dédiées (Avenant 11 inclus)
+  const _MAJ_CODES = new Set([
+    // Historiques
+    'DIM','NUIT','NUIT_PROF','IFD','IFI','MIE','MCI','MAU','IK','ISD','ISN_NUIT','ISN_NUIT_PROFONDE',
+    // Avenant 11 du 31/03/2026
+    'MSG','MSD','MIR',       // Majoration Soins Gériatriques, Scolaire Diabète, Intervention Régulée
+    'CIA','CIB',             // Consultations infirmières dédiées (20€, séance isolée)
+    'RKD',                   // Remise Kit Dépistage colorectal
+    'IAS_PDSA'               // Indemnité d'Astreinte PDSA (52€/4h)
+  ]);
   const _LOSS_THRESHOLD = 0.5;  // seuil € pour considérer une perte significative
 
   /* ════════════════════════════════════════════════
@@ -53,7 +62,9 @@
     );
     if (acte) return acte.tarif;
     // Forfaits BSI
-    if (ref.forfaits_bsi && ref.forfaits_bsi[norm]) return ref.forfaits_bsi[norm].tarif;
+    if (ref.forfaits_bsi && ref.forfaits_bsi[norm] && typeof ref.forfaits_bsi[norm] === 'object') {
+      return ref.forfaits_bsi[norm].tarif;
+    }
     // Majorations
     if (ref.majorations) {
       const key = Object.keys(ref.majorations).find(k =>
@@ -63,6 +74,14 @@
     }
     // Déplacements
     if (ref.deplacements && ref.deplacements[norm]) return ref.deplacements[norm].tarif || null;
+    // Avenant 11 : lettres-clés nouvelles (CIA=20€, CIB=20€, RKD=3€)
+    if (ref.lettres_cles && ref.lettres_cles[norm] && ref.lettres_cles[norm].valeur != null) {
+      return ref.lettres_cles[norm].valeur;
+    }
+    // Avenant 11 : indemnités d'astreinte (IAS_PDSA=52€)
+    if (ref.indemnites_astreinte && ref.indemnites_astreinte[norm] && ref.indemnites_astreinte[norm].tarif != null) {
+      return ref.indemnites_astreinte[norm].tarif;
+    }
     return null;
   }
 
@@ -422,7 +441,7 @@
   ════════════════════════════════════════════════ */
 
   window.NGAPAnalyzer = {
-    version: '1.0.0',
+    version: '1.1.0-avenant11',
     analyzeReferentiel,
     applyNGAPFix,
     liveAnalyzeCotation,
@@ -433,6 +452,17 @@
     _detectActsFromText,
     _optimizeActs,
   };
+
+  /* ── Avenant 11 : rafraîchissement à chaud du référentiel ──
+     Quand NGAPUpdateManager pousse une nouvelle version, on relogge
+     pour traçabilité (les fonctions lisent window.NGAP_REFERENTIEL
+     dynamiquement, donc rien à invalider en cache). */
+  document.addEventListener('ngap:ref_updated', (e) => {
+    if (window.console && console.info) {
+      console.info('[NGAPAnalyzer] Référentiel mis à jour à chaud :',
+        (e.detail && e.detail.version) || '?', '— analyses suivantes utiliseront la nouvelle version.');
+    }
+  });
 
   /* ════════════════════════════════════════════════
      H. AUTO-INIT — enrichissement temps réel sur #f-txt
@@ -537,6 +567,6 @@
 
   /* Log de chargement — utile pour admin */
   if (window.console && console.info) {
-    console.info('[NGAPAnalyzer] v1.0.0 prêt — window.NGAPAnalyzer disponible.');
+    console.info('[NGAPAnalyzer] v1.1.0-avenant11 prêt — window.NGAPAnalyzer disponible.');
   }
 })();

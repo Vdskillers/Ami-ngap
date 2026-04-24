@@ -36,11 +36,7 @@ let _pendingPrintData = null;
 
 // ─── TARIFS NGAP — lecture dynamique du référentiel si chargé ───
 // Fallback hardcodé complet NGAP 2026.3 (CIR-9/2025)
-// Avenant 11 : _COT_TARIFS est rebuildé automatiquement quand le référentiel
-// est mis à jour à chaud (event 'ngap:ref_updated' émis par ngap-update-manager.js).
-// Les nouvelles lettres-clés (CIA=20€, CIB=20€, RKD=3€) et majorations
-// (MSG=3.10€, MSD=7€, MIR=15€) sont incluses automatiquement si présentes.
-function _buildCotTarifs() {
+const _COT_TARIFS = (() => {
   if (window.NGAP_REFERENTIEL) {
     const ref = window.NGAP_REFERENTIEL;
     const out = {};
@@ -50,24 +46,14 @@ function _buildCotTarifs() {
       if (key) out[key] = a.tarif;
     });
     // Forfaits BSI
-    Object.entries(ref.forfaits_bsi || {}).forEach(([k, v]) => {
-      if (v && typeof v === 'object' && v.tarif != null) out[k] = v.tarif;
-    });
+    Object.entries(ref.forfaits_bsi || {}).forEach(([k, v]) => { out[k] = v.tarif; });
     // Déplacements
     Object.entries(ref.deplacements || {}).forEach(([k, v]) => { if (v.tarif) out[k] = v.tarif; });
-    // Majorations (avec alias) — inclut MSG / MSD / MIR de l'Avenant 11
+    // Majorations (avec alias)
     Object.entries(ref.majorations || {}).forEach(([k, v]) => { out[k] = v.tarif; });
     out['NUIT'] = ref.majorations?.ISN_NUIT?.tarif || 9.15;
     out['NUIT_PROF'] = ref.majorations?.ISN_NUIT_PROFONDE?.tarif || 18.30;
     out['DIM'] = ref.majorations?.ISD?.tarif || 8.50;
-    // Lettres-clés nouvelles Avenant 11 (CIA, CIB, RKD)
-    Object.entries(ref.lettres_cles || {}).forEach(([k, v]) => {
-      if (['CIA','CIB','RKD'].includes(k) && v && v.valeur != null) out[k] = v.valeur;
-    });
-    // Indemnités d'astreinte (IAS_PDSA 52€/4h)
-    Object.entries(ref.indemnites_astreinte || {}).forEach(([k, v]) => {
-      if (v && v.tarif != null) out[k] = v.tarif;
-    });
     return out;
   }
   // Fallback NGAP 2026.3 complet (tarifs officiels vérifiés)
@@ -93,21 +79,7 @@ function _buildCotTarifs() {
     // Télésoin
     TLS:10.00, TLL:12.00, TLD:15.00, RQD:10.00, TMI:5.04,
   };
-}
-
-let _COT_TARIFS = _buildCotTarifs();
-
-// Avenant 11 : rebuild à chaud quand l'override est poussé ou quand le fetch statique arrive
-if (typeof document !== 'undefined') {
-  const _cotRebuildTarifs = () => {
-    try {
-      _COT_TARIFS = _buildCotTarifs();
-      if (console.info) console.info('[cotation.js] _COT_TARIFS rebuild —', Object.keys(_COT_TARIFS).length, 'codes');
-    } catch (e) { if (console.warn) console.warn('[cotation.js] rebuild tarifs failed', e); }
-  };
-  document.addEventListener('ngap:ref_updated', _cotRebuildTarifs);
-  document.addEventListener('ngap:ref_loaded',  _cotRebuildTarifs);
-}
+})();
 
 // NLP côté client — détection complète des actes NGAP depuis le texte libre
 const _COT_NLP_PATTERNS = [
@@ -1049,21 +1021,6 @@ async function _cotationPipeline() {
               `${(_ck.types_label || []).join(', ')} — acte loggé pour traçabilité`);
           if (typeof auditLog === 'function')
             auditLog('ACT_WITHOUT_CONSENT', { patient_id: _patIdForCheck, types: _ck.types });
-
-          // ⚡ Mémoriser les consentements manquants pour auto-création à la signature.
-          //    Quand l'infirmière cliquera sur "Faire signer le patient" après cotation,
-          //    signature.js créera automatiquement le(s) consentement(s) pré-rempli(s)
-          //    avec la signature saisie, le type détecté, et la date du soin.
-          //    Pas de signature pour le moment → pas de consentement créé (juste mémorisé).
-          window._pendingConsentsForPatient = window._pendingConsentsForPatient || {};
-          window._pendingConsentsForPatient[_patIdForCheck] = {
-            patient_id:  _patIdForCheck,
-            patient_nom: _patNom,
-            types:       _ck.types || [],
-            types_label: _ck.types_label || [],
-            actes_text:  txt,
-            created_at:  Date.now(),
-          };
         }
       }
     }
@@ -1369,58 +1326,18 @@ async function _cotationPipeline() {
     // Dispatch ami:cotation_done pour signature.js + injection directe du bouton
     const _invoiceId = d.invoice_number || null;
     if (_invoiceId) {  // admin inclus — peut tester et démontrer la signature
-
-      // ⚡ Transférer les consentements en attente (patient → invoice) pour que
-      //    saveSignature puisse créer automatiquement le(s) consentement(s)
-      //    pré-rempli(s) avec la signature, le type d'acte et la date.
-      //    Extrait le _patIdForCheck mémorisé plus haut dans le scope.
-      let _patIdResolved = null;
-      try {
-        const _pnCurrent = (gv('f-pt') || '').trim();
-        if (_pnCurrent && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-          const _rows2 = await _idbGetAll(PATIENTS_STORE);
-          const _lowC = _pnCurrent.toLowerCase();
-          const _m2 = _rows2.find(r =>
-            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_lowC) ||
-            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_lowC)
-          );
-          if (_m2) _patIdResolved = _m2.id;
-        }
-      } catch (_) {}
-
-      const _pendingForPatient = _patIdResolved
-        ? window._pendingConsentsForPatient?.[_patIdResolved]
-        : null;
-
-      if (_pendingForPatient) {
-        window._pendingConsentsByInvoice = window._pendingConsentsByInvoice || {};
-        window._pendingConsentsByInvoice[_invoiceId] = {
-          ..._pendingForPatient,
-          invoice_number: _invoiceId,
-          date_soin:      d.date_soin || new Date().toISOString().slice(0, 10),
-          created_at:     Date.now(),  // utilisé par le TTL de signature.js
-        };
-      }
-
       // Injection directe du bouton de signature dans la card résultat
       const _cbody = $('cbody');
       if (_cbody && !_cbody.querySelector('.sig-btn-wrap')) {
         const _wrap = document.createElement('div');
         _wrap.className = 'sig-btn-wrap';
         _wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
-
-        // Badge visible si consentement(s) à créer à la signature
-        const _consentBadge = _pendingForPatient
-          ? `<span style="font-size:10px;background:rgba(255,181,71,.12);color:var(--w);border:1px solid rgba(255,181,71,.3);padding:3px 8px;border-radius:20px;font-family:var(--fm)">📄 Consentement sera ajouté : ${(_pendingForPatient.types_label || []).join(', ')}</span>`
-          : '';
-
         _wrap.innerHTML = `
           <button class="btn bv bsm" id="sig-btn-${_invoiceId}" data-sig="${_invoiceId}"
-            onclick="openSignatureModal('${_invoiceId}', { patient_id: '${_patIdResolved || ''}', invoice_number: '${_invoiceId}' })">
+            onclick="openSignatureModal('${_invoiceId}')">
             ✍️ Faire signer le patient
           </button>
-          <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>
-          ${_consentBadge}`;
+          <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>`;
         _cbody.querySelector('.card')?.appendChild(_wrap);
       }
       // Dispatch pour tout listener externe
@@ -2129,9 +2046,7 @@ async function openVerify() {
   VM_DATA = null;
   try {
     const d = await apiCall('/webhook/ami-calcul', {
-      mode: 'verify',
-      _force_n8n: true,       // ⚡ force l'appel N8N — bypass moteur local + cache + circuit breaker
-      texte: txt, ddn: gv('f-ddn'),
+      mode: 'verify', texte: txt, ddn: gv('f-ddn'),
       date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
       exo: gv('f-exo'), regl: gv('f-regl')
     });
@@ -2171,7 +2086,7 @@ async function verifyStandalone() {
   ld('btn-ver', true);
   $('res-ver').classList.remove('show');
   try {
-    const d = await apiCall('/webhook/ami-calcul', { mode: 'verify', _force_n8n: true, texte: txt, date_soin: gv('v-ds'), heure_soin: gv('v-hs'), exo: gv('v-exo') });
+    const d = await apiCall('/webhook/ami-calcul', { mode: 'verify', texte: txt, date_soin: gv('v-ds'), heure_soin: gv('v-hs'), exo: gv('v-exo') });
     const corrige = d.texte_corrige || '', fixes = d.corrections || [], alerts = d.alerts || [], sugg = d.optimisations || [];
     $('vbody').innerHTML = `<div class="card"><div class="ct">🔍 Résultat</div>
     ${corrige ? `<div style="margin-bottom:16px"><div class="lbl" style="color:var(--ok)">Texte normalisé</div><div style="background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;font-style:italic;font-size:14px;line-height:1.7">${corrige}</div></div>` : ''}

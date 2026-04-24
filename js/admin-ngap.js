@@ -97,11 +97,17 @@ function _render() {
       <button class="btn bs bsm" onclick="admNgapRunTests()" title="Rejouer les 58 tests (50 cliniques + 8 structurels) sur le référentiel en cours d'édition">🧪 Tests</button>
       <button class="btn bs bsm" onclick="admNgapToggleInstruction()" title="Appliquer une correction en langage naturel (ex: 'Passe AMI14 à 45€')">🪄 Instruction</button>
       <button class="btn bs bsm" onclick="admNgapSuggList()" title="Voir les suggestions des infirmières" id="adm-ngap-sugg-btn">📬 Suggestions <span id="adm-ngap-sugg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px"></span></button>
+      <button class="btn bs bsm" onclick="admNgapPushAvenant11()" title="Pousser la v2 Avenant 11 (référentiel + moteur) en IndexedDB avec hot-swap mémoire. Les nouveaux tarifs AMI ne seront pas effectifs avant novembre 2026." style="background:linear-gradient(135deg,rgba(168,85,247,.15),rgba(168,85,247,.05));border-color:rgba(168,85,247,.4);color:#a855f7">
+        🚀 Push Avenant 11 <span id="adm-ngap-a11-badge" style="display:none;margin-left:4px;background:#10b981;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700">ACTIF</span>
+      </button>
       <div style="flex:1"></div>
       <button class="btn bp bsm" onclick="admNgapSavePrompt()" ${dirty ? '' : 'disabled style="opacity:.4;cursor:not-allowed"'} title="Enregistrer une nouvelle version">
         💾 Enregistrer une nouvelle version
       </button>
     </div>
+
+    <!-- Zone Push Avenant 11 (repliable) -->
+    <div id="adm-ngap-a11-panel" style="display:none;margin-bottom:20px"></div>
 
     <!-- Zone historique (repliable) -->
     <div id="adm-ngap-history" style="display:none;margin-bottom:20px"></div>
@@ -1226,6 +1232,295 @@ window.admNgapSuggReject = async function(id) {
   } catch(e) {
     _toast('error', 'Erreur', e.message);
   }
+};
+
+/* ════════════════════════════════════════════════════════════════
+   PUSH AVENANT 11 — Mise à jour v2 (référentiel + moteur)
+   ────────────────────────────────────────────────────────────────
+   Dépendance : window.NGAPUpdateManager (ngap-update-manager.js)
+   Warning    : Les revalorisations tarifaires AMI (3.15 → 3.35 → 3.45)
+                ne sont PAS effectives avant le 01/11/2026 (étape 1)
+                et le 01/11/2027 (étape 2). Le moteur v2 gère la
+                transition automatiquement via getAMIValueForDate().
+══════════════════════════════════════════════════════════════════ */
+
+/** Ouvre/ferme le panneau Push Avenant 11 et affiche l'aperçu */
+window.admNgapPushAvenant11 = async function() {
+  const panel = document.getElementById('adm-ngap-a11-panel');
+  if (!panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+
+  // Vérifier que le gestionnaire est chargé
+  if (!window.NGAPUpdateManager) {
+    _toast('error', 'Module absent',
+      'ngap-update-manager.js n\'est pas chargé. Ajoutez-le dans index.html.');
+    return;
+  }
+
+  panel.style.display = 'block';
+  panel.innerHTML = `<div class="empty" style="padding:20px 0"><div class="ei"><div class="spin spinw" style="width:24px;height:24px"></div></div><p style="margin-top:10px">Analyse de la v2 Avenant 11…</p></div>`;
+
+  try {
+    const [status, preview] = await Promise.all([
+      window.NGAPUpdateManager.getStatus(),
+      window.NGAPUpdateManager.previewPayload(),
+    ]);
+    _renderA11Panel(panel, status, preview);
+    // Badge "ACTIF" si override actif
+    const badge = document.getElementById('adm-ngap-a11-badge');
+    if (badge) badge.style.display = status.active_source === 'idb_override' ? 'inline-block' : 'none';
+  } catch (e) {
+    panel.innerHTML = `<div class="ai er">⚠️ ${_esc(e.message)}</div>`;
+  }
+};
+
+function _renderA11Panel(panel, status, preview) {
+  const active = status.active_source === 'idb_override';
+  const meta = status.override_meta || {};
+  const ref = preview.ref_summary || {};
+  const eng = preview.engine_summary || {};
+
+  // Bannière warning date d'effet (visible en permanence)
+  const dateWarningBanner = `
+    <div class="adm-notice" style="background:linear-gradient(135deg,rgba(245,158,11,.12),rgba(245,158,11,.02));border-color:rgba(245,158,11,.4);margin-bottom:14px">
+      <span style="font-size:24px;flex-shrink:0">⏰</span>
+      <div style="flex:1;min-width:0">
+        <div style="color:#f59e0b;font-family:var(--fm);font-weight:600;margin-bottom:4px">
+          Revalorisations AMI non effectives avant novembre 2026
+        </div>
+        <div style="font-size:12px;color:var(--t);line-height:1.5">
+          La nouvelle grille tarifaire Avenant 11 (<strong>AMI 3.15 € → 3.35 € au 01/11/2026 → 3.45 € au 01/11/2027</strong>)
+          est déjà embarquée dans ce build. Le moteur applique automatiquement le tarif correct selon la date du soin
+          via <code>getAMIValueForDate()</code> — aucune action manuelle ensuite.
+          <br>
+          <em>Les nouveaux codes (CIA, CIB, RKD, MSG, MSD, MIR, AMI 3.48, AMI 3.77, AMI 1.35, AMI 1.48…) sont disponibles dès le push,
+          mais leur facturation dépend de la parution au JO de chaque arrêté d'application (accès direct plaies au 01/01/2027, surveillance hebdo au 01/01/2028, etc.).</em>
+        </div>
+      </div>
+    </div>`;
+
+  // Bloc statut actuel
+  const statusBlock = `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px;margin-bottom:8px">ÉTAT ACTUEL DU FRONT</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:12px">
+        <div>
+          <div style="color:var(--m)">Source référentiel</div>
+          <div style="color:${active ? '#10b981' : 'var(--a)'};font-weight:600">
+            ${active ? '🟢 Override IDB (v2 actif)' : '⚪ Fichier statique'}
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--m)">Version chargée</div>
+          <div style="color:var(--a);font-family:var(--fm);font-size:11px">
+            ${_esc(status.version_active || '—')}
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--m)">Moteur NGAPEngine</div>
+          <div style="color:${status.engine_loaded ? '#10b981' : '#ef4444'};font-weight:600">
+            ${status.engine_loaded ? '✅ chargé' : '❌ absent'}
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--m)">Dernier push</div>
+          <div style="color:var(--t);font-size:11px">
+            ${meta.pushed_at ? _fmtDate(meta.pushed_at) : '—'}
+          </div>
+        </div>
+      </div>
+      ${meta.note ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(0,0,0,.2);border-radius:6px;font-size:11px;color:var(--t);font-style:italic">"${_esc(meta.note)}"</div>` : ''}
+    </div>`;
+
+  // Bloc aperçu payload embarqué
+  const previewBlock = `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px;margin-bottom:10px">PAYLOAD EMBARQUÉ (prêt à pousser)</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">
+        ${_kpiCard('📋','Actes Ch. I', ref.nb_actes_chap_I || 0)}
+        ${_kpiCard('📋','Actes Ch. II', ref.nb_actes_chap_II || 0)}
+        ${_kpiCard('🔑','Lettres-clés', ref.nb_lettres_cles || 0)}
+        ${_kpiCard('⏱️','Majorations', ref.nb_majorations || 0)}
+        ${_kpiCard('🚫','Incompatibilités', ref.nb_incompatibilites || 0)}
+        ${_kpiCard('✅','Dérogations', ref.nb_derogations || 0)}
+      </div>
+
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:var(--a);letter-spacing:.3px">
+          🆕 NOUVELLES SECTIONS AVENANT 11 (${(ref.nouvelles_sections_avenant_11||[]).length})
+        </summary>
+        <ul style="margin:8px 0 0 20px;font-size:12px;color:var(--t);line-height:1.7">
+          ${(ref.nouvelles_sections_avenant_11 || []).map(s => `<li>${_esc(s)}</li>`).join('')}
+        </ul>
+      </details>
+
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:var(--a);letter-spacing:.3px">
+          🔑 NOUVELLES LETTRES-CLÉS / MAJORATIONS
+        </summary>
+        <div style="margin:8px 0 0 20px;font-size:12px;color:var(--t);line-height:1.7">
+          <strong>Lettres-clés :</strong> ${(ref.nouvelles_lettres_cles || []).join(' · ')}<br>
+          <strong>Majorations :</strong> ${(ref.nouvelles_majorations  || []).join(' · ')}
+        </div>
+      </details>
+
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:var(--a);letter-spacing:.3px">
+          💰 CALENDRIER TARIFAIRE AMI
+        </summary>
+        <table style="margin:8px 0 0 20px;font-size:12px;border-collapse:collapse">
+          <tr><td style="padding:3px 10px;color:var(--m)">Actuel :</td><td style="font-family:var(--fm);color:var(--a)">${_esc(ref.ami_calendrier?.actuel || '—')}</td></tr>
+          <tr><td style="padding:3px 10px;color:var(--m)">Étape 1 :</td><td style="font-family:var(--fm);color:var(--a)">${_esc(ref.ami_calendrier?.step_1 || '—')}</td></tr>
+          <tr><td style="padding:3px 10px;color:var(--m)">Étape 2 :</td><td style="font-family:var(--fm);color:var(--a)">${_esc(ref.ami_calendrier?.step_2 || '—')}</td></tr>
+        </table>
+      </details>
+
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:var(--a);letter-spacing:.3px">
+          ⚙️ NOUVELLES MÉTHODES DU MOTEUR (${(eng.methodes_ajoutees||[]).length})
+        </summary>
+        <ul style="margin:8px 0 0 20px;font-size:12px;color:var(--t);line-height:1.7">
+          ${(eng.methodes_ajoutees || []).map(m => `<li><code>${_esc(m)}</code></li>`).join('')}
+        </ul>
+        <div style="margin:6px 0 0 20px;font-size:11px;color:var(--m);font-style:italic">
+          Rétro-compatibilité : ${_esc(eng.backward_compat || '—')}
+        </div>
+      </details>
+    </div>`;
+
+  // Bloc actions
+  const actionsBlock = `
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px;margin-bottom:10px">ACTIONS</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn bp bsm" onclick="admNgapA11DoPush()"
+                style="background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border-color:#7c3aed"
+                title="Stocker la v2 en IndexedDB + hot-swap mémoire (persistant)">
+          🚀 Pousser la v2 (persistant)
+        </button>
+        <button class="btn bs bsm" onclick="admNgapA11ApplyNow()"
+                title="Appliquer en mémoire pour cette session uniquement, sans persister">
+          ⚡ Appliquer en session
+        </button>
+        <button class="btn bs bsm" onclick="admNgapA11Export()"
+                title="Télécharger ngap_referentiel_2026.json + ngap_engine.js pour commit GitHub">
+          💾 Exporter pour GitHub
+        </button>
+        ${active ? `
+          <button class="btn bs bsm" onclick="admNgapA11Rollback()"
+                  style="color:#ef4444;border-color:rgba(239,68,68,.4)"
+                  title="Supprimer l'override IndexedDB et revenir aux fichiers statiques">
+            ↩️ Rollback
+          </button>` : ''}
+        <div style="flex:1"></div>
+        <button class="btn bs bsm" onclick="admNgapA11ShowAudit()"
+                title="Voir le journal d'audit des dernières opérations">
+          📜 Audit
+        </button>
+      </div>
+    </div>`;
+
+  // Audit log (si présent)
+  const auditBlock = (status.audit_log && status.audit_log.length > 0) ? `
+    <details id="adm-ngap-a11-audit-details" style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 14px">
+      <summary style="cursor:pointer;font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px">
+        📜 JOURNAL D'AUDIT (${status.audit_log.length} dernières opérations)
+      </summary>
+      <div style="margin-top:10px;max-height:260px;overflow-y:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="border-bottom:1px solid var(--b);text-align:left">
+            <th style="padding:4px 6px;color:var(--m);font-family:var(--fm);font-weight:500">Date</th>
+            <th style="padding:4px 6px;color:var(--m);font-family:var(--fm);font-weight:500">Action</th>
+            <th style="padding:4px 6px;color:var(--m);font-family:var(--fm);font-weight:500">Résultat</th>
+            <th style="padding:4px 6px;color:var(--m);font-family:var(--fm);font-weight:500">Détails</th>
+          </tr></thead>
+          <tbody>
+            ${status.audit_log.map(l => `
+              <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+                <td style="padding:4px 6px;font-family:var(--fm);color:var(--t);font-size:10px">${_fmtDate(l.ts)}</td>
+                <td style="padding:4px 6px;font-family:var(--fm);color:var(--a)">${_esc(l.action || '')}</td>
+                <td style="padding:4px 6px">${l.ok ? '<span style="color:#10b981">✅ OK</span>' : '<span style="color:#ef4444">❌</span>'}</td>
+                <td style="padding:4px 6px;color:var(--m);font-size:10px">${_esc(l.version || l.error || '').slice(0, 60)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </details>` : '';
+
+  panel.innerHTML = dateWarningBanner + statusBlock + previewBlock + actionsBlock + auditBlock;
+}
+
+/** Exécute le push complet (IDB + hot-swap) */
+window.admNgapA11DoPush = async function() {
+  if (!window.NGAPUpdateManager) { _toast('error', 'Module absent', 'ngap-update-manager.js non chargé'); return; }
+  const c = window.NGAPUpdateManager._constants;
+  if (!confirm(
+    `Pousser la v2 Avenant 11 ?\n\n` +
+    `Version : ${c.PAYLOAD_VERSION}\n` +
+    `Compilée le : ${c.PAYLOAD_DATE_COMPIL}\n\n` +
+    `✓ Stockage IndexedDB (persistant)\n` +
+    `✓ Hot-swap mémoire immédiat\n` +
+    `✓ Les consumer modules rechargeront leurs caches\n\n` +
+    `⚠️ Les revalorisations AMI :\n` +
+    `  • 3.35 € à partir du ${c.AMI_EFFECTIVE_STEP_1}\n` +
+    `  • 3.45 € à partir du ${c.AMI_EFFECTIVE_STEP_2}\n\n` +
+    `Le moteur applique automatiquement le bon tarif\n` +
+    `selon la date du soin. Aucune action manuelle requise.`
+  )) return;
+
+  const note = prompt('Note / changelog (optionnel) :', 'Avenant 11 du 31/03/2026 — CIA/CIB, MSG, MSD, MIR, AMI3.48/3.77, accès direct plaies');
+  const r = await window.NGAPUpdateManager.pushUpdate({ note: note || '' });
+  if (r.ok) {
+    // Rafraîchir le panneau + badge
+    await window.admNgapPushAvenant11();   // toggle off
+    setTimeout(() => window.admNgapPushAvenant11(), 100);  // reopen
+  }
+};
+
+/** Applique sans persister (session uniquement) */
+window.admNgapA11ApplyNow = async function() {
+  if (!window.NGAPUpdateManager) return;
+  if (!confirm(
+    `Appliquer la v2 en mémoire uniquement ?\n\n` +
+    `✓ Immédiat, utile pour tester\n` +
+    `✗ Perdu au rechargement de la page\n\n` +
+    `Pour persister, utilisez "Pousser la v2".`
+  )) return;
+  const r = await window.NGAPUpdateManager.applyNow();
+  if (r.ok) setTimeout(() => window.admNgapPushAvenant11(), 100);
+};
+
+/** Télécharge les fichiers pour commit GitHub manuel */
+window.admNgapA11Export = async function() {
+  if (!window.NGAPUpdateManager) return;
+  if (!confirm(
+    `Télécharger les 2 fichiers v2 pour commit GitHub ?\n\n` +
+    `• ngap_referentiel_2026.json (~85 Ko)\n` +
+    `• ngap_engine.js (~28 Ko)\n\n` +
+    `À remplacer dans le dossier ngap-engine/ du repo.`
+  )) return;
+  await window.NGAPUpdateManager.exportForCommit();
+};
+
+/** Rollback vers fichiers statiques */
+window.admNgapA11Rollback = async function() {
+  if (!window.NGAPUpdateManager) return;
+  if (!confirm(
+    `Rollback vers les fichiers statiques ?\n\n` +
+    `• Supprime l'override IndexedDB\n` +
+    `• Nécessite un rechargement de page\n` +
+    `• Les tests et cotations utiliseront à nouveau la v1`
+  )) return;
+  const r = await window.NGAPUpdateManager.rollback();
+  if (r.ok) {
+    if (confirm('Rollback effectué. Recharger la page maintenant ?')) location.reload();
+  }
+};
+
+/** Affiche le journal d'audit complet */
+window.admNgapA11ShowAudit = async function() {
+  const el = document.getElementById('adm-ngap-a11-audit-details');
+  if (el) { el.open = !el.open; el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
 };
 
 

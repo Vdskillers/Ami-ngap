@@ -690,3 +690,174 @@ window.complianceExport        = complianceExport;
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'compliance') renderComplianceDashboard();
 });
+
+/* ════════════════════════════════════════════════════════════════
+   AVENANT 11 — Détection d'opportunités de cotation
+   ────────────────────────────────────────────────────────────────
+   Analyse un patient (ou tous) et retourne les opportunités non
+   exploitées depuis l'Avenant 11 :
+     • CIA : diabète T2 sous insuline <6 mois (jamais coté)
+     • CIB : bilan prévention âge-clé (jamais coté en suivi)
+     • MSG : patient avec BSC + SEGA ≥ 35 (non coté)
+     • AMI3.48 : plaie chronique ALD 15/23 (bilan annuel manquant)
+     • RKD : kit dépistage colorectal non délivré (50-74 ans)
+     • AMI2.02 accès direct : pansements sous prescription inutile (≥01/01/2027)
+
+   Non-intrusif : détecte seulement, ne modifie rien.
+   Non-effectif avant novembre 2026 pour les tarifs AMI.
+═══════════════════════════════════════════════════════════════ */
+
+async function complianceA11Opportunities(patient) {
+  const opportunities = [];
+  if (!patient) return opportunities;
+
+  const cots = patient.cotations || [];
+  const age = _computeAge(patient.date_naissance);
+  const now = new Date();
+  const nowStr = now.toISOString().slice(0, 10);
+  const oneYearAgo = new Date(now.getTime() - 365 * 864e5).toISOString().slice(0, 10);
+
+  // Helper : présence d'un code dans les cotations
+  const hasCode = (codeRx, sinceDate) => cots.some(c => {
+    const actes = Array.isArray(c.actes) ? c.actes : [c];
+    const date = c.date || c.date_soin || '';
+    if (sinceDate && date < sinceDate) return false;
+    return actes.some(a => codeRx.test(String(a.code || '').toUpperCase()));
+  });
+
+  // Diagnostic infos (tolérant aux schémas différents)
+  const diag = {
+    ald:       String(patient.ald || '').toUpperCase(),
+    ald_codes: Array.isArray(patient.ald_codes) ? patient.ald_codes.map(c => String(c).toUpperCase()) : [],
+    diabete:   /diabet|insulin|glycemi|dt2|type\s*2/i.test(JSON.stringify(patient).slice(0, 5000)),
+    insuline:  /insulin/i.test(JSON.stringify(patient.traitements || patient.medicaments || patient.notes || '').slice(0, 5000)),
+    sega:      Number(patient.sega_score || patient.sega || 0),
+    bsi_type:  String((patient.bsi || {}).type || '').toUpperCase(),
+    plaies:    Array.isArray(patient.plaies) ? patient.plaies : [],
+  };
+
+  /* ── CIA : instauration insuline DT2 ── */
+  if (diag.diabete && diag.insuline && !hasCode(/^CIA$/, oneYearAgo)) {
+    opportunities.push({
+      level: 'info',
+      code: 'CIA',
+      titre: 'Consultation instauration insuline (CIA) éligible',
+      detail: 'Patient diabétique T2 sous insuline — jusqu\'à 4 consultations CIA (20€) dans les 6 premiers mois de traitement.',
+      gain_estime_eur: 80,   // 4 × 20€
+      date_effet: 'À partir parution JO Avenant 11',
+      reference: 'Avenant 11 — art. consultation infirmière CIA',
+    });
+  }
+
+  /* ── MSG : Majoration Soins Gériatriques ── */
+  if (diag.bsi_type === 'BSC' && diag.sega >= 35 && !hasCode(/^MSG$/, oneYearAgo)) {
+    opportunities.push({
+      level: 'warn',
+      code: 'MSG',
+      titre: 'Majoration Soins Gériatriques (MSG) non appliquée',
+      detail: `Patient BSC avec score SEGA ${diag.sega} (≥35) — MSG +3.10€/jour non facturée.`,
+      gain_estime_eur: 3.10 * 30, // ~mensuel
+      date_effet: 'À partir parution JO Avenant 11',
+      reference: 'Avenant 11 — MSG réservée BSC + SEGA ≥35',
+    });
+  }
+
+  /* ── AMI3.48 : bilan plaie annuel pour plaie chronique en ALD ── */
+  const hasPlaieChronique = diag.plaies.some(p => /chronique|ulcere|escarre|pied\s*diabet/i.test(String(p.type || p.label || '')));
+  const aldMatchPlaie = /15|23/.test(diag.ald) || diag.ald_codes.some(c => /ALD\s*(15|23)/.test(c));
+  if (hasPlaieChronique && aldMatchPlaie && !hasCode(/^AMI\s*3\.48$/, oneYearAgo)) {
+    opportunities.push({
+      level: 'info',
+      code: 'AMI3.48',
+      titre: 'Bilan annuel plaie (AMI 3.48) éligible',
+      detail: 'Plaie chronique + ALD 15/23 — bilan annuel (10.96€) non facturé sur 12 derniers mois. Max 1×/an, hors BSI.',
+      gain_estime_eur: 10.96,
+      date_effet: '01/01/2027',
+      reference: 'Avenant 11 — art. bilan plaie à risque de complication',
+    });
+  }
+
+  /* ── RKD : kit dépistage colorectal (50-74 ans) ── */
+  if (age >= 50 && age <= 74 && !hasCode(/^RKD$/, oneYearAgo)) {
+    opportunities.push({
+      level: 'info',
+      code: 'RKD',
+      titre: 'Kit dépistage cancer colorectal (RKD) non délivré',
+      detail: `Patient ${age} ans (50-74) — remise kit RKD (3€) + 2€ si test réalisé. PEC 100% AM.`,
+      gain_estime_eur: 5,
+      date_effet: '01/01/2027',
+      reference: 'Avenant 11 — dépistage organisé cancer colorectal',
+    });
+  }
+
+  /* ── CIB : suivi post-bilan prévention (25, 45, 65, 70 ans) ── */
+  const agesBilan = [25, 45, 65, 70];
+  if (agesBilan.some(a => Math.abs(age - a) <= 2) && !hasCode(/^CIB$/, oneYearAgo)) {
+    opportunities.push({
+      level: 'info',
+      code: 'CIB',
+      titre: 'Consultation suivi bilan prévention (CIB) éligible',
+      detail: `Patient ${age} ans (proche âge-clé) — consultation CIB 20€ si bilan prévention réalisé. Max 4/bilan.`,
+      gain_estime_eur: 80,
+      date_effet: '01/07/2027 (sous réserve HAS)',
+      reference: 'Avenant 11 — consultation post-bilan prévention',
+    });
+  }
+
+  return opportunities;
+}
+
+/** Helper local : calcul d'âge tolérant */
+function _computeAge(dateNaissance) {
+  if (!dateNaissance) return 0;
+  try {
+    const d = new Date(dateNaissance);
+    if (isNaN(d.getTime())) return 0;
+    const diff = Date.now() - d.getTime();
+    return Math.floor(diff / (365.25 * 864e5));
+  } catch { return 0; }
+}
+
+/** Agrège les opportunités sur tout le panier patients */
+async function complianceA11OpportunitiesAll() {
+  if (typeof getAllPatients !== 'function') return { patients: [], total_opportunities: 0, total_gain_eur: 0 };
+  const allPat = await getAllPatients();
+  const out = [];
+  let total_gain = 0;
+  for (const p of allPat) {
+    const opps = await complianceA11Opportunities(p);
+    if (opps.length) {
+      const gain = opps.reduce((s, o) => s + (Number(o.gain_estime_eur) || 0), 0);
+      total_gain += gain;
+      out.push({
+        patient_id: p.id || p.code || '?',
+        patient_nom: p.nom || p.name || '',
+        opportunities: opps,
+        gain_eur: Math.round(gain * 100) / 100,
+      });
+    }
+  }
+  return {
+    patients: out,
+    total_opportunities: out.reduce((s, x) => s + x.opportunities.length, 0),
+    total_gain_eur: Math.round(total_gain * 100) / 100,
+    generated_at: new Date().toISOString(),
+    warning_dates_effet: {
+      note: 'Les revalorisations tarifaires Avenant 11 ne sont pas effectives avant novembre 2026.',
+      ami_step_1: '2026-11-01',
+      ami_step_2: '2027-11-01',
+    }
+  };
+}
+
+window.complianceA11Opportunities    = complianceA11Opportunities;
+window.complianceA11OpportunitiesAll = complianceA11OpportunitiesAll;
+
+// Log Avenant 11 lors du hot-swap du référentiel (par NGAPUpdateManager)
+document.addEventListener('ngap:ref_updated', (e) => {
+  if (window.console && console.info) {
+    console.info('[compliance-engine] Référentiel NGAP v2 chargé —',
+      (e.detail && e.detail.version) || '?',
+      '— opportunités Avenant 11 disponibles via complianceA11OpportunitiesAll()');
+  }
+});

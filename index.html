@@ -3268,19 +3268,29 @@
 <script src="js/ngap-correction-hints.js?v=1.0"></script><!-- 💡 Badge suggestions AMI côté infirmière -->
 <script src="js/notif-messages.js?v=1.0"></script><!-- 🔔 Panneau notifications enrichi -->
 
+<!-- 🚀 NGAP Update Manager — gestionnaire unifié de mise à jour (Avenant 11 embarqué) -->
+<!-- Doit être chargé AVANT le fetch du référentiel pour que le bootstrap IDB ait priorité -->
+<script src="js/ngap-update-manager.js?v=1.0"></script>
+
 <!-- ⚡ Chargement asynchrone du référentiel NGAP (source de vérité unique) -->
 <!-- Exposé via window.NGAP_REFERENTIEL — utilisé par cotation.js, tournee.js, ngap-analyzer.js -->
 <!-- Chemin repo GitHub : Ami-ngap/ngap-engine/ngap_referentiel_2026.json -->
+<!-- NB : si NGAPUpdateManager a poussé un override IDB, window.NGAP_REFERENTIEL est déjà peuplé → skip fetch -->
 <script>
 (function loadNGAPRef() {
-  if (window.NGAP_REFERENTIEL) return; // déjà chargé
+  if (window.NGAP_REFERENTIEL) {
+    if (window.console && console.info) console.info('[NGAP] Référentiel déjà chargé (override IDB actif) — fetch statique ignoré');
+    return;
+  }
   // Chemin relatif robuste : fonctionne sur GitHub Pages (/Ami-ngap/) et en dev local
   fetch('ngap-engine/ngap_referentiel_2026.json', { cache: 'force-cache' })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(data => {
+      // Double-check : un bootstrap IDB peut avoir résolu entre-temps
+      if (window.NGAP_REFERENTIEL) return;
       if (data && (data.actes_chapitre_I || data.version)) {
         window.NGAP_REFERENTIEL = data;
-        document.dispatchEvent(new CustomEvent('ngap:ref_loaded', { detail: { version: data.version } }));
+        document.dispatchEvent(new CustomEvent('ngap:ref_loaded', { detail: { version: data.version, source: 'static' } }));
         if (window.console && console.info) console.info('[NGAP] Référentiel chargé :', data.version || 'inconnu');
       }
     })
