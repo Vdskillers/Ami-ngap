@@ -340,21 +340,24 @@ select option{background:var(--s)}
 .ngap-chip.warn.added{background:#f59e0b;color:#1a1a1a;border-color:#f59e0b}
 .ngap-chip-lbl{font-size:10px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase;margin-top:10px;margin-bottom:4px;display:block}
 /* ── FAB flottant « Re-coter avec les ajouts » ────────────────────────── */
-.recote-fab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:9999;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:50px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#001f18;font-family:var(--fs,inherit);font-size:14px;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s,opacity .2s;animation:recoteFabIn .35s cubic-bezier(.34,1.56,.64,1)}
+/* Position : décalée vers la gauche pour ne pas chevaucher le bouton vocal
+   (FAB vocal ≈ 60px de large à right:20px → on s'écarte de ~96px) */
+.recote-fab{position:fixed;right:96px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:9998;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:50px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#001f18;font-family:var(--fs,inherit);font-size:14px;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s,opacity .2s;animation:recoteFabIn .35s cubic-bezier(.34,1.56,.64,1);pointer-events:auto}
 .recote-fab:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 12px 32px rgba(0,212,170,.6),0 4px 12px rgba(0,0,0,.3)}
 .recote-fab:active{transform:translateY(0) scale(.98)}
 .recote-fab-ico{font-size:18px;line-height:1;display:inline-block;animation:recoteFabSpin 3s ease-in-out infinite}
 .recote-fab-lbl{letter-spacing:.2px}
 .recote-fab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:20px;background:rgba(0,31,24,.22);color:#001f18;font-family:var(--fm,monospace);font-size:11px;font-weight:700}
-.recote-fab-close{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(0,31,24,.18);color:#001f18;font-size:14px;font-weight:700;line-height:1;margin-left:2px;transition:background .15s;cursor:pointer;user-select:none}
-.recote-fab-close:hover{background:rgba(0,31,24,.32)}
+.recote-fab-close{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(0,31,24,.18);color:#001f18;font-size:14px;font-weight:700;line-height:1;margin-left:2px;transition:background .15s,transform .15s;cursor:pointer;user-select:none;pointer-events:auto;flex-shrink:0}
+.recote-fab-close:hover{background:rgba(0,31,24,.4);transform:scale(1.1)}
+.recote-fab-close:active{transform:scale(.95)}
 .recote-fab.loading{pointer-events:none;opacity:.85}
 .recote-fab.loading .recote-fab-ico{animation:recoteFabSpin .8s linear infinite}
 @keyframes recoteFabIn{0%{opacity:0;transform:translateY(16px) scale(.88)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes recoteFabOut{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(16px) scale(.88)}}
 @keyframes recoteFabSpin{0%{transform:rotate(0)}50%{transform:rotate(180deg)}100%{transform:rotate(360deg)}}
 .recote-fab.out{animation:recoteFabOut .25s ease-in forwards}
-@media(max-width:640px){.recote-fab{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:12px 16px;font-size:13px}.recote-fab-lbl{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+@media(max-width:640px){.recote-fab{right:80px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:10px 14px;font-size:12px;gap:8px}.recote-fab-lbl{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.recote-fab-ico{font-size:16px}.recote-fab-badge{min-width:18px;height:18px;font-size:10px}.recote-fab-close{width:18px;height:18px;font-size:12px}}
 .dreb{display:inline-flex;align-items:center;gap:6px;background:rgba(79,168,255,.12);border:1px solid rgba(79,168,255,.3);color:var(--a2);font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px}
 .rag-c{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .rag-ch{font-family:var(--fm);font-size:10px;color:var(--m);background:var(--s);border:1px solid var(--b);padding:2px 8px;border-radius:20px}

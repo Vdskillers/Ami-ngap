@@ -863,6 +863,49 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
   // cotationIdx et invoice_number ne bypasses PAS la modale — ils servent uniquement à l'upsert.
   if (window._editingCotation && window._editingCotation._userChose) return true;
 
+  // ── BYPASS FAB « Re-coter » ────────────────────────────────────────────
+  // Si la cotation est déclenchée par le FAB (et non par un clic manuel sur
+  // « Coter avec l'IA »), on choisit automatiquement « Mettre à jour » sans
+  // afficher de modale — c'est l'intention implicite de l'utilisateur.
+  // Cas : Bastien clique sur des chips puis sur le FAB → veut MAJ, pas une nouvelle ligne.
+  if (window._cotFromReCoteFAB) {
+    try {
+      const _patNomCheck = (gv('f-pt') || '').trim();
+      const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
+      if (_patNomCheck && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+        const _allRows = await _idbGetAll(PATIENTS_STORE);
+        const _nomLow  = _patNomCheck.toLowerCase();
+        const _foundRow = _allRows.find(r =>
+          ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+          ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+        );
+        if (_foundRow && typeof _dec === 'function') {
+          const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+          if (Array.isArray(_foundPat.cotations)) {
+            const _existIdx = _foundPat.cotations.findIndex(c =>
+              (c.date || '').slice(0, 10) === _dateCheck.slice(0, 10)
+            );
+            if (_existIdx >= 0) {
+              const _existCot = _foundPat.cotations[_existIdx];
+              window._editingCotation = {
+                patientId:      _foundRow.id,
+                cotationIdx:    _existIdx,
+                invoice_number: _existCot.invoice_number || null,
+                _userChose:     true, // bypass définitif pour cette session
+                _fromTournee:   (window._editingCotation || {})._fromTournee || false,
+                _fromFAB:       true,
+                _prevActes:     (_existCot.actes || []).map(a => ({
+                  code: a.code, nom: a.nom || '', total: a.total || 0,
+                })),
+              };
+            }
+          }
+        }
+      }
+    } catch (_e) { console.warn('[cotation] FAB bypass doublon KO:', _e.message); }
+    return true; // Continuer le pipeline directement, sans modale
+  }
+
   try {
     const _patNomCheck = (gv('f-pt') || '').trim();
     const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
@@ -1215,6 +1258,37 @@ async function _cotationPipeline() {
       },
     });
     if (d.error) throw new Error(d.error);
+
+    // ══ FALLBACK NGAP LOCAL ══
+    // Si N8N renvoie 0 acte (ou que des majorations), on tente d'extraire les
+    // codes NGAP directement depuis le textarea via _cotExtractNgapChips et le
+    // moteur local NGAPEngine. Évite le « Aucun acte détecté » sur des textes
+    // contenant des codes explicites mais pas de verbe d'action (ex. issu du FAB).
+    try {
+      const _CODES_MAJ = new Set(['DIM','NUIT','NUIT_PROF','IFD','IFI','MIE','MCI','IK']);
+      const _hasTech = (d.actes || []).some(a => !_CODES_MAJ.has(String(a.code||'').toUpperCase()));
+      if (!_hasTech && typeof _cotExtractNgapChips === 'function') {
+        const enriched = _cotEnrichWithLocalEngine(d, txt);
+        if (enriched && enriched.actes && enriched.actes.length > (d.actes||[]).length) {
+          // Conserver les métadonnées N8N (alerts, suggestions, cpam_simulation…)
+          // mais remplacer les actes/totaux par ceux du moteur local
+          Object.assign(d, {
+            actes:        enriched.actes,
+            total:        enriched.total,
+            part_amo:     enriched.part_amo,
+            part_amc:     enriched.part_amc,
+            part_patient: enriched.part_patient,
+            _local_engine_used: true,
+          });
+          // Marqueur visuel discret dans alerts
+          d.alerts = d.alerts || [];
+          d.alerts.unshift('ℹ️ Cotation calculée localement (moteur NGAP) — N8N indisponible ou texte sans verbe d\'action');
+        }
+      }
+    } catch (_engErr) {
+      console.warn('[cotation] Fallback NGAP local KO:', _engErr.message);
+    }
+
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
     if (d.invoice_number && typeof displayInvoiceNumber === 'function') {
       displayInvoiceNumber(d.invoice_number);
@@ -1524,6 +1598,13 @@ function _cotClickAppend(btnOrRow, fragment, label) {
 /* FAB flottant « Re-coter » : apparaît dès qu'un ajout a été fait, disparaît
    à la re-cotation, au clic ou à la navigation hors de la page cotation. */
 function _cotShowReCoteBar() {
+  // Si on n'est pas sur la page cotation, ne pas afficher le FAB
+  // (sécurité contre _cotClickAppend déclenché depuis un autre contexte)
+  try {
+    const cotPage = document.getElementById('p-cot') || document.getElementById('section-cot');
+    if (cotPage && cotPage.style && cotPage.style.display === 'none') return;
+  } catch (_) {}
+
   let fab = document.getElementById('recote-fab');
   if (!fab) {
     fab = document.createElement('button');
@@ -1535,33 +1616,43 @@ function _cotShowReCoteBar() {
       <span class="recote-fab-ico" aria-hidden="true">🔄</span>
       <span class="recote-fab-lbl">Re-coter avec les ajouts</span>
       <span class="recote-fab-badge" data-count="1">1</span>
-      <span class="recote-fab-close" role="button" aria-label="Fermer" title="Fermer">✕</span>
+      <span class="recote-fab-close" role="button" aria-label="Fermer" title="Fermer (n'annule pas les ajouts)">✕</span>
     `;
     // Clic principal → relance la cotation
     fab.addEventListener('click', (ev) => {
+      // Sécurité : empêcher tout bubbling vers les éléments en dessous
+      // (notamment le bouton vocal qui se trouve dans la même zone)
+      ev.stopPropagation();
+      ev.preventDefault();
       // Clic sur la croix : ferme sans re-coter
-      if (ev.target && ev.target.classList.contains('recote-fab-close')) {
-        ev.stopPropagation();
+      if (ev.target && ev.target.classList && ev.target.classList.contains('recote-fab-close')) {
         _cotHideReCoteBar();
         return;
       }
       // Sinon : relance la cotation
       fab.classList.add('loading');
+      // Drapeau : la prochaine cotation est issue du FAB → force mode édition
+      // si une cotation existe déjà (bypass modale doublon, choix implicite « Mettre à jour »)
+      window._cotFromReCoteFAB = true;
       try {
         if (typeof cotation === 'function') {
           Promise.resolve(cotation()).catch(() => {}).finally(() => {
-            // Si la cotation échoue silencieusement, on retire le loading
-            setTimeout(() => { if (fab) fab.classList.remove('loading'); }, 1500);
+            window._cotFromReCoteFAB = false;
+            // Si la cotation échoue silencieusement, on retire le loading après 1.5s
+            setTimeout(() => { if (fab && document.body.contains(fab)) fab.classList.remove('loading'); }, 1500);
           });
         } else {
           // Fallback : click sur le bouton principal
           const mainBtn = document.getElementById('btn-cot');
           if (mainBtn) mainBtn.click();
+          setTimeout(() => { window._cotFromReCoteFAB = false; }, 5000);
         }
       } catch (_) {
+        window._cotFromReCoteFAB = false;
         fab.classList.remove('loading');
       }
     });
+    // Capture précoce (avant les autres listeners) pour éviter tout double-déclenchement
     document.body.appendChild(fab);
   } else {
     // Bouton déjà présent → incrémenter le compteur
@@ -1588,6 +1679,125 @@ function _cotHideReCoteBar() {
   setTimeout(() => { try { fab.remove(); } catch (_) {} }, 260);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   FALLBACK NGAP LOCAL : utilise NGAPEngine + window.NGAP_REFERENTIEL
+   pour calculer une cotation à partir des codes extraits du textarea.
+   Appelé quand N8N renvoie 0 acte technique (cold start, texte sans verbe…).
+   ═══════════════════════════════════════════════════════════════════════════ */
+function _cotEnrichWithLocalEngine(d, txt) {
+  // Pré-conditions : moteur + référentiel chargés
+  const Engine = window.NGAPEngine || (typeof NGAPEngine !== 'undefined' ? NGAPEngine : null);
+  const ref    = window.NGAP_REFERENTIEL;
+  if (!Engine || !ref) {
+    console.warn('[cotation] NGAPEngine ou référentiel non chargé → pas de fallback local');
+    return null;
+  }
+
+  // Extraire tous les codes du textarea (codes seuls + combos AMI4 + MCI)
+  const chips = _cotExtractNgapChips(txt || '');
+  if (!chips.length) return null;
+
+  // Décomposer chaque chip en codes individuels (un chip combo "AMI4 + MCI" → ["AMI4","MCI"])
+  const codes = [];
+  for (const c of chips) {
+    const parts = c.insert.split(/\s*\+\s*/);
+    for (const p of parts) {
+      // Récupérer le code seul + son éventuel coefficient (avec ou sans espace)
+      // Ex: "AMI 4" → "AMI4", "AMI 4.1 2ème passage" → "AMI4.1", "AMI 14/15 longue" → "AMI14/15"
+      const m = p.match(/^([A-Z][A-Z_]*)\s*(\d+(?:[._/]\d+)*)?/i);
+      if (m) {
+        const lettre = m[1].toUpperCase();
+        const coef   = m[2] || '';
+        codes.push({ code: lettre + coef });
+      }
+    }
+  }
+  if (!codes.length) return null;
+
+  // Appel du moteur local
+  try {
+    const engine = new Engine(ref);
+    const result = engine.compute({
+      codes,
+      date_soin:  gv('f-ds') || new Date().toISOString().slice(0,10),
+      heure_soin: gv('f-hs') || '',
+      mode:       'permissif', // tolérant pour ne pas bloquer
+    });
+    if (!result || !result.ok || !Array.isArray(result.actes_finaux) || !result.actes_finaux.length) {
+      return null;
+    }
+    // Adapter le format au schéma attendu par renderCot
+    const actes = result.actes_finaux.map(a => ({
+      code:        a.code || a.code_facturation || '?',
+      nom:         a.nom || a.libelle || '',
+      coefficient: a.coefficient || 1,
+      total:       parseFloat(a.tarif || a.total || 0),
+      description: a.description || '',
+    }));
+    const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
+    // Préserver la part patient si renseignée par d ; sinon répartition par défaut 60/40
+    const pAmo  = parseFloat(d.part_amo) || (total * 0.60);
+    const pAmc  = parseFloat(d.part_amc) || 0;
+    const pPat  = parseFloat(d.part_patient) || (total - pAmo - pAmc);
+    return {
+      actes,
+      total:        +total.toFixed(2),
+      part_amo:     +pAmo.toFixed(2),
+      part_amc:     +pAmc.toFixed(2),
+      part_patient: +pPat.toFixed(2),
+    };
+  } catch (e) {
+    console.warn('[cotation] NGAPEngine.compute KO:', e.message);
+    return null;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRÉ-WARM N8N : ping silencieux pour réveiller le worker Render avant que
+   l'utilisateur clique sur « Coter avec l'IA ». Casse le cold-start de ~30s.
+   Appelé une seule fois par session, à l'ouverture de la page de cotation.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function _cotPrewarmN8N() {
+  if (window._cotN8NPrewarmed) return;
+  window._cotN8NPrewarmed = true;
+  try {
+    if (typeof apiCall !== 'function') return;
+    // Appel avec mode: 'ping' — le worker peut court-circuiter ce mode et
+    // répondre 200 immédiatement. Si non géré, le worker traitera comme une
+    // requête normale avec un texte vide → 200/erreur, peu importe : le but
+    // est juste de réveiller le conteneur Render.
+    Promise.resolve(apiCall('/webhook/ami-calcul', {
+      mode: 'ping', texte: '', _prewarm: true,
+    }, { silent: true })).catch(() => {
+      // Aucun retour utilisateur — c'est un ping silencieux
+    });
+    console.info('[cotation] Pré-warm N8N envoyé');
+  } catch (_) {}
+}
+
+/* Hook sur navTo : déclencher le pré-warm dès qu'on entre sur la page cotation */
+if (typeof window !== 'undefined' && !window._cotPrewarmHookInstalled) {
+  window._cotPrewarmHookInstalled = true;
+  // Si on ouvre directement sur 'cot' au chargement, prewarm dès maintenant
+  try {
+    if (typeof location !== 'undefined' && /[?&#]p=cot|#cot/.test(location.href)) {
+      setTimeout(_cotPrewarmN8N, 800);
+    }
+  } catch (_) {}
+  // Pré-warm général au chargement de l'app (3s après DOMContentLoaded ou immédiat)
+  // pour que N8N soit déjà chaud quand l'utilisateur arrive sur la cotation.
+  try {
+    const _doPrewarm = () => setTimeout(_cotPrewarmN8N, 3000);
+    if (typeof document !== 'undefined') {
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        _doPrewarm();
+      } else {
+        document.addEventListener('DOMContentLoaded', _doPrewarm, { once: true });
+      }
+    }
+  } catch (_) {}
+}
+
 /* Nettoyage du FAB lors de la navigation hors de la page cotation */
 if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
   window._cotRecoteNavHookInstalled = true;
@@ -1597,6 +1807,10 @@ if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
     if (typeof _origNavTo === 'function') {
       window.navTo = function patchedNavTo(section, ...rest) {
         if (section && section !== 'cot') _cotHideReCoteBar();
+        // Pré-warm N8N au moment où l'utilisateur arrive sur la page cotation
+        if (section === 'cot') {
+          try { setTimeout(_cotPrewarmN8N, 300); } catch (_) {}
+        }
         return _origNavTo.apply(this, [section, ...rest]);
       };
     }
@@ -1749,13 +1963,15 @@ function _cotExtractNgapCodes(text) {
 
 /* Expose en global pour usage depuis les handlers inline onclick="" */
 if (typeof window !== 'undefined') {
-  window._cotAppendDesc       = _cotAppendDesc;
-  window._cotClickAppend      = _cotClickAppend;
-  window._cotExtractNgapCodes = _cotExtractNgapCodes;
-  window._cotExtractNgapChips = _cotExtractNgapChips;
-  window._cotIsInfoSuggestion = _cotIsInfoSuggestion;
-  window._cotShowReCoteBar    = _cotShowReCoteBar;
-  window._cotHideReCoteBar    = _cotHideReCoteBar;
+  window._cotAppendDesc          = _cotAppendDesc;
+  window._cotClickAppend         = _cotClickAppend;
+  window._cotExtractNgapCodes    = _cotExtractNgapCodes;
+  window._cotExtractNgapChips    = _cotExtractNgapChips;
+  window._cotIsInfoSuggestion    = _cotIsInfoSuggestion;
+  window._cotShowReCoteBar       = _cotShowReCoteBar;
+  window._cotHideReCoteBar       = _cotHideReCoteBar;
+  window._cotEnrichWithLocalEngine = _cotEnrichWithLocalEngine;
+  window._cotPrewarmN8N          = _cotPrewarmN8N;
 }
 
 function renderCot(d) {
@@ -2612,6 +2828,8 @@ async function verifyStandalone() {
    UTILITAIRES
 ════════════════════════════════════════════════ */
 function clrCot() {
+  // Purger le FAB « Re-coter » s'il était affiché
+  try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
   ['f-pr','f-pr-rp','f-pr-dt','f-pt','f-ddn','f-sec','f-amo','f-amc','f-txt','f-ds','f-hs']
     .forEach(id => { const e = $(id); if (e) e.value = ''; });
   ['f-exo','f-regl'].forEach(id => { const e = $(id); if (e) e.selectedIndex = 0; });
