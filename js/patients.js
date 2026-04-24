@@ -745,7 +745,11 @@ function _patTab(tab, id) {
     const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
 
     // Migration rétrocompatibilité : ordo_date (ancien champ) → ordonnances[] (nouveau tableau)
-    if (p.ordo_date && !p.ordonnances?.length) {
+    // ⚡ Condition stricte : uniquement si `ordonnances` n'existe PAS encore (jamais migré).
+    //    Si c'est déjà un tableau (même vide) → l'utilisateur l'a volontairement géré,
+    //    on ne recrée pas depuis ordo_date. Sinon chaque suppression serait annulée
+    //    par la re-création automatique au rendu suivant.
+    if (p.ordo_date && !Array.isArray(p.ordonnances)) {
       p.ordonnances = [{
         id:                'legacy_' + p.id,
         actes:             '',
@@ -1211,8 +1215,16 @@ async function _deleteOrdo(patientId, idx) {
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
   const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
-  if (!pat.ordonnances) return;
+  if (!Array.isArray(pat.ordonnances)) pat.ordonnances = [];
   pat.ordonnances.splice(idx, 1);
+  // ⚡ Si l'array devient vide, nettoyer le vieux champ legacy ordo_date
+  //    pour empêcher la migration rétrocompat (_patTab ligne ~748) de
+  //    recréer une ordonnance fantôme à la prochaine lecture.
+  //    Sans ça : splice vide → relecture IDB → p.ordo_date encore présent
+  //    → migration se déclenche → ordonnance "revient" à l'écran.
+  if (!pat.ordonnances.length) {
+    delete pat.ordo_date;
+  }
   pat.updated_at = new Date().toISOString();
   await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
   showToastSafe('🗑️ Ordonnance supprimée.');
