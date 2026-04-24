@@ -505,13 +505,26 @@ async function exportAuditJSON() {
    RENDU UI — vue "Conformité cabinet"
 ════════════════════════════════════════════════ */
 async function renderComplianceDashboard() {
-  const wrap = document.getElementById('compliance-root');
+  // Lookup dual container :
+  //   • #compliance-root       → ancien onglet dédié (legacy, peut être absent)
+  //   • #compliance-block      → nouvel emplacement : bloc inséré dans la page
+  //                               "Cabinet & synchronisation" (cabinet.js)
+  const wrap = document.getElementById('compliance-root')
+             || document.getElementById('compliance-block');
   if (!wrap) return;
+
+  // Si on rend dans la page Cabinet, on n'affiche pas de h1 (il y en a déjà un)
+  // et on n'affiche pas la carte "aucun cabinet" car la page Cabinet gère elle-même ce cas.
+  const isEmbeddedInCabinet = (wrap.id === 'compliance-block');
+  const titleTag = isEmbeddedInCabinet ? 'h2' : 'h1';
+  const titleClass = isEmbeddedInCabinet ? 'ct' : 'pt';
 
   // 🛡️ Guard cabinet — la vue « Conformité cabinet » n'a de sens que si on est dans un cabinet.
   // Hors cabinet : on affiche un état vide explicite avec CTA (pas de score fantôme).
   const cab = (typeof APP !== 'undefined' && APP.get) ? APP.get('cabinet') : null;
   if (!cab?.id) {
+    // Dans le mode embedded, on n'affiche RIEN si pas de cabinet — la page parent gère déjà ce cas
+    if (isEmbeddedInCabinet) { wrap.innerHTML = ''; return; }
     wrap.innerHTML = `
       <h1 class="pt">Conformité <em>cabinet</em></h1>
       <p class="ps">Score global · Auto-correction · Risque futur · Patients prioritaires</p>
@@ -534,20 +547,57 @@ async function renderComplianceDashboard() {
 
   wrap.innerHTML = `<div class="card"><div class="sk" style="height:140px"></div></div>`;
 
-  const [comp, actions, risk, ranking, sim] = await Promise.all([
+  const [comp, actions, risk, ranking, sim, a11opps] = await Promise.all([
     computeCompliance(),
     generateActions(),
     predictFutureRisk(),
     rankPatients(),
     simulateMonth(),
+    // Opportunités Avenant 11 (non bloquant)
+    (typeof complianceA11OpportunitiesAll === 'function' ? complianceA11OpportunitiesAll() : Promise.resolve(null)).catch(() => null),
   ]);
 
   const scoreColor = v => v >= 90 ? '#00d4aa' : v >= 70 ? '#f59e0b' : '#ef4444';
   const riskColor  = l => l === 'LOW' ? '#00d4aa' : l === 'MEDIUM' ? '#f59e0b' : '#ef4444';
 
+  // Carte "Opportunités Avenant 11" — uniquement si complianceA11OpportunitiesAll() a renvoyé des résultats
+  const a11Card = (a11opps && a11opps.total_opportunities > 0) ? `
+    <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(168,85,247,.08),rgba(124,58,237,.02));border:1px solid rgba(168,85,247,.3)">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <span style="font-size:20px">🆕</span>
+        <strong style="color:#a855f7;font-family:var(--fm);font-size:13px;letter-spacing:.3px">AVENANT 11 — ${a11opps.total_opportunities} opportunités détectées</strong>
+        <span style="margin-left:auto;font-family:var(--fm);color:#a855f7;font-weight:700;font-size:14px">+${(a11opps.total_gain_eur||0).toFixed(2)} €</span>
+      </div>
+      <div style="font-size:12px;color:var(--m);line-height:1.5;margin-bottom:10px">
+        Cotations Avenant 11 (CIA/CIB, MSG, AMI 3.48, RKD…) potentiellement applicables chez ${a11opps.patients.length} patient(s).
+        <br>
+        <em style="color:#f59e0b">⏰ Revalorisations AMI non effectives avant le 01/11/2026.</em>
+      </div>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:11px;color:#a855f7;letter-spacing:.3px">📋 VOIR LA LISTE PAR PATIENT</summary>
+        <div style="margin-top:10px;max-height:320px;overflow-y:auto">
+          ${a11opps.patients.slice(0, 30).map(p => `
+            <div style="padding:8px 10px;background:var(--s);border-radius:6px;margin-bottom:6px;font-size:12px">
+              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+                <strong style="color:var(--t)">${(p.patient_nom || p.patient_id)}</strong>
+                <span style="margin-left:auto;color:#a855f7;font-family:var(--fm);font-weight:700">+${(p.gain_eur||0).toFixed(2)} €</span>
+              </div>
+              ${p.opportunities.map(o => `
+                <div style="padding-left:12px;font-size:11px;color:var(--m);line-height:1.6">
+                  • <code style="background:rgba(168,85,247,.15);color:#a855f7;padding:1px 5px;border-radius:3px;font-family:var(--fm);font-size:10px">${o.code}</code>
+                  ${o.titre} <span style="color:#f59e0b;font-size:10px">(${o.date_effet})</span>
+                </div>`).join('')}
+            </div>`).join('')}
+          ${a11opps.patients.length > 30 ? `<div style="text-align:center;color:var(--m);font-size:11px;padding:6px">…et ${a11opps.patients.length - 30} autres patients</div>` : ''}
+        </div>
+      </details>
+    </div>` : '';
+
   wrap.innerHTML = `
-    <h1 class="pt">Conformité <em>cabinet</em></h1>
-    <p class="ps">Score global · Auto-correction · Risque futur · Patients prioritaires</p>
+    <${titleTag} class="${titleClass}" ${isEmbeddedInCabinet ? 'style="margin-top:24px"' : ''}>🛡️ Conformité <em>cabinet</em></${titleTag}>
+    ${!isEmbeddedInCabinet ? '<p class="ps">Score global · Auto-correction · Risque futur · Patients prioritaires</p>' : '<p style="font-size:12px;color:var(--m);margin:-4px 0 14px 0">Score global · Auto-correction · Risque futur · Patients prioritaires · Opportunités Avenant 11</p>'}
+
+    ${a11Card}
 
     <!-- Score global + 4 piliers -->
     <div class="card" style="margin-bottom:16px">
@@ -688,7 +738,18 @@ window.complianceApplyAll      = complianceApplyAll;
 window.complianceExport        = complianceExport;
 
 document.addEventListener('ui:navigate', e => {
-  if (e.detail?.view === 'compliance') renderComplianceDashboard();
+  const view = e.detail?.view;
+  if (view === 'compliance') renderComplianceDashboard();
+  // Depuis l'Avenant 11 : le dashboard de conformité est aussi rendu dans
+  // la page Cabinet & synchronisation (container #compliance-block).
+  // On laisse cabinet.js déclencher le render après son propre rendu,
+  // mais on garde un fallback ici : si l'utilisateur re-navigue sur le cabinet
+  // et que le block existe déjà, on re-render.
+  if (view === 'cabinet') {
+    setTimeout(() => {
+      if (document.getElementById('compliance-block')) renderComplianceDashboard();
+    }, 300);
+  }
 });
 
 /* ════════════════════════════════════════════════════════════════

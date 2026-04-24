@@ -456,7 +456,12 @@ function _renderCabinetDashboard(root, d) {
         <div class="ai in">⚠️ Les données patients restent anonymisées lors du partage</div>
         <div class="ai in">⚠️ Aucune synchronisation automatique sans votre accord</div>
       </div>
-    </div>`;
+    </div>
+
+    <!-- 🛡️ Tableau de bord Conformité (intégré depuis l'ancien onglet "Conformité cabinet") -->
+    <!-- Rendu par renderComplianceDashboard() dans compliance-engine.js                   -->
+    <!-- Inclut les opportunités Avenant 11 détectées via complianceA11OpportunitiesAll()  -->
+    <div id="compliance-block"></div>`;
 
   // ✅ Affichage automatique de l'état de synchro après rendu
   // Utilise le tracking local en priorité — visible sans avoir à cliquer
@@ -465,6 +470,15 @@ function _renderCabinetDashboard(root, d) {
       cabinetSyncStatus().catch(() => {});
     }
   }, 250);
+
+  // 🛡️ Rendu du tableau de bord conformité (intégré — ex onglet "Conformité cabinet")
+  setTimeout(() => {
+    if (typeof renderComplianceDashboard === 'function') {
+      renderComplianceDashboard().catch(err => {
+        console.warn('[cabinet.js] renderComplianceDashboard failed:', err);
+      });
+    }
+  }, 350);
 }
 
 /* ════════════════════════════════════════════════
