@@ -2500,6 +2500,98 @@ function importCalendar() {
   result.classList.add('show');
 }
 
+/* handleFileSelect(input) — hook onchange du <input type=file>
+   Appelé depuis index.html. Affiche un preview du nom + lance l'import
+   automatiquement (UX mobile : 1 seul tap pour tout faire). */
+function handleFileSelect(input) {
+  if (!input || !input.files || !input.files.length) return;
+  const file = input.files[0];
+  const zone = $('drop-zone');
+  if (zone) {
+    const textEl = zone.querySelector('.drop-text');
+    if (textEl) {
+      textEl.innerHTML = `<strong>📎 ${_esc(file.name)}</strong> · ${_formatBytes(file.size)}`;
+    }
+    zone.style.borderColor = 'var(--a)';
+    zone.style.background  = 'rgba(0,212,170,.06)';
+  }
+  // Lance l'import immédiatement pour éviter le 2e tap
+  try { importCalendar(); } catch (e) { console.warn('[import] auto-trigger KO:', e.message); }
+}
+
+function _esc(s) { return String(s || '').replace(/[<>&"]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;' }[c])); }
+function _formatBytes(n) {
+  if (!n) return '0 o';
+  if (n < 1024) return n + ' o';
+  if (n < 1024*1024) return (n / 1024).toFixed(1) + ' Ko';
+  return (n / 1024 / 1024).toFixed(1) + ' Mo';
+}
+
+/* Initialise le drag & drop sur la zone #drop-zone. Appelé 1 fois au 1er
+   affichage de la vue Import. Idempotent grâce au flag data-dragdrop. */
+function _initImportDragDrop() {
+  const zone = $('drop-zone');
+  if (!zone || zone.dataset.dragdrop === '1') return;
+  zone.dataset.dragdrop = '1';
+
+  const highlight   = () => { zone.style.borderColor = 'var(--a)'; zone.style.background = 'rgba(0,212,170,.1)'; };
+  const unhighlight = () => { zone.style.borderColor = ''; zone.style.background = ''; };
+
+  ['dragenter', 'dragover'].forEach(ev => {
+    zone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); highlight(); });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    zone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); unhighlight(); });
+  });
+  zone.addEventListener('drop', e => {
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    const file = files[0];
+    // Remplir le input file si accessible (permet handleFileSelect propre)
+    try {
+      const fileEl = $('imp-file');
+      if (fileEl && typeof DataTransfer !== 'undefined') {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileEl.files = dt.files;
+      }
+    } catch (_) { /* DataTransfer non supporté : on lit direct */ }
+
+    const textEl = zone.querySelector('.drop-text');
+    if (textEl) textEl.innerHTML = `<strong>📎 ${_esc(file.name)}</strong> · ${_formatBytes(file.size)}`;
+
+    const reader = new FileReader();
+    reader.onload = ev2 => _processImportData(ev2.target.result, file.name);
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
+// Auto-init au 1er affichage de la vue Import
+document.addEventListener('app:nav',     e => { if (e.detail?.view === 'imp') _initImportDragDrop(); });
+document.addEventListener('ui:navigate', e => { if (e.detail?.view === 'imp') _initImportDragDrop(); });
+document.addEventListener('DOMContentLoaded', () => { setTimeout(_initImportDragDrop, 300); });
+
+/* Découpe un texte libre en blocs patients. Un bloc est séparé par :
+   - une ligne vide (\n\n)
+   - ou un séparateur explicite ("===", "---", ">>>")
+   - ou le début d'un nouveau nom (MAJUSCULE en début de ligne après un texte)
+   Renvoie un tableau de strings, 1 bloc = 1 patient potentiel. */
+function _splitTextBlocks(text) {
+  if (!text) return [];
+  const src = String(text).replace(/\r\n/g, '\n').trim();
+
+  // Séparateurs explicites
+  if (/\n\s*\n/.test(src)) return src.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+  if (/\n[-=_*>]{3,}\n/.test(src)) return src.split(/\n[-=_*>]{3,}\n/).map(s => s.trim()).filter(Boolean);
+
+  // Pas de séparateur explicite → une entrée par ligne (planning simple)
+  // Sauf si >= 3 labels structurés détectés sur l'ensemble → texte unique d'un seul patient
+  const labelsFound = (src.match(/^(t[ée]l|n[ée]|ddn|s[ée]cu|m[ée]decin|adresse|pathologies?|traitements?|allergies?|mutuelle|cpam)\s*[:=]/gmi) || []).length;
+  if (labelsFound >= 3) return [src]; // 1 seul patient détaillé
+
+  return src.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+}
+
 /* ════════════════════════════════════════════════════════════════════
    PARSERS CALENDRIERS — support multi-format grand public
    ──────────────────────────────────────────────────────────────────
@@ -2548,6 +2640,95 @@ function _parseAdresseImport(raw) {
   return { street, zip, city, adresse };
 }
 
+/* Normalise une date arbitraire (FR, ISO, année seule) → YYYY-MM-DD.
+   Retourne '' si non parsable. Heuristique de siècle sur 2 chiffres :
+   > 30 → 19xx, sinon 20xx (supposition médicale : patient adulte). */
+function _normalizeDateFr(s) {
+  if (!s) return '';
+  const str = String(s).trim();
+  // ISO YYYY-MM-DD
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY
+  const fr = str.match(/^([0-3]?\d)[\/\-\.]([01]?\d)[\/\-\.](\d{2,4})/);
+  if (fr) {
+    let yr = fr[3];
+    if (yr.length === 2) yr = parseInt(yr, 10) > 30 ? '19' + yr : '20' + yr;
+    return `${yr}-${String(fr[2]).padStart(2, '0')}-${String(fr[1]).padStart(2, '0')}`;
+  }
+  // Année seule → 01/01/YYYY (info partielle mais exploitable pour l'âge)
+  if (/^\d{4}$/.test(str)) return `${str}-01-01`;
+  return '';
+}
+
+/* Extrait les champs patient canoniques depuis un texte libre multi-lignes
+   contenant des labels ("Tel: 0612…", "Né: 15/03/1950", "Sécu: 1 85 06…").
+   Compatible : DESCRIPTION ICS, notes calendrier, SMS, WhatsApp, tableaux collés.
+   Retourne un objet avec les clés détectées — absentes si non trouvées. */
+function _parseStructuredFields(text) {
+  const out = {};
+  if (!text) return out;
+  const src = String(text).replace(/\r\n/g, '\n');
+
+  // Patterns de labels — tolèrent accents, majuscules, et séparateurs : / = / —
+  const SEP = '\\s*[:=–—]\\s*';
+  const PATTERNS = {
+    telephone:   new RegExp(`(?:t[ée]l(?:[ée]phone)?|tel\\.?|gsm|mobile|portable|phone|num[ée]ro)${SEP}([\\+\\d][\\d\\s\\.\\-\\(\\)]{7,})`, 'i'),
+    ddn:         new RegExp(`(?:n[ée](?:\\s+le)?|ddn|date\\s+de?\\s+naissance|birthdate|dob|anniv\\.?)${SEP}([0-3]?\\d[\\/\\-\\.][01]?\\d[\\/\\-\\.]\\d{2,4}|\\d{4}-\\d{2}-\\d{2})`, 'i'),
+    secu:        new RegExp(`(?:n[°\\s]*s[ée]cu|n[°\\s]*ss|s[ée]cu|nir|vitale|s[ée]curit[ée]\\s+sociale|num[ée]ro?\\s+ss)${SEP}([12][\\s\\d]{13,30})`, 'i'),
+    medecin:     new RegExp(`(?:m[ée]decin(?:\\s+(?:r[ée]f[ée]rent|traitant|prescripteur))?|prescripteur|dr\\.?\\s+r[ée]f)${SEP}([^\\n,;|]+)`, 'i'),
+    pathologies: new RegExp(`(?:pathologies?|ant[ée]c[ée]dents?|diagnostic|dx|anamn[èe]se|maladies?)${SEP}([^\\n]+)`, 'i'),
+    traitements: new RegExp(`(?:traitements?|m[ée]dicaments?|ordonnance|rx|th[ée]rapie)${SEP}([^\\n]+)`, 'i'),
+    allergies:   new RegExp(`(?:allergies?|intol[ée]rances?)${SEP}([^\\n]+)`, 'i'),
+    amo:         new RegExp(`(?:cpam|amo|caisse(?:\\s+amo)?)${SEP}([^\\n,;|]+)`, 'i'),
+    amc:         new RegExp(`(?:mutuelle|amc|compl[ée]mentaire)${SEP}([^\\n,;|]+)`, 'i'),
+    contact_nom: new RegExp(`(?:contact(?:\\s+urgence)?|personne\\s+[àa]\\s+pr[ée]venir|urgence)${SEP}([^\\n,;|]+?)(?:\\s*[\\(—–\\-]\\s*|\\s{2,}|$)`, 'i'),
+    heure_pref:  new RegExp(`(?:heure\\s+pr[ée]f[ée]r[ée]e?|passage|horaire(?:\\s+pr[ée]f[ée]r[ée])?)${SEP}(\\d{1,2}[h:]\\d{0,2})`, 'i'),
+    ordo_date:   new RegExp(`(?:ordonnance\\s+(?:valide|jusqu'au)|validit[ée]\\s+ordo|valid\\.\\s+ordo|ordo\\s+valide?)${SEP}([0-3]?\\d[\\/\\-\\.][01]?\\d[\\/\\-\\.]\\d{2,4}|\\d{4}-\\d{2}-\\d{2})`, 'i'),
+    exo:         new RegExp(`(?:exon[ée]ration|exo|ald|prise\\s+en\\s+charge)${SEP}([^\\n,;|]+)`, 'i'),
+    actes:       new RegExp(`(?:actes?(?:\\s+r[ée]currents?)?|soins?|prestations?|interventions?)${SEP}([^\\n]+)`, 'i'),
+    adresse:     new RegExp(`(?:adresse|domicile|address)${SEP}([^\\n]+)`, 'i'),
+  };
+
+  for (const [key, regex] of Object.entries(PATTERNS)) {
+    const m = src.match(regex);
+    if (m && m[1]) out[key] = m[1].trim().replace(/^['"]|['"]$/g, '');
+  }
+
+  // Fallback téléphone : motif FR détecté même sans label explicite
+  if (!out.telephone) {
+    const phone = src.match(/(?:^|[\s,;|>\(])(\+?33\s?[1-9](?:[\s\.\-]?\d{2}){4}|0[1-9](?:[\s\.\-]?\d{2}){4})(?:$|[\s,;|<\)])/);
+    if (phone) out.telephone = phone[1].trim();
+  }
+
+  // Fallback DDN : "né en 1950" sans label "Né:"
+  if (!out.ddn) {
+    const ddnAlt = src.match(/\b(?:n[ée]\s+(?:en\s+)?)(\d{4})\b/i);
+    if (ddnAlt) out.ddn = ddnAlt[1];
+  }
+
+  // Normalisations finales
+  if (out.ddn)       out.ddn       = _normalizeDateFr(out.ddn);
+  if (out.ordo_date) out.ordo_date = _normalizeDateFr(out.ordo_date);
+  if (out.telephone) {
+    // Supprimer espaces/points/tirets/parenthèses → format normalisé 10 chiffres
+    out.telephone = out.telephone.replace(/[\s\.\-\(\)]/g, '');
+    if (/^\+?33/.test(out.telephone)) out.telephone = '0' + out.telephone.replace(/^\+?33/, '');
+  }
+  if (out.secu) {
+    out.secu = out.secu.replace(/\s/g, '');
+    // Validation minimale : 15 chiffres commençant par 1 ou 2
+    if (!/^[12]\d{14}$/.test(out.secu)) delete out.secu;
+  }
+  // Normaliser heure : "8h30" → "08:30"
+  if (out.heure_pref) {
+    const h = out.heure_pref.match(/(\d{1,2})[h:](\d{0,2})/);
+    if (h) out.heure_pref = `${String(h[1]).padStart(2,'0')}:${(h[2] || '00').padStart(2,'0')}`;
+  }
+
+  return out;
+}
+
 /* Extrait { nom, prenom } depuis un intitulé style SUMMARY ou Subject.
    Supprime les civilités (M., Mme, Dr, Monsieur, Madame, Mlle, M seul, etc.),
    détecte le mot en MAJUSCULES comme nom de famille, et prend le premier
@@ -2575,15 +2756,25 @@ function _extractNomPrenom(label) {
   return { prenom: parts[0], nom: parts.slice(1).join(' ') };
 }
 
-/* Parser ICS/iCalendar — compatible RFC 5545.
+/* Parser ICS/iCalendar — compatible RFC 5545 + extensions courantes.
+   ─────────────────────────────────────────────────────────────────
    Gère :
-   - Le dépliage des lignes ("line unfolding" : suite par espace/tab)
-   - Les paramètres ICS (TZID=..., VALUE=...)
-   - L'échappement RFC (\n, \,, \;, \\)
-   - Les VEVENT avec SUMMARY, LOCATION, DTSTART, DESCRIPTION, ATTENDEE, UID */
+   - Line unfolding (RFC 5545 : ligne débutant par espace/tab continue la précédente)
+   - Paramètres ICS (TZID=..., VALUE=..., CN=..., PARTSTAT=...)
+   - Échappements RFC (\n, \,, \;, \\)
+   - Blocs imbriqués : VALARM, VTODO, VTIMEZONE, VJOURNAL, VFREEBUSY sont ignorés
+   - Champs VEVENT : SUMMARY, DESCRIPTION, LOCATION, DTSTART, DTEND, UID, STATUS,
+     GEO (lat;lng RFC), X-APPLE-STRUCTURED-LOCATION (geo:lat,lng — Apple Calendar),
+     ATTENDEE (multiples, avec CN et URI mailto:/tel:), ORGANIZER,
+     RRULE (récurrence → respecter_horaire + heure_preferee),
+     CATEGORIES, URL, PRIORITY
+   - Parsing structuré de DESCRIPTION pour enrichir la fiche patient
+     (Tel:, Né:, Sécu:, Médecin:, Pathologies:, Traitements:, Allergies:...)
+   ───────────────────────────────────────────────────────────────── */
 function _parseICS(content) {
   if (!/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(content)) return null;
-  // 1. Line unfolding — RFC 5545 : une ligne commençant par espace ou tab continue la précédente
+
+  // 1. Line unfolding — RFC 5545
   const lines = content.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n');
 
   const unescapeIcs = (v) => String(v || '')
@@ -2592,7 +2783,7 @@ function _parseICS(content) {
 
   const parseIcsDate = (raw) => {
     if (!raw) return { date: '', heure: '' };
-    // Format possible : 20260422T083000Z, 20260422T083000, 20260422 (all day)
+    // 20260422T083000Z, 20260422T083000, 20260422 (all-day)
     const m = raw.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
     if (!m) return { date: '', heure: '' };
     const date  = `${m[1]}-${m[2]}-${m[3]}`;
@@ -2600,62 +2791,199 @@ function _parseICS(content) {
     return { date, heure };
   };
 
+  // Parser ligne "KEY[;PARAM=VAL]:VALUE" → { key, value, params }
+  const parseIcsLine = (line) => {
+    const idx = line.indexOf(':');
+    if (idx < 0) return null;
+    const rawKey = line.slice(0, idx);
+    const value  = line.slice(idx + 1);
+    const [key, ...paramParts] = rawKey.split(';');
+    const params = {};
+    for (const p of paramParts) {
+      const [k, v] = p.split('=');
+      if (k) params[k.toUpperCase()] = (v || '').replace(/^"|"$/g, '');
+    }
+    return { key: key.toUpperCase(), value, params };
+  };
+
+  // 2. Extraction des VEVENT (les blocs imbriqués VALARM/VTODO/etc. sont ignorés)
   const events = [];
-  let current = null;
+  let current  = null;
+  let nestedSkip = 0;
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
     if (!line) continue;
-    if (/^BEGIN:VEVENT$/i.test(line)) { current = {}; continue; }
+
+    // Blocs imbriqués à ignorer (ils peuvent contenir des champs DTSTART/etc.
+    // qui n'appartiennent PAS au VEVENT parent)
+    if (/^BEGIN:V(ALARM|TODO|TIMEZONE|FREEBUSY|JOURNAL|STANDARD|DAYLIGHT)$/i.test(line)) { nestedSkip++; continue; }
+    if (/^END:V(ALARM|TODO|TIMEZONE|FREEBUSY|JOURNAL|STANDARD|DAYLIGHT)$/i.test(line))   { nestedSkip = Math.max(0, nestedSkip - 1); continue; }
+    if (nestedSkip > 0) continue;
+
+    if (/^BEGIN:VEVENT$/i.test(line)) { current = { _attendees: [] }; continue; }
     if (/^END:VEVENT$/i.test(line))   { if (current) events.push(current); current = null; continue; }
     if (!current) continue;
-    // Format : KEY[;PARAM=VAL]:VALUE
-    const idx = line.indexOf(':');
-    if (idx < 0) continue;
-    const rawKey = line.slice(0, idx);
-    const value  = line.slice(idx + 1);
-    const key    = rawKey.split(';')[0].toUpperCase();
-    current[key] = value;
+
+    const parsed = parseIcsLine(line);
+    if (!parsed) continue;
+
+    // ATTENDEE : accumuler (un événement peut en avoir plusieurs)
+    if (parsed.key === 'ATTENDEE') {
+      current._attendees.push(parsed);
+    } else {
+      // Premier wins (si duplicata, on garde la première valeur)
+      if (current[parsed.key] === undefined) current[parsed.key] = parsed.value;
+      if (parsed.params && Object.keys(parsed.params).length) {
+        current[parsed.key + '_PARAMS'] = parsed.params;
+      }
+    }
   }
 
-  // Conversion VEVENT → patient
+  // 3. Conversion VEVENT → fiche patient
   return events.map((ev, i) => {
     const summary = unescapeIcs(ev.SUMMARY || '');
     const desc    = unescapeIcs(ev.DESCRIPTION || '');
     const loc     = unescapeIcs(ev.LOCATION || '');
-    const { date, heure } = parseIcsDate(ev.DTSTART || '');
-    const parsedAdr = _parseAdresseImport(loc);
-    const { nom, prenom } = _extractNomPrenom(summary);
+    const categories = unescapeIcs(ev.CATEGORIES || '');
+
+    const { date, heure }        = parseIcsDate(ev.DTSTART || '');
+    const { heure: heureFin }    = parseIcsDate(ev.DTEND   || '');
+
+    // Coordonnées GPS : GEO (RFC) ou X-APPLE-STRUCTURED-LOCATION
+    let lat = null, lng = null;
+    if (ev.GEO) {
+      const g = ev.GEO.split(/[;,]/).map(parseFloat);
+      if (g.length === 2 && !isNaN(g[0]) && !isNaN(g[1])) { lat = g[0]; lng = g[1]; }
+    }
+    if ((lat === null || lng === null) && ev['X-APPLE-STRUCTURED-LOCATION']) {
+      const mg = ev['X-APPLE-STRUCTURED-LOCATION'].match(/geo:([\-\d\.]+),([\-\d\.]+)/i);
+      if (mg) { lat = parseFloat(mg[1]); lng = parseFloat(mg[2]); }
+    }
+
+    // ATTENDEE : extraire tel: (URI RFC 3966) et CN=Nom
+    let telFromAttendee = '';
+    let contactNom      = '';
+    for (const a of (ev._attendees || [])) {
+      const v = a.value || '';
+      if (v.toLowerCase().startsWith('tel:')) {
+        telFromAttendee = telFromAttendee || v.replace(/^tel:/i, '').trim();
+      }
+      if (a.params && a.params.CN && !contactNom) contactNom = a.params.CN;
+    }
+
+    // RRULE : événement récurrent → heure de passage préférée + respecter_horaire
+    const recurrent = !!ev.RRULE;
+
+    // Parsing structuré de DESCRIPTION pour extraire tel, DDN, sécu, médecin, etc.
+    const struct = _parseStructuredFields(desc);
+
+    // Nom/prénom : priorité à ATTENDEE CN (identification formelle RFC 5545)
+    // sinon SUMMARY (peut être générique type "RDV hebdo")
+    let nom = '', prenom = '';
+    if (contactNom) {
+      const parts = _extractNomPrenom(contactNom);
+      nom = parts.nom; prenom = parts.prenom;
+    }
+    if (!nom && !prenom) {
+      const parts = _extractNomPrenom(summary);
+      nom = parts.nom; prenom = parts.prenom;
+    }
+
+    // Adresse : priorité LOCATION, fallback sur "Adresse:" dans DESCRIPTION
+    let adrFinal = _parseAdresseImport(loc);
+    if (!adrFinal.street && !adrFinal.zip && struct.adresse) {
+      adrFinal = _parseAdresseImport(struct.adresse);
+    }
+
     return {
-      id:          ev.UID || ('imp_ics_' + i),
-      nom,
-      prenom,
-      description: summary || desc,
-      texte:       summary,
+      id:               ev.UID || ('imp_ics_' + i),
+      nom, prenom,
+      description:      summary || desc,
+      texte:            summary,
       summary,
-      notes:       desc,
-      date_soin:   date,
-      heure_soin:  heure,
-      street:      parsedAdr.street,
-      zip:         parsedAdr.zip,
-      city:        parsedAdr.city,
-      adresse:     parsedAdr.adresse || loc,
-      _source:     'ics',
+      notes:            [desc, categories ? `Catégories: ${categories}` : '', ev.URL ? `URL: ${ev.URL}` : '']
+                          .filter(Boolean).join('\n').trim(),
+      date_soin:        date,
+      heure_soin:       heure,
+      heure_fin:        heureFin,
+      // Événement récurrent = rendez-vous régulier → heure_preferee auto
+      heure_preferee:   recurrent ? heure : (struct.heure_pref || ''),
+      respecter_horaire: recurrent,
+      street:           adrFinal.street,
+      zip:              adrFinal.zip,
+      city:             adrFinal.city,
+      adresse:          adrFinal.adresse || loc,
+      lat, lng,
+      // Champs patient enrichis
+      telephone:        struct.telephone || telFromAttendee || '',
+      ddn:              struct.ddn       || '',
+      secu:             struct.secu      || '',
+      medecin:          struct.medecin   || '',
+      pathologies:      struct.pathologies || '',
+      traitements:      struct.traitements || '',
+      allergies:        struct.allergies   || '',
+      amo:              struct.amo || '',
+      amc:              struct.amc || '',
+      exo:              struct.exo || '',
+      contact_nom:      struct.contact_nom || contactNom || '',
+      ordo_date:        struct.ordo_date   || '',
+      actes_recurrents: struct.actes || '',
+      _source:          'ics',
     };
   });
 }
 
-/* Parser CSV — compatible Outlook.com, Google Calendar CSV, Excel.
-   Détecte automatiquement les colonnes par nom (Subject/Summary/Title, Location,
-   Start Date, Start Time, Description…). Supporte guillemets + virgules
-   échappées. */
+/* Parser CSV — compatible Outlook.com, Google Calendar CSV, Excel, LibreOffice,
+   exports Doctolib et tableaux custom (FR/EN). Détecte automatiquement :
+   - Le séparateur (; pour Excel FR, , pour Google/Outlook, \t pour TSV)
+   - Les colonnes par nom (~25 alias FR/EN normalisés NFD)
+   - Les lignes explicites (1 colonne = 1 champ) ET le fallback sur SUMMARY parsé
+   - Les adresses en colonnes séparées (rue/cp/ville) ou combinées (location)
+   Les champs extraits côté fiche patient : identité, adresse structurée, tel,
+   DDN, sécu, médecin, couvertures AMO/AMC/exo, pathologies, traitements,
+   allergies, actes récurrents, contact urgence, heure préférée, ordo_date. */
 function _parseCSV(content) {
   const firstLine = content.split(/\r?\n/)[0] || '';
-  // Détection de séparateur : ; (Excel FR), , (Outlook/Google), \t (TSV)
-  const sep = firstLine.includes(';') && !firstLine.includes(',')
+  // Détection séparateur : priorité ; (Excel FR) > \t (TSV) > , (défaut)
+  const sep = firstLine.includes(';') && (firstLine.split(';').length > firstLine.split(',').length)
     ? ';'
-    : firstLine.includes('\t') ? '\t' : ',';
+    : (firstLine.includes('\t') ? '\t' : ',');
 
-  // Parseur CSV robuste (gère les guillemets et les retours ligne dans les champs)
+  // Parseur CSV complet : transforme le contenu entier en matrice [row][col],
+  // en gérant correctement les "..." multi-lignes (RFC 4180 §2.6).
+  // Un \n à l'intérieur de guillemets n'est PAS un séparateur de ligne.
+  const parseFullCSV = (text) => {
+    const src = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const out = [];
+    let row = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (ch === '"') {
+        if (inQ && src[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === sep && !inQ) {
+        row.push(cur); cur = '';
+      } else if (ch === '\n' && !inQ) {
+        row.push(cur); cur = '';
+        // Ne pas pusher les lignes totalement vides
+        if (row.some(c => c.trim().length > 0)) out.push(row);
+        row = [];
+      } else {
+        cur += ch;
+      }
+    }
+    // Flush dernière ligne
+    if (cur.length || row.length) {
+      row.push(cur);
+      if (row.some(c => c.trim().length > 0)) out.push(row);
+    }
+    return out;
+  };
+
+  // Parser rapide pour 1 ligne seule (utilisé nulle part d'autre désormais, gardé
+  // pour compatibilité si un appel externe emploie ce helper interne).
   const parseLine = (line) => {
     const out = []; let cur = ''; let inQ = false;
     for (let i = 0; i < line.length; i++) {
@@ -2669,79 +2997,163 @@ function _parseCSV(content) {
     return out;
   };
 
-  const rows = content.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim().length);
-  if (rows.length < 2) return null;
-  const header = parseLine(rows[0]).map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
+  const rowsMatrix = parseFullCSV(content);
+  if (rowsMatrix.length < 2) return null;
 
-  // Cartographie des colonnes standard → clé canonique
+  // Normalisation header : lowercase, sans accents, trim, sans guillemets
+  const header = rowsMatrix[0].map(h => String(h || '').toLowerCase().trim()
+    .replace(/^"|"$/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+
+  // Résolution index de colonne : match exact OU contient l'alias
   const findCol = (aliases) => header.findIndex(h => aliases.some(a => h === a || h.includes(a)));
+
   const colIdx = {
-    subject:  findCol(['subject', 'summary', 'title', 'sujet', 'titre', 'objet', 'nom']),
-    start:    findCol(['start date', 'start_date', 'date début', 'date debut', 'start']),
-    stime:    findCol(['start time', 'start_time', 'heure début', 'heure debut', 'time']),
-    location: findCol(['location', 'lieu', 'adresse', 'address']),
-    descr:    findCol(['description', 'notes', 'note', 'commentaire', 'body']),
-    attendee: findCol(['attendees', 'attendee', 'participant', 'required attendees']),
+    // Calendrier standard
+    subject:      findCol(['subject', 'summary', 'title', 'sujet', 'titre', 'objet', 'intitule', 'libelle']),
+    start:        findCol(['start date', 'start_date', 'date debut', 'date de debut', 'start', 'date soin', 'date_soin', 'date passage', 'date']),
+    stime:        findCol(['start time', 'start_time', 'heure debut', 'heure de debut', 'time', 'heure soin', 'heure_soin', 'heure', 'h passage']),
+    etime:        findCol(['end time', 'end_time', 'heure fin', 'heure de fin']),
+    location:     findCol(['location', 'lieu', 'adresse complete', 'address']),
+    descr:        findCol(['description', 'notes', 'note', 'commentaire', 'commentaires', 'body', 'observations', 'remarques', 'details']),
+    attendee:     findCol(['attendees', 'attendee', 'participant', 'required attendees']),
+    frequence:    findCol(['frequence', 'recurrence', 'periodicite', 'frequency']),
+    // Identité patient
+    nom:          findCol(['nom', 'last name', 'lastname', 'surname', 'family name', 'nom de famille']),
+    prenom:       findCol(['prenom', 'first name', 'firstname', 'given name']),
+    ddn:          findCol(['ddn', 'date de naissance', 'date naissance', 'naissance', 'birthdate', 'dob', 'birth date', 'ne le']),
+    tel:          findCol(['telephone', 'tel', 'phone', 'gsm', 'mobile', 'portable', 'num tel', 'numero tel']),
+    secu:         findCol(['secu', 'num secu', 'numero secu', 'nir', 'ss', 'securite sociale', 'n° secu', 'vitale']),
+    // Adresse structurée (3 champs séparés — format export carnet)
+    street:       findCol(['rue', 'street', 'voie', 'adresse rue', 'address1']),
+    zip:          findCol(['cp', 'code postal', 'code_postal', 'postal', 'zip', 'postcode', 'code-postal']),
+    city:         findCol(['ville', 'city', 'commune', 'town']),
+    // Couverture
+    amo:          findCol(['amo', 'cpam', 'caisse amo', 'caisse']),
+    amc:          findCol(['amc', 'mutuelle', 'complementaire']),
+    exo:          findCol(['exo', 'exoneration', 'ald', 'prise en charge']),
+    // Médical
+    medecin:      findCol(['medecin', 'medecin traitant', 'medecin referent', 'prescripteur', 'doctor', 'dr referent']),
+    pathologies:  findCol(['pathologies', 'antecedents', 'diagnostic', 'dx', 'anamnese', 'maladies']),
+    traitements:  findCol(['traitements', 'traitement', 'medicaments', 'ordonnance', 'rx']),
+    allergies:    findCol(['allergies', 'allergie', 'intolerances']),
+    actes:        findCol(['actes', 'actes recurrents', 'soins', 'prestations', 'interventions']),
+    ordo_date:    findCol(['ordonnance date', 'validite ordo', 'ordo valide', 'ordo jusqu']),
+    // Agenda + contact urgence
+    heure_pref:   findCol(['heure preferee', 'heure passage', 'horaire prefere', 'h preferee']),
+    contact_nom:  findCol(['contact', 'contact urgence', 'personne a prevenir', 'urgence', 'pers a prevenir']),
+    contact_tel:  findCol(['contact tel', 'tel urgence', 'telephone urgence']),
   };
-  // Heuristique : si aucune colonne standard détectée → ce n'est pas un CSV calendrier
-  if (colIdx.subject < 0 && colIdx.location < 0 && colIdx.descr < 0) return null;
+
+  // Heuristique : au moins UNE colonne parmi les essentielles doit être détectée
+  const hasAnyKey = ['subject', 'location', 'descr', 'nom', 'prenom'].some(k => colIdx[k] >= 0);
+  if (!hasAnyKey) return null;
 
   const norm = (v) => String(v || '').trim().replace(/^"|"$/g, '');
-  const parseCsvDate = (d) => {
-    if (!d) return '';
-    // ISO YYYY-MM-DD
-    const m1 = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m1) return `${m1[1]}-${m1[2]}-${m1[3]}`;
-    // Format ambigu : DD/MM/YYYY (FR) ou MM/DD/YYYY (US)
-    const m2 = d.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-    if (m2) {
-      const a  = parseInt(m2[1], 10);
-      const b  = parseInt(m2[2], 10);
-      const yr = m2[3].length === 2 ? '20' + m2[3] : m2[3];
-      let day, month;
-      if (a > 12)      { day = a; month = b; }  // DD/MM/YYYY (jour > 12 = sûr)
-      else if (b > 12) { day = b; month = a; }  // MM/DD/YYYY (jour > 12 = sûr)
-      else             { day = a; month = b; }  // ambigu : FR par défaut
-      return `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    }
-    return d;
-  };
+  const get  = (cells, idx) => (idx >= 0 && idx < cells.length) ? norm(cells[idx]) : '';
+
+  const parseCsvDate = (d) => d ? _normalizeDateFr(d) : '';
   const parseCsvTime = (t) => {
     if (!t) return '';
-    const m = t.match(/(\d{1,2})[h:]\s*(\d{2})?/);
-    return m ? `${String(m[1]).padStart(2,'0')}:${m[2] || '00'}` : '';
+    const m = t.match(/(\d{1,2})[h:]\s*(\d{0,2})/);
+    return m ? `${String(m[1]).padStart(2,'0')}:${(m[2] || '00').padStart(2,'0')}` : '';
+  };
+  const normTel = (t) => {
+    if (!t) return '';
+    let tel = String(t).replace(/[\s\.\-\(\)]/g, '');
+    if (/^\+?33/.test(tel)) tel = '0' + tel.replace(/^\+?33/, '');
+    return tel;
+  };
+  const normSecu = (s) => {
+    if (!s) return '';
+    const clean = String(s).replace(/\s/g, '');
+    return /^[12]\d{14}$/.test(clean) ? clean : '';
   };
 
   const out = [];
-  for (let r = 1; r < rows.length; r++) {
-    const cells  = parseLine(rows[r]);
-    const subj   = colIdx.subject  >= 0 ? norm(cells[colIdx.subject])  : '';
-    const loc    = colIdx.location >= 0 ? norm(cells[colIdx.location]) : '';
-    const descr  = colIdx.descr    >= 0 ? norm(cells[colIdx.descr])    : '';
-    const dDate  = colIdx.start    >= 0 ? parseCsvDate(norm(cells[colIdx.start])) : '';
-    const dTime  = colIdx.stime    >= 0 ? parseCsvTime(norm(cells[colIdx.stime])) : '';
-    if (!subj && !loc && !descr) continue; // ligne vide
+  for (let r = 1; r < rowsMatrix.length; r++) {
+    const cells = rowsMatrix[r];
 
-    const { nom, prenom } = _extractNomPrenom(subj);
+    const subj           = get(cells, colIdx.subject);
+    const descr          = get(cells, colIdx.descr);
+    const explicitNom    = get(cells, colIdx.nom);
+    const explicitPrenom = get(cells, colIdx.prenom);
+    const explicitLoc    = get(cells, colIdx.location);
+    const explicitStreet = get(cells, colIdx.street);
+    const explicitZip    = get(cells, colIdx.zip);
+    const explicitCity   = get(cells, colIdx.city);
 
-    const parsedAdr = _parseAdresseImport(loc);
+    // Ligne vide → skip
+    if (!subj && !descr && !explicitNom && !explicitPrenom && !explicitLoc) continue;
+
+    // Nom/prénom : priorité colonnes explicites, fallback extraction depuis subject
+    let nom = explicitNom, prenom = explicitPrenom;
+    if (!nom && !prenom && subj) {
+      const parts = _extractNomPrenom(subj);
+      nom = parts.nom; prenom = parts.prenom;
+    }
+
+    // Adresse : priorité rue/cp/ville séparés, fallback sur location combinée
+    let street = explicitStreet, zip = explicitZip, city = explicitCity, adresse = '';
+    if (!street && !zip && !city && explicitLoc) {
+      const p = _parseAdresseImport(explicitLoc);
+      street = p.street; zip = p.zip; city = p.city; adresse = p.adresse;
+    }
+    if (!adresse && (street || zip || city)) {
+      adresse = [street, [zip, city].filter(Boolean).join(' '), 'France']
+        .map(s => (s || '').trim()).filter(Boolean).join(', ');
+    }
+
+    // Enrichissement via parsing structuré de DESCRIPTION (Tel:, Né:, etc.)
+    const struct = _parseStructuredFields(descr);
+
+    const dDate = parseCsvDate(get(cells, colIdx.start));
+    const dTime = parseCsvTime(get(cells, colIdx.stime));
+
     out.push({
-      id:          'imp_csv_' + r,
+      id:               'imp_csv_' + r,
       nom, prenom,
-      description: subj || descr,
-      texte:       subj,
-      summary:     subj,
-      notes:       descr,
-      date_soin:   dDate,
-      heure_soin:  dTime,
-      street:      parsedAdr.street,
-      zip:         parsedAdr.zip,
-      city:        parsedAdr.city,
-      adresse:     parsedAdr.adresse || loc,
-      _source:     'csv',
+      description:      subj || descr,
+      texte:            subj,
+      summary:          subj,
+      notes:            descr,
+      date_soin:        dDate,
+      heure_soin:       dTime,
+      heure_fin:        parseCsvTime(get(cells, colIdx.etime)),
+      heure_preferee:   parseCsvTime(get(cells, colIdx.heure_pref)) || struct.heure_pref || '',
+      street, zip, city,
+      adresse:          adresse || explicitLoc || '',
+      telephone:        normTel(get(cells, colIdx.tel)) || struct.telephone || '',
+      ddn:              parseCsvDate(get(cells, colIdx.ddn)) || struct.ddn || '',
+      secu:             normSecu(get(cells, colIdx.secu))   || struct.secu || '',
+      medecin:          get(cells, colIdx.medecin)     || struct.medecin     || '',
+      amo:              get(cells, colIdx.amo)         || struct.amo         || '',
+      amc:              get(cells, colIdx.amc)         || struct.amc         || '',
+      exo:              get(cells, colIdx.exo)         || struct.exo         || '',
+      pathologies:      get(cells, colIdx.pathologies) || struct.pathologies || '',
+      traitements:      get(cells, colIdx.traitements) || struct.traitements || '',
+      allergies:        get(cells, colIdx.allergies)   || struct.allergies   || '',
+      actes_recurrents: get(cells, colIdx.actes)       || struct.actes       || '',
+      contact_nom:      get(cells, colIdx.contact_nom) || struct.contact_nom || '',
+      contact_tel:      normTel(get(cells, colIdx.contact_tel)) || '',
+      ordo_date:        parseCsvDate(get(cells, colIdx.ordo_date)) || struct.ordo_date || '',
+      frequence:        get(cells, colIdx.frequence) || '',
+      _source:          'csv',
     });
   }
   return out.length ? out : null;
+}
+
+/* Bascule directement vers la vue Tournée IA après un import.
+   Appelé depuis le bouton "⚡ Lancer la tournée IA" du widget de résultat.
+   La donnée importée est déjà en APP.importedData — il suffit de naviguer. */
+function _gotoImportedTournee() {
+  if (typeof navTo === 'function')        { navTo('tur'); return; }
+  if (typeof showView === 'function')     { showView('tur'); return; }
+  // Fallback hash-based
+  location.hash = '#tur';
+  // Déclenche l'event de navigation au cas où
+  document.dispatchEvent(new CustomEvent('ui:navigate', { detail: { view: 'tur' } }));
 }
 
 function _processImportData(content, source) {
@@ -2773,26 +3185,63 @@ function _processImportData(content, source) {
     if (csv && csv.length) { patients = csv; formatDetect = 'csv'; }
   }
 
-  // 4. Fallback texte libre (plannings copiés-collés, SMS, WhatsApp)
+  // 4. Fallback texte libre — détection de blocs structurés multi-lignes.
+  //    Un "bloc patient" est séparé par une ligne vide, ou commence par un
+  //    motif d'identité (MAJUSCULE Prénom / "Patient : …" / etc.)
+  //    Chaque bloc est parsé via _parseStructuredFields pour extraire tel, DDN…
   if (!patients.length) {
-    const lines = content.split('\n').filter(l => l.trim().length > 3);
-    patients = lines.map((l, i) => {
-      // Essayer d'extraire une adresse depuis la ligne (format : "Nom — 12 rue X, Ville")
-      const addrMatch = l.match(/(?:—|-|:)\s*(\d+[^,\n]+(?:rue|avenue|bd|boulevard|allée|impasse|chemin|place|villa|résidence)[^,\n]*(?:,\s*\d{5}[^,\n]*)?)/i);
-      const rawAdresse = addrMatch ? addrMatch[1].trim() : '';
-      const parsedAdr  = _parseAdresseImport(rawAdresse);
+    const blocks = _splitTextBlocks(content);
+    patients = blocks.map((block, i) => {
+      const struct = _parseStructuredFields(block);
+
+      // Identifier la première ligne non-label comme intitulé du patient
+      const firstLine = block.split('\n').map(l => l.trim())
+        .find(l => l && !/^(t[ée]l|n[ée]|ddn|s[ée]cu|m[ée]decin|adresse|pathologies?|traitements?|allergies?|mutuelle|cpam)\s*[:=]/i.test(l)) || '';
+
+      // Essai d'extraction nom/prénom depuis la 1ère ligne
+      const { nom, prenom } = _extractNomPrenom(firstLine);
+
+      // Si pas d'adresse structurée, tenter détection d'adresse inline dans le bloc
+      let parsedAdr = { street: '', zip: '', city: '', adresse: '' };
+      if (struct.adresse) {
+        parsedAdr = _parseAdresseImport(struct.adresse);
+      } else {
+        const addrMatch = block.match(/(\d+[^,\n]{2,}?(?:rue|avenue|av\.|bd|boulevard|all[ée]e|impasse|chemin|place|villa|r[ée]sidence|route|rte|lieu-dit)[^,\n]*(?:,?\s*\d{5}[^,\n]*)?)/i);
+        if (addrMatch) parsedAdr = _parseAdresseImport(addrMatch[1].trim());
+      }
+
+      // Heure : priorité struct (label "Heure: 8h"), fallback pattern brut
+      const heure = struct.heure_pref || ((block.match(/\b(\d{1,2})[hH:](\d{2})\b/) || [])[0] || '');
+
       return {
-        id:          'imp_txt_' + i,
-        description: l.trim().replace(/^[-*•→]+\s*/, ''),
-        texte:       l.trim(),
-        heure_soin:  (l.match(/(\d{1,2})[hH:](\d{2})/) || [])[0] || '',
-        street:      parsedAdr.street,
-        zip:         parsedAdr.zip,
-        city:        parsedAdr.city,
-        adresse:     parsedAdr.adresse,
-        _source:     'texte_libre',
+        id:               'imp_txt_' + i,
+        nom, prenom,
+        description:      firstLine.replace(/^[-*•→]+\s*/, '') || block.split('\n')[0].trim(),
+        texte:            block.trim(),
+        summary:          firstLine,
+        notes:            block.trim(),
+        heure_soin:       heure.replace(/[hH]/, ':').padStart(5, '0').slice(0, 5),
+        heure_preferee:   struct.heure_pref || '',
+        street:           parsedAdr.street,
+        zip:              parsedAdr.zip,
+        city:             parsedAdr.city,
+        adresse:          parsedAdr.adresse,
+        telephone:        struct.telephone || '',
+        ddn:              struct.ddn       || '',
+        secu:             struct.secu      || '',
+        medecin:          struct.medecin   || '',
+        pathologies:      struct.pathologies || '',
+        traitements:      struct.traitements || '',
+        allergies:        struct.allergies   || '',
+        amo:              struct.amo || '',
+        amc:              struct.amc || '',
+        exo:              struct.exo || '',
+        contact_nom:      struct.contact_nom || '',
+        ordo_date:        struct.ordo_date   || '',
+        actes_recurrents: struct.actes || '',
+        _source:          'texte_libre',
       };
-    });
+    }).filter(p => p.nom || p.prenom || p.telephone || p.adresse || (p.description && p.description.length > 3));
     formatDetect = 'texte';
   }
 
@@ -2822,37 +3271,54 @@ function _processImportData(content, source) {
   // Ceci assure que Planning ↔ Carnet restent cohérents sans doublon.
   _autoAddImportedToCarnet(patients).catch(() => {});
 
-  // Compter les patients avec adresse pour proposer le géocodage
+  // Compter les enrichissements pour retour visuel honnête
   const withAddr    = patients.filter(p => p.adresse && p.adresse.trim()).length;
   const withStruct  = patients.filter(p => p.street && p.zip && p.city).length;
   const withGPS     = patients.filter(p => p.lat && p.lng).length;
   const missingGPS  = patients.filter(p => (!p.lat || !p.lng) && p.adresse && p.adresse.trim()).length;
   const withIdent   = patients.filter(p => (p.nom || p.prenom)).length;
+  const withTel     = patients.filter(p => p.telephone).length;
+  const withDDN     = patients.filter(p => p.ddn).length;
+  const withSecu    = patients.filter(p => p.secu).length;
+  const withMed     = patients.filter(p => p.pathologies || p.traitements || p.allergies || p.medecin).length;
 
   const formatLabel = {
     json:   '🗂️ JSON',
     ics:    '📅 iCalendar (Google / Apple / Outlook / Thunderbird)',
-    csv:    '📊 CSV (Outlook / Google Calendar / Excel)',
-    texte:  '📝 texte libre',
+    csv:    '📊 CSV (Outlook / Google Calendar / Excel / Doctolib)',
+    texte:  '📝 texte libre (SMS / WhatsApp / bloc-notes)',
   }[formatDetect] || source;
+
+  const enrichStats = [
+    withIdent  > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">👤 ${withIdent} identité(s)</span>`,
+    withTel    > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">📞 ${withTel} téléphone(s)</span>`,
+    withDDN    > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">🎂 ${withDDN} DDN</span>`,
+    withSecu   > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">🆔 ${withSecu} N° sécu</span>`,
+    withMed    > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">💊 ${withMed} info médicale</span>`,
+    withStruct > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">🏠 ${withStruct} adresse(s) complète(s)</span>`,
+    withGPS    > 0 && `<span style="font-size:11px;color:var(--a);font-family:var(--fm)">📍 ${withGPS} GPS déjà résolu(s)</span>`,
+  ].filter(Boolean).join(' · ');
 
   result.innerHTML = `
     <div class="ai su">
       ✅ Import réussi — ${formatLabel}<br>
       📋 <strong>${patients.length}</strong> entrée(s) chargée(s)
-      ${withIdent > 0 ? `<br><span style="font-size:12px;color:var(--a)">👤 ${withIdent} patient(s) identifié(s) (nom/prénom)</span>` : ''}
-      ${withStruct > 0 ? `<br><span style="font-size:12px;color:var(--a)">🏠 ${withStruct} adresse(s) complète(s) (rue + CP + ville)</span>` : ''}
-      ${withGPS > 0 ? `<br><span style="font-size:12px;color:var(--a)">📍 ${withGPS} GPS déjà résolu(s)</span>` : ''}
-      ${missingGPS > 0 ? `<br><span style="font-size:12px;color:var(--w)">⚠️ ${missingGPS} adresse(s) sans coordonnées GPS</span>` : ''}
-      <span style="font-size:11px;color:var(--m);margin-top:4px;display:block">Allez dans <strong>Tournée IA</strong> ou <strong>Planning</strong> pour utiliser ces données.</span>
+      ${enrichStats ? `<div style="margin-top:8px;line-height:1.8">${enrichStats}</div>` : ''}
+      ${missingGPS > 0 ? `<div style="margin-top:6px;font-size:12px;color:var(--w)">⚠️ ${missingGPS} adresse(s) sans coordonnées GPS</div>` : ''}
+      <div style="font-size:11px;color:var(--m);margin-top:8px">Les patients identifiables ont été ajoutés au <strong>Carnet patients</strong> (stockage local chiffré, aucune transmission serveur).</div>
     </div>
-    ${missingGPS > 0 ? `
-    <div style="margin-top:10px">
-      <button class="btn bv bsm" id="btn-geocode-import" onclick="geocodeImportedPatients()">
-        <span>📡</span> Résoudre ${missingGPS} adresse(s) GPS
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      ${missingGPS > 0 ? `
+        <button class="btn bv bsm" id="btn-geocode-import" onclick="geocodeImportedPatients()">
+          <span>📡</span> Résoudre ${missingGPS} adresse(s) GPS
+        </button>` : ''}
+      <button class="btn bp bsm" onclick="_gotoImportedTournee()">
+        <span>⚡</span> Lancer la tournée IA
       </button>
-      <span style="font-size:11px;color:var(--m);margin-left:8px">Recommandé pour optimiser la tournée</span>
-    </div>` : ''}`;
+      <button class="btn bs bsm" onclick="if(typeof showView==='function')showView('pat');else location.hash='#pat'">
+        <span>📋</span> Voir le Carnet
+      </button>
+    </div>`;
   result.classList.add('show');
 
   /* ── WARMUP CACHE OSRM (tâche de fond, non bloquant) ──────────
@@ -2962,9 +3428,14 @@ async function _autoAddImportedToCarnet(patients) {
         traitements:       p.traitements   || '',
         actes_recurrents:  p.actes_recurrents || '',
         ordo_date:         p.ordo_date     || '',
-        // Contact urgence (le tél calendrier est rattaché ici à défaut d'un champ tél patient dédié)
+        // Téléphone patient : stocké en `tel` (schema patient-form.js) ET en
+        // `contact_tel` (schema patients.js) pour couvrir les deux formulaires.
+        // La distinction contact urgence / patient se fait sur p.contact_nom :
+        // si un nom de contact est présent, p.contact_tel est celui du contact,
+        // sinon le téléphone détecté est celui du patient lui-même.
+        tel:               p.telephone || p.tel || (p.contact_nom ? '' : (p.contact_tel || '')),
         contact_nom:       p.contact_nom   || '',
-        contact_tel:       p.contact_tel   || p.telephone || p.tel || '',
+        contact_tel:       p.contact_tel || (p.contact_nom ? (p.telephone || '') : ''),
         // Agenda
         heure_preferee:    p.heure_preferee || p.heure_soin || '',
         respecter_horaire: !!p.respecter_horaire,

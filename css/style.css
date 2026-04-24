@@ -315,6 +315,42 @@ select option{background:var(--s)}
 .ai.wa{background:var(--wd);border:1px solid rgba(255,181,71,.25);color:#ffc96b}
 .ai.in{background:var(--a2d);border:1px solid rgba(79,168,255,.25);color:#80c4ff}
 .ai.su{background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.25);color:#7eedb3}
+/* ── Éléments cliquables de la cotation (actes/optims/suggestions) ──────── */
+.ar.clk,.ai.clk{cursor:pointer;position:relative;transition:border-color .15s,background-color .15s,transform .1s}
+.ar.clk:hover{border-color:var(--a);background:rgba(0,212,170,.06)}
+.ar.clk:active{transform:scale(.99)}
+.ai.clk:hover{filter:brightness(1.15);border-color:var(--a)}
+.ai.clk:active{transform:scale(.99)}
+.ar.clk::after,.ai.clk .clk-plus{content:"+ Ajouter";font-family:var(--fm);font-size:10px;color:var(--a);background:var(--ad);border:1px solid rgba(0,212,170,.3);padding:2px 8px;border-radius:20px;margin-left:8px;opacity:.6;transition:opacity .15s;flex-shrink:0;white-space:nowrap}
+.ar.clk:hover::after,.ai.clk:hover .clk-plus{opacity:1}
+.ai.clk.added,.ar.clk.added{background:rgba(0,212,170,.12);border-color:var(--a)}
+.ai.clk.added::after,.ar.clk.added::after{content:"✓ Ajouté";color:var(--a);opacity:1}
+/* Chips pour codes NGAP extraits des suggestions */
+.ngap-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ngap-chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--fm);font-size:11px;background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.35);padding:4px 10px;border-radius:20px;cursor:pointer;transition:all .15s;user-select:none}
+.ngap-chip:hover{background:rgba(0,212,170,.22);border-color:var(--a);transform:translateY(-1px)}
+.ngap-chip:active{transform:translateY(0)}
+.ngap-chip.added{background:var(--a);color:#000;border-color:var(--a)}
+.ngap-chip.added::before{content:"✓ "}
+.ngap-chip::before{content:"+ "}
+.ngap-chip.added::before{content:""}
+.ngap-chip-lbl{font-size:10px;color:var(--m);font-family:var(--fm);letter-spacing:.5px;text-transform:uppercase;margin-top:10px;margin-bottom:4px;display:block}
+/* ── FAB flottant « Re-coter avec les ajouts » ────────────────────────── */
+.recote-fab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:9999;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:50px;background:linear-gradient(135deg,#00d4aa,#00b894);color:#001f18;font-family:var(--fs,inherit);font-size:14px;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(0,212,170,.45),0 2px 8px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s,opacity .2s;animation:recoteFabIn .35s cubic-bezier(.34,1.56,.64,1)}
+.recote-fab:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 12px 32px rgba(0,212,170,.6),0 4px 12px rgba(0,0,0,.3)}
+.recote-fab:active{transform:translateY(0) scale(.98)}
+.recote-fab-ico{font-size:18px;line-height:1;display:inline-block;animation:recoteFabSpin 3s ease-in-out infinite}
+.recote-fab-lbl{letter-spacing:.2px}
+.recote-fab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:20px;background:rgba(0,31,24,.22);color:#001f18;font-family:var(--fm,monospace);font-size:11px;font-weight:700}
+.recote-fab-close{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(0,31,24,.18);color:#001f18;font-size:14px;font-weight:700;line-height:1;margin-left:2px;transition:background .15s;cursor:pointer;user-select:none}
+.recote-fab-close:hover{background:rgba(0,31,24,.32)}
+.recote-fab.loading{pointer-events:none;opacity:.85}
+.recote-fab.loading .recote-fab-ico{animation:recoteFabSpin .8s linear infinite}
+@keyframes recoteFabIn{0%{opacity:0;transform:translateY(16px) scale(.88)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes recoteFabOut{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(16px) scale(.88)}}
+@keyframes recoteFabSpin{0%{transform:rotate(0)}50%{transform:rotate(180deg)}100%{transform:rotate(360deg)}}
+.recote-fab.out{animation:recoteFabOut .25s ease-in forwards}
+@media(max-width:640px){.recote-fab{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:12px 16px;font-size:13px}.recote-fab-lbl{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .dreb{display:inline-flex;align-items:center;gap:6px;background:rgba(79,168,255,.12);border:1px solid rgba(79,168,255,.3);color:var(--a2);font-family:var(--fm);font-size:11px;padding:5px 12px;border-radius:20px}
 .rag-c{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .rag-ch{font-family:var(--fm);font-size:10px;color:var(--m);background:var(--s);border:1px solid var(--b);padding:2px 8px;border-radius:20px}

@@ -1386,18 +1386,18 @@
 
         <div class="lbl" style="margin-bottom:16px">Importez depuis un fichier / texte</div>
         <div class="drop-zone" id="drop-zone">
-          <input type="file" id="imp-file" accept=".ics,.csv,.xlsx,.json,.txt" onchange="handleFileSelect(this)">
+          <input type="file" id="imp-file" accept=".ics,.ical,.ifb,.vcs,.csv,.tsv,.xlsx,.json,.txt" onchange="(typeof handleFileSelect==='function'?handleFileSelect(this):importCalendar())">
           <div class="drop-icon">📂</div>
           <div class="drop-text"><strong>Sélectionner un fichier</strong> ou glisser-déposer ici</div>
-          <div class="drop-formats">Formats : .ics · .csv · .json · .txt · copier-coller</div>
+          <div class="drop-formats">Formats : .ics · .csv · .json · .txt · copier-coller · Google / Apple / Outlook / Thunderbird / Doctolib</div>
         </div>
         <div style="margin-top:16px">
           <div class="lbl">Ou coller du texte directement</div>
-          <div class="f" style="margin-bottom:12px"><textarea id="imp-text" placeholder="Collez votre planning ici (format libre, JSON, CSV...)..." style="min-height:120px"></textarea></div>
+          <div class="f" style="margin-bottom:12px"><textarea id="imp-text" placeholder="Collez votre planning ici — formats acceptés : ICS, CSV, JSON, ou texte libre multi-lignes avec labels (Tel:, Né:, Sécu:, Médecin:, Pathologies:, Adresse:...)" style="min-height:120px"></textarea></div>
         </div>
         <div class="ar-row">
           <button class="btn bp" id="btn-imp" onclick="importCalendar()"><span>📥</span> Importer</button>
-          <button class="btn bs" onclick="$('imp-text').value='';$('imp-file').value='';$('imp-result').classList.remove('show')">↺ Effacer</button>
+          <button class="btn bs" onclick="$('imp-text').value='';$('imp-file').value='';$('imp-result').classList.remove('show');var z=$('drop-zone');if(z){var t=z.querySelector('.drop-text');if(t)t.innerHTML='<strong>Sélectionner un fichier</strong> ou glisser-déposer ici';z.style.borderColor='';z.style.background=''}">↺ Effacer</button>
         </div>
       </div>
       <div id="imp-result" class="res"></div>

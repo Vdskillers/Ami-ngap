@@ -575,6 +575,8 @@ async function cotationCabinet(txt) {
 
   } catch(e) {
     _clear();
+    // Re-cotation cabinet en erreur → retire le FAB
+    try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
     $('cerr').style.display = 'flex';
     $('cerr-m').textContent = e.message;
     $('res-cot').classList.add('show');
@@ -1441,6 +1443,8 @@ async function _cotationPipeline() {
         window._editingCotation?._fromTournee) {
       window._editingCotation = null;
     }
+    // Une re-cotation en erreur → retire le FAB (évite qu'il reste loading indéfiniment)
+    try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
     _clearSlowTimers();
     $('cerr').style.display = 'flex';
     // Message plus clair pour timeout IA
@@ -1453,7 +1457,198 @@ async function _cotationPipeline() {
   ld('btn-cot', false);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   HELPERS CLIQUABLES : ajouter du texte à la description des soins (f-txt)
+   depuis les lignes du "Détail des actes", "Optimisations" et "Suggestions".
+   Permet ensuite de relancer "Coter avec l'IA" pour recalculer avec ce code.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Nettoie & ajoute le fragment à f-txt sans doublon. Ne remplace pas. */
+function _cotAppendDesc(fragment) {
+  const el = typeof $ === 'function' ? $('f-txt') : document.getElementById('f-txt');
+  if (!el) return false;
+  const frag = String(fragment || '').trim();
+  if (!frag) return false;
+  const cur = (el.value || '').trim();
+  // Évite d'ajouter un fragment déjà présent (casse-insensible)
+  const curNorm = cur.toLowerCase();
+  const fragNorm = frag.toLowerCase();
+  if (curNorm.includes(fragNorm)) return 'exists';
+  // Séparateur : « + » entre fragments pour une syntaxe lisible par l'IA
+  const sep = cur ? (/[.,+]$/.test(cur) ? ' ' : ' + ') : '';
+  el.value = cur + sep + frag;
+  // Déclenche les listeners (cabinet mode, validation…)
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+}
+
+/* Handler commun appelé en onclick : ajoute + feedback visuel + toast léger */
+function _cotClickAppend(btnOrRow, fragment, label) {
+  const res = _cotAppendDesc(fragment);
+  if (res === true || res === 'exists') {
+    // Feedback visuel sur l'élément cliqué
+    try {
+      if (btnOrRow && btnOrRow.classList) btnOrRow.classList.add('added');
+      setTimeout(() => { try { btnOrRow.classList.remove('added'); } catch (_) {} }, 2200);
+    } catch (_) {}
+    const toast = typeof showToast === 'function' ? showToast
+                : (typeof showToastSafe === 'function' ? showToastSafe : null);
+    if (toast) {
+      const msg = res === 'exists'
+        ? `ℹ️ "${label || fragment}" déjà dans la description`
+        : `✅ "${label || fragment}" ajouté`;
+      toast(msg, res === 'exists' ? 'in' : 'su');
+    }
+    // Scroll doux vers le champ f-txt (utile sur mobile)
+    const elTxt = typeof $ === 'function' ? $('f-txt') : document.getElementById('f-txt');
+    if (elTxt && typeof elTxt.scrollIntoView === 'function') {
+      try { elTxt.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    }
+    // FAB « Re-coter » : on ne l'affiche que si un nouvel ajout a réellement été fait
+    if (res === true) _cotShowReCoteBar();
+  }
+}
+
+/* FAB flottant « Re-coter » : apparaît dès qu'un ajout a été fait, disparaît
+   à la re-cotation, au clic ou à la navigation hors de la page cotation. */
+function _cotShowReCoteBar() {
+  let fab = document.getElementById('recote-fab');
+  if (!fab) {
+    fab = document.createElement('button');
+    fab.id = 'recote-fab';
+    fab.className = 'recote-fab';
+    fab.type = 'button';
+    fab.setAttribute('aria-label', 'Re-coter avec les ajouts');
+    fab.innerHTML = `
+      <span class="recote-fab-ico" aria-hidden="true">🔄</span>
+      <span class="recote-fab-lbl">Re-coter avec les ajouts</span>
+      <span class="recote-fab-badge" data-count="1">1</span>
+      <span class="recote-fab-close" role="button" aria-label="Fermer" title="Fermer">✕</span>
+    `;
+    // Clic principal → relance la cotation
+    fab.addEventListener('click', (ev) => {
+      // Clic sur la croix : ferme sans re-coter
+      if (ev.target && ev.target.classList.contains('recote-fab-close')) {
+        ev.stopPropagation();
+        _cotHideReCoteBar();
+        return;
+      }
+      // Sinon : relance la cotation
+      fab.classList.add('loading');
+      try {
+        if (typeof cotation === 'function') {
+          Promise.resolve(cotation()).catch(() => {}).finally(() => {
+            // Si la cotation échoue silencieusement, on retire le loading
+            setTimeout(() => { if (fab) fab.classList.remove('loading'); }, 1500);
+          });
+        } else {
+          // Fallback : click sur le bouton principal
+          const mainBtn = document.getElementById('btn-cot');
+          if (mainBtn) mainBtn.click();
+        }
+      } catch (_) {
+        fab.classList.remove('loading');
+      }
+    });
+    document.body.appendChild(fab);
+  } else {
+    // Bouton déjà présent → incrémenter le compteur
+    const badge = fab.querySelector('.recote-fab-badge');
+    if (badge) {
+      const cur = parseInt(badge.getAttribute('data-count') || '0', 10) || 0;
+      const n   = cur + 1;
+      badge.setAttribute('data-count', String(n));
+      badge.textContent = String(n);
+      // Petit pulse pour signaler l'incrément
+      badge.style.transform = 'scale(1.3)';
+      setTimeout(() => { if (badge) badge.style.transform = ''; }, 180);
+    }
+    // Retire l'éventuel état 'out' si un clic très proche
+    fab.classList.remove('out', 'loading');
+  }
+}
+
+function _cotHideReCoteBar() {
+  const fab = document.getElementById('recote-fab');
+  if (!fab) return;
+  // Anim sortie puis suppression
+  fab.classList.add('out');
+  setTimeout(() => { try { fab.remove(); } catch (_) {} }, 260);
+}
+
+/* Nettoyage du FAB lors de la navigation hors de la page cotation */
+if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
+  window._cotRecoteNavHookInstalled = true;
+  // Hook sur navTo si disponible — purement défensif, pas bloquant
+  try {
+    const _origNavTo = window.navTo;
+    if (typeof _origNavTo === 'function') {
+      window.navTo = function patchedNavTo(section, ...rest) {
+        if (section && section !== 'cot') _cotHideReCoteBar();
+        return _origNavTo.apply(this, [section, ...rest]);
+      };
+    }
+  } catch (_) {}
+}
+
+/* Extraction des codes NGAP (AMI, BSB, BSC, BSA, BSI, MIE, IFD, IFI, IK, DI,
+   AIS, MAU, MCI, NUIT, DIM...) dans une chaîne libre.
+   Conserve le libellé court qui suit le code si présent (ex: "AMI 14 longue"). */
+function _cotExtractNgapCodes(text) {
+  const s = String(text || '');
+  if (!s) return [];
+  const found = [];
+  const seen = new Set();
+
+  // 1) Codes AMI / AIS / SFI / SF avec coefficient numérique optionnel
+  const reCoef = /\b(AMI|AIS|SFI|SF)\s*(\d{1,2}(?:\.\d{1,2})?(?:\/\d{1,2})?)\b/gi;
+  let m;
+  while ((m = reCoef.exec(s)) !== null) {
+    const codeNorm    = m[1].toUpperCase() + m[2];
+    const codeDisplay = m[1].toUpperCase() + ' ' + m[2];
+    // Libellé court qui suit (max 3 mots), sans ponctuation
+    const after = s.slice(m.index + m[0].length, m.index + m[0].length + 60);
+    const labelM = after.match(/^\s*([a-zàâéèêëïîôùûüç]+(?:\s+[a-zàâéèêëïîôùûüç]+){0,2})/i);
+    const label = labelM ? labelM[1].trim() : '';
+    const key = codeNorm + '|' + label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const insert = codeDisplay + (label ? ' ' + label : '');
+    found.push({ code: codeNorm, display: insert, insert });
+  }
+
+  // 2) Codes forfaits/majorations sans coefficient
+  const simpleCodes = [
+    'BSB', 'BSC', 'BSA', 'BSI',
+    'MIE', 'MAU', 'MCI',
+    'IFD', 'IFI', 'IFSD',
+    'DI', 'DIP', 'DIE',
+    'NUIT_PROF', 'NUIT', 'DIM',
+  ];
+  for (const c of simpleCodes) {
+    const re = new RegExp('\\b' + c + '\\b', 'gi');
+    if (re.test(s)) {
+      const key = c + '|';
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ code: c, display: c, insert: c });
+    }
+  }
+  return found;
+}
+
+/* Expose en global pour usage depuis les handlers inline onclick="" */
+if (typeof window !== 'undefined') {
+  window._cotAppendDesc       = _cotAppendDesc;
+  window._cotClickAppend      = _cotClickAppend;
+  window._cotExtractNgapCodes = _cotExtractNgapCodes;
+  window._cotShowReCoteBar    = _cotShowReCoteBar;
+  window._cotHideReCoteBar    = _cotHideReCoteBar;
+}
+
 function renderCot(d) {
+  // Une cotation fraîche arrive → retire le FAB « Re-coter » s'il traîne
+  try { _cotHideReCoteBar(); } catch (_) {}
   const a   = d.actes  || [];
   const al  = d.alerts || [];
   const op  = d.optimisations || [];
@@ -1513,12 +1708,34 @@ function renderCot(d) {
   // ── Suggestions alternatives N8N v7 ─────────────────────────────────────────
   const suggBloc = sugg.length ? `<div style="margin-top:12px">
     <div class="lbl" style="font-size:10px;margin-bottom:6px;color:#22c55e">💰 Suggestions de valorisation</div>
-    <div class="aic">${sugg.map(s =>
-      `<div class="ai su" style="border-left:3px solid #22c55e">
-        ${s.gain ? `<strong style="color:var(--a)">${s.gain}</strong> — ` : ''}${s.reason || ''}
-        ${s.action ? `<span style="font-size:10px;opacity:.7"> → ${s.action}</span>` : ''}
-      </div>`
-    ).join('')}</div>
+    <div class="aic">${sugg.map((s, i) => {
+      // Texte brut de la suggestion (pour clic sur la ligne entière)
+      const reason = s.reason || '';
+      const action = s.action || '';
+      const gain   = s.gain   || '';
+      // Texte complet utilisé pour extraire les codes NGAP
+      const fullTxt = [reason, action].filter(Boolean).join(' ');
+      let codes = [];
+      try { codes = _cotExtractNgapCodes(fullTxt); } catch (_) {}
+      // Fragment ajouté si clic sur la bulle entière = reason seule
+      const frag = (reason || action || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const chipsHtml = codes.length
+        ? `<div class="ngap-chip-lbl">💡 Ajouter un code à la description :</div>
+           <div class="ngap-chips">${codes.map(c => {
+             const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+             const dsp = c.display.replace(/"/g, '&quot;');
+             return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}')" title="Ajouter « ${dsp} » à la description">${dsp}</span>`;
+           }).join('')}</div>`
+        : '';
+      return `<div class="ai su clk" style="border-left:3px solid #22c55e"
+                   onclick="window._cotClickAppend(this,'${frag}','Suggestion ${i + 1}')"
+                   title="Cliquer pour ajouter cette suggestion à la description">
+        ${gain ? `<strong style="color:var(--a)">${gain}</strong> — ` : ''}${reason}
+        ${action ? `<span style="font-size:10px;opacity:.7"> → ${action}</span>` : ''}
+        <span class="clk-plus"></span>
+        ${chipsHtml}
+      </div>`;
+    }).join('')}</div>
   </div>` : '';
 
   // ── Scoring infirmière N8N v7 ────────────────────────────────────────────────
@@ -1579,9 +1796,27 @@ function renderCot(d) {
   // ── Optimisations ajoutées par N8N ──────────────────────────────────────────
   const opBloc = op.length ? `<div style="margin-top:12px">
     <div class="lbl" style="font-size:10px;margin-bottom:6px">⬆️ Optimisations appliquées</div>
-    <div class="aic">${op.map(o => {
+    <div class="aic">${op.map((o, i) => {
       const msg = typeof o === 'string' ? o : (o.msg || JSON.stringify(o));
-      return `<div class="ai su">💰 ${msg}</div>`;
+      const msgEsc = msg.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      // Extraction des codes NGAP éventuels pour proposer une insertion ciblée
+      let codes = [];
+      try { codes = _cotExtractNgapCodes(msg); } catch (_) {}
+      const chipsHtml = codes.length
+        ? `<div class="ngap-chip-lbl">💡 Ajouter un code à la description :</div>
+           <div class="ngap-chips">${codes.map(c => {
+             const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+             const dsp = c.display.replace(/"/g, '&quot;');
+             return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}')" title="Ajouter « ${dsp} » à la description">${dsp}</span>`;
+           }).join('')}</div>`
+        : '';
+      return `<div class="ai su clk"
+                   onclick="window._cotClickAppend(this,'${msgEsc}','Optimisation ${i + 1}')"
+                   title="Cliquer pour ajouter cette optimisation à la description">
+        💰 ${msg}
+        <span class="clk-plus"></span>
+        ${chipsHtml}
+      </div>`;
     }).join('')}</div>
   </div>` : '';
 
@@ -1635,9 +1870,22 @@ function renderCot(d) {
   </div>
 
   <!-- ══ DÉTAIL DES ACTES ══ -->
-  <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);margin-bottom:10px">Détail des actes</div>
+  <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);margin-bottom:10px">Détail des actes <span style="color:var(--m);opacity:.7;text-transform:none;letter-spacing:0;font-family:inherit;font-size:10px;margin-left:6px">(cliquez pour ajouter à la description)</span></div>
   <div class="al" style="margin-bottom:0">${a.length
-    ? a.map(x => `<div class="ar">
+    ? a.map(x => {
+        const code = (x.code || '').trim();
+        const nom  = (x.nom  || '').trim();
+        // Fragment à injecter : code + libellé court (ex : "AMI9 Perfusion courte")
+        // On tronque le nom au 1er séparateur pour garder l'insertion compacte
+        const nomShort = nom.split(/[—–\-:()]/)[0].trim().slice(0, 48);
+        const insertTxt = (code + (nomShort ? ' ' + nomShort : '')).trim();
+        const insertEsc = insertTxt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const labelEsc  = (code || nomShort || 'acte').replace(/"/g, '&quot;');
+        // Pas de clic si aucun code/nom exploitable
+        const clickable = !!insertTxt;
+        return `<div class="ar${clickable ? ' clk' : ''}"
+            ${clickable ? `onclick="window._cotClickAppend(this,'${insertEsc}','${labelEsc}')"` : ''}
+            ${clickable ? `title="Cliquer pour ajouter « ${labelEsc} » à la description"` : ''}>
         <div class="ac ${cc(x.code)}">${x.code || '?'}</div>
         <div class="an" style="flex:1">
           <div style="font-size:13px;color:var(--t)">${x.nom || ''}</div>
@@ -1645,7 +1893,8 @@ function renderCot(d) {
         </div>
         <div class="ao" style="color:var(--m)">×${(x.coefficient || 1).toFixed(1)}</div>
         <div class="at" style="color:var(--t);font-weight:700">${fmt(x.total)}</div>
-      </div>`).join('')
+      </div>`;
+      }).join('')
     : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}
   </div>
 
