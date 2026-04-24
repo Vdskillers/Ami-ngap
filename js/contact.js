@@ -169,9 +169,8 @@ window.contactAcceptSuggestion = async function(msgId) {
     const d = await apiCall('/webhook/ngap-correction-action', { message_id: msgId, action: 'accept' });
     if (!d || !d.ok) throw new Error(d?.error || 'Action impossible');
 
-    // La correction a été appliquée côté serveur → resync immédiat de l'IDB
-    // pour que le carnet patient (Cotations) affiche la version corrigée.
     if (d.applied) {
+      // Correction appliquée côté serveur → resync immédiat de l'IDB
       if (typeof syncCotationsFromServer === 'function') {
         try { await syncCotationsFromServer(); } catch(_) {}
       }
@@ -180,8 +179,23 @@ window.contactAcceptSuggestion = async function(msgId) {
         showToast('success', 'Correction appliquée' + gain, 'Historique et carnet patient mis à jour.');
       }
     } else {
-      // Fallback si le meta n'était pas parsable (ancien message ou erreur serveur)
-      if (typeof showToast === 'function') showToast('info', 'Suggestion acceptée', 'Ouvrez votre historique pour appliquer la correction manuellement si nécessaire.');
+      // Accept enregistré mais PATCH non appliqué (raison retournée par le serveur)
+      const reasons = {
+        'meta_absent':          'Message ancien sans métadonnées — à ignorer.',
+        'meta_incomplet':       'Métadonnées incomplètes — à ignorer.',
+        'cotation_introuvable': 'La cotation concernée a été supprimée.',
+        'deja_corrigee':        'Cette cotation a déjà été corrigée par AMI.',
+        'deja_equivalente':     'Cette cotation est déjà à jour (rien à changer).',
+        'engine_ko':            'Moteur NGAP indisponible — réessayez plus tard.',
+        'safety_total_degrade': 'Sécurité : correction annulée (le total aurait diminué).',
+        'safety_acte_perdu':    'Sécurité : correction annulée (acte technique manquant).',
+        'safety_resultat_court':'Sécurité : correction annulée (résultat incohérent).',
+      };
+      const humanReason = reasons[d.skip_reason] || 'Aucune modification appliquée.';
+      if (typeof showToast === 'function') {
+        const isSafety = String(d.skip_reason || '').startsWith('safety_');
+        showToast(isSafety ? 'warning' : 'info', 'Suggestion enregistrée', humanReason);
+      }
     }
     if (typeof loadMyMessages === 'function') loadMyMessages();
   } catch(e) {

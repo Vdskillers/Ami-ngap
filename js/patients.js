@@ -2906,10 +2906,7 @@ async function syncCotationsFromServer() {
       let added = 0;
       let updated = 0;
 
-      // ── Helper : détecte si une cotation serveur a été corrigée par l'admin ──
-      // Marqueur posé par /webhook/admin-ngap-auto-correct-direct (alerts contient
-      // "Cotation corrigee automatiquement par AMI") OU par /ngap-correction-action
-      // (accept d'une suggestion par l'infirmière).
+      // Détecte si une cotation serveur a été corrigée par AMI (marqueur dans alerts)
       const _isServerCorrected = (sc) => {
         if (!sc || !sc.alerts) return false;
         try {
@@ -2933,27 +2930,22 @@ async function syncCotationsFromServer() {
 
         // ── BRANCHE 1 : invoice_number DÉJÀ local → tentative d'UPDATE si corrigé serveur ──
         if (localInvoices.has(sc.invoice_number)) {
-          // On ne met à jour QUE si le serveur a un marqueur "corrigé par AMI"
-          // (évite d'écraser les modifications locales légitimes non syncées).
           if (!_isServerCorrected(sc)) continue;
           const _localIdx = p.cotations.findIndex(c => c.invoice_number === sc.invoice_number);
-          if (_localIdx < 0) continue; // inconsistance, skip
+          if (_localIdx < 0) continue;
 
           const _localCot = p.cotations[_localIdx];
           const _localTotal = parseFloat(_localCot.total || 0);
-          // Déjà à jour ? (tolérance 1 centime)
           if (Math.abs(_localTotal - _scTotal) < 0.01) {
-            // Actes déjà alignés — on met juste à jour le flag _synced si nécessaire
             if (_localCot._synced !== true) {
               p.cotations[_localIdx] = { ..._localCot, _synced: true };
-              // pas de "updated++" : pas de changement de valeur réelle
             }
             continue;
           }
 
-          // 🔧 UPSERT : remplacer en place (doctrine — jamais de push/doublon)
+          // 🔧 UPSERT : remplace en place (doctrine — jamais de push/doublon)
           p.cotations[_localIdx] = {
-            ..._localCot, // préserve date/heure/soin/patient_id custom si définis localement
+            ..._localCot,
             date:         sc.date_soin       || _localCot.date,
             heure:        sc.heure_soin      || _localCot.heure || '',
             actes:        actes,
@@ -2967,7 +2959,6 @@ async function syncCotationsFromServer() {
             _corrected_at: new Date().toISOString(),
             _synced:      true,
           };
-          // Rafraîchir l'index date+total pour cette cotation
           const _oldKey = `${(_localCot.date || '').slice(0, 10)}|${_localTotal.toFixed(2)}`;
           localKeyDateTotal.delete(_oldKey);
           if (_scTotal > 0) localKeyDateTotal.add(`${_scDate10}|${_scTotal.toFixed(2)}`);
@@ -2976,14 +2967,10 @@ async function syncCotationsFromServer() {
         }
 
         // ── BRANCHE 2 : invoice_number inconnu localement → ADD (code existant) ──
-        // Filtre anti-doublon par (date + total) : si une cotation locale existe déjà
-        // pour le même jour avec le même montant, on considère que c'est un doublon
-        // serveur (ancienne tournée envoyée 2× avant le fix uber.js skipIDB:true).
-        // On marque l'invoice_number comme "vu" pour ne pas le re-tenter au prochain pull.
         const _scKey = `${_scDate10}|${_scTotal.toFixed(2)}`;
         if (_scTotal > 0 && localKeyDateTotal.has(_scKey)) {
           console.warn(`[AMI] syncCotationsFromServer : doublon serveur ignoré (${sc.invoice_number}, ${_scKey})`);
-          localInvoices.add(sc.invoice_number); // évite re-scan
+          localInvoices.add(sc.invoice_number);
           continue;
         }
         p.cotations.push({
@@ -3006,7 +2993,6 @@ async function syncCotationsFromServer() {
           _data: _enc(p), updated_at: p.updated_at,
         };
         await _idbPut(PATIENTS_STORE, toStore);
-        // Re-push vers le serveur pour écrire patient_id si absent (évite re-scan futur)
         if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
         changed++;
         totalAdded   += added;

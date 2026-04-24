@@ -142,6 +142,9 @@ function _admInjectNgapButton() {
     <button id="adm-ngap-autocorrect-direct-btn" class="btn bp bsm" onclick="admAutoCorrectDirect()" title="Applique immédiatement les corrections dans l'historique des soins — l'infirmière reçoit juste une notification" style="display:none;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff">
       ⚡ Corriger directement
     </button>
+    <button id="adm-cleanup-orphans-btn" class="btn bs bsm" onclick="admCleanupOrphans()" title="Scanne planning_patients pour détecter et supprimer les rows incomplètes (sans nom/heure) et les doublons d'invoice_number" style="background:rgba(239,68,68,.08);color:#ef4444;border:1px solid rgba(239,68,68,.3)">
+      🧹 Nettoyer orphelins
+    </button>
     <span style="font-size:11px;color:var(--m)">Données anonymisées · lecture seule · audit-safe</span>
   `;
   host.parentElement?.appendChild(wrap);
@@ -365,6 +368,80 @@ async function admAutoCorrectDirect() {
     if (btn) { btn.disabled = false; btn.innerHTML = '⚡ Corriger directement'; }
     if (typeof showToast === 'function') showToast('error', 'Correction directe KO', e.message || 'Erreur inattendue');
     console.warn('[admAutoCorrectDirect]', e);
+  }
+}
+
+/* 🧹 Scan + cleanup des rows orphelines et doublons dans planning_patients */
+async function admCleanupOrphans() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+
+  const btn = document.getElementById('adm-cleanup-orphans-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Scan en cours…'; }
+
+  try {
+    // Phase 1 : dry-run
+    const scan = await wpost('/webhook/admin-cleanup-orphans', { dry_run: true });
+    if (!scan || !scan.ok) throw new Error(scan?.error || 'Scan impossible');
+
+    if (scan.to_delete === 0) {
+      res.innerHTML = `
+        <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(0,212,170,.08),transparent);border:1px solid rgba(0,212,170,.3)">
+          <div style="font-size:13px;font-weight:700;color:#00d4aa">✅ Base propre</div>
+          <div style="font-size:11px;color:var(--m);margin-top:4px">${scan.total_scanned} cotation(s) scannée(s) · aucune orpheline · aucun doublon.</div>
+        </div>`;
+      if (typeof showToast === 'function') showToast('success', 'Base propre', 'Aucune row orpheline ou doublon détecté.');
+      return;
+    }
+
+    // Afficher le récap et demander confirmation
+    const sampleRows = (scan.sample || []).map(s => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid var(--b);font-size:11px;font-family:var(--fm)">
+        <span>${s.reason === 'orphan' ? '👤' : '📑'} ${_escAdm(String(s.id).slice(0,8))}… · ${s.invoice_number || '—'}</span>
+        <span style="color:var(--m)">
+          ${s.has_patient ? '✓ patient' : '✗ patient'} ·
+          ${s.has_heure ? '✓ heure' : '✗ heure'} ·
+          ${(s.total || 0).toFixed(2)} €
+        </span>
+      </div>`).join('');
+
+    res.innerHTML = `
+      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(239,68,68,.06),transparent);border:1px solid rgba(239,68,68,.3)">
+        <div style="font-size:13px;font-weight:700;color:#ef4444;margin-bottom:6px">🧹 Scan terminé · ${scan.to_delete} row(s) à supprimer</div>
+        <div style="font-size:11px;color:var(--m);margin-bottom:12px">
+          ${scan.orphans_count} orpheline(s) (sans nom ni heure) · ${scan.duplicates_count} doublon(s) d'invoice_number · sur ${scan.total_scanned} scanées.
+        </div>
+        <div style="max-height:220px;overflow-y:auto;border:1px solid var(--b);border-radius:8px;margin-bottom:12px">${sampleRows}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bp bsm" onclick="admCleanupOrphansConfirm()" style="background:#ef4444;color:#fff">🗑️ Supprimer les ${scan.to_delete} row(s)</button>
+          <button class="btn bs bsm" onclick="document.getElementById('adm-ngap-result').innerHTML=''">Annuler</button>
+        </div>
+      </div>`;
+  } catch(e) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message)}</div>`;
+    if (typeof showToast === 'function') showToast('error', 'Scan impossible', e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '🧹 Nettoyer orphelins'; }
+  }
+}
+
+/* Confirme la suppression (dry_run=false) */
+async function admCleanupOrphansConfirm() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+  res.innerHTML = '<div class="ai">⏳ Suppression en cours…</div>';
+  try {
+    const out = await wpost('/webhook/admin-cleanup-orphans', { dry_run: false });
+    if (!out || !out.ok) throw new Error(out?.error || 'Suppression impossible');
+    res.innerHTML = `
+      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(0,212,170,.08),transparent);border:1px solid rgba(0,212,170,.3)">
+        <div style="font-size:13px;font-weight:700;color:#00d4aa">✅ ${out.deleted} row(s) supprimée(s)</div>
+        <div style="font-size:11px;color:var(--m);margin-top:4px">Base nettoyée. Les prochaines analyses ne les verront plus.</div>
+      </div>`;
+    if (typeof showToast === 'function') showToast('success', 'Cleanup OK', `${out.deleted} row(s) supprimée(s).`);
+  } catch(e) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message)}</div>`;
+    if (typeof showToast === 'function') showToast('error', 'Suppression KO', e.message);
   }
 }
 
