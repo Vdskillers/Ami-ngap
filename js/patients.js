@@ -2848,6 +2848,8 @@ async function syncCotationsFromServer() {
 
     const localRows = await _idbGetAll(PATIENTS_STORE);
     let changed = 0;
+    let totalAdded = 0;
+    let totalUpdated = 0;
 
     const _CODES_MAJ_NS = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
 
@@ -2902,19 +2904,82 @@ async function syncCotationsFromServer() {
       }
 
       let added = 0;
+      let updated = 0;
+
+      // ── Helper : détecte si une cotation serveur a été corrigée par l'admin ──
+      // Marqueur posé par /webhook/admin-ngap-auto-correct-direct (alerts contient
+      // "Cotation corrigee automatiquement par AMI") OU par /ngap-correction-action
+      // (accept d'une suggestion par l'infirmière).
+      const _isServerCorrected = (sc) => {
+        if (!sc || !sc.alerts) return false;
+        try {
+          const alerts = typeof sc.alerts === 'string' ? JSON.parse(sc.alerts) : sc.alerts;
+          if (!Array.isArray(alerts)) return false;
+          return alerts.some(a => typeof a === 'string' && /Cotation corrig(e|é)e automatiquement par AMI/i.test(a));
+        } catch (_) { return false; }
+      };
+
       for (const sc of serverCots) {
-        if (!sc.invoice_number || localInvoices.has(sc.invoice_number)) continue;
+        if (!sc.invoice_number) continue;
+
         let actes = [];
         try { actes = typeof sc.actes === 'string' ? JSON.parse(sc.actes) : (sc.actes || []); } catch (_) {}
         // Guard : ignorer cotations sans acte technique (majorations seules)
         const _hasTechNS = actes.some(a => !_CODES_MAJ_NS.has((a.code||'').toUpperCase()));
         if (!_hasTechNS && actes.length > 0) continue;
+
+        const _scTotal = parseFloat(sc.total || 0);
+        const _scDate10 = (sc.date_soin || '').slice(0, 10);
+
+        // ── BRANCHE 1 : invoice_number DÉJÀ local → tentative d'UPDATE si corrigé serveur ──
+        if (localInvoices.has(sc.invoice_number)) {
+          // On ne met à jour QUE si le serveur a un marqueur "corrigé par AMI"
+          // (évite d'écraser les modifications locales légitimes non syncées).
+          if (!_isServerCorrected(sc)) continue;
+          const _localIdx = p.cotations.findIndex(c => c.invoice_number === sc.invoice_number);
+          if (_localIdx < 0) continue; // inconsistance, skip
+
+          const _localCot = p.cotations[_localIdx];
+          const _localTotal = parseFloat(_localCot.total || 0);
+          // Déjà à jour ? (tolérance 1 centime)
+          if (Math.abs(_localTotal - _scTotal) < 0.01) {
+            // Actes déjà alignés — on met juste à jour le flag _synced si nécessaire
+            if (_localCot._synced !== true) {
+              p.cotations[_localIdx] = { ..._localCot, _synced: true };
+              // pas de "updated++" : pas de changement de valeur réelle
+            }
+            continue;
+          }
+
+          // 🔧 UPSERT : remplacer en place (doctrine — jamais de push/doublon)
+          p.cotations[_localIdx] = {
+            ..._localCot, // préserve date/heure/soin/patient_id custom si définis localement
+            date:         sc.date_soin       || _localCot.date,
+            heure:        sc.heure_soin      || _localCot.heure || '',
+            actes:        actes,
+            total:        _scTotal,
+            part_amo:     parseFloat(sc.part_amo     || 0),
+            part_amc:     parseFloat(sc.part_amc     || 0),
+            part_patient: parseFloat(sc.part_patient || 0),
+            invoice_number: sc.invoice_number,
+            ngap_version: sc.ngap_version || _localCot.ngap_version || null,
+            source:       'ami_corrected',
+            _corrected_at: new Date().toISOString(),
+            _synced:      true,
+          };
+          // Rafraîchir l'index date+total pour cette cotation
+          const _oldKey = `${(_localCot.date || '').slice(0, 10)}|${_localTotal.toFixed(2)}`;
+          localKeyDateTotal.delete(_oldKey);
+          if (_scTotal > 0) localKeyDateTotal.add(`${_scDate10}|${_scTotal.toFixed(2)}`);
+          updated++;
+          continue;
+        }
+
+        // ── BRANCHE 2 : invoice_number inconnu localement → ADD (code existant) ──
         // Filtre anti-doublon par (date + total) : si une cotation locale existe déjà
         // pour le même jour avec le même montant, on considère que c'est un doublon
         // serveur (ancienne tournée envoyée 2× avant le fix uber.js skipIDB:true).
         // On marque l'invoice_number comme "vu" pour ne pas le re-tenter au prochain pull.
-        const _scTotal = parseFloat(sc.total || 0);
-        const _scDate10 = (sc.date_soin || '').slice(0, 10);
         const _scKey = `${_scDate10}|${_scTotal.toFixed(2)}`;
         if (_scTotal > 0 && localKeyDateTotal.has(_scKey)) {
           console.warn(`[AMI] syncCotationsFromServer : doublon serveur ignoré (${sc.invoice_number}, ${_scKey})`);
@@ -2934,7 +2999,7 @@ async function syncCotationsFromServer() {
         added++;
       }
 
-      if (added > 0) {
+      if (added > 0 || updated > 0) {
         p.updated_at = new Date().toISOString();
         const toStore = {
           id: row.id, nom: p.nom || row.nom, prenom: p.prenom || row.prenom,
@@ -2944,11 +3009,16 @@ async function syncCotationsFromServer() {
         // Re-push vers le serveur pour écrire patient_id si absent (évite re-scan futur)
         if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
         changed++;
+        totalAdded   += added;
+        totalUpdated += updated;
       }
     }
 
     if (changed > 0) {
-      console.info(`[AMI] syncCotationsFromServer : ${changed} fiche(s) complétée(s).`);
+      const parts = [];
+      if (totalAdded > 0)   parts.push(`+${totalAdded} ajout(s)`);
+      if (totalUpdated > 0) parts.push(`${totalUpdated} correction(s) AMI appliquée(s)`);
+      console.info(`[AMI] syncCotationsFromServer : ${changed} fiche(s) modifiée(s) (${parts.join(', ') || 'resync'}).`);
       if (document.querySelector('#patients-section:not(.hidden)') ||
           document.querySelector('[data-view="patients"].active')) loadPatients();
     } else {

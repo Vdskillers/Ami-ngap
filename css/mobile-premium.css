@@ -146,38 +146,107 @@
       font-size: 13px !important;
     }
 
-    /* ── Bouton "⏻ Déconnexion" en icône seule sur mobile étroit ──
-       Sur viewport ≤420px, le texte "Déconnexion" débordait et
-       s'affichait coupé ("Déconnexi"). On garde l'icône uniquement,
-       le bouton reste pleinement cliquable. */
-    #admin-header-controls .bout {
-      font-size: 0 !important;
-      padding: 5px 9px !important;
-      min-width: 32px !important;
-      white-space: nowrap !important;
-    }
-    #admin-header-controls .bout::before {
-      content: "⏻";
-      font-size: 13px;
-      line-height: 1;
-    }
+    /* ── Header admin mobile : masquer le bouton "⏻ Déconnexion" ──
+       Sur viewport étroit, il débordait et s'affichait coupé
+       ("Déconnexi"). Le logout reste 100% accessible via le menu
+       Plus → bouton "Quitter" rouge (bottom nav).
+       On garde l'affichage desktop intact. */
+    #admin-header-controls .bout,
+    .top.admin-active #btn-logout-normal { display: none !important; }
 
     /* Pill nom admin plus compacte — tronque si trop long */
     #mobile-admin-name {
       font-size: 10px !important;
       padding: 3px 9px !important;
-      max-width: 100px !important;
+      max-width: 110px !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
       white-space: nowrap !important;
     }
+
+    /* ── Greeting "BONJOUR" forcé à masquer sur mobile ──
+       Certains scripts réinjectent du contenu dans #mobile-greeting
+       après coup (toast de bienvenue). On blinde avec plusieurs
+       sélecteurs pour ne plus JAMAIS voir "BONJOU" déborder. */
+    #mobile-greeting,
+    #mobile-greeting-hello,
+    #mobile-greeting-name,
+    .top #mobile-greeting,
+    #admin-header-controls #mobile-greeting { display: none !important; }
   }
 
   /* Mobile très étroit (≤360px, ex. petits Android) :
      on masque carrément la pill "Bastien Admin" pour garder
-     seulement [A][🤖][🎤] [🛡️] [⏻] qui tiennent sur 1 ligne. */
+     seulement [A][🤖][🎤] [🛡️] [🔔] qui tiennent sur 1 ligne. */
   @media (max-width: 360px) {
     #mobile-admin-name { display: none !important; }
+  }
+
+  /* ── Fabs mobile header (micro vocal + robot admin) compacts ──
+     Par défaut hérités du desktop → trop gros, écrasaient le reste
+     du header. On force des tailles mobile cohérentes avec la cloche. */
+  #mobile-header-fabs {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    margin-left: 6px !important;
+    flex-shrink: 0 !important;
+  }
+  #mobile-header-fabs > * {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+    font-size: 14px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1 !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Logo "A" du header compact en mobile */
+  .logo .lmark {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 16px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     VUE "RAPPORT D'ACTIVITÉ" — fix listes qui cassent en 2 col
+     ──────────────────────────────────────────────────────────
+     .rapport-include-item est en `display: flex align-items: center`.
+     Avec un enfant <div class="rapport-include-dot"> suivi d'un <strong>
+     et d'un text node libre, ces DEUX derniers deviennent des flex
+     items distincts → wrappent indépendamment → "KPIs revenus" finit
+     à gauche et "· décomposition AMO/AMC/Patient" à droite, mal aligné.
+
+     Correction : passer en block sur mobile, dot positionné en absolu,
+     tout le texte wrappe naturellement dans un seul flux.
+  ══════════════════════════════════════════════════════════ */
+  .rapport-include-item {
+    display: block !important;
+    position: relative !important;
+    padding-left: 14px !important;
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+    color: var(--m) !important;
+  }
+  .rapport-include-item .rapport-include-dot {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0.55em !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+  }
+  .rapport-include-item strong {
+    color: var(--t) !important;
+  }
+  .rapport-includes {
+    gap: 8px !important;
   }
 
   /* ── BOTTOM NAV ── */

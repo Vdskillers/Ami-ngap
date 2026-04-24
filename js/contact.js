@@ -124,11 +124,17 @@ function _renderMyMessages(messages) {
           ${statut}
         </div>
       </div>
-      <div style="font-size:13px;color:var(--m);line-height:1.6;white-space:pre-wrap">${_escHtml(m.message)}</div>
+      <div style="font-size:13px;color:var(--m);line-height:1.6;white-space:pre-wrap">${_escHtml(_stripMeta(m.message))}</div>
       ${replyBloc}
       ${_renderMessageActions(m)}
     </div>`;
   }).join('');
+}
+
+/* Retire le bloc de métadonnées AMI_META (invisible côté infirmière) */
+function _stripMeta(s) {
+  if (!s) return '';
+  return String(s).replace(/\n*<!--AMI_META:[^]*?-->\n*/g, '').trim();
 }
 
 /* Boutons d'action contextuels selon la catégorie du message */
@@ -162,7 +168,21 @@ window.contactAcceptSuggestion = async function(msgId) {
   try {
     const d = await apiCall('/webhook/ngap-correction-action', { message_id: msgId, action: 'accept' });
     if (!d || !d.ok) throw new Error(d?.error || 'Action impossible');
-    if (typeof showToast === 'function') showToast('success', 'Suggestion acceptée', 'Rendez-vous dans votre historique pour appliquer la correction.');
+
+    // La correction a été appliquée côté serveur → resync immédiat de l'IDB
+    // pour que le carnet patient (Cotations) affiche la version corrigée.
+    if (d.applied) {
+      if (typeof syncCotationsFromServer === 'function') {
+        try { await syncCotationsFromServer(); } catch(_) {}
+      }
+      if (typeof showToast === 'function') {
+        const gain = d.detail?.gain ? ` (+${Number(d.detail.gain).toFixed(2)} €)` : '';
+        showToast('success', 'Correction appliquée' + gain, 'Historique et carnet patient mis à jour.');
+      }
+    } else {
+      // Fallback si le meta n'était pas parsable (ancien message ou erreur serveur)
+      if (typeof showToast === 'function') showToast('info', 'Suggestion acceptée', 'Ouvrez votre historique pour appliquer la correction manuellement si nécessaire.');
+    }
     if (typeof loadMyMessages === 'function') loadMyMessages();
   } catch(e) {
     if (typeof showToast === 'function') showToast('error', 'Erreur', e.message);

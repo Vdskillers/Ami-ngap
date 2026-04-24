@@ -262,9 +262,10 @@ async function _consentCreateOrUpdate({ patient_id, type, signatureDataUrl, pati
   const id = await _consentPut(obj);
   obj.id = id;
 
-  // Audit local + sync cabinet (best-effort, non bloquant)
+  // Audit local + sync cabinet + sync user (best-effort, non bloquant)
   try { if (typeof auditLog === 'function') auditLog('CONSENT_SIGNED', { patient_id, type, version: obj.version }); } catch(_){}
   _consentSyncToCabinet(obj).catch(() => {}); // async fire-and-forget
+  consentSyncPush().catch(() => {});          // sync user-level (tous appareils)
 
   return obj;
 }
@@ -350,6 +351,156 @@ async function consentPullFromCabinet() {
     return { pulled: 0, error: e.message };
   }
 }
+
+/* ════════════════════════════════════════════════
+   SYNCHRONISATION USER-LEVEL (tous appareils du même compte)
+   ────────────────────────────────────────────────
+   Permet à une infirmière de retrouver ses consentements signés
+   sur tous ses appareils (téléphone ↔ tablette ↔ desktop).
+   Fonctionne SANS cabinet — c'est le cas d'usage solo.
+
+   • Obfuscation btoa + clé dérivée userId (stable tous appareils)
+   • Endpoints : /webhook/consentements-push · /webhook/consentements-pull
+   • Table Supabase : consentements_sync (RLS par infirmiere_id)
+   • Modèle copié à l'identique de constantes.js / piluliers.js
+
+   ⚠️ RGPD/HDS : les signatures brutes ne sont JAMAIS envoyées.
+      Seuls les hashes + métadonnées partent vers le backend.
+════════════════════════════════════════════════ */
+
+function _consentSyncKey() {
+  const uid = APP?.user?.id || APP?.user?.email || 'local';
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
+  return 'sk_cons_' + String(Math.abs(h));
+}
+function _consentEnc(obj) {
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _consentSyncKey()))); }
+  catch { return null; }
+}
+function _consentDec(str) {
+  try {
+    const raw = decodeURIComponent(escape(atob(str)));
+    const sep = raw.lastIndexOf('|');
+    return JSON.parse(raw.slice(0, sep));
+  } catch { return null; }
+}
+
+/* Helper wpost — tolérant à l'absence (retombe sur apiCall s'il existe) */
+async function _consentWpost(path, body) {
+  if (typeof wpost === 'function') return wpost(path, body);
+  if (typeof apiCall === 'function') return apiCall(path, body);
+  return null;
+}
+
+/**
+ * Pousse TOUS les consentements locaux (actifs ET archivés) vers Supabase.
+ * Signatures brutes retirées — seuls hashes + métadonnées partent.
+ * Fire-and-forget : erreurs loggées mais non bloquantes.
+ */
+async function consentSyncPush() {
+  const uid = APP?.user?.id;
+  if (!uid) return;
+
+  try {
+    const all = await _consentGetAllRaw();
+    if (!Array.isArray(all) || !all.length) return;
+
+    // Purge des champs sensibles (signature brute) avant envoi
+    const sanitized = all.map(c => {
+      const { signatureDataUrl, signature_raw, _raw_signature, ...clean } = c;
+      return clean;
+    });
+
+    const encrypted_data = _consentEnc(sanitized);
+    if (!encrypted_data) return;
+
+    await _consentWpost('/webhook/consentements-push', {
+      encrypted_data,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn('[consentSyncPush]', e.message);
+  }
+}
+
+/**
+ * Récupère les consentements des autres appareils et merge dans l'IDB locale.
+ * Dédup par (patient_id, type, version) — la version la plus haute gagne.
+ * Retourne { pulled: N } pour que l'appelant puisse décider d'un re-render.
+ */
+async function consentSyncPull() {
+  const uid = APP?.user?.id;
+  if (!uid) return { pulled: 0 };
+
+  try {
+    const resp = await _consentWpost('/webhook/consentements-pull', {});
+    if (!resp?.data?.encrypted_data) return { pulled: 0 };
+
+    // Format AES-GCM de l'ancien code (incompatible) → forcer un push d'écrasement
+    try {
+      const parsed = JSON.parse(resp.data.encrypted_data);
+      if (parsed?.iv !== undefined) {
+        console.warn('[consentSyncPull] Format AES-GCM obsolète — push forcé pour corriger.');
+        consentSyncPush().catch(() => {});
+        return { pulled: 0 };
+      }
+    } catch (_) { /* format btoa correct, continuer */ }
+
+    const remote = _consentDec(resp.data.encrypted_data);
+    if (!Array.isArray(remote) || !remote.length) {
+      // Payload illisible avec la clé actuelle → probablement corruption ou user différent
+      console.warn('[consentSyncPull] Déchiffrement échoué — push forcé pour réécrire.');
+      consentSyncPush().catch(() => {});
+      return { pulled: 0 };
+    }
+
+    // Index des consentements locaux par clé (patient_id, type, version)
+    const existing = await _consentGetAllRaw();
+    const byKey = new Map();
+    for (const c of existing) {
+      const k = `${c.patient_id}|${c.type}|${c.version || 1}`;
+      byKey.set(k, c);
+    }
+
+    let pulled = 0;
+    for (const r of remote) {
+      if (!r?.patient_id || !r?.type) continue;
+      const k = `${r.patient_id}|${r.type}|${r.version || 1}`;
+      const local = byKey.get(k);
+
+      // Existe déjà avec le même (id, version) → skip
+      if (local) continue;
+
+      // Import — on ne récupère PAS l'id IDB pour laisser autoIncrement en local
+      const { id: _drop, ...clean } = r;
+      await _consentPut({
+        ...clean,
+        _synced_from_user: true,
+        _synced_at: new Date().toISOString(),
+      });
+      byKey.set(k, clean);
+      pulled++;
+    }
+
+    if (pulled > 0) console.info(`[consentSyncPull] ${pulled} consentement(s) importé(s) d'un autre appareil.`);
+    return { pulled };
+  } catch (e) {
+    console.warn('[consentSyncPull]', e.message);
+    return { pulled: 0, error: e.message };
+  }
+}
+
+/* Au login : push (écrase les lignes corrompues), puis pull immédiat */
+document.addEventListener('ami:login', () => {
+  consentSyncPush().catch(() => {}).finally(() => {
+    consentSyncPull().catch(() => {});
+  });
+});
+
+/* Expose pour debug / usages externes */
+window.consentSyncPush = consentSyncPush;
+window.consentSyncPull = consentSyncPull;
 
 /* ════════════════════════════════════════════════
    CHECK AVANT ACTE (beforeCareCheck)
@@ -485,6 +636,14 @@ async function renderConsentements() {
 
   // Pull cabinet en fond avant render (silencieux)
   consentPullFromCabinet().catch(() => {});
+  // Pull user-level : récupère les consentements signés sur les autres appareils
+  // du même utilisateur (téléphone ↔ tablette ↔ desktop). Silencieux, non bloquant.
+  consentSyncPull().then(r => {
+    if (r?.pulled > 0 && typeof showToast === 'function') {
+      // Re-render au prochain tick pour afficher les consentements pullés
+      setTimeout(() => { try { renderConsentements(); } catch(_){} }, 150);
+    }
+  }).catch(() => {});
 
   let patients = [];
   try { if (typeof getAllPatients === 'function') patients = await getAllPatients(); } catch (_) {}

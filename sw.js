@@ -6,7 +6,7 @@
    ✅ Préfixe cache isolé (amitest-) pour ne pas entrer en conflit avec la PWA prod
 */
 
-const CACHE_VERSION = 'amitest-v4.0';
+const CACHE_VERSION = 'amitest-v4.1';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

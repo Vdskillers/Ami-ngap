@@ -29,7 +29,7 @@
   .dl-bar{height:6px;background:#00d4aa;border-radius:3px;width:0%;transition:width .3s}
 
   @media(max-width:768px){
-    #mobile-greeting{display:flex!important}
+    /* #mobile-greeting est géré par mobile-premium.css (masqué, remplacé par #mobile-admin-name) */
     .logo .ltext,.logo .lsub{display:none}
   }
 
@@ -1096,7 +1096,7 @@
   </div>
 </div>
 <!-- Bandeau hors-ligne -->
-<!-- offline-banner supprimée : doublon avec #oa-offline-badge d'offline-auth.js -->
+<div id="offline-banner" style="display:none;position:fixed;top:64px;left:0;right:0;z-index:200;background:rgba(255,181,71,.12);border-bottom:1px solid rgba(255,181,71,.3);padding:6px 20px;font-size:12px;color:var(--w);font-family:var(--fm);align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"></div>
 <div id="llm-progress">🤖 IA locale active</div>
 
 <!-- APP SHELL -->
@@ -1143,10 +1143,11 @@
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
       <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique <span class="ni-alert-badge orange" id="nav-his-badge" style="display:none"></span></div>
       <div class="ni nurse-only" data-v="outils-ordos"><span class="nic">💊</span> Ordonnances <span id="ordo-nav-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
-      <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
-      <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
       <div class="ni" data-v="pilulier"><span class="nic">💊</span> Semainier / Pilulier</div>
       <div class="ni" data-v="constantes"><span class="nic">📊</span> Constantes patients</div>
+      <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
+      <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
+      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Outils pratiques</div>
@@ -1156,7 +1157,6 @@
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
       <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
       <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
-      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
       <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
       <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
