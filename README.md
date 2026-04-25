@@ -785,9 +785,6 @@ Pour un correctif majeur (ex: 2026 → 2027), ajouter un tag Git versionné `v20
 
 **Conçu pour les infirmier(e)s libérales** — par Bastien (vdskillers).  
 Repo : `Vdskillers/Ami-ngap`  
-Backend Worker : `raspy-tooth-1a2f.workers.dev`  
-N8N : `n8n-6fyl.onrender.com`  
-DB : Supabase (`ycsprblaruusaegohcid`)
 
 > Pour toute question NGAP : utilise le **Copilote IA** intégré.  
 > Pour les bugs : page **Contact** dans l'app.
