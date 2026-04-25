@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="AMI NGAP">
 <meta name="mobile-web-app-capable" content="yes">
 <title>AMI — Cotation NGAP</title>
-<meta name="description" content="Cotation NGAP intelligente pour infirmiers — IA · Architecture RAG Dual (Strict 247 + Enrichi 850) · Source NGAP opposable · Tarifs 2026">
+<meta name="description" content="Cotation NGAP intelligente pour infirmiers — IA · RAG BM25 · Tarifs 2026">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230b0f14'/><text y='.9em' font-size='80' font-family='sans-serif' font-weight='bold' fill='%2300d4aa' x='12'>A</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,7 +29,7 @@
   .dl-bar{height:6px;background:#00d4aa;border-radius:3px;width:0%;transition:width .3s}
 
   @media(max-width:768px){
-    /* #mobile-greeting est géré par mobile-premium.css (masqué, remplacé par #mobile-admin-name) */
+    #mobile-greeting{display:flex!important}
     .logo .ltext,.logo .lsub{display:none}
   }
 
@@ -104,39 +104,6 @@
   .lp-compare td.ok{color:#00d4aa}
   .lp-stack{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:52px}
   .lp-stack-pill{background:rgba(79,168,255,.07);border:1px solid rgba(79,168,255,.18);border-radius:20px;padding:7px 16px;font-family:var(--fm);font-size:11px;color:#a0c8ff;letter-spacing:.5px}
-
-  /* ── Architecture RAG Dual ──────────────────── */
-  .lp-rag-dual{margin-top:24px;padding-top:24px;border-top:1px solid rgba(30,45,61,.95)}
-  .lp-rag-dual-h{font-family:var(--fs);font-size:18px;color:#ffffff;margin:0 0 8px;font-weight:600}
-  .lp-rag-dual-intro{font-size:13px;color:#b8cdd8;margin:0 0 18px;line-height:1.55}
-  .lp-rag-dual-intro strong{color:#ffffff;font-weight:600}
-  .lp-rag-block{border-radius:12px;padding:16px 18px;margin-bottom:12px;border:1px solid}
-  .lp-rag-strict{background:rgba(0,212,170,.04);border-color:rgba(0,212,170,.25)}
-  .lp-rag-enrichi{background:rgba(255,180,80,.04);border-color:rgba(255,180,80,.25)}
-  .lp-rag-tag{font-family:var(--fm);font-size:10.5px;font-weight:700;letter-spacing:.6px;margin-bottom:8px;line-height:1.4}
-  .lp-rag-strict .lp-rag-tag{color:#00d4aa}
-  .lp-rag-enrichi .lp-rag-tag{color:#ffb450}
-  .lp-rag-desc{font-size:13px;color:#d0e4ee;line-height:1.6;margin-bottom:8px}
-  .lp-rag-desc strong{color:#ffffff;font-weight:600}
-  .lp-rag-meta{font-family:var(--fm);font-size:10.5px;color:#a0bbd0;line-height:1.5;letter-spacing:.2px}
-  .lp-rag-engine{margin-top:14px;padding:12px 16px;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.18);border-radius:10px;font-size:12.5px;color:#d0e4ee;line-height:1.55}
-  .lp-rag-engine strong{color:#ffffff;font-weight:600}
-
-  /* Bouton + d'info RAG Dual + Modal */
-  .rag-info-btn{background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.3);color:#00d4aa;font-family:var(--fm);font-size:10.5px;font-weight:600;letter-spacing:.4px;padding:3px 10px;border-radius:14px;cursor:pointer;transition:all .18s;white-space:nowrap}
-  .rag-info-btn:hover{background:rgba(0,212,170,.15);border-color:rgba(0,212,170,.5);transform:translateY(-1px)}
-  .rag-info-btn:active{transform:translateY(0)}
-  #modal-rag-dual{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);padding:16px;overflow-y:auto;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-  #modal-rag-dual.open{display:flex;align-items:flex-start;justify-content:center;animation:ragModalFade .25s ease both}
-  @keyframes ragModalFade{from{opacity:0}to{opacity:1}}
-  .rag-modal-card{background:#0b0f14;border:1px solid rgba(30,45,61,.95);border-radius:16px;max-width:680px;width:100%;margin:5vh auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
-  .rag-modal-head{padding:18px 22px;border-bottom:1px solid rgba(30,45,61,.95);display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .rag-modal-title{font-family:var(--fs);font-size:17px;color:#fff;font-weight:600;margin:0;line-height:1.3}
-  .rag-modal-close{background:none;border:1px solid rgba(255,255,255,.15);color:#b8cdd8;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;transition:all .18s;flex-shrink:0}
-  .rag-modal-close:hover{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.3)}
-  .rag-modal-body{padding:20px 22px}
-  .rag-modal-intro{font-size:13px;color:#b8cdd8;margin:0 0 16px;line-height:1.55}
-  .rag-modal-intro strong{color:#fff;font-weight:600}
   .lp-sec-rgpd{background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12);border-radius:16px;padding:24px 28px;margin-bottom:52px}
   .lp-pill-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:12px}
   .lp-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:#d0e4ee;white-space:nowrap}
@@ -766,55 +733,13 @@
         <p>Pour les développeurs et responsables SI qui veulent comprendre l'architecture technique.</p>
         <div class="lp-stack">
           <span class="lp-stack-pill">IA hybride (Rule Engine + ML + RL)</span>
-          <span class="lp-stack-pill">Agent NGAP n8n · RAG Dual</span>
+          <span class="lp-stack-pill">Agent NGAP n8n + RAG BM25</span>
           <span class="lp-stack-pill">AES-256-GCM</span>
           <span class="lp-stack-pill">Sync temps réel PC / mobile</span>
           <span class="lp-stack-pill">PWA offline first</span>
           <span class="lp-stack-pill">VRPTW + OSRM multi-mirrors</span>
           <span class="lp-stack-pill">Scoring compliance 4 piliers</span>
           <span class="lp-stack-pill">Moteur auto-correction audit trail</span>
-        </div>
-
-        <!-- Architecture RAG Dual — détail explicite -->
-        <div class="lp-rag-dual">
-          <h4 class="lp-rag-dual-h">Architecture RAG Dual — séparation médico-légale</h4>
-          <p class="lp-rag-dual-intro">
-            AMI utilise <strong>deux bases de connaissance distinctes</strong> avec marquage explicite,
-            pour garantir l'opposabilité en audit CPAM.
-          </p>
-
-          <div class="lp-rag-block lp-rag-strict">
-            <div class="lp-rag-tag">[247 STRICT — SOURCE DE VÉRITÉ NGAP — OPPOSABLE EN AUDIT CPAM]</div>
-            <div class="lp-rag-desc">
-              Ces informations sont 100% sourcées depuis le référentiel NGAP officiel
-              (ameli.fr, Légifrance UNCAM, articles CSS).
-              <strong>Elles font foi pour toute cotation et tout calcul tarifaire.</strong>
-            </div>
-            <div class="lp-rag-meta">
-              247 chunks vérifiés · Lettres-clés · Forfaits BSI/DI · Actes Chap I-II ·
-              Article 11B · CIR-9/2025 · IPA (avenant 9) · ALD (D.322-1 CSS) · PRADO
-            </div>
-          </div>
-
-          <div class="lp-rag-block lp-rag-enrichi">
-            <div class="lp-rag-tag">[850 ENRICHI — PÉDAGOGIE / CONTEXTE — NON OPPOSABLE]</div>
-            <div class="lp-rag-desc">
-              Ces informations sont des aides à la compréhension : cas pratiques illustratifs,
-              exemples de tournées, contexte clinique. Elles ne peuvent pas servir de base à une
-              cotation officielle.
-              <strong>En cas de contradiction avec [STRICT], la section [STRICT] prévaut.</strong>
-            </div>
-            <div class="lp-rag-meta">
-              850 chunks pédagogiques · Cas pratiques · Exemples cliniques ·
-              Vulgarisation · Contexte conversationnel pour l'IA
-            </div>
-          </div>
-
-          <div class="lp-rag-engine">
-            ⚙️ <strong>Le moteur de calcul</strong> (Recalcul NGAP Officiel) utilise <strong>uniquement</strong>
-            le référentiel vérifié de 242 entrées sourcées. Aucun chunk pédagogique ne pollue jamais
-            la chaîne de calcul médico-légale.
-          </div>
         </div>
       </div>
     </details>
@@ -898,7 +823,6 @@
       <button class="adm-tab-btn"    data-tab="logs"     onclick="admTab('logs')"     style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🔍 Logs d'audit</button>
       <button class="adm-tab-btn"    data-tab="sante"    onclick="admTab('sante')"    style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🖥️ Santé système</button>
       <button class="adm-tab-btn"    data-tab="ngap"     onclick="admTab('ngap')"     style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">⚖️ NGAP</button>
-      <button class="adm-tab-btn"    data-tab="incidents" onclick="admTab('incidents')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🚨 Incidents <span id="adm-inc-badge" style="display:none;background:#dc2626;color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></button>
       <button class="adm-tab-btn"    data-tab="messages" onclick="admTab('messages')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">💬 Messages <span id="adm-msg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></button>
     </div>
 
@@ -1040,34 +964,6 @@
       </div>
     </div>
 
-    <!-- ═══ ONGLET : INCIDENTS RGPD <72h ═══ -->
-    <div class="adm-tab-section" data-tab="incidents" style="display:none">
-      <div class="adm-notice" style="margin-bottom:14px"><span style="font-size:18px;flex-shrink:0">🛡️</span><p><strong>Plan d'incident RGPD — Notification CNIL obligatoire sous 72h.</strong> Cette table affiche tous les incidents de sécurité détectés (manuel + automatique). Le compteur deadline passe en rouge à <strong>moins de 12h</strong> avant l'échéance CNIL. Référence procédure : <code>INCIDENT_RESPONSE.md</code></p></div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-        <div class="lbl">🚨 Incidents détectés</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <select onchange="incFilterStatus(this.value)" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
-            <option value="open" selected>🔴 Ouverts</option>
-            <option value="">Tous statuts</option>
-            <option value="investigating">🔍 En enquête</option>
-            <option value="resolved">✅ Résolus</option>
-            <option value="notified">📨 CNIL notifiée</option>
-            <option value="dismissed">⚫ Rejetés</option>
-          </select>
-          <select onchange="incFilterSeverity(this.value)" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
-            <option value="">Toutes sévérités</option>
-            <option value="critical">🚨 CRITICAL</option>
-            <option value="high">🟠 HIGH</option>
-            <option value="medium">🔵 MEDIUM</option>
-            <option value="low">⚪ LOW</option>
-          </select>
-          <button class="bs bsm" onclick="loadAdmIncidents()" style="padding:8px 16px;font-size:12px">↻ Actualiser</button>
-        </div>
-      </div>
-      <div id="adm-incidents"><div class="empty" style="padding:24px 0"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:10px">Chargement...</p></div></div>
-    </div>
-
     <!-- ═══ ONGLET : MESSAGES ═══ -->
     <div class="adm-tab-section" data-tab="messages" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
@@ -1188,155 +1084,6 @@
   </div>
 </div>
 
-<!-- ═══ MODAL : SIGNALER UN INCIDENT (infirmière + admin) ═══ -->
-<div id="incident-modal" style="position:fixed;inset:0;z-index:800;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.88);backdrop-filter:blur(8px);padding:20px;overflow-y:auto">
-  <div style="background:var(--c);border:2px solid rgba(220,38,38,.4);border-radius:var(--rl);padding:24px;width:100%;max-width:560px;box-shadow:var(--sh);max-height:90vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-      <div style="width:44px;height:44px;background:rgba(220,38,38,.15);border-radius:10px;display:grid;place-items:center;font-size:22px;flex-shrink:0">🚨</div>
-      <div style="flex:1">
-        <div style="font-family:var(--fs);font-size:20px;color:#dc2626">Signaler un incident sécurité</div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px">Plan RGPD/CNIL — Notification obligatoire sous 72h</div>
-      </div>
-      <button onclick="closeIncidentModal()" style="background:none;border:none;color:var(--m);cursor:pointer;font-size:20px;padding:4px;line-height:1">✕</button>
-    </div>
-
-    <div class="adm-notice" style="margin:14px 0;background:rgba(245,158,11,.05);border-color:rgba(245,158,11,.25)">
-      <span style="font-size:16px;flex-shrink:0">⚠️</span>
-      <p style="font-size:12px"><strong>N'incluez aucune donnée patient identifiable</strong> dans ce formulaire. Pour une fuite confirmée de données patients, sélectionnez la sévérité <strong>CRITICAL</strong> — l'administration sera notifiée immédiatement.</p>
-    </div>
-
-    <div class="g2" style="margin-bottom:12px">
-      <div class="af">
-        <label for="inc-type">Type d'incident</label>
-        <select id="inc-type" name="incident_type">
-          <option value="unauthorized">🔓 Accès non autorisé</option>
-          <option value="data_breach">💥 Fuite de données</option>
-          <option value="data_loss">🗑️ Perte de données</option>
-          <option value="service_down">⛔ Service indisponible</option>
-          <option value="vulnerability">🔍 Vulnérabilité découverte</option>
-          <option value="unknown">❓ Indéterminé</option>
-        </select>
-      </div>
-      <div class="af">
-        <label for="inc-severity">Sévérité</label>
-        <select id="inc-severity" name="severity">
-          <option value="low">⚪ LOW — Notable, sans risque immédiat</option>
-          <option value="medium" selected>🔵 MEDIUM — Surveillance renforcée</option>
-          <option value="high">🟠 HIGH — Notification CNIL probable</option>
-          <option value="critical">🚨 CRITICAL — Notification CNIL OBLIGATOIRE</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="af" style="margin-bottom:12px">
-      <label for="inc-summary">Résumé court <span style="color:var(--d)">*</span></label>
-      <input type="text" id="inc-summary" name="incident_summary" placeholder="Ex : Mots de passe affichés en clair dans les logs frontend" maxlength="200">
-      <div style="font-size:11px;color:var(--m);margin-top:4px">Min. 10 caractères — phrase claire</div>
-    </div>
-
-    <div class="af" style="margin-bottom:12px">
-      <label for="inc-impact">Impact estimé</label>
-      <input type="text" id="inc-impact" name="incident_impact" placeholder="Ex : Tous les utilisateurs de la dernière heure" maxlength="200">
-    </div>
-
-    <div class="af" style="margin-bottom:12px">
-      <label for="inc-affected">Nombre de personnes potentiellement impactées</label>
-      <input type="number" id="inc-affected" name="incident_affected" min="0" max="100000" value="0">
-    </div>
-
-    <div class="af" style="margin-bottom:14px">
-      <label for="inc-details">Détails techniques (chiffrés AES-256-GCM côté serveur)</label>
-      <textarea id="inc-details" name="incident_details" placeholder="Étapes pour reproduire, navigateur/appareil, heure exacte, captures d'écran (description)…" style="min-height:100px" maxlength="2000"></textarea>
-    </div>
-
-    <div class="msg o" id="inc-msg-ok" style="display:none"></div>
-    <div class="msg e" id="inc-msg-err" style="display:none"></div>
-
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-      <button class="btn bp" id="btn-inc-submit" onclick="submitIncident()" style="background:linear-gradient(135deg,#dc2626,#b91c1c);font-weight:600;flex:1;justify-content:center">
-        <span>🚨</span> Envoyer le signalement
-      </button>
-      <button class="btn bs" onclick="closeIncidentModal()">Annuler</button>
-    </div>
-    <div id="inc-deadline" style="margin-top:8px;text-align:center;font-size:11px;color:var(--m);font-family:var(--fm)"></div>
-  </div>
-</div>
-
-<!-- ═══ MODAL : NOTIFIER CNIL (admin uniquement) ═══ -->
-<div id="inc-notify-modal" style="position:fixed;inset:0;z-index:810;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.88);backdrop-filter:blur(8px);padding:20px">
-  <div style="background:var(--c);border:2px solid rgba(59,130,246,.4);border-radius:var(--rl);padding:24px;width:100%;max-width:520px;box-shadow:var(--sh)">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-      <div style="width:40px;height:40px;background:rgba(59,130,246,.15);border-radius:10px;display:grid;place-items:center;font-size:20px;flex-shrink:0">📨</div>
-      <div style="flex:1">
-        <div style="font-family:var(--fs);font-size:20px">Marquer comme notifié CNIL</div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px">Cette action enregistre l'incident comme officiellement notifié</div>
-      </div>
-    </div>
-
-    <div class="adm-notice" style="margin:14px 0">
-      <span style="font-size:16px;flex-shrink:0">📋</span>
-      <p style="font-size:12px">Avant de cliquer ici, assurez-vous d'avoir effectué la notification sur le téléservice <a href="https://notifications.cnil.fr/notifications/index" target="_blank" rel="noopener" style="color:var(--a);text-decoration:underline">notifications.cnil.fr</a> et d'avoir reçu un numéro d'enregistrement.</p>
-    </div>
-
-    <div style="background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px 12px;margin-bottom:14px">
-      <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-bottom:2px">INCIDENT</div>
-      <div id="inc-notify-summary" style="font-size:13px;color:var(--t);line-height:1.4"></div>
-    </div>
-
-    <input type="hidden" id="inc-notify-id">
-
-    <div class="af" style="margin-bottom:12px">
-      <label for="inc-notify-num">N° d'enregistrement CNIL <span style="color:var(--d)">*</span></label>
-      <input type="text" id="inc-notify-num" name="cnil_registration_number" placeholder="Ex : 2026-VD-0001234" maxlength="50">
-      <div style="font-size:11px;color:var(--m);margin-top:4px">Format reçu après soumission sur notifications.cnil.fr</div>
-    </div>
-
-    <div class="af" style="margin-bottom:14px">
-      <label for="inc-notify-comment">Commentaire (optionnel)</label>
-      <textarea id="inc-notify-comment" name="cnil_comment" placeholder="Date d'envoi, contact CNIL référent, mesures correctives appliquées…" style="min-height:80px" maxlength="1000"></textarea>
-    </div>
-
-    <div class="msg e" id="inc-notify-err" style="display:none"></div>
-
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn bp" onclick="incSubmitNotify()" style="background:linear-gradient(135deg,#3b82f6,#2563eb);flex:1;justify-content:center">
-        <span>📨</span> Confirmer la notification
-      </button>
-      <button class="btn bs" onclick="incCloseNotifyModal()">Annuler</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ MODAL : RÉSOUDRE UN INCIDENT (admin uniquement) ═══ -->
-<div id="inc-resolve-modal" style="position:fixed;inset:0;z-index:810;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.88);backdrop-filter:blur(8px);padding:20px">
-  <div style="background:var(--c);border:2px solid rgba(16,185,129,.4);border-radius:var(--rl);padding:24px;width:100%;max-width:520px;box-shadow:var(--sh)">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-      <div style="width:40px;height:40px;background:rgba(16,185,129,.15);border-radius:10px;display:grid;place-items:center;font-size:20px;flex-shrink:0">✅</div>
-      <div style="flex:1">
-        <div style="font-family:var(--fs);font-size:20px">Résoudre cet incident</div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px">Documentez les mesures correctives appliquées</div>
-      </div>
-    </div>
-
-    <input type="hidden" id="inc-resolve-id">
-
-    <div class="af" style="margin-bottom:14px">
-      <label for="inc-resolve-text">Description de la résolution <span style="color:var(--d)">*</span></label>
-      <textarea id="inc-resolve-text" name="resolution_text" placeholder="Cause racine identifiée, correctif déployé, vérifications effectuées, mesures préventives mises en place…" style="min-height:120px" maxlength="1000"></textarea>
-      <div style="font-size:11px;color:var(--m);margin-top:4px">Min. 10 caractères — sera conservé pour le retour d'expérience (REX)</div>
-    </div>
-
-    <div class="msg e" id="inc-resolve-err" style="display:none"></div>
-
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn bv" onclick="incSubmitResolve()" style="background:linear-gradient(135deg,#10b981,#059669);flex:1;justify-content:center">
-        <span>✅</span> Marquer comme résolu
-      </button>
-      <button class="btn bs" onclick="incCloseResolveModal()">Annuler</button>
-    </div>
-  </div>
-</div>
-
 <!-- ASSISTANT VOCAL -->
 <button id="voicebtn" title="Assistant vocal" onclick="toggleVoice()">🎤</button>
 <div id="voice-toast">
@@ -1396,11 +1143,10 @@
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
       <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique <span class="ni-alert-badge orange" id="nav-his-badge" style="display:none"></span></div>
       <div class="ni nurse-only" data-v="outils-ordos"><span class="nic">💊</span> Ordonnances <span id="ordo-nav-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
-      <div class="ni" data-v="pilulier"><span class="nic">💊</span> Semainier / Pilulier</div>
-      <div class="ni" data-v="constantes"><span class="nic">📊</span> Constantes patients</div>
       <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
       <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
-      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
+      <div class="ni" data-v="pilulier"><span class="nic">💊</span> Semainier / Pilulier</div>
+      <div class="ni" data-v="constantes"><span class="nic">📊</span> Constantes patients</div>
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Outils pratiques</div>
@@ -1410,6 +1156,7 @@
       <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
       <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
       <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
+      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
       <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
       <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
       <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
@@ -1492,10 +1239,7 @@
         <h1 class="pt" style="margin-bottom:0">Cotation <em>intelligente</em></h1>
         <button onclick="resetOnboarding()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
       </div>
-      <p class="ps" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span>Agent IA NGAP · RAG Dual (247 STRICT + 850 ENRICHI) · Tarifs 2026</span>
-        <button type="button" class="rag-info-btn" onclick="openRagDualModal()" aria-label="En savoir plus sur l'architecture RAG Dual">+ d'info</button>
-      </p>
+      <p class="ps">Agent IA NGAP · RAG BM25 · Tarifs 2026</p>
 
       <div class="card cot-form-premium">
 
@@ -1642,18 +1386,18 @@
 
         <div class="lbl" style="margin-bottom:16px">Importez depuis un fichier / texte</div>
         <div class="drop-zone" id="drop-zone">
-          <input type="file" id="imp-file" accept=".ics,.ical,.ifb,.vcs,.csv,.tsv,.xlsx,.json,.txt" onchange="(typeof handleFileSelect==='function'?handleFileSelect(this):importCalendar())">
+          <input type="file" id="imp-file" accept=".ics,.csv,.xlsx,.json,.txt" onchange="handleFileSelect(this)">
           <div class="drop-icon">📂</div>
           <div class="drop-text"><strong>Sélectionner un fichier</strong> ou glisser-déposer ici</div>
-          <div class="drop-formats">Formats : .ics · .csv · .json · .txt · copier-coller · Google / Apple / Outlook / Thunderbird / Doctolib</div>
+          <div class="drop-formats">Formats : .ics · .csv · .json · .txt · copier-coller</div>
         </div>
         <div style="margin-top:16px">
           <div class="lbl">Ou coller du texte directement</div>
-          <div class="f" style="margin-bottom:12px"><textarea id="imp-text" placeholder="Collez votre planning ici — formats acceptés : ICS, CSV, JSON, ou texte libre multi-lignes avec labels (Tel:, Né:, Sécu:, Médecin:, Pathologies:, Adresse:...)" style="min-height:120px"></textarea></div>
+          <div class="f" style="margin-bottom:12px"><textarea id="imp-text" placeholder="Collez votre planning ici (format libre, JSON, CSV...)..." style="min-height:120px"></textarea></div>
         </div>
         <div class="ar-row">
           <button class="btn bp" id="btn-imp" onclick="importCalendar()"><span>📥</span> Importer</button>
-          <button class="btn bs" onclick="$('imp-text').value='';$('imp-file').value='';$('imp-result').classList.remove('show');var z=$('drop-zone');if(z){var t=z.querySelector('.drop-text');if(t)t.innerHTML='<strong>Sélectionner un fichier</strong> ou glisser-déposer ici';z.style.borderColor='';z.style.background=''}">↺ Effacer</button>
+          <button class="btn bs" onclick="$('imp-text').value='';$('imp-file').value='';$('imp-result').classList.remove('show')">↺ Effacer</button>
         </div>
       </div>
       <div id="imp-result" class="res"></div>
@@ -2905,22 +2649,6 @@
       <h1 class="pt">Contact <em>Administrateur</em></h1>
       <p class="ps">Signalez un bug, demandez une amélioration ou posez une question à l'équipe technique</p>
 
-      <!-- 🚨 Carte spéciale Incident sécurité — visibilité haute -->
-      <div class="card nurse-only" style="margin-bottom:16px;border:2px solid rgba(220,38,38,.3);background:linear-gradient(135deg,rgba(220,38,38,.03),rgba(245,158,11,.03))">
-        <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
-          <div style="font-size:28px;flex-shrink:0">🚨</div>
-          <div style="flex:1;min-width:200px">
-            <div class="ct" style="color:#dc2626;margin-bottom:4px">Incident de sécurité</div>
-            <p style="margin:0 0 10px 0;font-size:13px;color:var(--m);line-height:1.5">
-              Pour signaler une <strong>fuite de données</strong>, un <strong>accès non autorisé</strong>, une <strong>perte de données patients</strong> ou toute <strong>vulnérabilité</strong> détectée. Différent d'un simple bug — déclenche le plan de réponse RGPD/CNIL.
-            </p>
-            <button class="btn bp" onclick="openIncidentModal()" style="background:linear-gradient(135deg,#dc2626,#b91c1c);font-weight:600">
-              <span>🚨</span> Signaler un incident
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- Formulaire d'envoi -->
       <div class="card">
         <div class="adm-notice" style="margin-bottom:20px"><span style="font-size:18px;flex-shrink:0">💬</span><p>Votre message sera transmis à l'équipe d'administration. Vous recevrez une réponse directement dans cet espace. <strong>N'incluez jamais de données patient dans vos messages.</strong></p></div>
@@ -3481,7 +3209,6 @@
 <script src="js/security.js?v=3.8"></script><!-- RGPD + AES + PIN + Consentement -->
 <script src="js/admin.js?v=3.8"></script>
 <script src="js/admin-ngap.js?v=1.3"></script><!-- ⚖️ Édition référentiel NGAP (admin, versioning, rollback) -->
-<script src="js/incident.js?v=1.0"></script><!-- 🚨 Plan incident RGPD/CNIL <72h : modal infirmière + dashboard admin -->
 <script src="js/profil.js?v=3.9"></script>
 <script src="js/cotation.js?v=3.9"></script><!-- ⚡ v3.9 : hook check consentement avant acte -->
 <script src="js/contact.js?v=3.8"></script>
@@ -4106,18 +3833,6 @@ document.addEventListener('click', function(e) {
       }, 600);
     };
 
-    // 🔔 Garde-fou : si auth.js a déjà appelé showApp() AVANT que ce hook ne soit
-    // installé (ex: rechargement page avec session active, hot-reload, race condition),
-    // on initialise quand même les extras topbar pour que la cloche apparaisse.
-    // Détection : le conteneur #app est déjà affiché.
-    setTimeout(function() {
-      var appEl = document.getElementById('app');
-      var notifBtn = document.getElementById('top-notif-btn');
-      if (appEl && appEl.style.display !== 'none' && notifBtn && notifBtn.style.display === 'none') {
-        if (typeof window._initTopbarExtras === 'function') window._initTopbarExtras();
-      }
-    }, 800);
-
     // Chargement auto KPIs rapport + filtre hist à la navigation
     document.addEventListener('ui:navigate', function(e) {
       const view = e.detail?.view;
@@ -4670,72 +4385,5 @@ window._initTopbarExtras = function() {
   });
 })();
 </script>
-
-<!-- MODAL ARCHITECTURE RAG DUAL -->
-<div id="modal-rag-dual" role="dialog" aria-modal="true" aria-labelledby="rag-modal-title" onclick="if(event.target===this)closeRagDualModal()">
-  <div class="rag-modal-card" role="document">
-    <div class="rag-modal-head">
-      <h3 class="rag-modal-title" id="rag-modal-title">Architecture RAG Dual — séparation médico-légale</h3>
-      <button type="button" class="rag-modal-close" onclick="closeRagDualModal()" aria-label="Fermer">×</button>
-    </div>
-    <div class="rag-modal-body">
-      <p class="rag-modal-intro">
-        AMI utilise <strong>deux bases de connaissance distinctes</strong> avec marquage explicite,
-        pour garantir l'opposabilité en audit CPAM.
-      </p>
-
-      <div class="lp-rag-block lp-rag-strict">
-        <div class="lp-rag-tag">[247 STRICT — SOURCE DE VÉRITÉ NGAP — OPPOSABLE EN AUDIT CPAM]</div>
-        <div class="lp-rag-desc">
-          Ces informations sont 100% sourcées depuis le référentiel NGAP officiel
-          (ameli.fr, Légifrance UNCAM, articles CSS).
-          <strong>Elles font foi pour toute cotation et tout calcul tarifaire.</strong>
-        </div>
-        <div class="lp-rag-meta">
-          247 chunks vérifiés · Lettres-clés · Forfaits BSI/DI · Actes Chap I-II ·
-          Article 11B · CIR-9/2025 · IPA (avenant 9) · ALD (D.322-1 CSS) · PRADO
-        </div>
-      </div>
-
-      <div class="lp-rag-block lp-rag-enrichi">
-        <div class="lp-rag-tag">[850 ENRICHI — PÉDAGOGIE / CONTEXTE — NON OPPOSABLE]</div>
-        <div class="lp-rag-desc">
-          Ces informations sont des aides à la compréhension : cas pratiques illustratifs,
-          exemples de tournées, contexte clinique. Elles ne peuvent pas servir de base à une
-          cotation officielle.
-          <strong>En cas de contradiction avec [STRICT], la section [STRICT] prévaut.</strong>
-        </div>
-        <div class="lp-rag-meta">
-          850 chunks pédagogiques · Cas pratiques · Exemples cliniques ·
-          Vulgarisation · Contexte conversationnel pour l'IA
-        </div>
-      </div>
-
-      <div class="lp-rag-engine">
-        ⚙️ <strong>Le moteur de calcul</strong> (Recalcul NGAP Officiel) utilise <strong>uniquement</strong>
-        le référentiel vérifié de 242 entrées sourcées. Aucun chunk pédagogique ne pollue jamais
-        la chaîne de calcul médico-légale.
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-function openRagDualModal(){
-  var m = document.getElementById('modal-rag-dual');
-  if(m){ m.classList.add('open'); document.body.style.overflow='hidden'; }
-}
-function closeRagDualModal(){
-  var m = document.getElementById('modal-rag-dual');
-  if(m){ m.classList.remove('open'); document.body.style.overflow=''; }
-}
-document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape'){
-    var m = document.getElementById('modal-rag-dual');
-    if(m && m.classList.contains('open')) closeRagDualModal();
-  }
-});
-</script>
-
 </body>
 </html>

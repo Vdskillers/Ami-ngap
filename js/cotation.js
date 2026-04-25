@@ -575,8 +575,6 @@ async function cotationCabinet(txt) {
 
   } catch(e) {
     _clear();
-    // Re-cotation cabinet en erreur → retire le FAB
-    try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
     $('cerr').style.display = 'flex';
     $('cerr-m').textContent = e.message;
     $('res-cot').classList.add('show');
@@ -863,49 +861,6 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
   // cotationIdx et invoice_number ne bypasses PAS la modale — ils servent uniquement à l'upsert.
   if (window._editingCotation && window._editingCotation._userChose) return true;
 
-  // ── BYPASS FAB « Re-coter » ────────────────────────────────────────────
-  // Si la cotation est déclenchée par le FAB (et non par un clic manuel sur
-  // « Coter avec l'IA »), on choisit automatiquement « Mettre à jour » sans
-  // afficher de modale — c'est l'intention implicite de l'utilisateur.
-  // Cas : Bastien clique sur des chips puis sur le FAB → veut MAJ, pas une nouvelle ligne.
-  if (window._cotFromReCoteFAB) {
-    try {
-      const _patNomCheck = (gv('f-pt') || '').trim();
-      const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
-      if (_patNomCheck && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-        const _allRows = await _idbGetAll(PATIENTS_STORE);
-        const _nomLow  = _patNomCheck.toLowerCase();
-        const _foundRow = _allRows.find(r =>
-          ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
-          ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
-        );
-        if (_foundRow && typeof _dec === 'function') {
-          const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
-          if (Array.isArray(_foundPat.cotations)) {
-            const _existIdx = _foundPat.cotations.findIndex(c =>
-              (c.date || '').slice(0, 10) === _dateCheck.slice(0, 10)
-            );
-            if (_existIdx >= 0) {
-              const _existCot = _foundPat.cotations[_existIdx];
-              window._editingCotation = {
-                patientId:      _foundRow.id,
-                cotationIdx:    _existIdx,
-                invoice_number: _existCot.invoice_number || null,
-                _userChose:     true, // bypass définitif pour cette session
-                _fromTournee:   (window._editingCotation || {})._fromTournee || false,
-                _fromFAB:       true,
-                _prevActes:     (_existCot.actes || []).map(a => ({
-                  code: a.code, nom: a.nom || '', total: a.total || 0,
-                })),
-              };
-            }
-          }
-        }
-      }
-    } catch (_e) { console.warn('[cotation] FAB bypass doublon KO:', _e.message); }
-    return true; // Continuer le pipeline directement, sans modale
-  }
-
   try {
     const _patNomCheck = (gv('f-pt') || '').trim();
     const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
@@ -988,11 +943,6 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
         invoice_number: _existCot.invoice_number || null,
         _userChose:     true, // choix explicite utilisateur → bypass la modale au prochain appel
         _fromTournee:   (window._editingCotation || {})._fromTournee || false,
-        // Mémoriser les codes de l'ancienne cotation pour détecter régressions
-        // (ex: AMI4 disparu après re-cotation avec une description incomplète)
-        _prevActes:     (_existCot.actes || []).map(a => ({
-          code: a.code, nom: a.nom || '', total: a.total || 0,
-        })),
       };
       onUpdate();
     };
@@ -1187,10 +1137,6 @@ async function _cotationPipeline() {
                   cotationIdx:  _existIdx,
                   invoice_number: _existCot.invoice_number || null,
                   _autoDetected: true, // flag : positionné automatiquement (pas par l'utilisateur)
-                  // Mémoriser les codes de l'ancienne cotation pour détecter régressions
-                  _prevActes:   (_existCot.actes || []).map(a => ({
-                    code: a.code, nom: a.nom || '', total: a.total || 0,
-                  })),
                 };
               }
             }
@@ -1226,93 +1172,29 @@ async function _cotationPipeline() {
     // La photo / signature ne sont JAMAIS transmises — uniquement leur hash
     // La géolocalisation est floue (département uniquement — RGPD compatible)
     const _sigEl = document.querySelector('[data-last-sig-hash]');
-    let _sigHash = _sigEl?.dataset?.lastSigHash || '';
-    let _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
-    let _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
+    const _sigHash = _sigEl?.dataset?.lastSigHash || '';
+    const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
+    const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
 
-    // ⚡ Préserver une preuve FORTE existante lors d'une re-cotation.
-    // Si la cotation actuelle (en mémoire) a déjà été signée, on conserve
-    // la métadonnée preuve_soin pour que le worker ne dégrade pas en STANDARD.
-    // Sources possibles, par priorité décroissante :
-    //   1. Le DOM (data-last-sig-hash) — signature posée dans la session courante
-    //   2. _lastCotData.preuve_soin — dernière cotation rendue dans renderCot()
-    //   3. _editingCotation.cotation.preuve_soin — cotation chargée pour édition
-    if (!_sigHash) {
-      const _lastPreuve = (window._lastCotData?.preuve_soin)
-        || (window._editingCotation?.cotation?.preuve_soin)
-        || null;
-      if (_lastPreuve && _lastPreuve.force_probante === 'FORTE' && _lastPreuve.hash_preuve) {
-        _sigHash     = _lastPreuve.hash_preuve;
-        _preuveType  = _lastPreuve.type || 'signature_patient';
-        _preuveForce = 'FORTE';
-      }
-    }
-
-    // Si on est passé par le FAB « Re-coter avec les ajouts », on force N8N :
-    // l'utilisateur a explicitement cliqué pour AVOIR une vraie correction IA,
-    // pas un fallback local.
-    const _viaFab = !!window._cotFromReCoteFAB;
-
-    // ⚡ « Coter avec l'IA » FORCE N8N PAR DÉFAUT (intention utilisateur claire).
-    // Stratégie en deux temps :
-    //   1) 1er appel avec _force_n8n: true → tente vraiment N8N (bypass cache,
-    //      circuit breaker, smart engine). Si N8N répond → on a la vraie IA.
-    //   2) Si N8N indisponible (502) → 2ème appel automatique SANS _force_n8n
-    //      → le worker bascule sur Smart Engine v8 + RL + fallback NGAP local.
-    // Garantit toujours une réponse, tout en privilégiant l'IA réelle.
-    // L'utilisateur ne voit pas la différence et n'a rien à cliquer.
-
-    // ⚡ PAYLOAD N8N MINIMAL — N8N n'a besoin QUE des éléments pour calculer
-    // la cotation : texte (langage naturel), date, heure, exonération, ddn
-    // (pour majorations enfant). Tout le reste (infirmière, patient, prescripteur,
-    // preuve_soin, invoice_number) est connu côté frontend/worker et sera réinjecté
-    // dans la réponse APRÈS le calcul N8N.
-    // Bénéfices :
-    //   • payload 80% plus léger → temps réseau divisé par 5
-    //   • workflow N8N moins lourd à parser → moins de timeout
-    //   • RGPD : pas d'envoi inutile de données nominatives à l'IA
-    //   • réduction du cold-start sur Render
-    const _n8nPayload = {
-      mode: 'ngap',
-      texte: txt,
-      date_soin: gv('f-ds'),
-      heure_soin: gv('f-hs'),
-      exo: gv('f-exo'),
-      ddn: gv('f-ddn'),  // utile pour majorations enfant <7 ans
-      // ⚡ v3.10 — Bypass sauvegarde Postgres dans N8N
-      // Le worker Cloudflare sauvegarde déjà dans Supabase (_saveCotationNurse).
-      // La sauvegarde dans N8N (nœud "Sauvegarder en BDD") est un DOUBLON qui
-      // ralentit le workflow et provoque des timeouts 502 (cold-start Postgres).
-      // _skip_db:true → le nœud "Mode spécial ?" route vers la réponse directe
-      // sans toucher à Postgres. Le mode 'verify' marche grâce à ce même flag.
-      _skip_db: true,
-    };
-
-    // Méta-données conservées côté client — réinjectées dans la réponse pour
-    // la sauvegarde Supabase (ami-save-cotation) et le rendu (renderCot).
-    // PAS envoyées à N8N → réduit drastiquement la taille du payload.
-    const _clientMeta = {
-      // Identité infirmière (déjà connue côté worker via JWT, mais on la
-      // garde ici pour l'affichage immédiat et la sauvegarde IDB locale)
+    const d = await apiCall('/webhook/ami-calcul', {
+      mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
-      adeli:     u.adeli || '',
-      rpps:      u.rpps || '',
-      structure: u.structure || '',
-      // Couverture sociale (utilisée par le calcul des parts AMO/AMC)
-      amo: gv('f-amo'),
-      amc: gv('f-amc'),
-      regl: gv('f-regl'),
-      // Patient (champ f-pt → carnet patient)
-      patient_nom: (gv('f-pt') || '').trim(),
-      patient_id:  _prePatientId || null,
-      // Prescripteur
-      prescripteur_nom:  gv('f-pr') || '',
+      adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
+      ddn: gv('f-ddn'), amo: gv('f-amo'), amc: gv('f-amc'),
+      exo: gv('f-exo'), regl: gv('f-regl'),
+      date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
+      prescripteur_nom: gv('f-pr') || '',
       prescripteur_rpps: gv('f-pr-rp') || '',
       date_prescription: gv('f-pr-dt') || '',
-      prescripteur_id:   prescripteur_id || null,
-      // Numéro de facture (si édition d'une cotation existante)
-      invoice_number: _editRef?.invoice_number || null,
-      // Preuve soin (hash uniquement — RGPD-compliant)
+      ...(prescripteur_id ? { prescripteur_id } : {}),
+      // patient_nom → affiché dans l'historique (champ f-pt)
+      ...((gv('f-pt') || '').trim() ? { patient_nom: (gv('f-pt') || '').trim() } : {}),
+      // patient_id IDB → rattachement cotation ↔ fiche dans planning_patients
+      // Note : _prePatientId est résolu juste avant cet appel
+      ...(_prePatientId ? { patient_id: _prePatientId } : {}),
+      // invoice_number existant → le worker fera un PATCH au lieu d'un POST
+      ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
+      // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
       preuve_soin: {
         type:         _preuveType,
         timestamp:    new Date().toISOString(),
@@ -1320,99 +1202,8 @@ async function _cotationPipeline() {
         certifie_ide: true,
         force_probante: _preuveForce,
       },
-    };
-
-    let d;
-    let _usedFallback = false;
-    try {
-      // 1ère tentative : force N8N (vraie IA) avec payload minimal
-      d = await apiCall('/webhook/ami-calcul', {
-        ..._n8nPayload,
-        _force_n8n: true,
-        _client_meta: _clientMeta, // le worker peut utiliser pour la sauvegarde
-        ...(_viaFab ? { _from_fab: true } : {}),
-      });
-      // Si le worker renvoie ok:false avec _force_n8n:true → c'est aussi un échec
-      if (d && d.ok === false && d._force_n8n) {
-        throw new Error(d.error || 'force_n8n_failed');
-      }
-    } catch (_n8nErr) {
-      const errMsg = _n8nErr?.message || '';
-      const is502 = /502|service.*indisponible|n8n.*indisponible|n8n_unavailable|force_n8n_failed/i.test(errMsg);
-      if (!is502) {
-        // Erreur autre que N8N down → propager
-        throw _n8nErr;
-      }
-      // N8N down : retry avec Smart Engine v8 + fallback worker (toujours payload minimal)
-      console.info('[cotation] N8N indisponible → bascule sur Smart Engine v8 (worker)');
-      _usedFallback = true;
-      d = await apiCall('/webhook/ami-calcul', {
-        ..._n8nPayload,
-        _client_meta: _clientMeta,
-      });
-      // Marqueur visuel discret pour informer l'utilisateur
-      d.alerts = d.alerts || [];
-      d.alerts.unshift('ℹ️ N8N (IA distante) temporairement indisponible — cotation calculée par le moteur Smart Engine v8 du serveur.');
-    }
+    });
     if (d.error) throw new Error(d.error);
-
-    // ⚡ RÉINJECTION DES MÉTA-DONNÉES CÔTÉ CLIENT
-    // N8N a calculé la cotation pure (actes, total, parts). On enrichit
-    // maintenant la réponse avec les données qui n'ont pas été envoyées à N8N
-    // mais qui sont nécessaires à la sauvegarde et à l'affichage.
-    if (!d.patient_nom && _clientMeta.patient_nom)         d.patient_nom = _clientMeta.patient_nom;
-    if (!d.patient_id && _clientMeta.patient_id)           d.patient_id = _clientMeta.patient_id;
-    if (!d.infirmiere && _clientMeta.infirmiere)           d.infirmiere = _clientMeta.infirmiere;
-    if (!d.adeli && _clientMeta.adeli)                     d.adeli = _clientMeta.adeli;
-    if (!d.rpps && _clientMeta.rpps)                       d.rpps = _clientMeta.rpps;
-    if (!d.structure && _clientMeta.structure)             d.structure = _clientMeta.structure;
-    if (!d.prescripteur_nom && _clientMeta.prescripteur_nom)   d.prescripteur_nom = _clientMeta.prescripteur_nom;
-    if (!d.prescripteur_rpps && _clientMeta.prescripteur_rpps) d.prescripteur_rpps = _clientMeta.prescripteur_rpps;
-    if (!d.date_prescription && _clientMeta.date_prescription) d.date_prescription = _clientMeta.date_prescription;
-    if (!d.prescripteur_id && _clientMeta.prescripteur_id)     d.prescripteur_id = _clientMeta.prescripteur_id;
-    // ⚡ Preuve_soin : préserver la version la plus FORTE entre celle envoyée
-    // au worker (_clientMeta) et celle retournée. Évite qu'une re-cotation
-    // après signature renvoie STANDARD et écrase l'affichage de la signature.
-    const _metaPreuveForce = _clientMeta.preuve_soin?.force_probante === 'FORTE';
-    if (!d.preuve_soin || (_metaPreuveForce && d.preuve_soin?.force_probante !== 'FORTE')) {
-      d.preuve_soin = _clientMeta.preuve_soin;
-    }
-    if (!d.invoice_number && _clientMeta.invoice_number)       d.invoice_number = _clientMeta.invoice_number;
-    // amo/amc/regl : nécessaires pour les parts (si N8N ne les a pas calculées)
-    if (!d.amo && _clientMeta.amo)   d.amo  = _clientMeta.amo;
-    if (!d.amc && _clientMeta.amc)   d.amc  = _clientMeta.amc;
-    if (!d.regl && _clientMeta.regl) d.regl = _clientMeta.regl;
-
-    // ══ FALLBACK NGAP LOCAL ══
-    // Si N8N renvoie 0 acte (ou que des majorations), on tente d'extraire les
-    // codes NGAP directement depuis le textarea via _cotExtractNgapChips et le
-    // moteur local NGAPEngine. Évite le « Aucun acte détecté » sur des textes
-    // contenant des codes explicites mais pas de verbe d'action (ex. issu du FAB).
-    try {
-      const _CODES_MAJ = new Set(['DIM','NUIT','NUIT_PROF','IFD','IFI','MIE','MCI','IK']);
-      const _hasTech = (d.actes || []).some(a => !_CODES_MAJ.has(String(a.code||'').toUpperCase()));
-      if (!_hasTech && typeof _cotExtractNgapChips === 'function') {
-        const enriched = _cotEnrichWithLocalEngine(d, txt);
-        if (enriched && enriched.actes && enriched.actes.length > (d.actes||[]).length) {
-          // Conserver les métadonnées N8N (alerts, suggestions, cpam_simulation…)
-          // mais remplacer les actes/totaux par ceux du moteur local
-          Object.assign(d, {
-            actes:        enriched.actes,
-            total:        enriched.total,
-            part_amo:     enriched.part_amo,
-            part_amc:     enriched.part_amc,
-            part_patient: enriched.part_patient,
-            _local_engine_used: true,
-          });
-          // Marqueur visuel discret dans alerts
-          d.alerts = d.alerts || [];
-          d.alerts.unshift('ℹ️ Cotation calculée localement (moteur NGAP) — N8N indisponible ou texte sans verbe d\'action');
-        }
-      }
-    } catch (_engErr) {
-      console.warn('[cotation] Fallback NGAP local KO:', _engErr.message);
-    }
-
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
     if (d.invoice_number && typeof displayInvoiceNumber === 'function') {
       displayInvoiceNumber(d.invoice_number);
@@ -1427,14 +1218,6 @@ async function _cotationPipeline() {
         cotationIdx:    _existRef?.cotationIdx     ?? -1,
         invoice_number: d.invoice_number,
         _autoDetected:  _existRef?._autoDetected   || false,
-        // ⚡ FIX régression d'acte fantôme : on enregistre les actes de la
-        // cotation qui vient d'être affichée, PAS ceux de l'originale.
-        // Comme ça, à la prochaine re-cotation, on compare au DERNIER état
-        // affiché et non au plus ancien — évite de proposer en boucle de
-        // remettre des actes que l'utilisateur a sciemment retirés.
-        _prevActes:     Array.isArray(d.actes) && d.actes.length
-          ? d.actes.map(a => ({ code: a.code, nom: a.nom }))
-          : (_existRef?._prevActes || null),
       };
     }
     // ── Mémoriser l'heure de soin dans le cache persistant (analyse horaire Dashboard) ──
@@ -1582,52 +1365,6 @@ async function _cotationPipeline() {
       }
     } catch(_idbErr) { if (_idbErr.message !== '__SKIP_IDB__') console.warn('[cotation] IDB save KO:', _idbErr.message); }
 
-    // ── 🛡️ Vérification post-cotation Carnet → Historique des soins ────────
-    // Quand la cotation a été initiée depuis le Carnet patients
-    // (coterDepuisPatient → _editingCotation._fromCarnet:true), on vérifie
-    // après quelques secondes que la ligne est bien arrivée dans
-    // planning_patients (ce qui alimente l'Historique des soins).
-    // Si absente → relance ami-save-cotation avec upsert tri-critères
-    // côté worker (zéro risque de doublon).
-    try {
-      if ((_editRef?._fromCarnet || _editRef?._fromTournee) && d?.invoice_number && typeof _ensureCotationInHistorique === 'function') {
-        // Résoudre le patient_id IDB si pas encore connu
-        let _patIdEnsure = _editRef.patientId || null;
-        if (!_patIdEnsure) {
-          const _patNomE = (gv('f-pt') || '').trim();
-          if (_patNomE && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
-            const _rowsE = await _idbGetAll(PATIENTS_STORE);
-            const _lowE  = _patNomE.toLowerCase();
-            const _hitE  = _rowsE.find(r =>
-              ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_lowE) ||
-              ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_lowE)
-            );
-            if (_hitE) _patIdEnsure = _hitE.id;
-          }
-        }
-        const _ensureCot = {
-          actes:          d.actes || [],
-          total:          parseFloat(d.total || 0),
-          date_soin:      gv('f-ds') || new Date().toISOString().slice(0,10),
-          heure_soin:     gv('f-hs') || null,
-          soin:           (txt || '').slice(0, 200),
-          invoice_number: d.invoice_number,
-          source:         _editRef ? 'carnet_edit' : 'carnet_form',
-          patient_id:     _patIdEnsure || undefined,
-          patient_nom:    (gv('f-pt') || '').trim(),
-          part_amo:       parseFloat(d.part_amo || 0),
-          part_amc:       parseFloat(d.part_amc || 0),
-          part_patient:   parseFloat(d.part_patient || 0),
-        };
-        setTimeout(() => {
-          _ensureCotationInHistorique({
-            invoice_number: d.invoice_number,
-            cotation:       _ensureCot,
-          }).catch(() => {});
-        }, 4000);
-      }
-    } catch (_ensureErr) { console.warn('[cotation] Hook ensureHistorique KO:', _ensureErr.message); }
-
     // ── Déclencher la signature après cotation ──────────────────────────────
     // Dispatch ami:cotation_done pour signature.js + injection directe du bouton
     const _invoiceId = d.invoice_number || null;
@@ -1666,37 +1403,8 @@ async function _cotationPipeline() {
       }
 
       // Injection directe du bouton de signature dans la card résultat
-      // ⚡ Conditions d'affichage du bouton « Faire signer le patient » du bas :
-      //   - Pas déjà signé (sinon doublon avec le badge "Signé")
-      //   - Pas de bandeau CPAM avec bouton signer (sinon doublon visuel)
-      // On reproduit ICI la même logique que le bandeau CPAM dans renderCot() :
-      // un bouton « Faire signer le patient maintenant » est ajouté dans le bandeau
-      // CPAM si toutes ces conditions sont vraies :
-      //   - cpam.niveau existe et != 'OK'
-      //   - il reste des anomalies après filtrage des "preuve terrain"
-      //   - pas de preuve FORTE existante
-      //   - une anomalie restante mentionne "preuve terrain"
-      //   - invoice_number existe
-      // Si toutes ces conditions sont vraies → bouton CPAM affiché → on n'injecte
-      // PAS le bouton du bas (sinon doublon).
       const _cbody = $('cbody');
-      const _alreadySigned = d.preuve_soin?.force_probante === 'FORTE';
-
-      // Reproduire la logique de _filteredAnomalies / _showSignBtn de renderCot
-      const _isPreuveAnomaly_local = (txt) => /preuve\s+terrain|justificatif\s+opposable|absence.*[ée]l[ée]ment\s+justif/i.test(String(txt || ''));
-      const _hasPreuveForte_local = d.preuve_soin?.force_probante === 'FORTE';
-      const _cpamLocal = d.cpam_simulation || {};
-      const _anomaliesAll = _cpamLocal.anomalies || [];
-      const _anomaliesFiltered = _anomaliesAll.filter(a => !(_hasPreuveForte_local && _isPreuveAnomaly_local(a)));
-      const _hasCpamSignBtn = !!(
-        _cpamLocal.niveau && _cpamLocal.niveau !== 'OK' &&
-        _anomaliesFiltered.length > 0 &&
-        !_hasPreuveForte_local &&
-        _invoiceId &&
-        _anomaliesFiltered.some(a => _isPreuveAnomaly_local(a))
-      );
-      const _shouldShowBottomBtn = !_alreadySigned && !_hasCpamSignBtn;
-      if (_cbody && !_cbody.querySelector('.sig-btn-wrap') && _shouldShowBottomBtn) {
+      if (_cbody && !_cbody.querySelector('.sig-btn-wrap')) {
         const _wrap = document.createElement('div');
         _wrap.className = 'sig-btn-wrap';
         _wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
@@ -1733,1203 +1441,19 @@ async function _cotationPipeline() {
         window._editingCotation?._fromTournee) {
       window._editingCotation = null;
     }
-    // Une re-cotation en erreur → retire le FAB (évite qu'il reste loading indéfiniment)
-    try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
     _clearSlowTimers();
     $('cerr').style.display = 'flex';
-    // Message plus clair selon le type d'erreur
-    const msgRaw = e.message || '';
-    const isSlowTimeout = msgRaw.includes("prend plus de temps");
-    const is502N8N = /502|N8N|Service de v[eé]rification IA/i.test(msgRaw);
-    let userMsg = msgRaw;
-    if (isSlowTimeout) {
-      userMsg = "⏱️ L'IA a mis trop de temps à répondre. Réessayez dans quelques instants.";
-    } else if (is502N8N) {
-      userMsg = "🤖 Service IA temporairement indisponible (cold-start ou erreur réseau). Réessayez dans 15-30s.";
-    }
-    $('cerr-m').innerHTML = userMsg + (
-      is502N8N || isSlowTimeout
-        ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-             <button class="btn bp bsm" onclick="cotation()">🔄 Réessayer</button>
-           </div>`
-        : ''
-    );
+    // Message plus clair pour timeout IA
+    const isSlowTimeout = e.message && e.message.includes("prend plus de temps");
+    $('cerr-m').textContent = isSlowTimeout
+      ? "⏱️ L'IA a mis trop de temps à répondre. La cotation a été estimée automatiquement ci-dessous."
+      : e.message;
     $('res-cot').classList.add('show');
   }
   ld('btn-cot', false);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   COTATION LOCALE NGAP : calcule directement avec _cotMinimalLocalCalc
-   sans appeler N8N. Utile quand le service IA est down ou pour gagner du
-   temps sur des cotations simples. Bouton dédié ajouté dans l'UI.
-   ═══════════════════════════════════════════════════════════════════════════ */
-async function cotationLocaleNGAP() {
-  const txt = (gv('f-txt') || '').trim();
-  if (!txt) { alert('Veuillez saisir une description.'); return; }
-  ld('btn-cot-local', true);
-  // Cacher l'erreur précédente s'il y en a une
-  const cerr = $('cerr'); if (cerr) cerr.style.display = 'none';
-  try {
-    // 1) Extraire les codes NGAP du textarea (codes explicites)
-    let codes = _cotExtractCodesFromText(txt);
-
-    // 2) Si aucun code explicite trouvé, utiliser un mini-NLP texte→code pour
-    //    les actes courants saisis en langage naturel (« injection insuline »)
-    if (!codes.length) {
-      codes = _cotInferCodesFromText(txt);
-    }
-
-    const result = _cotMinimalLocalCalc(
-      codes,
-      { part_amo: null, part_amc: null, part_patient: null }
-    );
-    if (!result || !result.actes || !result.actes.length) {
-      throw new Error('Aucun code NGAP reconnu dans la description. Essayez un format clair comme : "AMI 4 + MCI", "injection insuline", "perfusion 1h", "pansement complexe", ou cliquez sur « Coter avec l\'IA » pour la détection IA complète.');
-    }
-    // 2) Composer l'objet d compatible avec renderCot
-    const d = {
-      actes:        result.actes,
-      total:        result.total,
-      part_amo:     result.part_amo,
-      part_amc:     result.part_amc,
-      part_patient: result.part_patient,
-      alerts:       ['ℹ️ Cotation calculée localement (mode NGAP rapide, sans IA) — utilisez « Coter avec l\'IA » pour la validation IA complète.'],
-      optimisations: [],
-      suggestions_optimisation: [],
-      _local_only:  true,
-      _ngap_version: (typeof _COT_NGAP_VERSION !== 'undefined' ? _COT_NGAP_VERSION : 'NGAP 2026'),
-    };
-    // 3) Render
-    renderCot(d);
-    if (typeof showToast === 'function') {
-      showToast(`✅ Cotation locale NGAP : ${result.total.toFixed(2)} €`, 'su');
-    }
-
-    // ── 🛡️ RENFORCEMENT « Carnet → Historique des soins » ──────────────────
-    // Le mode local NGAP ne passait PAS par /webhook/ami-calcul → la cotation
-    // n'arrivait jamais dans planning_patients (Historique). On corrige :
-    //   1. Persistance IDB stricte (mêmes règles upsert que cotation IA).
-    //   2. Push synchrone vers /webhook/ami-save-cotation (tri-critères
-    //      worker : invoice_number > patient_id+date_soin > patient_nom+date_soin).
-    //   3. Si offline → mise en file via queueCotation (replay automatique).
-    //
-    // Respecte la doctrine upsert :
-    //   • Patient existant + _editRef + idx trouvé → MAJ
-    //   • Patient existant + pas _editRef          → 1ère cotation (push)
-    //   • Patient existant + _editRef + pas d'idx  → rien (évite doublon)
-    //   • Patient absent + pas _editRef            → crée fiche + cotation
-    //   • Patient absent + _editRef                → rien (pas de fiche fantôme)
-    try { await _cotationLocalPersist(d, txt); }
-    catch (_pErr) { console.warn('[cotation] Persistance locale KO:', _pErr.message); }
-  } catch (e) {
-    if (cerr) {
-      cerr.style.display = 'flex';
-      $('cerr-m').textContent = e.message;
-      $('res-cot').classList.add('show');
-    } else {
-      alert(e.message);
-    }
-  } finally {
-    ld('btn-cot-local', false);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   MINI-NLP : convertit du langage naturel en codes NGAP officiels.
-   Utilisé par cotationLocaleNGAP() quand l'utilisateur saisit du texte libre
-   (« injection insuline + perfusion 3x/semaine ») au lieu de codes explicites.
-   Retourne un tableau [{code: 'AMI1'}, {code: 'AMI9'}, ...] compatible avec
-   _cotMinimalLocalCalc.
-   ═══════════════════════════════════════════════════════════════════════════ */
-function _cotInferCodesFromText(txt) {
-  const s = String(txt || '').toLowerCase();
-  if (!s) return [];
-
-  // Table de mapping : motif (regex) → code NGAP
-  // Ordonné du plus spécifique au plus générique
-  // ⚠️ Si group=true, dès qu'un mapping de ce groupe match, on saute les
-  //    autres mappings du même groupe (évite double match perfusion >1h ET perfusion seul).
-  const mappings = [
-    // ── Perfusions (groupe « perfusion ») ──────────────────────────────
-    { re: /perfusion\s*(?:>|sup[eé]rieure?\s*[aà]?)\s*1\s*h|perfusion\s+longue|perfusion\s+>\s*1h/, code: 'AMI14', group: 'perfusion' },
-    { re: /perfusion\s*(?:<|inf[eé]rieure?\s*[aà]?)\s*1\s*h|perfusion\s+courte|perfusion\s+<\s*1h/, code: 'AMI9', group: 'perfusion' },
-    { re: /perfusion\b(?!\s*(?:de|du|en|sous))/, code: 'AMI9', group: 'perfusion' }, // perfusion par défaut
-    // ── Injections (groupe « injection ») ──────────────────────────────
-    { re: /injection\s+insuline|insuline\s+(?:sous-cutan[eé]e|sc|sous\s*cutan)/, code: 'AMI1', group: 'injection' },
-    { re: /injection\s+(?:sous-?cutan[eé]e|sc|im|intra-?musculaire|hbpm|h[eé]parine|anticoagulant|vaccin)/, code: 'AMI1', group: 'injection' },
-    { re: /injection\s+intra-?veineuse|injection\s+iv\b/, code: 'AMI2', group: 'injection' },
-    // ── Pansements (groupe « pansement ») ──────────────────────────────
-    { re: /pansement\s+(?:complexe|lourd|cicatris)|pansement\s+(?:escarre|ulc[eè]re|n[eé]crose|br[uû]l[uû]re)/, code: 'AMI4', group: 'pansement' },
-    { re: /pansement\s+(?:simple|l[eé]ger|sec)|pansement\b(?!\s+(?:complexe|simple|lourd|escarre|ulc))/, code: 'AMI2', group: 'pansement' },
-    // ── Dialyse / soins spécialisés (groupe « dialyse ») ───────────────
-    { re: /dialyse\s+p[eé]riton[eé]ale|dpa\b|dpac\b/, code: 'AMI14', group: 'dialyse' },
-    { re: /chambre\s+implantable|picc-?line|cathe?ter\s+central/, code: 'AMI9', group: 'catheter' },
-    // ── Glycémie / soins courants ──────────────────────────────────────
-    { re: /glyc[eé]mie\s+capillaire|hgt\b|dextro\b/, code: 'AMI1', group: 'glycemie' },
-    { re: /prise\s+de\s+sang|pr[eé]l[eè]vement\s+sanguin/, code: 'AMI1', group: 'prelevement' },
-    { re: /sond(?:age|e)\s+(?:urinaire|v[eé]sical)|sondage\s+a\s+demeure/, code: 'AMI4', group: 'sondage' },
-    { re: /lavement\s+[eé]vacuateur/, code: 'AMI3', group: 'lavement' },
-    { re: /a[eé]rosol|n[eé]bulisation/, code: 'AMI1', group: 'aerosol' },
-    // ── BSI (groupe « bsi ») ────────────────────────────────────────────
-    { re: /bsi\s+(?:autonome|patient\s+autonome)|bsa\b/, code: 'BSA', group: 'bsi' },
-    { re: /bsi\s+(?:l[eé]g[eè]re?\s+perte|d[eé]pendance\s+l[eé]g[eè]re)|bsb\b/, code: 'BSB', group: 'bsi' },
-    { re: /bsi\s+(?:lourde\s+perte|d[eé]pendance\s+lourde)|bsc\b/, code: 'BSC', group: 'bsi' },
-    { re: /bilan\s+soins?\s+infirmiers?|bsi\b/, code: 'BSB', group: 'bsi' }, // BSI par défaut
-    // ── Surveillance / ulcère stade ────────────────────────────────────
-    { re: /surveillance\s+(?:thérapeutique|continue|post-op)/, code: 'AMI4', group: 'surveillance' },
-    { re: /ulc[eè]re\s+stade\s+(?:3|4|iii|iv)|escarre\s+stade\s+(?:3|4|iii|iv)/, code: 'AMI4', group: 'ulcere' },
-  ];
-
-  const found = [];
-  const seen = new Set();
-  const matchedGroups = new Set();
-  for (const { re, code, group } of mappings) {
-    // Si un mapping du même groupe a déjà matché, on saute
-    if (group && matchedGroups.has(group)) continue;
-    if (re.test(s) && !seen.has(code)) {
-      seen.add(code);
-      found.push({ code });
-      if (group) matchedGroups.add(group);
-    }
-  }
-
-  // ── Majorations contextuelles ──────────────────────────────────────────
-  // MCI : explicitement mentionnée
-  if (/\bmci\b|coordination\s+infirm/i.test(s) && !seen.has('MCI')) {
-    seen.add('MCI'); found.push({ code: 'MCI' });
-  }
-  // MIE : enfant de moins de 7 ans
-  if (/(enfant|nourrisson|p[eé]diatrique)\s*(?:de|<|moins\s+de)?\s*(?:[1-6]|sept|7)\s*ans?/i.test(s) && !seen.has('MIE')) {
-    seen.add('MIE'); found.push({ code: 'MIE' });
-  }
-  // IFD : déplacement mentionné explicitement
-  if (/\bifd\b|d[eé]placement|domicile/i.test(s) && !seen.has('IFD')) {
-    seen.add('IFD'); found.push({ code: 'IFD' });
-  }
-  // Note : NUIT et DIM sont gérés automatiquement par renderCot selon l'heure
-
-  return found;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   _cotationLocalPersist — persistance + sync Supabase pour cotation locale
-   ───────────────────────────────────────────────────────────────────────────
-   Appelée après cotationLocaleNGAP() pour garantir que la cotation arrive
-   dans l'Historique des soins (planning_patients) malgré l'absence de N8N.
-
-   Étapes :
-   1. Génère un invoice_number temporaire (TMP-LOCAL-…) si absent.
-      Le worker /ami-save-cotation détectera ce préfixe et générera un
-      vrai numéro côté serveur lors du POST.
-   2. Upsert IDB carnet patient (mêmes règles que cotation IA).
-   3. Push vers /webhook/ami-save-cotation. Si offline → queueCotation.
-   4. Vérifie via _ensureCotationInHistorique() que la ligne est bien
-      en base après quelques secondes ; relance ami-save-cotation sinon.
-   ═══════════════════════════════════════════════════════════════════════════ */
-async function _cotationLocalPersist(d, txt) {
-  const _patNom = (gv('f-pt') || '').trim();
-  if (!_patNom) return;
-  if (typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') return;
-
-  const _editRef = window._editingCotation;
-  const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
-  const _cotHeure = gv('f-hs') || '';
-
-  // Guard : pas d'acte technique ET pas de mode édition → ne pas polluer
-  const _CODES_MAJ_LP = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
-  const _actesTech = (d.actes || []).filter(a => !_CODES_MAJ_LP.has((a.code||'').toUpperCase()));
-  if (!_actesTech.length && !_editRef) {
-    console.warn('[cotation] Local persist ignoré — pas d\'acte technique');
-    return;
-  }
-
-  // 1) Génération invoice_number temporaire (réservé au mode local)
-  const _invNum = _editRef?.invoice_number
-               || `TMP-LOCAL-${_cotDate.replace(/-/g,'')}-${Date.now().toString(36).slice(-6).toUpperCase()}`;
-
-  // 2) Upsert IDB
-  const _patRows = await _idbGetAll(PATIENTS_STORE);
-  let _patRow = _editRef?.patientId
-    ? _patRows.find(r => r.id === _editRef.patientId)
-    : null;
-  if (!_patRow) {
-    const _nomLow = _patNom.toLowerCase();
-    _patRow = _patRows.find(r =>
-      ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
-      ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
-    );
-  }
-
-  const _newCot = {
-    date:           _cotDate,
-    heure:          _cotHeure,
-    actes:          d.actes || [],
-    total:          parseFloat(d.total || 0),
-    part_amo:       parseFloat(d.part_amo || 0),
-    part_amc:       parseFloat(d.part_amc || 0),
-    part_patient:   parseFloat(d.part_patient || 0),
-    soin:           (txt || '').slice(0, 120),
-    invoice_number: _invNum,
-    source:         _editRef ? 'local_ngap_edit' : 'local_ngap',
-    _synced:        false, // sera passé à true après push réussi
-    _local_only:    true,
-  };
-
-  let _resolvedPatientId = _patRow?.id || null;
-
-  if (_patRow) {
-    // ── Patient existant → upsert strict ──────────────────────────────────
-    const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
-    if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
-
-    let _idx = -1;
-    if (typeof _editRef?.cotationIdx === 'number' && _editRef.cotationIdx >= 0)
-      _idx = _editRef.cotationIdx;
-    if (_idx < 0 && _invNum)
-      _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
-    if (_idx < 0 && _editRef?.invoice_number)
-      _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
-    const _isForceNewLocal = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-    if (_idx < 0 && _editRef && _cotDate && !_isForceNewLocal) {
-      _idx = _pat.cotations.findIndex(c =>
-        (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
-      );
-    }
-
-    if (_idx >= 0) {
-      _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
-    } else if (!_editRef || _isForceNewLocal) {
-      _pat.cotations.push(_newCot);
-    } else {
-      // _editRef avec idx introuvable → rien (évite doublon)
-      return;
-    }
-
-    _pat.updated_at = new Date().toISOString();
-    const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
-    await _idbPut(PATIENTS_STORE, _toStore);
-    if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
-
-  } else if (!_editRef) {
-    // ── Patient absent → créer fiche + cotation ──────────────────────────
-    const _parts = _patNom.trim().split(/\s+/);
-    const _prenom = _parts.slice(0, -1).join(' ') || _patNom;
-    const _nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
-    const _newPat = {
-      id:         'pat_' + Date.now(),
-      nom:        _nom,
-      prenom:     _prenom,
-      ddn:        gv('f-ddn') || '',
-      amo:        gv('f-amo') || '',
-      amc:        gv('f-amc') || '',
-      exo:        gv('f-exo') || '',
-      medecin:    gv('f-pr')  || '',
-      cotations:  [_newCot],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      source:     'local_ngap_auto',
-    };
-    const _toStore = {
-      id:         _newPat.id,
-      nom:        _nom,
-      prenom:     _prenom,
-      _data:      _enc(_newPat),
-      updated_at: _newPat.updated_at,
-    };
-    await _idbPut(PATIENTS_STORE, _toStore);
-    _resolvedPatientId = _newPat.id;
-    if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
-    if (typeof showToast === 'function')
-      showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
-  } else {
-    // Patient absent + _editRef → rien (pas de fiche fantôme)
-    return;
-  }
-
-  // 3) Push vers /webhook/ami-save-cotation (tri-critères upsert worker)
-  const _payloadServer = {
-    cotations: [{
-      actes:          _newCot.actes,
-      total:          _newCot.total,
-      date_soin:      _cotDate,
-      heure_soin:     _cotHeure || null,
-      soin:           _newCot.soin,
-      invoice_number: _invNum,
-      source:         _newCot.source,
-      patient_id:     _resolvedPatientId || undefined,
-      patient_nom:    _patNom,
-      part_amo:       _newCot.part_amo,
-      part_amc:       _newCot.part_amc,
-      part_patient:   _newCot.part_patient,
-    }],
-  };
-
-  const _isOnline = (typeof navigator !== 'undefined') ? navigator.onLine !== false : true;
-  if (!_isOnline) {
-    // Hors-ligne → mise en file pour replay automatique
-    if (typeof queueCotation === 'function') {
-      queueCotation({
-        ..._payloadServer.cotations[0],
-        // queueCotation rejouera via /ami-calcul ; on conserve _saveTarget pour
-        // que le replay tente d'abord ami-save-cotation (cotation déjà calculée).
-        _saveTarget: '/webhook/ami-save-cotation',
-        texte:       (txt || '').slice(0, 200),
-      });
-    }
-    return;
-  }
-
-  try {
-    const _res = typeof apiCall === 'function'
-      ? await apiCall('/webhook/ami-save-cotation', _payloadServer)
-      : null;
-    if (_res?.ok && _resolvedPatientId) {
-      // Marquer la cotation comme synchronisée dans l'IDB
-      try {
-        const _refreshed = await _idbGetAll(PATIENTS_STORE);
-        const _updRow = _refreshed.find(r => r.id === _resolvedPatientId);
-        if (_updRow) {
-          const _updPat = { id: _updRow.id, nom: _updRow.nom, prenom: _updRow.prenom, ...(_dec(_updRow._data)||{}) };
-          if (Array.isArray(_updPat.cotations)) {
-            const _ci = _updPat.cotations.findIndex(c => c.invoice_number === _invNum);
-            if (_ci >= 0) {
-              _updPat.cotations[_ci]._synced = true;
-              _updPat.updated_at = new Date().toISOString();
-              const _toStoreS = { id: _updPat.id, nom: _updPat.nom, prenom: _updPat.prenom, _data: _enc(_updPat), updated_at: _updPat.updated_at };
-              await _idbPut(PATIENTS_STORE, _toStoreS);
-            }
-          }
-        }
-      } catch (_) {}
-      if (typeof showToast === 'function')
-        showToast('✅ Cotation locale synchronisée dans l\'Historique des soins', 'su');
-    }
-  } catch (_pushErr) {
-    console.warn('[cotation] Push local→Supabase KO, mise en file:', _pushErr.message);
-    if (typeof queueCotation === 'function') {
-      queueCotation({
-        ..._payloadServer.cotations[0],
-        _saveTarget: '/webhook/ami-save-cotation',
-        texte:       (txt || '').slice(0, 200),
-      });
-    }
-  }
-
-  // 4) Vérification post-save : la cotation est-elle bien dans l'Historique ?
-  if (_invNum && typeof _ensureCotationInHistorique === 'function') {
-    setTimeout(() => {
-      _ensureCotationInHistorique({
-        invoice_number: _invNum,
-        cotation:       _payloadServer.cotations[0],
-      }).catch(() => {});
-    }, 4000);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   _ensureCotationInHistorique — garantie « cotation Carnet → Historique »
-   ───────────────────────────────────────────────────────────────────────────
-   Appelée après TOUTE cotation (IA ou locale) initiée depuis le Carnet
-   patients (_editingCotation._fromCarnet = true). Vérifie via
-   /webhook/ami-historique que la ligne est bien arrivée dans
-   planning_patients ; si absente, relance /webhook/ami-save-cotation
-   en rattrapage (jusqu'à 2 tentatives).
-
-   Garantie zéro doublon : le worker ami-save-cotation utilise un upsert
-   tri-critères (invoice_number → patient_id+date → patient_nom+date),
-   donc relancer N fois la même cotation ne crée pas de duplicata.
-   ═══════════════════════════════════════════════════════════════════════════ */
-async function _ensureCotationInHistorique({ invoice_number, cotation, _retry = 0 }) {
-  if (!invoice_number || !cotation) return;
-  if (_retry > 2) {
-    console.warn('[cotation] Vérif Historique : abandon après 3 tentatives pour', invoice_number);
-    return;
-  }
-  if (typeof apiCall !== 'function') return;
-  const _isOnline = (typeof navigator !== 'undefined') ? navigator.onLine !== false : true;
-  if (!_isOnline) return; // offline-queue prendra le relais
-
-  try {
-    // 1) Vérifier la présence dans l'Historique des soins
-    const _hist = await apiCall('/webhook/ami-historique?period=month', {});
-    const _rows = Array.isArray(_hist?.data) ? _hist.data : (Array.isArray(_hist) ? _hist : []);
-    const _found = _rows.find(r =>
-      r.invoice_number === invoice_number ||
-      // Fallback : match par patient_id + date_soin + total (tolérance 0.01€)
-      (r.patient_id && cotation.patient_id && r.patient_id === cotation.patient_id &&
-       (r.date_soin || '').slice(0,10) === (cotation.date_soin || '').slice(0,10) &&
-       Math.abs(parseFloat(r.total||0) - parseFloat(cotation.total||0)) < 0.01)
-    );
-    if (_found) {
-      console.info('[cotation] ✅ Cotation présente dans Historique :', invoice_number);
-      return;
-    }
-    // 2) Absente → relancer ami-save-cotation (upsert tri-critères côté worker)
-    console.warn(`[cotation] ⚠️ Cotation absente Historique — rattrapage tentative ${_retry+1}/3 :`, invoice_number);
-    await apiCall('/webhook/ami-save-cotation', { cotations: [cotation] });
-    // 3) Re-vérifier après délai
-    setTimeout(() => {
-      _ensureCotationInHistorique({ invoice_number, cotation, _retry: _retry + 1 }).catch(() => {});
-    }, 5000);
-  } catch (e) {
-    console.warn('[cotation] Vérif Historique KO:', e.message);
-  }
-}
-
-/* Helper : extrait les codes NGAP d'un texte au format attendu par
-   _cotMinimalLocalCalc, en utilisant _cotExtractNgapChips puis en décomposant
-   les chips combo (AMI4 + MCI → 2 codes séparés). */
-function _cotExtractCodesFromText(txt) {
-  const chips = (typeof _cotExtractNgapChips === 'function')
-    ? _cotExtractNgapChips(txt || '')
-    : [];
-  const codes = [];
-  for (const c of chips) {
-    const parts = c.insert.split(/\s*\+\s*/);
-    for (const p of parts) {
-      const m = p.match(/^([A-Z][A-Z_]*)\s*(\d+(?:[._/]\d+)*)?/i);
-      if (m) {
-        const lettre = m[1].toUpperCase();
-        const coef   = m[2] || '';
-        codes.push({ code: lettre + coef });
-      }
-    }
-  }
-  return codes;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   HELPERS CLIQUABLES : ajouter du texte à la description des soins (f-txt)
-   depuis les lignes du "Détail des actes", "Optimisations" et "Suggestions".
-   Permet ensuite de relancer "Coter avec l'IA" pour recalculer avec ce code.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Nettoie & ajoute le fragment à f-txt sans doublon. Ne remplace pas. */
-function _cotAppendDesc(fragment) {
-  const el = typeof $ === 'function' ? $('f-txt') : document.getElementById('f-txt');
-  if (!el) return false;
-  const frag = String(fragment || '').trim();
-  if (!frag) return false;
-  const cur = (el.value || '').trim();
-  // Évite d'ajouter un fragment déjà présent (casse-insensible)
-  const curNorm = cur.toLowerCase();
-  const fragNorm = frag.toLowerCase();
-  if (curNorm.includes(fragNorm)) return 'exists';
-  // ⚡ Check renforcé sur les codes NGAP : si le fragment commence par un code
-  // NGAP (AMI1, AMI4, BSC, MCI…) et que ce code exact est déjà présent dans le
-  // textarea (avec word boundary), considérer comme doublon.
-  // Évite d'ajouter « AMI1 Injection sous » si « AMI1 » est déjà là.
-  // Distingue bien AMI1 vs AMI10/AMI11 grâce à la frontière de mot (\b ou \W).
-  const codeMatch = frag.match(/^([A-Z]{2,4}\d+(?:[._/]\d+)?)\b/i);
-  if (codeMatch) {
-    const code = codeMatch[1].toUpperCase();
-    // Cherche le code en tant que mot entier dans le textarea
-    const re = new RegExp('(?:^|[^A-Za-z0-9_/.])' + code.replace(/[.+*?^$()[\]{}|\\]/g, '\\$&') + '(?:[^A-Za-z0-9_/.]|$)', 'i');
-    if (re.test(cur)) {
-      return 'exists';
-    }
-  }
-  // Séparateur : « + » entre fragments pour une syntaxe lisible par l'IA
-  const sep = cur ? (/[.,+]$/.test(cur) ? ' ' : ' + ') : '';
-  el.value = cur + sep + frag;
-  // Déclenche les listeners (cabinet mode, validation…)
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  return true;
-}
-
-/* Handler commun appelé en onclick : ajoute + feedback visuel + toast léger */
-function _cotClickAppend(btnOrRow, fragment, label) {
-  const res = _cotAppendDesc(fragment);
-  if (res === true || res === 'exists') {
-    // Feedback visuel sur l'élément cliqué
-    try {
-      if (btnOrRow && btnOrRow.classList) btnOrRow.classList.add('added');
-      setTimeout(() => { try { btnOrRow.classList.remove('added'); } catch (_) {} }, 2200);
-    } catch (_) {}
-    const toast = typeof showToast === 'function' ? showToast
-                : (typeof showToastSafe === 'function' ? showToastSafe : null);
-    if (toast) {
-      const msg = res === 'exists'
-        ? `ℹ️ "${label || fragment}" déjà dans la description`
-        : `✅ "${label || fragment}" ajouté`;
-      toast(msg, res === 'exists' ? 'in' : 'su');
-    }
-    // Scroll doux vers le champ f-txt (utile sur mobile)
-    const elTxt = typeof $ === 'function' ? $('f-txt') : document.getElementById('f-txt');
-    if (elTxt && typeof elTxt.scrollIntoView === 'function') {
-      try { elTxt.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
-    }
-    // FAB « Re-coter » : on ne l'affiche que si un nouvel ajout a réellement été fait
-    if (res === true) _cotShowReCoteBar();
-  }
-}
-
-/* FAB flottant « Re-coter » : apparaît dès qu'un ajout a été fait, disparaît
-   à la re-cotation, au clic ou à la navigation hors de la page cotation. */
-function _cotShowReCoteBar() {
-  // Si on n'est pas sur la page cotation, ne pas afficher le FAB
-  // (sécurité contre _cotClickAppend déclenché depuis un autre contexte)
-  try {
-    const cotPage = document.getElementById('p-cot') || document.getElementById('section-cot');
-    if (cotPage && cotPage.style && cotPage.style.display === 'none') return;
-  } catch (_) {}
-
-  let fab = document.getElementById('recote-fab');
-  if (!fab) {
-    fab = document.createElement('button');
-    fab.id = 'recote-fab';
-    fab.className = 'recote-fab';
-    fab.type = 'button';
-    fab.setAttribute('aria-label', 'Re-coter avec les ajouts');
-    fab.innerHTML = `
-      <span class="recote-fab-ico" aria-hidden="true">🔄</span>
-      <span class="recote-fab-lbl">Re-coter avec les ajouts</span>
-      <span class="recote-fab-badge" data-count="1">1</span>
-      <span class="recote-fab-close" role="button" aria-label="Fermer" title="Fermer (n'annule pas les ajouts)">✕</span>
-    `;
-    // Clic principal → relance la cotation
-    fab.addEventListener('click', (ev) => {
-      // Sécurité : empêcher tout bubbling vers les éléments en dessous
-      // (notamment le bouton vocal qui se trouve dans la même zone)
-      ev.stopPropagation();
-      ev.preventDefault();
-      // Clic sur la croix : ferme sans re-coter
-      if (ev.target && ev.target.classList && ev.target.classList.contains('recote-fab-close')) {
-        _cotHideReCoteBar();
-        return;
-      }
-      // Sinon : relance la cotation
-      fab.classList.add('loading');
-      // Drapeau : la prochaine cotation est issue du FAB → force mode édition
-      // si une cotation existe déjà (bypass modale doublon, choix implicite « Mettre à jour »)
-      window._cotFromReCoteFAB = true;
-      try {
-        if (typeof cotation === 'function') {
-          Promise.resolve(cotation()).catch(() => {}).finally(() => {
-            window._cotFromReCoteFAB = false;
-            // Si la cotation échoue silencieusement, on retire le loading après 1.5s
-            setTimeout(() => { if (fab && document.body.contains(fab)) fab.classList.remove('loading'); }, 1500);
-          });
-        } else {
-          // Fallback : click sur le bouton principal
-          const mainBtn = document.getElementById('btn-cot');
-          if (mainBtn) mainBtn.click();
-          setTimeout(() => { window._cotFromReCoteFAB = false; }, 5000);
-        }
-      } catch (_) {
-        window._cotFromReCoteFAB = false;
-        fab.classList.remove('loading');
-      }
-    });
-    // Capture précoce (avant les autres listeners) pour éviter tout double-déclenchement
-    document.body.appendChild(fab);
-  } else {
-    // Bouton déjà présent → incrémenter le compteur
-    const badge = fab.querySelector('.recote-fab-badge');
-    if (badge) {
-      const cur = parseInt(badge.getAttribute('data-count') || '0', 10) || 0;
-      const n   = cur + 1;
-      badge.setAttribute('data-count', String(n));
-      badge.textContent = String(n);
-      // Petit pulse pour signaler l'incrément
-      badge.style.transform = 'scale(1.3)';
-      setTimeout(() => { if (badge) badge.style.transform = ''; }, 180);
-    }
-    // Retire l'éventuel état 'out' si un clic très proche
-    fab.classList.remove('out', 'loading');
-  }
-}
-
-function _cotHideReCoteBar() {
-  const fab = document.getElementById('recote-fab');
-  if (!fab) return;
-  // Anim sortie puis suppression
-  fab.classList.add('out');
-  setTimeout(() => { try { fab.remove(); } catch (_) {} }, 260);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   FALLBACK NGAP LOCAL : utilise NGAPEngine + window.NGAP_REFERENTIEL
-   pour calculer une cotation à partir des codes extraits du textarea.
-   Appelé quand N8N renvoie 0 acte technique (cold start, texte sans verbe…).
-   ═══════════════════════════════════════════════════════════════════════════ */
-function _cotEnrichWithLocalEngine(d, txt) {
-  // Pré-conditions : moteur + référentiel chargés (de préférence)
-  const Engine = window.NGAPEngine || (typeof NGAPEngine !== 'undefined' ? NGAPEngine : null);
-  const ref    = window.NGAP_REFERENTIEL;
-
-  // Extraire tous les codes du textarea (codes seuls + combos AMI4 + MCI)
-  const chips = _cotExtractNgapChips(txt || '');
-  if (!chips.length) return null;
-
-  // Décomposer chaque chip en codes individuels (un chip combo "AMI4 + MCI" → ["AMI4","MCI"])
-  const codes = [];
-  for (const c of chips) {
-    const parts = c.insert.split(/\s*\+\s*/);
-    for (const p of parts) {
-      // Récupérer le code seul + son éventuel coefficient (avec ou sans espace)
-      // Ex: "AMI 4" → "AMI4", "AMI 4.1 2ème passage" → "AMI4.1", "AMI 14/15 longue" → "AMI14/15"
-      const m = p.match(/^([A-Z][A-Z_]*)\s*(\d+(?:[._/]\d+)*)?/i);
-      if (m) {
-        const lettre = m[1].toUpperCase();
-        const coef   = m[2] || '';
-        codes.push({ code: lettre + coef });
-      }
-    }
-  }
-  if (!codes.length) return null;
-
-  // ── Cas 1 : moteur déclaratif chargé → l'utiliser ──────────────────────
-  if (Engine && ref) {
-    try {
-      const engine = new Engine(ref);
-      const result = engine.compute({
-        codes,
-        date_soin:  gv('f-ds') || new Date().toISOString().slice(0,10),
-        heure_soin: gv('f-hs') || '',
-        mode:       'permissif', // tolérant pour ne pas bloquer
-      });
-      if (result && result.ok && Array.isArray(result.actes_finaux) && result.actes_finaux.length) {
-        const actes = result.actes_finaux.map(a => ({
-          code:        a.code || a.code_facturation || '?',
-          nom:         a.nom || a.libelle || '',
-          coefficient: a.coefficient || 1,
-          total:       parseFloat(a.tarif || a.total || 0),
-          description: a.description || '',
-        }));
-        const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
-        const pAmo  = parseFloat(d.part_amo) || (total * 0.60);
-        const pAmc  = parseFloat(d.part_amc) || 0;
-        const pPat  = parseFloat(d.part_patient) || (total - pAmo - pAmc);
-        return {
-          actes,
-          total:        +total.toFixed(2),
-          part_amo:     +pAmo.toFixed(2),
-          part_amc:     +pAmc.toFixed(2),
-          part_patient: +pPat.toFixed(2),
-        };
-      }
-    } catch (e) {
-      console.warn('[cotation] NGAPEngine.compute KO → fallback minimal:', e.message);
-    }
-  }
-
-  // ── Cas 2 : fallback minimal — utilise juste _COT_TARIFS ─────────────────
-  // Marche même si NGAPEngine n'est pas chargé. Pas de gestion fine des
-  // cumuls interdits, mais permet d'avoir une cotation visible et chiffrée
-  // au lieu d'« aucun acte détecté ».
-  return _cotMinimalLocalCalc(codes, d);
-}
-
-/* Fallback minimal : calcule une cotation à partir des codes extraits en
-   utilisant uniquement la table _COT_TARIFS (toujours disponible).
-   Applique les actes au tarif officiel et somme. Aucune règle de cumul. */
-function _cotMinimalLocalCalc(codes, d) {
-  // Récupérer la table des tarifs (déjà construite au chargement)
-  const tarifs = (typeof _COT_TARIFS !== 'undefined' && _COT_TARIFS)
-    ? _COT_TARIFS
-    : (typeof _buildCotTarifs === 'function' ? _buildCotTarifs() : null);
-  if (!tarifs) {
-    console.warn('[cotation] _COT_TARIFS indisponible → pas de fallback minimal');
-    return null;
-  }
-  // Libellés courants (fallback texte si non fournis)
-  const libelles = {
-    AMI1:  'Acte technique AMI 1',
-    AMI2:  'Acte technique AMI 2',
-    AMI3:  'Acte technique AMI 3',
-    AMI4:  'Pansement complexe / acte AMI 4',
-    'AMI4.1': 'Pansement complexe (2ème passage)',
-    AMI5:  'Acte AMI 5',
-    AMI9:  'Perfusion courte (≤1h)',
-    AMI10: 'Acte AMI 10',
-    AMI14: 'Forfait perfusion >1h avec organisation surveillance',
-    AMI15: 'Perfusion >1h avec surveillance continue',
-    BSA:   'BSI Bilan Soins Infirmiers (autonome)',
-    BSB:   'BSI Bilan Soins Infirmiers (légère perte)',
-    BSC:   'BSI Bilan Soins Infirmiers (lourde perte)',
-    MCI:   'Majoration coordination infirmière',
-    MIE:   'Majoration enfant <7 ans',
-    IFD:   'Indemnité forfaitaire de déplacement',
-    IFI:   'Indemnité forfaitaire infirmier',
-    NUIT:  'Majoration nuit (20h-23h / 5h-8h)',
-    NUIT_PROF: 'Majoration nuit profonde (23h-5h)',
-    DIM:   'Majoration dimanche / férié',
-    DI:    'Démarche infirmière',
-  };
-
-  const actes = [];
-  const seen = new Set();
-  for (const c of codes) {
-    const code = String(c.code || '').toUpperCase();
-    if (!code) continue;
-    // Dédoublonnage simple (pas le même code 2x)
-    if (seen.has(code)) continue;
-    seen.add(code);
-    // Lookup tarif : essai direct, puis variantes (point/underscore)
-    let tarif = tarifs[code]
-             || tarifs[code.replace('.', '_')]
-             || tarifs[code.replace('_', '.')]
-             || tarifs[code.replace('/', '_')];
-    // Variante AMI14/15 : on prend le 1er nombre (AMI14)
-    if (tarif === undefined && code.includes('/')) {
-      const firstNum = code.split('/')[0];
-      tarif = tarifs[firstNum];
-    }
-    if (tarif === undefined || tarif === null) {
-      console.warn('[cotation] code sans tarif:', code);
-      continue;
-    }
-    actes.push({
-      code,
-      nom:         libelles[code] || code,
-      coefficient: 1,
-      total:       parseFloat(tarif),
-      description: '',
-    });
-  }
-
-  if (!actes.length) return null;
-
-  const total = actes.reduce((s, a) => s + (parseFloat(a.total) || 0), 0);
-  const pAmo  = parseFloat(d?.part_amo) || (total * 0.60);
-  const pAmc  = parseFloat(d?.part_amc) || 0;
-  const pPat  = parseFloat(d?.part_patient) || (total - pAmo - pAmc);
-  return {
-    actes,
-    total:        +total.toFixed(2),
-    part_amo:     +pAmo.toFixed(2),
-    part_amc:     +pAmc.toFixed(2),
-    part_patient: +pPat.toFixed(2),
-  };
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   PRÉ-WARM N8N : ping silencieux pour réveiller le worker Render avant que
-   l'utilisateur clique sur « Coter avec l'IA ». Casse le cold-start de ~30s.
-   Appelé une seule fois par session, à l'ouverture de la page de cotation.
-   ═══════════════════════════════════════════════════════════════════════════ */
-function _cotPrewarmN8N() {
-  if (window._cotN8NPrewarmed) return;
-  // 🔒 Garde authentification : pas de prewarm tant que l'utilisateur n'est pas connecté.
-  // Sinon le worker renvoie 401 Unauthorized (pollution console + log admin).
-  if (!_cotIsAuthenticated()) {
-    // Réessayera au prochain navTo('cot') ou après login (auth-success event)
-    return;
-  }
-  window._cotN8NPrewarmed = true;
-  try {
-    if (typeof apiCall !== 'function') return;
-    // Appel avec mode: 'ping' — le worker peut court-circuiter ce mode et
-    // répondre 200 immédiatement. Si non géré, le worker traitera comme une
-    // requête normale avec un texte vide → 200/erreur, peu importe : le but
-    // est juste de réveiller le conteneur Render.
-    Promise.resolve(apiCall('/webhook/ami-calcul', {
-      mode: 'ping', texte: '', _prewarm: true,
-    }, { silent: true })).catch(() => {
-      // Aucun retour utilisateur — c'est un ping silencieux
-    });
-    console.info('[cotation] Pré-warm N8N envoyé');
-  } catch (_) {}
-}
-
-/* Version « forte » : envoie un vrai appel N8N avec un texte factice pour
-   garantir que tout le pipeline IA est chaud (parsing, Grok, NGAPEngine côté
-   worker). Appelée quand l'utilisateur arrive sur la page cotation — plus
-   agressif que _cotPrewarmN8N() qui ne fait qu'un ping. Non bloquant.
-   Une fois par session uniquement. */
-function _cotPrewarmN8N_FullPipeline() {
-  if (window._cotN8NFullPrewarmed) return;
-  // 🔒 Idem : pas de prewarm si non authentifié
-  if (!_cotIsAuthenticated()) return;
-  window._cotN8NFullPrewarmed = true;
-  try {
-    if (typeof apiCall !== 'function') return;
-    // Texte factice standard — le worker ne le persiste pas car _prewarm:true
-    Promise.resolve(apiCall('/webhook/ami-calcul', {
-      mode: 'ngap',
-      texte: 'injection insuline',
-      _prewarm: true,          // drapeau : pas de sauvegarde Supabase/IDB
-      _no_local_fallback: true, // on veut vraiment N8N pour le réveil complet
-    }, { silent: true })).catch(() => {
-      // Ignorer — c'est juste un warm-up
-    });
-    console.info('[cotation] Pré-warm N8N complet envoyé (pipeline IA)');
-  } catch (_) {}
-}
-
-/* Détection robuste : l'utilisateur est-il connecté ?
-   Vérifie tous les indicateurs disponibles : token JWT, user en mémoire,
-   session storage, cookie. Tolérant aux variantes d'app. */
-function _cotIsAuthenticated() {
-  try {
-    // 1) Token JWT en mémoire
-    if (typeof window !== 'undefined') {
-      if (window.AUTH_TOKEN || window.JWT || window.SESSION_TOKEN) return true;
-      if (window.AMI_USER && (window.AMI_USER.id || window.AMI_USER.email)) return true;
-      if (window.currentUser && (window.currentUser.id || window.currentUser.email)) return true;
-    }
-    // 2) localStorage
-    if (typeof localStorage !== 'undefined') {
-      const keys = ['ami_token', 'auth_token', 'jwt', 'session_token', 'ami_session', 'ami_user'];
-      for (const k of keys) {
-        const v = localStorage.getItem(k);
-        if (v && v.length > 10) return true;
-      }
-    }
-    // 3) Présence du DOM "post-login" : la sidebar n'est visible qu'une fois loggué
-    if (typeof document !== 'undefined') {
-      // Si le formulaire de connexion est visible → pas connecté
-      const loginForm = document.getElementById('p-login') ||
-                        document.querySelector('[data-page="login"]') ||
-                        document.querySelector('.login-card');
-      if (loginForm && loginForm.offsetParent !== null) return false;
-      // Si la sidebar nav est visible → connecté
-      const nav = document.querySelector('.sidebar-nav') ||
-                  document.querySelector('#sidebar') ||
-                  document.querySelector('nav.main-nav');
-      if (nav && nav.offsetParent !== null) return true;
-    }
-    return false;
-  } catch (_) {
-    return false;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   AUTO-REMPLISSAGE DATE / HEURE COURANTES
-   À l'ouverture de la page cotation, si f-ds (date) ou f-hs (heure) sont vides
-   et que l'utilisateur n'est pas en mode édition (_editingCotation), on les
-   pré-remplit avec maintenant. Évite que l'utilisateur ait à les saisir.
-   ═══════════════════════════════════════════════════════════════════════════ */
-function _cotAutoFillDateHeure() {
-  try {
-    const fDs = document.getElementById('f-ds');
-    const fHs = document.getElementById('f-hs');
-    if (!fDs && !fHs) return;
-    // En mode édition (_editingCotation posé) → on respecte la valeur existante
-    // (la cotation à modifier a déjà été chargée avec sa date/heure)
-    const isEditing = !!(window._editingCotation && (window._editingCotation.cotationIdx !== undefined || window._editingCotation.invoice_number));
-    const now = new Date();
-    if (fDs && !fDs.value) {
-      fDs.value = now.toISOString().slice(0, 10);
-    }
-    if (fHs && !fHs.value && !isEditing) {
-      fHs.value = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    }
-  } catch (_e) {
-    // Non bloquant
-  }
-}
-
-/* Hook sur navTo : déclencher le pré-warm dès qu'on entre sur la page cotation */
-if (typeof window !== 'undefined' && !window._cotPrewarmHookInstalled) {
-  window._cotPrewarmHookInstalled = true;
-  // ⚠️ Plus de pré-warm aveugle au DOMContentLoaded : le worker exige un token
-  // d'auth et renvoie 401 si l'utilisateur n'est pas encore connecté.
-  // Le prewarm est désormais conditionné par _cotIsAuthenticated() (côté
-  // _cotPrewarmN8N et _cotPrewarmN8N_FullPipeline) ET déclenché à 3 endroits :
-  //   1. Chargement direct sur la page cotation (URL = ?p=cot ou #cot)
-  //   2. Événement de login réussi (auth-success / ami:login)
-  //   3. Navigation vers la page cotation (hook navTo plus bas)
-
-  try {
-    // 1) Chargement direct sur la page cotation
-    if (typeof location !== 'undefined' && /[?&#]p=cot|#cot/.test(location.href)) {
-      // Délai plus long (3s) pour laisser le temps à l'auth de s'établir
-      setTimeout(_cotPrewarmN8N, 3000);
-      setTimeout(_cotPrewarmN8N_FullPipeline, 4500);
-    }
-  } catch (_) {}
-
-  try {
-    // 2) Hook sur les événements de login — déclenche le prewarm dès que connecté
-    if (typeof document !== 'undefined') {
-      const _onAuthSuccess = () => {
-        setTimeout(_cotPrewarmN8N, 1000);             // ping léger après login
-        setTimeout(_cotPrewarmN8N_FullPipeline, 3000); // pipeline complet 2s plus tard
-      };
-      // Plusieurs noms d'events possibles selon les versions de l'app
-      ['auth:success', 'ami:login', 'ami:auth-success', 'login:success', 'user:logged-in'].forEach(evt => {
-        document.addEventListener(evt, _onAuthSuccess, { once: false });
-      });
-    }
-  } catch (_) {}
-
-  try {
-    // 3) Polling léger : si déjà connecté quand cotation.js charge, déclencher
-    // après un court délai. Évite de manquer le prewarm si l'event login est
-    // émis avant que cotation.js soit prêt.
-    if (typeof document !== 'undefined') {
-      const _checkAndPrewarm = () => {
-        if (_cotIsAuthenticated()) {
-          _cotPrewarmN8N();
-          setTimeout(_cotPrewarmN8N_FullPipeline, 2000);
-        }
-      };
-      // 5s après DOMContentLoaded — laisse largement le temps à l'auth
-      if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(_checkAndPrewarm, 5000);
-      } else {
-        document.addEventListener('DOMContentLoaded', () => {
-          setTimeout(_checkAndPrewarm, 5000);
-        }, { once: true });
-      }
-    }
-  } catch (_) {}
-}
-
-/* Nettoyage du FAB lors de la navigation hors de la page cotation */
-if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
-  window._cotRecoteNavHookInstalled = true;
-  // Hook sur navTo si disponible — purement défensif, pas bloquant
-  try {
-    const _origNavTo = window.navTo;
-    if (typeof _origNavTo === 'function') {
-      window.navTo = function patchedNavTo(section, ...rest) {
-        if (section && section !== 'cot') _cotHideReCoteBar();
-        // Pré-warm N8N quand l'utilisateur arrive sur la page cotation
-        // - _cotPrewarmN8N : ping léger (réveille le conteneur Render)
-        // - _cotPrewarmN8N_FullPipeline : vrai appel N8N (réveille l'IA en entier)
-        // - Auto-fill date/heure : si vides, mettre maintenant
-        if (section === 'cot') {
-          try { setTimeout(_cotPrewarmN8N, 300); } catch (_) {}
-          try { setTimeout(_cotPrewarmN8N_FullPipeline, 800); } catch (_) {}
-          try { setTimeout(_cotAutoFillDateHeure, 200); } catch (_) {}
-        }
-        return _origNavTo.apply(this, [section, ...rest]);
-      };
-    }
-  } catch (_) {}
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   LISTENER ami:preuve_updated — rafraîchit l'UI cotation après signature
-   ───────────────────────────────────────────────────────────────────────────
-   Émis par signature.js après une signature patient réussie. Met à jour :
-   - le badge preuve (passe en FORTE) sans re-cotation N8N
-   - les blocs CPAM et Scoring qui mentionnaient « Aucune preuve terrain »
-   - le badge data-sig sur le bouton signature (déjà fait par signature.js)
-
-   Stratégie : on conserve la dernière cotation rendue dans window._lastCotData,
-   on patche son champ preuve_soin et on appelle renderCot pour re-render à
-   partir des données déjà en mémoire. Pas d'appel réseau. Pas de race condition.
-   ═══════════════════════════════════════════════════════════════════════════ */
-if (typeof window !== 'undefined' && !window._cotPreuveListenerInstalled) {
-  window._cotPreuveListenerInstalled = true;
-  document.addEventListener('ami:preuve_updated', function(ev) {
-    try {
-      const detail = ev?.detail || {};
-      // Vérifier qu'on a bien une cotation actuellement affichée
-      const last = window._lastCotData;
-      if (!last || typeof renderCot !== 'function') return;
-      // Vérifier que c'est bien la cotation actuellement affichée
-      // (l'invoice_number doit matcher pour éviter de mettre à jour la mauvaise)
-      if (detail.invoice_number && last.invoice_number && detail.invoice_number !== last.invoice_number) {
-        return; // event pour une autre cotation, on ignore
-      }
-      // Mise à jour preuve_soin dans la copie en mémoire
-      last.preuve_soin = {
-        type:           detail.type           || 'signature_patient',
-        force_probante: detail.force_probante || 'FORTE',
-        hash_preuve:    detail.hash_preuve    || '',
-        timestamp:      detail.timestamp      || new Date().toISOString(),
-        certifie_ide:   detail.certifie_ide   === true,
-      };
-      // Re-render — renderCot retourne un STRING HTML qu'il faut assigner à cbody
-      // Sans cette assignation, le DOM ne se met pas à jour et le bandeau CPAM
-      // « Aucune preuve terrain » reste visible malgré la signature.
-      const _cbody = document.getElementById('cbody');
-      if (_cbody) {
-        _cbody.innerHTML = renderCot(last);
-      }
-      // Toast de confirmation visuel
-      if (typeof showToast === 'function') {
-        showToast('ok', '🛡️ Preuve forte enregistrée', 'Signature patient validée — la cotation est maintenant pleinement opposable.');
-      }
-    } catch (e) {
-      console.warn('[cotation] listener ami:preuve_updated KO:', e.message);
-    }
-  });
-}
-
-/* Détecte si une suggestion est purement informative (non-actionnable).
-   Ex: PROTECTION, RGPD, AUDIT, INFO, VIGILANCE — pas de code à ajouter. */
-function _cotIsInfoSuggestion(text) {
-  const s = String(text || '').trim();
-  if (!s) return false;
-  // Mots-clés d'en-tête en MAJUSCULES indiquant une info (pas une action cotation)
-  const infoKeywords = [
-    'PROTECTION',
-    'RGPD',
-    'INFO',
-    'NOTE',
-    'AUDIT',
-    'VIGILANCE',
-    'TRACABILITE',
-    'TRAÇABILITÉ',
-    'CONFORMITÉ',
-    'CONFORMITE',
-    'SIGNATURE',
-    'PREUVE',
-  ];
-  // Détection : "MOTCLE — " ou "MOTCLE : " ou "MOTCLE - " en début de chaîne
-  const reHeader = new RegExp('^(' + infoKeywords.join('|') + ')\\s*[—\\-:·]', 'i');
-  if (reHeader.test(s)) return true;
-  // Ou action orientée UI/outil plutôt que cotation (ex: "Activer preuve forte")
-  const actionInfo = /\bactiver\s+(preuve|signature|photo|tra[cç]abilit)/i;
-  if (actionInfo.test(s)) return true;
-  return false;
-}
-
-/* Extraction des codes NGAP en GROUPES (chaque groupe = 1 chip).
-   Les codes reliés par "+" forment un groupe unique (combinaison).
-   Les séparateurs forts (→, , ou, vs, puis) délimitent les groupes distincts.
-   Ex: "AMI1 → AMI4 + MCI"              → [ {insert:"AMI 1"}, {insert:"AMI 4 + MCI"} ]
-       "AMI 14 longue, AMI 9 courte"    → [ {insert:"AMI 14 longue"}, {insert:"AMI 9 courte"} ]
-       "AMI 14 + BSA + IFD"             → [ {insert:"AMI 14 + BSA + IFD"} ] */
-function _cotExtractNgapChips(text) {
-  const s = String(text || '');
-  if (!s) return [];
-
-  // 1) Collecter tous les tokens (codes NGAP) avec leur position dans la chaîne
-  const tokens = [];
-
-  // Codes avec coefficient : AMI/AIS/SFI/SF
-  const reCoef = /\b(AMI|AIS|SFI|SF)\s*(\d{1,2}(?:\.\d{1,2})?(?:\/\d{1,2})?)\b/gi;
-  let m;
-  while ((m = reCoef.exec(s)) !== null) {
-    const codeNorm    = m[1].toUpperCase() + m[2];
-    const codeDisplay = m[1].toUpperCase() + ' ' + m[2];
-    // Libellé court qui suit (max 3 mots)
-    const after = s.slice(m.index + m[0].length, m.index + m[0].length + 60);
-    const labelM = after.match(/^\s*([\wàâéèêëïîôùûüçÀÂÉÈÊËÏÎÔÙÛÜÇ]+(?:\s+[\wàâéèêëïîôùûüçÀÂÉÈÊËÏÎÔÙÛÜÇ]+){0,2})/);
-    const label = labelM ? labelM[1].trim() : '';
-    const insert = codeDisplay + (label ? ' ' + label : '');
-    const endPos = m.index + m[0].length + (label ? (labelM[0].length) : 0);
-    tokens.push({
-      code:    codeNorm,
-      display: insert,
-      insert,
-      start:   m.index,
-      end:     endPos,
-    });
-  }
-
-  // Codes simples (sans coef) : BSB, BSC, MIE, IFD, NUIT_PROF…
-  const simpleCodes = [
-    'NUIT_PROF',                         // Doit être testé AVANT 'NUIT' (longest-first)
-    'BSB', 'BSC', 'BSA', 'BSI',
-    'MIE', 'MAU', 'MCI',
-    'IFD', 'IFI', 'IFSD',
-    'DIP', 'DIE', 'DI',
-    'NUIT', 'DIM',
-  ];
-  for (const c of simpleCodes) {
-    const re = new RegExp('\\b' + c + '\\b', 'gi');
-    let mm;
-    while ((mm = re.exec(s)) !== null) {
-      // Skip si déjà capturé par un code plus long (ex: NUIT_PROF contient NUIT)
-      const overlap = tokens.some(t => mm.index < t.end && mm.index + c.length > t.start);
-      if (overlap) continue;
-      tokens.push({
-        code:    c,
-        display: c,
-        insert:  c,
-        start:   mm.index,
-        end:     mm.index + c.length,
-      });
-    }
-  }
-
-  if (!tokens.length) return [];
-
-  // 2) Trier par position pour pouvoir examiner le texte entre 2 codes consécutifs
-  tokens.sort((a, b) => a.start - b.start);
-
-  // 3) Regrouper : les codes reliés par "+" (avec éventuellement espaces/parenthèses)
-  //    appartiennent au même groupe. Les séparateurs forts (→, ,, ou, vs, puis, ;)
-  //    terminent un groupe.
-  const reSepSoft = /^[\s(]*\+[\s)]*$/;                              // " + " entre codes
-  const reSepHard = /[→←⇒,;]|\b(ou|vs|puis|alors|sinon|plut[ôo]t)\b/i; // vrais séparateurs
-  const groups = [];
-  let current = [tokens[0]];
-  for (let i = 1; i < tokens.length; i++) {
-    const prev = tokens[i - 1];
-    const cur  = tokens[i];
-    const between = s.slice(prev.end, cur.start);
-    if (reSepHard.test(between)) {
-      // Séparateur fort → nouveau groupe
-      groups.push(current);
-      current = [cur];
-    } else if (reSepSoft.test(between)) {
-      // "+" → combo dans le même groupe
-      current.push(cur);
-    } else {
-      // Autre cas (espace simple, parenthèse…) → par défaut nouveau groupe
-      // (évite qu'une phrase continue agrège trop de codes)
-      groups.push(current);
-      current = [cur];
-    }
-  }
-  groups.push(current);
-
-  // 4) Dédupliquer (même combinaison de codes → 1 seul chip)
-  const seenKeys = new Set();
-  const chips = [];
-  for (const g of groups) {
-    const insert  = g.map(t => t.insert).join(' + ');
-    const display = g.map(t => t.display).join(' + ');
-    const key     = g.map(t => t.code).join('+').toLowerCase();
-    if (seenKeys.has(key)) continue;
-    seenKeys.add(key);
-    chips.push({ insert, display, codes: g.map(t => t.code) });
-  }
-  return chips;
-}
-
-/* Compat : ancienne API — renvoie un code par chip (pas de combo "+"). */
-function _cotExtractNgapCodes(text) {
-  return _cotExtractNgapChips(text).map(c => ({
-    code:    c.codes[0],
-    display: c.display,
-    insert:  c.insert,
-  }));
-}
-
-/* Expose en global pour usage depuis les handlers inline onclick="" */
-if (typeof window !== 'undefined') {
-  window._cotAppendDesc          = _cotAppendDesc;
-  window._cotClickAppend         = _cotClickAppend;
-  window._cotExtractNgapCodes    = _cotExtractNgapCodes;
-  window._cotExtractNgapChips    = _cotExtractNgapChips;
-  window._cotExtractCodesFromText = _cotExtractCodesFromText;
-  window._cotInferCodesFromText  = _cotInferCodesFromText;
-  window._cotIsInfoSuggestion    = _cotIsInfoSuggestion;
-  window._cotShowReCoteBar       = _cotShowReCoteBar;
-  window._cotHideReCoteBar       = _cotHideReCoteBar;
-  window._cotEnrichWithLocalEngine = _cotEnrichWithLocalEngine;
-  window._cotMinimalLocalCalc    = _cotMinimalLocalCalc;
-  window._cotPrewarmN8N          = _cotPrewarmN8N;
-  window._cotPrewarmN8N_FullPipeline = _cotPrewarmN8N_FullPipeline;
-  window._cotIsAuthenticated     = _cotIsAuthenticated;
-  window._cotAutoFillDateHeure   = _cotAutoFillDateHeure;
-  // Note : cotationLocaleNGAP() retiré de l'API publique (bouton supprimé du HTML)
-  // La fonction reste définie dans le fichier pour usage interne potentiel.
-  // Bouton « Vérifier & corriger » (handlers inline du HTML)
-  if (typeof openVerify       === 'function') window.openVerify       = openVerify;
-  if (typeof applyVerify      === 'function') window.applyVerify      = applyVerify;
-  if (typeof closeVM          === 'function') window.closeVM          = closeVM;
-  if (typeof verifyStandalone === 'function') window.verifyStandalone = verifyStandalone;
-}
-
 function renderCot(d) {
-  // Une cotation fraîche arrive → retire le FAB « Re-coter » s'il traîne
-  try { _cotHideReCoteBar(); } catch (_) {}
-  // Sauvegarder en mémoire pour permettre au listener ami:preuve_updated
-  // de re-render après signature sans appel N8N
-  window._lastCotData = d;
   const a   = d.actes  || [];
   const al  = d.alerts || [];
   const op  = d.optimisations || [];
@@ -2975,108 +1499,33 @@ function renderCot(d) {
     : '';
 
   // ── Bloc simulation CPAM N8N v7 ─────────────────────────────────────────────
-  // Avec gestion intelligente de l'absence de preuve : si l'unique anomalie
-  // (ou l'anomalie principale) est l'absence de preuve terrain, on propose
-  // directement un bouton « ✍️ Faire signer » qui ouvre la modale signature.
   const cpam = d.cpam_simulation || {};
-  // Détecter si la cotation a déjà une preuve forte (signature/photo)
-  const _hasPreuveForte = preuve.force_probante === 'FORTE';
-  // Détecter les anomalies « preuve terrain absente »
-  const _isPreuveAnomaly = (txt) => /preuve\s+terrain|justificatif\s+opposable|absence.*[ée]l[ée]ment\s+justif/i.test(String(txt || ''));
-  const _filteredAnomalies = (cpam.anomalies || []).filter(a => !(_hasPreuveForte && _isPreuveAnomaly(a)));
-  // ID invoice pour ouvrir la modale signature directement depuis le bandeau
-  const _cpamInvoiceId = d.invoice_number || '';
-  const _cpamPatId = (window._editingCotation?.patientId) || '';
-  const _hasOnlyPreuveAnomaly = (cpam.anomalies || []).length > 0
-    && (cpam.anomalies || []).every(a => _isPreuveAnomaly(a));
-
-  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK' && _filteredAnomalies.length > 0) ? (() => {
+  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK') ? (() => {
     const isKO = cpam.niveau === 'CRITIQUE';
-    // Bouton signer : seulement si l'anomalie filtrée concerne la preuve terrain
-    // ET qu'on a un invoice_number (cotation déjà sauvée côté worker)
-    const _showSignBtn = !_hasPreuveForte && _cpamInvoiceId &&
-      _filteredAnomalies.some(a => _isPreuveAnomaly(a));
-    const _signBtnHtml = _showSignBtn ? `
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn bv bsm" onclick="openSignatureModal('${_cpamInvoiceId}', { patient_id: '${_cpamPatId}', invoice_number: '${_cpamInvoiceId}' })">
-          ✍️ Faire signer le patient maintenant
-        </button>
-        <span style="font-size:10px;color:var(--m)">→ supprimera cette anomalie</span>
-      </div>
-      <div style="margin-top:6px;font-size:10px;color:var(--m)">Signature stockée localement · non transmise</div>` : '';
-    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}" data-cpam-bloc="1">
+    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}">
       <div style="font-size:11px;font-weight:700;color:${isKO ? '#ef4444' : '#f59e0b'};margin-bottom:6px">
         ${isKO ? '🚨' : '⚠️'} Simulation CPAM — ${cpam.decision || cpam.niveau}
       </div>
-      ${_filteredAnomalies.map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
-      ${_signBtnHtml}
+      ${(cpam.anomalies||[]).map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
     </div>`;
   })() : '';
-
-  // Si toutes les anomalies CPAM concernent la preuve ET qu'on a une preuve forte,
-  // afficher un bandeau positif de confirmation
-  const cpamSuccessBloc = (cpam.niveau && cpam.niveau !== 'OK' && _hasOnlyPreuveAnomaly && _hasPreuveForte) ? `
-    <div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(0,212,170,.08);border:1px solid #00b894" data-preuve-ok="1">
-      <div style="font-size:11px;font-weight:700;color:#00b894">
-        ✅ Preuve terrain enregistrée — Simulation CPAM conforme
-      </div>
-    </div>` : '';
 
   // ── Suggestions alternatives N8N v7 ─────────────────────────────────────────
   const suggBloc = sugg.length ? `<div style="margin-top:12px">
     <div class="lbl" style="font-size:10px;margin-bottom:6px;color:#22c55e">💰 Suggestions de valorisation</div>
-    <div class="aic">${sugg.map((s, i) => {
-      const reason = s.reason || '';
-      const action = s.action || '';
-      const gain   = s.gain   || '';
-      const fullTxt = [reason, action].filter(Boolean).join(' ');
-
-      // Détection info/protection → non-cliquable, pas de chips
-      const isInfo = _cotIsInfoSuggestion(reason) || _cotIsInfoSuggestion(fullTxt) || (s.type && /info|protection|audit/i.test(s.type));
-
-      if (isInfo) {
-        // Rendu purement informatif — aucune interaction, aucune flèche "+"
-        return `<div class="ai su" style="border-left:3px solid #6366f1;cursor:default">
-          ${gain ? `<strong style="color:var(--a)">${gain}</strong> — ` : ''}${reason}
-          ${action ? `<span style="font-size:10px;opacity:.7"> → ${action}</span>` : ''}
-        </div>`;
-      }
-
-      // Cliquable : extraction des groupes (codes reliés par "+" → 1 chip combo)
-      let chips = [];
-      try { chips = _cotExtractNgapChips(fullTxt); } catch (_) {}
-      const frag = (reason || action || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      const chipsHtml = chips.length
-        ? `<div class="ngap-chip-lbl">💡 Ajouter à la description :</div>
-           <div class="ngap-chips">${chips.map(c => {
-             const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-             const dsp = c.display.replace(/"/g, '&quot;');
-             return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}')" title="Ajouter « ${dsp} » à la description">${dsp}</span>`;
-           }).join('')}</div>`
-        : '';
-      return `<div class="ai su clk" style="border-left:3px solid #22c55e"
-                   onclick="window._cotClickAppend(this,'${frag}','Suggestion ${i + 1}')"
-                   title="Cliquer pour ajouter cette suggestion à la description">
-        ${gain ? `<strong style="color:var(--a)">${gain}</strong> — ` : ''}${reason}
-        ${action ? `<span style="font-size:10px;opacity:.7"> → ${action}</span>` : ''}
-        <span class="clk-plus"></span>
-        ${chipsHtml}
-      </div>`;
-    }).join('')}</div>
+    <div class="aic">${sugg.map(s =>
+      `<div class="ai su" style="border-left:3px solid #22c55e">
+        ${s.gain ? `<strong style="color:var(--a)">${s.gain}</strong> — ` : ''}${s.reason || ''}
+        ${s.action ? `<span style="font-size:10px;opacity:.7"> → ${s.action}</span>` : ''}
+      </div>`
+    ).join('')}</div>
   </div>` : '';
 
   // ── Scoring infirmière N8N v7 ────────────────────────────────────────────────
-  // Si la cotation a maintenant une preuve forte ET que le scoring concerne
-  // uniquement l'absence de preuve (label « SURVEILLANCE » avec mention preuve),
-  // on masque le scoring (il n'est plus pertinent après signature).
   const scoring = d.infirmiere_scoring || {};
-  const _scoringMentionsPreuve = scoring.reasons && Array.isArray(scoring.reasons)
-    ? scoring.reasons.some(r => _isPreuveAnomaly(r))
-    : (scoring.level === 'SURVEILLANCE' && _hasOnlyPreuveAnomaly);
-  const _hideScoring = _hasPreuveForte && _scoringMentionsPreuve;
-  const scoringBloc = (!_hideScoring && scoring.level && scoring.level !== 'SAFE') ? (() => {
+  const scoringBloc = (scoring.level && scoring.level !== 'SAFE') ? (() => {
     const col = scoring.level === 'DANGER' ? '#ef4444' : '#f59e0b';
-    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px" data-scoring-bloc="1">
+    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px">
       <span style="color:${col};font-weight:700">${scoring.level === 'DANGER' ? '🚨' : '⚠️'} Scoring IDE : ${scoring.level}</span>
       ${scoring.score != null ? ` (${scoring.score} pts)` : ''}
     </div>`;
@@ -3119,54 +1568,20 @@ function renderCot(d) {
     : '';
 
   // ── Alertes NGAP ────────────────────────────────────────────────────────────
-  // Les alertes de type "cumul interdit" ou "code non reconnu" deviennent cliquables :
-  // elles ouvrent une ligne d'actions (remplacer/supprimer/préciser) directement dans la carte.
   const alertsBloc = al.length
-    ? `<div class="aic" style="margin-top:12px">${al.map((x, i) => {
+    ? `<div class="aic" style="margin-top:12px">${al.map(x => {
         const isErr = x.startsWith('🚨') || x.startsWith('❌');
         const isOk  = x.startsWith('✅');
-        const isInfo = x.startsWith('ℹ️');
-        const cls = isErr ? 'er' : isOk ? 'su' : isInfo ? 'in' : 'wa';
-        // Pas d'actions sur les messages OK / Info
-        const actionsHtml = (isOk || isInfo) ? '' : _vmBuildAlertActions(x);
-        return `<div class="ai ${cls}${actionsHtml ? ' ai-has-actions' : ''}">
-          <div>${x}</div>
-          ${actionsHtml}
-        </div>`;
+        return `<div class="ai ${isErr ? 'er' : isOk ? 'su' : 'wa'}">${x}</div>`;
       }).join('')}</div>`
     : `<div class="ai su" style="margin-top:12px">✅ Aucune alerte NGAP</div>`;
 
   // ── Optimisations ajoutées par N8N ──────────────────────────────────────────
   const opBloc = op.length ? `<div style="margin-top:12px">
     <div class="lbl" style="font-size:10px;margin-bottom:6px">⬆️ Optimisations appliquées</div>
-    <div class="aic">${op.map((o, i) => {
+    <div class="aic">${op.map(o => {
       const msg = typeof o === 'string' ? o : (o.msg || JSON.stringify(o));
-      const msgEsc = msg.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-
-      // Info/protection au milieu des optims → non-cliquable
-      const isInfo = _cotIsInfoSuggestion(msg);
-      if (isInfo) {
-        return `<div class="ai su" style="border-left:3px solid #6366f1;cursor:default">💡 ${msg}</div>`;
-      }
-
-      // Extraction des groupes (codes reliés par "+" → 1 chip combo)
-      let chips = [];
-      try { chips = _cotExtractNgapChips(msg); } catch (_) {}
-      const chipsHtml = chips.length
-        ? `<div class="ngap-chip-lbl">💡 Ajouter à la description :</div>
-           <div class="ngap-chips">${chips.map(c => {
-             const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-             const dsp = c.display.replace(/"/g, '&quot;');
-             return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}')" title="Ajouter « ${dsp} » à la description">${dsp}</span>`;
-           }).join('')}</div>`
-        : '';
-      return `<div class="ai su clk"
-                   onclick="window._cotClickAppend(this,'${msgEsc}','Optimisation ${i + 1}')"
-                   title="Cliquer pour ajouter cette optimisation à la description">
-        💰 ${msg}
-        <span class="clk-plus"></span>
-        ${chipsHtml}
-      </div>`;
+      return `<div class="ai su">💰 ${msg}</div>`;
     }).join('')}</div>
   </div>` : '';
 
@@ -3220,22 +1635,9 @@ function renderCot(d) {
   </div>
 
   <!-- ══ DÉTAIL DES ACTES ══ -->
-  <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);margin-bottom:10px">Détail des actes <span style="color:var(--m);opacity:.7;text-transform:none;letter-spacing:0;font-family:inherit;font-size:10px;margin-left:6px">(cliquez pour ajouter à la description)</span></div>
+  <div style="font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--m);margin-bottom:10px">Détail des actes</div>
   <div class="al" style="margin-bottom:0">${a.length
-    ? a.map(x => {
-        const code = (x.code || '').trim();
-        const nom  = (x.nom  || '').trim();
-        // Fragment à injecter : code + libellé court (ex : "AMI9 Perfusion courte")
-        // On tronque le nom au 1er séparateur pour garder l'insertion compacte
-        const nomShort = nom.split(/[—–\-:()]/)[0].trim().slice(0, 48);
-        const insertTxt = (code + (nomShort ? ' ' + nomShort : '')).trim();
-        const insertEsc = insertTxt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const labelEsc  = (code || nomShort || 'acte').replace(/"/g, '&quot;');
-        // Pas de clic si aucun code/nom exploitable
-        const clickable = !!insertTxt;
-        return `<div class="ar${clickable ? ' clk' : ''}"
-            ${clickable ? `onclick="window._cotClickAppend(this,'${insertEsc}','${labelEsc}')"` : ''}
-            ${clickable ? `title="Cliquer pour ajouter « ${labelEsc} » à la description"` : ''}>
+    ? a.map(x => `<div class="ar">
         <div class="ac ${cc(x.code)}">${x.code || '?'}</div>
         <div class="an" style="flex:1">
           <div style="font-size:13px;color:var(--t)">${x.nom || ''}</div>
@@ -3243,51 +1645,9 @@ function renderCot(d) {
         </div>
         <div class="ao" style="color:var(--m)">×${(x.coefficient || 1).toFixed(1)}</div>
         <div class="at" style="color:var(--t);font-weight:700">${fmt(x.total)}</div>
-      </div>`;
-      }).join('')
+      </div>`).join('')
     : '<div class="ai wa">⚠️ Aucun acte retourné</div>'}
   </div>
-
-  ${(() => {
-    // ══ BANDEAU RÉGRESSION D'ACTES ══
-    // Détecte les actes présents dans l'ancienne cotation (_prevActes) qui ont
-    // disparu de la nouvelle. Arrive typiquement quand une re-cotation utilise
-    // une description incomplète (ex: AMI4 n'est plus dans f-txt).
-    try {
-      const editRef = window._editingCotation;
-      const prevActes = editRef?._prevActes;
-      if (!Array.isArray(prevActes) || !prevActes.length) return '';
-      // Codes présents dans la nouvelle cotation (normalisation MAJ sans espaces)
-      const normNew = new Set((a || []).map(x => String(x.code || '').toUpperCase().replace(/\s+/g, '')));
-      const missing = prevActes.filter(p => {
-        const k = String(p.code || '').toUpperCase().replace(/\s+/g, '');
-        return k && !normNew.has(k);
-      });
-      if (!missing.length) return '';
-      // Chip pour chaque acte manquant : clic = ajoute "CODE NOM" à f-txt
-      const missChips = missing.map(p => {
-        const code   = String(p.code || '').trim();
-        const nom    = String(p.nom  || '').trim();
-        const short  = nom.split(/[—–\-:()]/)[0].trim().slice(0, 40);
-        const insTxt = (code + (short ? ' ' + short : '')).trim();
-        const insEsc = insTxt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const dspEsc = code.replace(/"/g, '&quot;');
-        return `<span class="ngap-chip warn" onclick="window._cotClickAppend(this,'${insEsc}','${dspEsc}')" title="Remettre « ${dspEsc} » dans la description">${dspEsc}</span>`;
-      }).join('');
-      return `
-      <div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid #f59e0b">
-        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:4px;display:flex;align-items:center;gap:6px">
-          ⚠️ Acte${missing.length > 1 ? 's' : ''} principal${missing.length > 1 ? 'aux' : ''} disparu${missing.length > 1 ? 's' : ''} depuis la re-cotation
-        </div>
-        <div style="font-size:11px;color:var(--m);margin-bottom:8px">
-          La cotation précédente contenait ${missing.length} acte${missing.length > 1 ? 's' : ''} qui ne figure${missing.length > 1 ? 'nt' : ''} plus dans celle-ci.
-          Si vous validez « Mettre à jour », il${missing.length > 1 ? 's' : ''} sera${missing.length > 1 ? 'nt' : ''} perdu${missing.length > 1 ? 's' : ''}.
-        </div>
-        <div class="ngap-chip-lbl" style="margin-top:0">💡 Remettre dans la description et re-coter :</div>
-        <div class="ngap-chips">${missChips}</div>
-      </div>`;
-    } catch (_) { return ''; }
-  })()}
 
   <!-- ══ ALERTES + OPTIMISATIONS + SUGGESTIONS + CPAM + SCORING ══ -->
   ${estimationBannerBloc}
@@ -3295,7 +1655,6 @@ function renderCot(d) {
   ${opBloc}
   ${suggBloc}
   ${cpamBloc}
-  ${cpamSuccessBloc}
   ${scoringBloc}
 
   </div>`;
@@ -3762,85 +2121,25 @@ ${sigHtml || ''}
 async function openVerify() {
   const txt = gv('f-txt');
   if (!txt) { alert("Saisissez d'abord une description du soin."); return; }
-
-  // Loading visuel sur le bouton lui-même (en plus de la modale)
-  const _btnVerify = $('btn-verify');
-  const _origLabel = _btnVerify ? _btnVerify.innerHTML : null;
-  if (_btnVerify) {
-    _btnVerify.innerHTML = '<span class="spin spinw" style="width:14px;height:14px;display:inline-block;vertical-align:middle"></span> Analyse en cours…';
-    _btnVerify.disabled = true;
-  }
-
   $('vm').classList.add('open');
   $('vm-loading').style.display = 'block';
   $('vm-result').style.display = 'none';
   $('vm-apply').style.display = 'none';
   $('vm-cotate').style.display = 'none';
   VM_DATA = null;
-
-  // ── Pré-warm N8N en parallèle (au cas où le worker dort) ──
-  // Ne bloque pas — le vrai appel est verify ci-dessous
-  try { if (typeof _cotPrewarmN8N === 'function') _cotPrewarmN8N(); } catch (_) {}
-
-  // ── Feedback progressif si N8N est lent (cold-start Render ~30s) ──
-  const _slowMsgs = [
-    { delay: 6000,  msg: '🤖 N8N analyse votre description…' },
-    { delay: 18000, msg: '🤖 Service en cours de réveil — patientez…' },
-    { delay: 35000, msg: '🤖 Démarrage du service N8N (cold-start)…' },
-  ];
-  const _slowTimers = [];
-  const _vmLoadingMsg = $('vm-loading')?.querySelector('p');
-  const _origMsg = _vmLoadingMsg ? _vmLoadingMsg.textContent : null;
-  _slowMsgs.forEach(({ delay, msg }) => {
-    _slowTimers.push(setTimeout(() => {
-      if (_vmLoadingMsg) _vmLoadingMsg.textContent = msg;
-    }, delay));
-  });
-  const _clearVerifyTimers = () => {
-    _slowTimers.forEach(t => clearTimeout(t));
-    if (_vmLoadingMsg && _origMsg) _vmLoadingMsg.textContent = _origMsg;
-    if (_btnVerify) {
-      if (_origLabel) _btnVerify.innerHTML = _origLabel;
-      _btnVerify.disabled = false;
-    }
-  };
-
   try {
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'verify',
       _force_n8n: true,       // ⚡ force l'appel N8N — bypass moteur local + cache + circuit breaker
-      _no_local_fallback: true, // pas de fallback NGAPEngine ici : on VEUT N8N pour la vérif
       texte: txt, ddn: gv('f-ddn'),
       date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
-      exo: gv('f-exo'), regl: gv('f-regl'),
+      exo: gv('f-exo'), regl: gv('f-regl')
     });
-    _clearVerifyTimers();
     VM_DATA = d;
     renderVM(d);
   } catch (e) {
-    _clearVerifyTimers();
     $('vm-loading').style.display = 'none';
-    // Message d'erreur plus parlant selon le type
-    let errMsg = e.message || 'Erreur inconnue';
-    let errIcon = '⚠️';
-    let errAdvice = '';
-    if (/timeout|aborted|signal/i.test(errMsg)) {
-      errIcon = '⏱️';
-      errMsg = 'N8N n\'a pas répondu dans les temps (cold-start probable)';
-      errAdvice = '<div style="margin-top:10px;font-size:12px;color:var(--m)">💡 Réessayez dans 15-30 secondes — le service est en cours de démarrage.</div>';
-    } else if (/network|fetch|failed/i.test(errMsg)) {
-      errIcon = '📡';
-      errMsg = 'Connexion réseau impossible';
-      errAdvice = '<div style="margin-top:10px;font-size:12px;color:var(--m)">💡 Vérifiez votre connexion internet.</div>';
-    }
-    $('vm-result').innerHTML = `
-      <div class="vm-item warn">${errIcon} ${errMsg}</div>
-      ${errAdvice}
-      <div style="margin-top:14px;display:flex;gap:8px">
-        <button class="btn bp bsm" onclick="closeVM();setTimeout(openVerify,500)">🔄 Réessayer</button>
-        <button class="btn bs bsm" onclick="closeVM();setTimeout(cotation,100)">⚡ Coter quand même</button>
-      </div>
-    `;
+    $('vm-result').innerHTML = `<div class="vm-item warn">⚠️ Erreur : ${e.message}</div>`;
     $('vm-result').style.display = 'block';
   }
 }
@@ -3856,239 +2155,11 @@ function renderVM(d) {
     $('vm-corrected-text').textContent = corrige;
     $('vm-apply').style.display = 'flex';
   } else { $('vm-corr-wrap').style.display = 'none'; }
-
-  // ── Corrections : cliquables pour appliquer directement le fix au textarea ──
-  if (fixes.length) {
-    $('vm-fixes-wrap').style.display = 'block';
-    $('vm-fixes').innerHTML = fixes.map((f, i) => {
-      const txt = typeof f === 'string' ? f : (f.msg || f.text || JSON.stringify(f));
-      const esc = txt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      return `<div class="vm-item fix vm-clickable" onclick="window._vmApplyFix('${esc}',this)" title="Cliquer pour appliquer cette correction dans la description">✏️ ${txt} <span class="vm-act">+ Appliquer</span></div>`;
-    }).join('');
-  } else { $('vm-fixes-wrap').style.display = 'none'; }
-
-  // ── Incohérences NGAP : actions contextuelles ──
-  // Ex: "NUIT + NUIT_PROF non cumulables — appliquer NUIT_PROF si après 23h"
-  //     → boutons "Remplacer NUIT par NUIT_PROF" et "Garder NUIT"
-  // Ex: "Code AMI non reconnu dans le référentiel"
-  //     → boutons "Supprimer AMI" et "Corriger en AMI 1"
-  if (alerts.length) {
-    $('vm-alerts-wrap').style.display = 'block';
-    $('vm-alerts').innerHTML = alerts.map((a, i) => {
-      const txt = typeof a === 'string' ? a : (a.msg || a.text || JSON.stringify(a));
-      const actionsHtml = _vmBuildAlertActions(txt);
-      return `<div class="vm-item warn" data-alert-idx="${i}">
-        <div>⚠️ ${txt}</div>
-        ${actionsHtml}
-      </div>`;
-    }).join('');
-  } else { $('vm-alerts-wrap').style.display = 'none'; }
-
-  // ── Suggestions : cliquables (ajout du code extrait ou de la suggestion entière) ──
-  if (sugg.length) {
-    $('vm-sugg-wrap').style.display = 'block';
-    $('vm-sugg').innerHTML = sugg.map((s, i) => {
-      const txt = typeof s === 'string' ? s : (s.msg || s.text || JSON.stringify(s));
-      // Extraire les codes NGAP éventuels pour créer des chips
-      let chips = [];
-      try { chips = _cotExtractNgapChips(txt); } catch (_) {}
-      const chipsHtml = chips.length
-        ? `<div class="ngap-chips" style="margin-top:6px">${chips.map(c => {
-            const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const dsp = c.display.replace(/"/g, '&quot;');
-            return `<span class="ngap-chip" onclick="event.stopPropagation();window._cotClickAppend(this,'${ins}','${dsp}');window.closeVM&&setTimeout(window.closeVM,300)" title="Ajouter « ${dsp} » à la description puis fermer">${dsp}</span>`;
-          }).join('')}</div>`
-        : '';
-      const esc = txt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      return `<div class="vm-item sugg vm-clickable" onclick="window._vmApplySuggestion('${esc}',this)" title="Cliquer pour ajouter à la description">
-        <div>💡 ${txt} <span class="vm-act">+ Ajouter</span></div>
-        ${chipsHtml}
-      </div>`;
-    }).join('');
-  } else { $('vm-sugg-wrap').style.display = 'none'; }
-
+  if (fixes.length)  { $('vm-fixes-wrap').style.display = 'block';  $('vm-fixes').innerHTML  = fixes.map(f  => `<div class="vm-item fix">✏️ ${f}</div>`).join(''); } else { $('vm-fixes-wrap').style.display  = 'none'; }
+  if (alerts.length) { $('vm-alerts-wrap').style.display = 'block'; $('vm-alerts').innerHTML = alerts.map(a => `<div class="vm-item warn">⚠️ ${a}</div>`).join(''); } else { $('vm-alerts-wrap').style.display = 'none'; }
+  if (sugg.length)   { $('vm-sugg-wrap').style.display   = 'block'; $('vm-sugg').innerHTML   = sugg.map(s   => `<div class="vm-item sugg">💡 ${s}</div>`).join(''); } else { $('vm-sugg-wrap').style.display   = 'none'; }
   $('vm-ok-wrap').style.display = hasChanges ? 'none' : 'block';
   $('vm-cotate').style.display = 'flex';
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Handlers pour les éléments cliquables dans la modale « Vérifier & corriger »
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Applique une correction proposée : ajoute le texte à f-txt */
-function _vmApplyFix(fix, el) {
-  if (typeof _cotAppendDesc === 'function') _cotAppendDesc(fix);
-  if (el && el.classList) {
-    el.classList.add('vm-applied');
-    setTimeout(() => { try { el.classList.remove('vm-applied'); } catch(_){} }, 2000);
-  }
-  // Pas de fermeture automatique — on laisse l'utilisateur enchaîner
-}
-
-/* Applique une suggestion : ajoute le texte et ferme la modale */
-function _vmApplySuggestion(sug, el) {
-  if (typeof _cotAppendDesc === 'function') _cotAppendDesc(sug);
-  if (el && el.classList) {
-    el.classList.add('vm-applied');
-  }
-  setTimeout(() => { try { closeVM(); } catch(_) {} }, 400);
-}
-
-/* Construit les boutons d'action pour une alerte NGAP selon son contenu */
-function _vmBuildAlertActions(alertTxt) {
-  const s = String(alertTxt || '');
-  const actions = [];
-
-  // ── Pattern 1 : cumul interdit "X + Y non cumulables — appliquer Y si …" ──
-  //   Ex: NUIT + NUIT_PROF non cumulables — appliquer NUIT_PROF si après 23h
-  const cumul = s.match(/\b([A-Z][A-Z_0-9]*)\s*\+\s*([A-Z][A-Z_0-9]*)\s+non\s+cumulables?\s*[—\-:]+\s*appliquer\s+([A-Z][A-Z_0-9]*)/i);
-  if (cumul) {
-    const codeA = cumul[1].toUpperCase();
-    const codeB = cumul[2].toUpperCase();
-    const codeKeep = cumul[3].toUpperCase();
-    const codeDrop = codeKeep === codeA ? codeB : codeA;
-    actions.push({
-      label: `→ Remplacer par ${codeKeep} seul`,
-      action: `_vmReplaceCode('${codeDrop}','${codeKeep}',this)`,
-      title: `Supprimer ${codeDrop} et conserver ${codeKeep} dans la description`,
-    });
-    actions.push({
-      label: `Supprimer ${codeDrop}`,
-      action: `_vmRemoveCode('${codeDrop}',this)`,
-      title: `Retirer ${codeDrop} de la description`,
-      secondary: true,
-    });
-  }
-
-  // ── Pattern 2 : "Code X non reconnu dans le référentiel — accepté tel quel" ──
-  // Ex: Code "AMI" non reconnu dans le référentiel — accepté tel quel
-  const unknown = s.match(/code\s*["«]?\s*([A-Z][A-Z_0-9]*)\s*["»]?\s+non\s+reconnu/i);
-  if (unknown && !cumul) {
-    const code = unknown[1].toUpperCase();
-    actions.push({
-      label: `Supprimer "${code}"`,
-      action: `_vmRemoveCode('${code}',this)`,
-      title: `Retirer "${code}" de la description (code incomplet)`,
-    });
-    // Propose des remplacements courants si c'est "AMI" seul
-    if (code === 'AMI') {
-      ['AMI 1', 'AMI 4', 'AMI 9', 'AMI 14'].forEach(sug => {
-        actions.push({
-          label: `→ ${sug}`,
-          action: `_vmReplaceCode('${code}','${sug}',this)`,
-          title: `Remplacer "${code}" par "${sug}"`,
-          secondary: true,
-        });
-      });
-    }
-    if (code === 'AIS') {
-      ['AIS 3', 'AIS 4'].forEach(sug => {
-        actions.push({
-          label: `→ ${sug}`,
-          action: `_vmReplaceCode('${code}','${sug}',this)`,
-          secondary: true,
-        });
-      });
-    }
-  }
-
-  // ── Pattern 3 : "Coefficient manquant pour X" / "coefficient requis" ──
-  const coefMiss = s.match(/coefficient\s+(?:manquant|requis|obligatoire)\s*(?:pour\s*)?([A-Z][A-Z_0-9]*)?/i);
-  if (coefMiss && !cumul && !unknown) {
-    const code = (coefMiss[1] || '').toUpperCase();
-    if (code) {
-      actions.push({
-        label: `Préciser ${code}…`,
-        action: `_vmPromptCoef('${code}',this)`,
-        title: `Saisir le coefficient correct pour ${code}`,
-      });
-    }
-  }
-
-  // ── Pattern 4 : "Acte X requis" / "manque X" ──
-  const missReq = s.match(/(?:manque|requis|ajouter)\s+([A-Z][A-Z_0-9]*\s*\d*(?:[._/]\d+)?)/i);
-  if (missReq && !cumul && !unknown && !coefMiss) {
-    const code = missReq[1].trim();
-    actions.push({
-      label: `+ Ajouter ${code}`,
-      action: `_vmAppendCode('${code}',this)`,
-      title: `Ajouter ${code} à la description`,
-    });
-  }
-
-  // ── Extraction générique : tout code NGAP mentionné dans l'alerte ──
-  // (si aucun pattern spécifique n'a matché, on propose d'extraire les codes)
-  if (!actions.length) {
-    try {
-      const chips = _cotExtractNgapChips(s);
-      chips.forEach(c => {
-        const ins = c.insert.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const dsp = c.display.replace(/"/g, '&quot;');
-        actions.push({
-          label: `+ ${dsp}`,
-          action: `_vmAppendCode('${ins}',this)`,
-          title: `Ajouter « ${dsp} » à la description`,
-          secondary: true,
-        });
-      });
-    } catch (_) {}
-  }
-
-  if (!actions.length) return '';
-  return `<div class="vm-actions-row">${actions.map(a =>
-    `<button type="button" class="vm-act-btn${a.secondary ? ' sec' : ''}" onclick="event.stopPropagation();window.${a.action}" title="${a.title || ''}">${a.label}</button>`
-  ).join('')}</div>`;
-}
-
-/* Retire toutes les occurrences d'un code de la description (f-txt) */
-function _vmRemoveCode(code, btn) {
-  const el = $('f-txt'); if (!el) return;
-  const cur = el.value || '';
-  // Regex insensible à la casse, frontière mot, gère le "+" séparateur
-  const reCode = new RegExp('\\s*\\+?\\s*\\b' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b(?:\\s+[a-zàâéèêëïîôùûüç0-9éè]+(?:\\s+[a-zàâéèêëïîôùûüç0-9éè]+){0,2})?', 'gi');
-  const cleaned = cur.replace(reCode, '').replace(/\s{2,}/g, ' ').replace(/^\s*\+?\s*|\s*\+?\s*$/g, '').trim();
-  el.value = cleaned;
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  if (btn && btn.classList) btn.classList.add('vm-applied');
-  if (typeof showToast === 'function') showToast(`✅ "${code}" retiré de la description`, 'su');
-  // Active le FAB pour que l'utilisateur puisse relancer
-  if (typeof _cotShowReCoteBar === 'function') _cotShowReCoteBar();
-}
-
-/* Remplace un code par un autre dans la description */
-function _vmReplaceCode(oldCode, newCode, btn) {
-  const el = $('f-txt'); if (!el) return;
-  const cur = el.value || '';
-  const reCode = new RegExp('\\b' + oldCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
-  if (reCode.test(cur)) {
-    // Remplacement direct
-    const replaced = cur.replace(reCode, newCode);
-    el.value = replaced;
-  } else {
-    // oldCode n'était pas présent → append newCode
-    const sep = cur && !/[,+]\s*$/.test(cur) ? ' + ' : ' ';
-    el.value = cur.trim() + sep + newCode;
-  }
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  if (btn && btn.classList) btn.classList.add('vm-applied');
-  if (typeof showToast === 'function') showToast(`✅ Remplacé par "${newCode}"`, 'su');
-  if (typeof _cotShowReCoteBar === 'function') _cotShowReCoteBar();
-}
-
-/* Ajoute un code à la description */
-function _vmAppendCode(code, btn) {
-  if (typeof _cotAppendDesc === 'function') _cotAppendDesc(code);
-  if (btn && btn.classList) btn.classList.add('vm-applied');
-  if (typeof showToast === 'function') showToast(`✅ "${code}" ajouté`, 'su');
-  if (typeof _cotShowReCoteBar === 'function') _cotShowReCoteBar();
-}
-
-/* Prompt pour préciser le coefficient d'un code */
-function _vmPromptCoef(code, btn) {
-  const coef = prompt(`Coefficient pour ${code} ? (ex: 1, 4, 4.1, 9, 14/15)`);
-  if (!coef) return;
-  const cleaned = String(coef).trim().replace(/,/g, '.');
-  _vmReplaceCode(code, code + ' ' + cleaned, btn);
 }
 
 function applyVerify() { if (VM_DATA?.texte_corrige) $('f-txt').value = VM_DATA.texte_corrige; closeVM(); }
@@ -4122,8 +2193,6 @@ async function verifyStandalone() {
    UTILITAIRES
 ════════════════════════════════════════════════ */
 function clrCot() {
-  // Purger le FAB « Re-coter » s'il était affiché
-  try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
   ['f-pr','f-pr-rp','f-pr-dt','f-pt','f-ddn','f-sec','f-amo','f-amc','f-txt','f-ds','f-hs']
     .forEach(id => { const e = $(id); if (e) e.value = ''; });
   ['f-exo','f-regl'].forEach(id => { const e = $(id); if (e) e.selectedIndex = 0; });
@@ -4153,77 +2222,9 @@ function clrCot() {
 }
 
 function coterDepuisRoute(desc, nomPatient) {
-  // 🛡️ HARMONISATION CARNET ↔ TOURNÉE (route IA) → Historique des soins
-  // ----------------------------------------------------------------------
-  // Marqueur _fromCarnet pour que _cotationPipeline déclenche après-coup
-  // _ensureCotationInHistorique (vérif présence dans planning_patients +
-  // rattrapage ami-save-cotation si absente — upsert tri-critères = zéro
-  // doublon). Pré-résolution patient_id par nom pour que le worker fasse
-  // un PATCH sur la bonne ligne (Critère 2 : patient_id+date_soin).
-  window._editingCotation = null;
-  (async () => {
-    try {
-      if (!nomPatient || typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') {
-        // Pas de patient connu → marquer simplement pour ensureHistorique
-        window._editingCotation = { _fromCarnet: true, _fromTournee: true };
-        return;
-      }
-      const _rows = await _idbGetAll(PATIENTS_STORE);
-      const _low  = nomPatient.toLowerCase().trim();
-      const _hit  = _rows.find(r =>
-        ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_low) ||
-        ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_low)
-      );
-      const _ed = {
-        _fromCarnet:  true,
-        _fromTournee: true,
-      };
-      if (_hit) {
-        _ed.patientId = _hit.id;
-        // Pré-détection cotation existante AUJOURD'HUI pour ce patient (toutes sources)
-        try {
-          const _p = { ...((typeof _dec === 'function' ? _dec(_hit._data) : {}) || {}) };
-          if (Array.isArray(_p.cotations)) {
-            const _todayStr = new Date().toISOString().slice(0, 10);
-            const _existIdx = _p.cotations.findIndex(c => (c.date || '').slice(0,10) === _todayStr);
-            if (_existIdx >= 0) {
-              _ed.cotationIdx    = _existIdx;
-              _ed.invoice_number = _p.cotations[_existIdx].invoice_number || null;
-              _ed._autoDetected  = true;
-            }
-          }
-        } catch (_) {}
-      }
-      window._editingCotation = _ed;
-    } catch (_) {
-      window._editingCotation = { _fromCarnet: true, _fromTournee: true };
-    }
-  })();
-
   navTo('cot', null);
   setTimeout(() => {
     const elTxt = $('f-txt'); if (elTxt) { elTxt.value = desc; elTxt.focus(); }
     const elPt  = $('f-pt');  if (elPt && nomPatient) elPt.value = nomPatient;
   }, 150);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Exposition globale (fin de fichier) des fonctions appelées par les
-   handlers inline `onclick=""` du HTML. Doit être après la définition
-   des fonctions concernées.
-   ═══════════════════════════════════════════════════════════════════════════ */
-if (typeof window !== 'undefined') {
-  if (typeof openVerify       === 'function') window.openVerify       = openVerify;
-  if (typeof applyVerify      === 'function') window.applyVerify      = applyVerify;
-  if (typeof closeVM          === 'function') window.closeVM          = closeVM;
-  if (typeof verifyStandalone === 'function') window.verifyStandalone = verifyStandalone;
-  if (typeof renderVM         === 'function') window.renderVM         = renderVM;
-  // Handlers pour les actions des alertes de la modale Verify + carte résultat
-  if (typeof _vmApplyFix        === 'function') window._vmApplyFix        = _vmApplyFix;
-  if (typeof _vmApplySuggestion === 'function') window._vmApplySuggestion = _vmApplySuggestion;
-  if (typeof _vmBuildAlertActions === 'function') window._vmBuildAlertActions = _vmBuildAlertActions;
-  if (typeof _vmRemoveCode      === 'function') window._vmRemoveCode      = _vmRemoveCode;
-  if (typeof _vmReplaceCode     === 'function') window._vmReplaceCode     = _vmReplaceCode;
-  if (typeof _vmAppendCode      === 'function') window._vmAppendCode      = _vmAppendCode;
-  if (typeof _vmPromptCoef      === 'function') window._vmPromptCoef      = _vmPromptCoef;
 }
