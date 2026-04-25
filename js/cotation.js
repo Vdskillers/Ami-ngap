@@ -1370,7 +1370,13 @@ async function _cotationPipeline() {
     if (!d.prescripteur_rpps && _clientMeta.prescripteur_rpps) d.prescripteur_rpps = _clientMeta.prescripteur_rpps;
     if (!d.date_prescription && _clientMeta.date_prescription) d.date_prescription = _clientMeta.date_prescription;
     if (!d.prescripteur_id && _clientMeta.prescripteur_id)     d.prescripteur_id = _clientMeta.prescripteur_id;
-    if (!d.preuve_soin && _clientMeta.preuve_soin)             d.preuve_soin = _clientMeta.preuve_soin;
+    // ⚡ Preuve_soin : préserver la version la plus FORTE entre celle envoyée
+    // au worker (_clientMeta) et celle retournée. Évite qu'une re-cotation
+    // après signature renvoie STANDARD et écrase l'affichage de la signature.
+    const _metaPreuveForce = _clientMeta.preuve_soin?.force_probante === 'FORTE';
+    if (!d.preuve_soin || (_metaPreuveForce && d.preuve_soin?.force_probante !== 'FORTE')) {
+      d.preuve_soin = _clientMeta.preuve_soin;
+    }
     if (!d.invoice_number && _clientMeta.invoice_number)       d.invoice_number = _clientMeta.invoice_number;
     // amo/amc/regl : nécessaires pour les parts (si N8N ne les a pas calculées)
     if (!d.amo && _clientMeta.amo)   d.amo  = _clientMeta.amo;
@@ -1660,14 +1666,35 @@ async function _cotationPipeline() {
       }
 
       // Injection directe du bouton de signature dans la card résultat
-      // ⚡ Conditions d'affichage :
-      //   - Pas déjà signé (sinon afficher juste un badge « Signé » via data-sig)
+      // ⚡ Conditions d'affichage du bouton « Faire signer le patient » du bas :
+      //   - Pas déjà signé (sinon doublon avec le badge "Signé")
       //   - Pas de bandeau CPAM avec bouton signer (sinon doublon visuel)
-      // Si aucune des deux conditions ci-dessus, on n'injecte rien : le bouton
-      // CPAM du dessus suffit, ou la signature est déjà faite.
+      // On reproduit ICI la même logique que le bandeau CPAM dans renderCot() :
+      // un bouton « Faire signer le patient maintenant » est ajouté dans le bandeau
+      // CPAM si toutes ces conditions sont vraies :
+      //   - cpam.niveau existe et != 'OK'
+      //   - il reste des anomalies après filtrage des "preuve terrain"
+      //   - pas de preuve FORTE existante
+      //   - une anomalie restante mentionne "preuve terrain"
+      //   - invoice_number existe
+      // Si toutes ces conditions sont vraies → bouton CPAM affiché → on n'injecte
+      // PAS le bouton du bas (sinon doublon).
       const _cbody = $('cbody');
       const _alreadySigned = d.preuve_soin?.force_probante === 'FORTE';
-      const _hasCpamSignBtn = !!_cbody?.querySelector('[data-cpam-bloc="1"] button[onclick*="openSignatureModal"]');
+
+      // Reproduire la logique de _filteredAnomalies / _showSignBtn de renderCot
+      const _isPreuveAnomaly_local = (txt) => /preuve\s+terrain|justificatif\s+opposable|absence.*[ée]l[ée]ment\s+justif/i.test(String(txt || ''));
+      const _hasPreuveForte_local = d.preuve_soin?.force_probante === 'FORTE';
+      const _cpamLocal = d.cpam_simulation || {};
+      const _anomaliesAll = _cpamLocal.anomalies || [];
+      const _anomaliesFiltered = _anomaliesAll.filter(a => !(_hasPreuveForte_local && _isPreuveAnomaly_local(a)));
+      const _hasCpamSignBtn = !!(
+        _cpamLocal.niveau && _cpamLocal.niveau !== 'OK' &&
+        _anomaliesFiltered.length > 0 &&
+        !_hasPreuveForte_local &&
+        _invoiceId &&
+        _anomaliesFiltered.some(a => _isPreuveAnomaly_local(a))
+      );
       const _shouldShowBottomBtn = !_alreadySigned && !_hasCpamSignBtn;
       if (_cbody && !_cbody.querySelector('.sig-btn-wrap') && _shouldShowBottomBtn) {
         const _wrap = document.createElement('div');
@@ -2710,8 +2737,13 @@ if (typeof window !== 'undefined' && !window._cotPreuveListenerInstalled) {
         timestamp:      detail.timestamp      || new Date().toISOString(),
         certifie_ide:   detail.certifie_ide   === true,
       };
-      // Re-render — les blocs CPAM/scoring/badge preuve seront recalculés
-      renderCot(last);
+      // Re-render — renderCot retourne un STRING HTML qu'il faut assigner à cbody
+      // Sans cette assignation, le DOM ne se met pas à jour et le bandeau CPAM
+      // « Aucune preuve terrain » reste visible malgré la signature.
+      const _cbody = document.getElementById('cbody');
+      if (_cbody) {
+        _cbody.innerHTML = renderCot(last);
+      }
       // Toast de confirmation visuel
       if (typeof showToast === 'function') {
         showToast('ok', '🛡️ Preuve forte enregistrée', 'Signature patient validée — la cotation est maintenant pleinement opposable.');
