@@ -1952,12 +1952,30 @@ async function coterDepuisPatient(id) {
   const p = { ...(_dec(row._data)||{}), nom: row.nom, prenom: row.prenom };
 
   // ── Pré-détection cotation existante ────────────────────────────────────
-  // Si une cotation existe déjà pour ce patient aujourd'hui, pré-poser
-  // _editingCotation pour que la modale de choix s'affiche dès le clic sur "Coter".
+  // 🛡️ RENFORCEMENT « Carnet → Historique des soins » :
+  //   1. Marqueur _fromCarnet:true → permet au pipeline de cotation de
+  //      vérifier après-coup que la cotation est bien arrivée dans
+  //      planning_patients (Historique des soins) côté serveur, et
+  //      relance ami-save-cotation en rattrapage si manquant.
+  //   2. patientId pré-résolu → garantit que _saveCotationNurse côté
+  //      worker reçoit le bon patient_id et que l'upsert se fait sur la
+  //      bonne ligne (évite création d'une 2e ligne sans patient_id).
+  //   3. Détection doublon élargie : on ne se limite plus à aujourd'hui ;
+  //      si l'utilisateur change f-ds dans la cotation, la modale doublon
+  //      s'affichera quand même (la logique d'_cotationCheckDoublon dans
+  //      cotation.js compare par date saisie).
   // On efface d'abord toute ref précédente pour repartir propre.
   window._editingCotation = null;
   try {
     const _todayStr = new Date().toISOString().slice(0, 10);
+    // Marqueur de provenance — propagé jusqu'au pipeline de cotation
+    // ↳ même sans cotation pré-existante, on pose le flag pour que la
+    //   vérification post-save dans l'Historique des soins se déclenche.
+    window._editingCotation = {
+      patientId:    row.id,
+      _fromPatient: true,
+      _fromCarnet:  true,
+    };
     if (Array.isArray(p.cotations)) {
       const _existIdx = p.cotations.findIndex(c => c.date === _todayStr);
       if (_existIdx >= 0) {
@@ -1967,6 +1985,7 @@ async function coterDepuisPatient(id) {
           cotationIdx:    _existIdx,
           invoice_number: _existCot.invoice_number || null,
           _fromPatient:   true,
+          _fromCarnet:    true,
           _autoDetected:  true, // sera remplacé par le choix explicite de l'utilisateur
         };
         if (typeof showToast === 'function')

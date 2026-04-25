@@ -2440,6 +2440,30 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
         const key = (typeof _dashCacheKey === 'function') ? _dashCacheKey() : 'ami_dash_cache';
         localStorage.removeItem(key);
       } catch {}
+
+      // ── 🛡️ Garantie post-batch Pilotage → Historique des soins ──────────
+      // Pour chaque cotation envoyée avec un invoice_number connu, vérifier
+      // 4s plus tard que la ligne est bien dans planning_patients ; si
+      // absente, relance ami-save-cotation (upsert tri-critères côté worker
+      // = zéro doublon). Limite à 10 vérifs en parallèle pour ne pas
+      // saturer la queue API.
+      if (typeof _ensureCotationInHistorique === 'function') {
+        const _toEnsure = cotations
+          .map((c, i) => {
+            const _inv = _retInvs[i] || c.invoice_number || null;
+            return _inv ? { ...c, invoice_number: _inv } : null;
+          })
+          .filter(Boolean)
+          .slice(0, 10);
+        setTimeout(() => {
+          for (const _c of _toEnsure) {
+            _ensureCotationInHistorique({
+              invoice_number: _c.invoice_number,
+              cotation:       _c,
+            }).catch(() => {});
+          }
+        }, 4000);
+      }
     }
   } catch(e) {
     console.warn('[AMI] Sync cotations KO (silencieux):', e.message);
@@ -5139,6 +5163,21 @@ function _validateCotationLive() {
           return Math.abs(_nowMsVL - _cMs) < _DEDUP_WINDOW_MS_VL;
         });
       }
+      // 🛡️ HARMONISATION CARNET ↔ PILOTAGE — fallback strict sur date_soin
+      // ----------------------------------------------------------------------
+      // Si une cotation existe déjà pour CE patient à CETTE date (peu importe
+      // la source : cotation_form, cotation_edit, ngap_*, cabinet_*, local_ngap…),
+      // on l'upsert au lieu d'en pousser une nouvelle. C'est la même règle
+      // que cotation.js (_cotationPipeline / _cotationLocalPersist) et que le
+      // worker /ami-save-cotation (Critère 2 : patient_id+date_soin).
+      // → Empêche le doublon classique : Carnet AM + Pilotage PM même jour.
+      // Note : on ne filtre PAS sur la source car le but est précisément
+      // de rattraper toute cotation existante quel que soit son origine.
+      if (existingIdx < 0) {
+        existingIdx = p.cotations.findIndex(c =>
+          (c.date || '').slice(0, 10) === today
+        );
+      }
       // Garder la cotation uniquement si elle contient au moins un acte technique (pas juste une majoration)
       const _CODES_MAJ = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
       const _hasActeTech = actes.some(a => !_CODES_MAJ.has((a.code||'').toUpperCase()));
@@ -5169,8 +5208,17 @@ function _validateCotationLive() {
         updated_at:     new Date().toISOString(),
       };
       if (existingIdx >= 0) {
+        // Cotation existante (même invoice_number, même fenêtre tournée, OU
+        // même date n'importe quelle source) → upsert strict, pas de doublon.
+        // On préserve l'invoice_number existant (peut venir d'une cotation
+        // Carnet faite plus tôt dans la journée) — le worker fera PATCH dessus.
+        const _preservedInv = p.cotations[existingIdx].invoice_number || cotEntry.invoice_number;
+        cotEntry.invoice_number = _preservedInv;
         p.cotations[existingIdx] = cotEntry;
-      } else if (!existingInvoice) {
+      } else {
+        // Aucune cotation existante pour cette date → push (1ère cotation du jour
+        // pour ce patient, tous flux confondus). Pas de garde !existingInvoice
+        // car cotEntry.invoice_number serait null à ce stade (existingIdx<0).
         p.cotations.push(cotEntry);
       }
       p.updated_at = new Date().toISOString();
@@ -5189,28 +5237,34 @@ function _validateCotationLive() {
             // ⚡ patient_nom : résolu depuis p (déchiffré IDB) — garantit l'affichage
             // correct dans l'Historique des soins (évite "?" + ID seul).
             const _patNomSB = ((p.prenom || '') + ' ' + (p.nom || '')).trim();
-            const sbRes = await apiCall('/webhook/ami-save-cotation', {
-              cotations: [{
-                actes,
-                total,
-                date_soin:      today,
-                heure_soin:     heureFinalLive, // ⚡ heure RÉELLE (pas la contrainte horaire)
-                soin:           soinLabel,
-                source:         'tournee',
-                invoice_number: cotEntry.invoice_number || null,
-                patient_id:     pid,
-                ...(_patNomSB ? { patient_nom: _patNomSB } : {}),
-              }]
-            });
+            const _payloadCotSB = {
+              actes,
+              total,
+              date_soin:      today,
+              heure_soin:     heureFinalLive, // ⚡ heure RÉELLE (pas la contrainte horaire)
+              soin:           soinLabel,
+              source:         'tournee',
+              invoice_number: cotEntry.invoice_number || null,
+              patient_id:     pid,
+              ...(_patNomSB ? { patient_nom: _patNomSB } : {}),
+            };
+            const sbRes = await apiCall('/webhook/ami-save-cotation', { cotations: [_payloadCotSB] });
             // Mettre à jour l'invoice_number retourné dans IDB + mémoire
             const invReturned = sbRes?.invoice_numbers?.[0] || sbRes?.invoice_number || null;
             if (invReturned) {
               // En mémoire
               if (patient._cotation) patient._cotation.invoice_number = invReturned;
-              // En IDB
-              const finalIdx = p.cotations.findIndex(c =>
-                c.source === 'tournee' && (c.date||'').slice(0,10) === today && !c._synced
-              );
+              // En IDB — résolution prioritaire par invoice_number (si déjà posé),
+              // puis par date YYYY-MM-DD non-synced (toutes sources tournée)
+              let finalIdx = -1;
+              if (cotEntry.invoice_number) {
+                finalIdx = p.cotations.findIndex(c => c.invoice_number === cotEntry.invoice_number);
+              }
+              if (finalIdx < 0) {
+                finalIdx = p.cotations.findIndex(c =>
+                  c.source === 'tournee' && (c.date||'').slice(0,10) === today && !c._synced
+                );
+              }
               if (finalIdx >= 0) {
                 p.cotations[finalIdx].invoice_number = invReturned;
                 p.cotations[finalIdx]._synced = true;
@@ -5219,6 +5273,20 @@ function _validateCotationLive() {
                 await _idbPut(PATIENTS_STORE, _tsLive2);
                 if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsLive2).catch(() => {});
               }
+            }
+
+            // ── 🛡️ Garantie post-cotation Pilotage → Historique des soins ──
+            // Même hook que pour Carnet patients (cotation.js) : on vérifie 4s
+            // après que la ligne est bien dans planning_patients ; si absente,
+            // relance ami-save-cotation (upsert tri-critères = zéro doublon).
+            const _invoiceForEnsure = invReturned || cotEntry.invoice_number || null;
+            if (_invoiceForEnsure && typeof _ensureCotationInHistorique === 'function') {
+              setTimeout(() => {
+                _ensureCotationInHistorique({
+                  invoice_number: _invoiceForEnsure,
+                  cotation: { ..._payloadCotSB, invoice_number: _invoiceForEnsure },
+                }).catch(() => {});
+              }, 4000);
             }
           }
         }

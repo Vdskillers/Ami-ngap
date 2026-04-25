@@ -1235,11 +1235,16 @@ async function _cotationPipeline() {
     // pas un fallback local.
     const _viaFab = !!window._cotFromReCoteFAB;
 
-    // ⚡ FORCE N8N par défaut sur le bouton « Coter avec l'IA »
-    // L'utilisateur clique sur un bouton qui dit « avec l'IA » → il VEUT N8N.
-    // Le mode « NGAP local » utilise un autre chemin (cotationLocaleNGAP).
-    // Bypass uniquement si la cotation est déclenchée en arrière-plan (sync, etc.)
-    const _forceN8N = !window._cotSkipForceN8N;
+    // ⚡ NE PAS forcer N8N par défaut sur « Coter avec l'IA » :
+    // Le worker a sa propre logique intelligente (Smart Engine v8 + RL + circuit
+    // breaker + fallback local NGAP). Forcer N8N systématiquement provoque des
+    // erreurs 502 quand le service est en cold-start (Render).
+    // Le force_n8n est réservé aux cas où l'utilisateur veut explicitement
+    // une vérification IA, c'est-à-dire :
+    //   - clic sur le FAB « Re-coter avec les ajouts » (correction iterative)
+    //   - clic sur « Vérifier & corriger » (modale Verify, déjà géré ailleurs)
+    // Pour le bouton « Coter avec l'IA » par défaut → on laisse le worker
+    // décider, ce qui garantit toujours une réponse même si N8N est down.
 
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: txt,
@@ -1259,9 +1264,9 @@ async function _cotationPipeline() {
       ...(_prePatientId ? { patient_id: _prePatientId } : {}),
       // invoice_number existant → le worker fera un PATCH au lieu d'un POST
       ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
-      // Drapeau FAB : force N8N (bypass cache / circuit breaker / fallback worker)
-      // OU : bouton « Coter avec l'IA » par défaut → forçage IA réelle
-      ...((_viaFab || _forceN8N) ? { _force_n8n: true, ...(_viaFab ? { _from_fab: true } : {}) } : {}),
+      // Drapeau FAB UNIQUEMENT : force N8N (bypass cache + circuit breaker)
+      // L'utilisateur a explicitement cliqué pour avoir une vraie correction IA.
+      ...(_viaFab ? { _force_n8n: true, _from_fab: true } : {}),
       // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
       preuve_soin: {
         type:         _preuveType,
@@ -1467,6 +1472,52 @@ async function _cotationPipeline() {
       }
     } catch(_idbErr) { if (_idbErr.message !== '__SKIP_IDB__') console.warn('[cotation] IDB save KO:', _idbErr.message); }
 
+    // ── 🛡️ Vérification post-cotation Carnet → Historique des soins ────────
+    // Quand la cotation a été initiée depuis le Carnet patients
+    // (coterDepuisPatient → _editingCotation._fromCarnet:true), on vérifie
+    // après quelques secondes que la ligne est bien arrivée dans
+    // planning_patients (ce qui alimente l'Historique des soins).
+    // Si absente → relance ami-save-cotation avec upsert tri-critères
+    // côté worker (zéro risque de doublon).
+    try {
+      if ((_editRef?._fromCarnet || _editRef?._fromTournee) && d?.invoice_number && typeof _ensureCotationInHistorique === 'function') {
+        // Résoudre le patient_id IDB si pas encore connu
+        let _patIdEnsure = _editRef.patientId || null;
+        if (!_patIdEnsure) {
+          const _patNomE = (gv('f-pt') || '').trim();
+          if (_patNomE && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+            const _rowsE = await _idbGetAll(PATIENTS_STORE);
+            const _lowE  = _patNomE.toLowerCase();
+            const _hitE  = _rowsE.find(r =>
+              ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_lowE) ||
+              ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_lowE)
+            );
+            if (_hitE) _patIdEnsure = _hitE.id;
+          }
+        }
+        const _ensureCot = {
+          actes:          d.actes || [],
+          total:          parseFloat(d.total || 0),
+          date_soin:      gv('f-ds') || new Date().toISOString().slice(0,10),
+          heure_soin:     gv('f-hs') || null,
+          soin:           (txt || '').slice(0, 200),
+          invoice_number: d.invoice_number,
+          source:         _editRef ? 'carnet_edit' : 'carnet_form',
+          patient_id:     _patIdEnsure || undefined,
+          patient_nom:    (gv('f-pt') || '').trim(),
+          part_amo:       parseFloat(d.part_amo || 0),
+          part_amc:       parseFloat(d.part_amc || 0),
+          part_patient:   parseFloat(d.part_patient || 0),
+        };
+        setTimeout(() => {
+          _ensureCotationInHistorique({
+            invoice_number: d.invoice_number,
+            cotation:       _ensureCot,
+          }).catch(() => {});
+        }, 4000);
+      }
+    } catch (_ensureErr) { console.warn('[cotation] Hook ensureHistorique KO:', _ensureErr.message); }
+
     // ── Déclencher la signature après cotation ──────────────────────────────
     // Dispatch ami:cotation_done pour signature.js + injection directe du bouton
     const _invoiceId = d.invoice_number || null;
@@ -1582,13 +1633,21 @@ async function cotationLocaleNGAP() {
   // Cacher l'erreur précédente s'il y en a une
   const cerr = $('cerr'); if (cerr) cerr.style.display = 'none';
   try {
-    // 1) Extraire les codes NGAP du textarea
+    // 1) Extraire les codes NGAP du textarea (codes explicites)
+    let codes = _cotExtractCodesFromText(txt);
+
+    // 2) Si aucun code explicite trouvé, utiliser un mini-NLP texte→code pour
+    //    les actes courants saisis en langage naturel (« injection insuline »)
+    if (!codes.length) {
+      codes = _cotInferCodesFromText(txt);
+    }
+
     const result = _cotMinimalLocalCalc(
-      _cotExtractCodesFromText(txt),
+      codes,
       { part_amo: null, part_amc: null, part_patient: null }
     );
     if (!result || !result.actes || !result.actes.length) {
-      throw new Error('Aucun code NGAP reconnu dans la description. Essayez : "AMI 4 + MCI" ou cliquez sur « Coter avec l\'IA ».');
+      throw new Error('Aucun code NGAP reconnu dans la description. Essayez un format clair comme : "AMI 4 + MCI", "injection insuline", "perfusion 1h", "pansement complexe", ou cliquez sur « Coter avec l\'IA » pour la détection IA complète.');
     }
     // 2) Composer l'objet d compatible avec renderCot
     const d = {
@@ -1608,6 +1667,23 @@ async function cotationLocaleNGAP() {
     if (typeof showToast === 'function') {
       showToast(`✅ Cotation locale NGAP : ${result.total.toFixed(2)} €`, 'su');
     }
+
+    // ── 🛡️ RENFORCEMENT « Carnet → Historique des soins » ──────────────────
+    // Le mode local NGAP ne passait PAS par /webhook/ami-calcul → la cotation
+    // n'arrivait jamais dans planning_patients (Historique). On corrige :
+    //   1. Persistance IDB stricte (mêmes règles upsert que cotation IA).
+    //   2. Push synchrone vers /webhook/ami-save-cotation (tri-critères
+    //      worker : invoice_number > patient_id+date_soin > patient_nom+date_soin).
+    //   3. Si offline → mise en file via queueCotation (replay automatique).
+    //
+    // Respecte la doctrine upsert :
+    //   • Patient existant + _editRef + idx trouvé → MAJ
+    //   • Patient existant + pas _editRef          → 1ère cotation (push)
+    //   • Patient existant + _editRef + pas d'idx  → rien (évite doublon)
+    //   • Patient absent + pas _editRef            → crée fiche + cotation
+    //   • Patient absent + _editRef                → rien (pas de fiche fantôme)
+    try { await _cotationLocalPersist(d, txt); }
+    catch (_pErr) { console.warn('[cotation] Persistance locale KO:', _pErr.message); }
   } catch (e) {
     if (cerr) {
       cerr.style.display = 'flex';
@@ -1618,6 +1694,348 @@ async function cotationLocaleNGAP() {
     }
   } finally {
     ld('btn-cot-local', false);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MINI-NLP : convertit du langage naturel en codes NGAP officiels.
+   Utilisé par cotationLocaleNGAP() quand l'utilisateur saisit du texte libre
+   (« injection insuline + perfusion 3x/semaine ») au lieu de codes explicites.
+   Retourne un tableau [{code: 'AMI1'}, {code: 'AMI9'}, ...] compatible avec
+   _cotMinimalLocalCalc.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function _cotInferCodesFromText(txt) {
+  const s = String(txt || '').toLowerCase();
+  if (!s) return [];
+
+  // Table de mapping : motif (regex) → code NGAP
+  // Ordonné du plus spécifique au plus générique
+  // ⚠️ Si group=true, dès qu'un mapping de ce groupe match, on saute les
+  //    autres mappings du même groupe (évite double match perfusion >1h ET perfusion seul).
+  const mappings = [
+    // ── Perfusions (groupe « perfusion ») ──────────────────────────────
+    { re: /perfusion\s*(?:>|sup[eé]rieure?\s*[aà]?)\s*1\s*h|perfusion\s+longue|perfusion\s+>\s*1h/, code: 'AMI14', group: 'perfusion' },
+    { re: /perfusion\s*(?:<|inf[eé]rieure?\s*[aà]?)\s*1\s*h|perfusion\s+courte|perfusion\s+<\s*1h/, code: 'AMI9', group: 'perfusion' },
+    { re: /perfusion\b(?!\s*(?:de|du|en|sous))/, code: 'AMI9', group: 'perfusion' }, // perfusion par défaut
+    // ── Injections (groupe « injection ») ──────────────────────────────
+    { re: /injection\s+insuline|insuline\s+(?:sous-cutan[eé]e|sc|sous\s*cutan)/, code: 'AMI1', group: 'injection' },
+    { re: /injection\s+(?:sous-?cutan[eé]e|sc|im|intra-?musculaire|hbpm|h[eé]parine|anticoagulant|vaccin)/, code: 'AMI1', group: 'injection' },
+    { re: /injection\s+intra-?veineuse|injection\s+iv\b/, code: 'AMI2', group: 'injection' },
+    // ── Pansements (groupe « pansement ») ──────────────────────────────
+    { re: /pansement\s+(?:complexe|lourd|cicatris)|pansement\s+(?:escarre|ulc[eè]re|n[eé]crose|br[uû]l[uû]re)/, code: 'AMI4', group: 'pansement' },
+    { re: /pansement\s+(?:simple|l[eé]ger|sec)|pansement\b(?!\s+(?:complexe|simple|lourd|escarre|ulc))/, code: 'AMI2', group: 'pansement' },
+    // ── Dialyse / soins spécialisés (groupe « dialyse ») ───────────────
+    { re: /dialyse\s+p[eé]riton[eé]ale|dpa\b|dpac\b/, code: 'AMI14', group: 'dialyse' },
+    { re: /chambre\s+implantable|picc-?line|cathe?ter\s+central/, code: 'AMI9', group: 'catheter' },
+    // ── Glycémie / soins courants ──────────────────────────────────────
+    { re: /glyc[eé]mie\s+capillaire|hgt\b|dextro\b/, code: 'AMI1', group: 'glycemie' },
+    { re: /prise\s+de\s+sang|pr[eé]l[eè]vement\s+sanguin/, code: 'AMI1', group: 'prelevement' },
+    { re: /sond(?:age|e)\s+(?:urinaire|v[eé]sical)|sondage\s+a\s+demeure/, code: 'AMI4', group: 'sondage' },
+    { re: /lavement\s+[eé]vacuateur/, code: 'AMI3', group: 'lavement' },
+    { re: /a[eé]rosol|n[eé]bulisation/, code: 'AMI1', group: 'aerosol' },
+    // ── BSI (groupe « bsi ») ────────────────────────────────────────────
+    { re: /bsi\s+(?:autonome|patient\s+autonome)|bsa\b/, code: 'BSA', group: 'bsi' },
+    { re: /bsi\s+(?:l[eé]g[eè]re?\s+perte|d[eé]pendance\s+l[eé]g[eè]re)|bsb\b/, code: 'BSB', group: 'bsi' },
+    { re: /bsi\s+(?:lourde\s+perte|d[eé]pendance\s+lourde)|bsc\b/, code: 'BSC', group: 'bsi' },
+    { re: /bilan\s+soins?\s+infirmiers?|bsi\b/, code: 'BSB', group: 'bsi' }, // BSI par défaut
+    // ── Surveillance / ulcère stade ────────────────────────────────────
+    { re: /surveillance\s+(?:thérapeutique|continue|post-op)/, code: 'AMI4', group: 'surveillance' },
+    { re: /ulc[eè]re\s+stade\s+(?:3|4|iii|iv)|escarre\s+stade\s+(?:3|4|iii|iv)/, code: 'AMI4', group: 'ulcere' },
+  ];
+
+  const found = [];
+  const seen = new Set();
+  const matchedGroups = new Set();
+  for (const { re, code, group } of mappings) {
+    // Si un mapping du même groupe a déjà matché, on saute
+    if (group && matchedGroups.has(group)) continue;
+    if (re.test(s) && !seen.has(code)) {
+      seen.add(code);
+      found.push({ code });
+      if (group) matchedGroups.add(group);
+    }
+  }
+
+  // ── Majorations contextuelles ──────────────────────────────────────────
+  // MCI : explicitement mentionnée
+  if (/\bmci\b|coordination\s+infirm/i.test(s) && !seen.has('MCI')) {
+    seen.add('MCI'); found.push({ code: 'MCI' });
+  }
+  // MIE : enfant de moins de 7 ans
+  if (/(enfant|nourrisson|p[eé]diatrique)\s*(?:de|<|moins\s+de)?\s*(?:[1-6]|sept|7)\s*ans?/i.test(s) && !seen.has('MIE')) {
+    seen.add('MIE'); found.push({ code: 'MIE' });
+  }
+  // IFD : déplacement mentionné explicitement
+  if (/\bifd\b|d[eé]placement|domicile/i.test(s) && !seen.has('IFD')) {
+    seen.add('IFD'); found.push({ code: 'IFD' });
+  }
+  // Note : NUIT et DIM sont gérés automatiquement par renderCot selon l'heure
+
+  return found;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   _cotationLocalPersist — persistance + sync Supabase pour cotation locale
+   ───────────────────────────────────────────────────────────────────────────
+   Appelée après cotationLocaleNGAP() pour garantir que la cotation arrive
+   dans l'Historique des soins (planning_patients) malgré l'absence de N8N.
+
+   Étapes :
+   1. Génère un invoice_number temporaire (TMP-LOCAL-…) si absent.
+      Le worker /ami-save-cotation détectera ce préfixe et générera un
+      vrai numéro côté serveur lors du POST.
+   2. Upsert IDB carnet patient (mêmes règles que cotation IA).
+   3. Push vers /webhook/ami-save-cotation. Si offline → queueCotation.
+   4. Vérifie via _ensureCotationInHistorique() que la ligne est bien
+      en base après quelques secondes ; relance ami-save-cotation sinon.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function _cotationLocalPersist(d, txt) {
+  const _patNom = (gv('f-pt') || '').trim();
+  if (!_patNom) return;
+  if (typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') return;
+
+  const _editRef = window._editingCotation;
+  const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
+  const _cotHeure = gv('f-hs') || '';
+
+  // Guard : pas d'acte technique ET pas de mode édition → ne pas polluer
+  const _CODES_MAJ_LP = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+  const _actesTech = (d.actes || []).filter(a => !_CODES_MAJ_LP.has((a.code||'').toUpperCase()));
+  if (!_actesTech.length && !_editRef) {
+    console.warn('[cotation] Local persist ignoré — pas d\'acte technique');
+    return;
+  }
+
+  // 1) Génération invoice_number temporaire (réservé au mode local)
+  const _invNum = _editRef?.invoice_number
+               || `TMP-LOCAL-${_cotDate.replace(/-/g,'')}-${Date.now().toString(36).slice(-6).toUpperCase()}`;
+
+  // 2) Upsert IDB
+  const _patRows = await _idbGetAll(PATIENTS_STORE);
+  let _patRow = _editRef?.patientId
+    ? _patRows.find(r => r.id === _editRef.patientId)
+    : null;
+  if (!_patRow) {
+    const _nomLow = _patNom.toLowerCase();
+    _patRow = _patRows.find(r =>
+      ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+      ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+    );
+  }
+
+  const _newCot = {
+    date:           _cotDate,
+    heure:          _cotHeure,
+    actes:          d.actes || [],
+    total:          parseFloat(d.total || 0),
+    part_amo:       parseFloat(d.part_amo || 0),
+    part_amc:       parseFloat(d.part_amc || 0),
+    part_patient:   parseFloat(d.part_patient || 0),
+    soin:           (txt || '').slice(0, 120),
+    invoice_number: _invNum,
+    source:         _editRef ? 'local_ngap_edit' : 'local_ngap',
+    _synced:        false, // sera passé à true après push réussi
+    _local_only:    true,
+  };
+
+  let _resolvedPatientId = _patRow?.id || null;
+
+  if (_patRow) {
+    // ── Patient existant → upsert strict ──────────────────────────────────
+    const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+    if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
+
+    let _idx = -1;
+    if (typeof _editRef?.cotationIdx === 'number' && _editRef.cotationIdx >= 0)
+      _idx = _editRef.cotationIdx;
+    if (_idx < 0 && _invNum)
+      _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
+    if (_idx < 0 && _editRef?.invoice_number)
+      _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
+    const _isForceNewLocal = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+    if (_idx < 0 && _editRef && _cotDate && !_isForceNewLocal) {
+      _idx = _pat.cotations.findIndex(c =>
+        (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
+      );
+    }
+
+    if (_idx >= 0) {
+      _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
+    } else if (!_editRef || _isForceNewLocal) {
+      _pat.cotations.push(_newCot);
+    } else {
+      // _editRef avec idx introuvable → rien (évite doublon)
+      return;
+    }
+
+    _pat.updated_at = new Date().toISOString();
+    const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+    await _idbPut(PATIENTS_STORE, _toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
+
+  } else if (!_editRef) {
+    // ── Patient absent → créer fiche + cotation ──────────────────────────
+    const _parts = _patNom.trim().split(/\s+/);
+    const _prenom = _parts.slice(0, -1).join(' ') || _patNom;
+    const _nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
+    const _newPat = {
+      id:         'pat_' + Date.now(),
+      nom:        _nom,
+      prenom:     _prenom,
+      ddn:        gv('f-ddn') || '',
+      amo:        gv('f-amo') || '',
+      amc:        gv('f-amc') || '',
+      exo:        gv('f-exo') || '',
+      medecin:    gv('f-pr')  || '',
+      cotations:  [_newCot],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      source:     'local_ngap_auto',
+    };
+    const _toStore = {
+      id:         _newPat.id,
+      nom:        _nom,
+      prenom:     _prenom,
+      _data:      _enc(_newPat),
+      updated_at: _newPat.updated_at,
+    };
+    await _idbPut(PATIENTS_STORE, _toStore);
+    _resolvedPatientId = _newPat.id;
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
+    if (typeof showToast === 'function')
+      showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
+  } else {
+    // Patient absent + _editRef → rien (pas de fiche fantôme)
+    return;
+  }
+
+  // 3) Push vers /webhook/ami-save-cotation (tri-critères upsert worker)
+  const _payloadServer = {
+    cotations: [{
+      actes:          _newCot.actes,
+      total:          _newCot.total,
+      date_soin:      _cotDate,
+      heure_soin:     _cotHeure || null,
+      soin:           _newCot.soin,
+      invoice_number: _invNum,
+      source:         _newCot.source,
+      patient_id:     _resolvedPatientId || undefined,
+      patient_nom:    _patNom,
+      part_amo:       _newCot.part_amo,
+      part_amc:       _newCot.part_amc,
+      part_patient:   _newCot.part_patient,
+    }],
+  };
+
+  const _isOnline = (typeof navigator !== 'undefined') ? navigator.onLine !== false : true;
+  if (!_isOnline) {
+    // Hors-ligne → mise en file pour replay automatique
+    if (typeof queueCotation === 'function') {
+      queueCotation({
+        ..._payloadServer.cotations[0],
+        // queueCotation rejouera via /ami-calcul ; on conserve _saveTarget pour
+        // que le replay tente d'abord ami-save-cotation (cotation déjà calculée).
+        _saveTarget: '/webhook/ami-save-cotation',
+        texte:       (txt || '').slice(0, 200),
+      });
+    }
+    return;
+  }
+
+  try {
+    const _res = typeof apiCall === 'function'
+      ? await apiCall('/webhook/ami-save-cotation', _payloadServer)
+      : null;
+    if (_res?.ok && _resolvedPatientId) {
+      // Marquer la cotation comme synchronisée dans l'IDB
+      try {
+        const _refreshed = await _idbGetAll(PATIENTS_STORE);
+        const _updRow = _refreshed.find(r => r.id === _resolvedPatientId);
+        if (_updRow) {
+          const _updPat = { id: _updRow.id, nom: _updRow.nom, prenom: _updRow.prenom, ...(_dec(_updRow._data)||{}) };
+          if (Array.isArray(_updPat.cotations)) {
+            const _ci = _updPat.cotations.findIndex(c => c.invoice_number === _invNum);
+            if (_ci >= 0) {
+              _updPat.cotations[_ci]._synced = true;
+              _updPat.updated_at = new Date().toISOString();
+              const _toStoreS = { id: _updPat.id, nom: _updPat.nom, prenom: _updPat.prenom, _data: _enc(_updPat), updated_at: _updPat.updated_at };
+              await _idbPut(PATIENTS_STORE, _toStoreS);
+            }
+          }
+        }
+      } catch (_) {}
+      if (typeof showToast === 'function')
+        showToast('✅ Cotation locale synchronisée dans l\'Historique des soins', 'su');
+    }
+  } catch (_pushErr) {
+    console.warn('[cotation] Push local→Supabase KO, mise en file:', _pushErr.message);
+    if (typeof queueCotation === 'function') {
+      queueCotation({
+        ..._payloadServer.cotations[0],
+        _saveTarget: '/webhook/ami-save-cotation',
+        texte:       (txt || '').slice(0, 200),
+      });
+    }
+  }
+
+  // 4) Vérification post-save : la cotation est-elle bien dans l'Historique ?
+  if (_invNum && typeof _ensureCotationInHistorique === 'function') {
+    setTimeout(() => {
+      _ensureCotationInHistorique({
+        invoice_number: _invNum,
+        cotation:       _payloadServer.cotations[0],
+      }).catch(() => {});
+    }, 4000);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   _ensureCotationInHistorique — garantie « cotation Carnet → Historique »
+   ───────────────────────────────────────────────────────────────────────────
+   Appelée après TOUTE cotation (IA ou locale) initiée depuis le Carnet
+   patients (_editingCotation._fromCarnet = true). Vérifie via
+   /webhook/ami-historique que la ligne est bien arrivée dans
+   planning_patients ; si absente, relance /webhook/ami-save-cotation
+   en rattrapage (jusqu'à 2 tentatives).
+
+   Garantie zéro doublon : le worker ami-save-cotation utilise un upsert
+   tri-critères (invoice_number → patient_id+date → patient_nom+date),
+   donc relancer N fois la même cotation ne crée pas de duplicata.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function _ensureCotationInHistorique({ invoice_number, cotation, _retry = 0 }) {
+  if (!invoice_number || !cotation) return;
+  if (_retry > 2) {
+    console.warn('[cotation] Vérif Historique : abandon après 3 tentatives pour', invoice_number);
+    return;
+  }
+  if (typeof apiCall !== 'function') return;
+  const _isOnline = (typeof navigator !== 'undefined') ? navigator.onLine !== false : true;
+  if (!_isOnline) return; // offline-queue prendra le relais
+
+  try {
+    // 1) Vérifier la présence dans l'Historique des soins
+    const _hist = await apiCall('/webhook/ami-historique?period=month', {});
+    const _rows = Array.isArray(_hist?.data) ? _hist.data : (Array.isArray(_hist) ? _hist : []);
+    const _found = _rows.find(r =>
+      r.invoice_number === invoice_number ||
+      // Fallback : match par patient_id + date_soin + total (tolérance 0.01€)
+      (r.patient_id && cotation.patient_id && r.patient_id === cotation.patient_id &&
+       (r.date_soin || '').slice(0,10) === (cotation.date_soin || '').slice(0,10) &&
+       Math.abs(parseFloat(r.total||0) - parseFloat(cotation.total||0)) < 0.01)
+    );
+    if (_found) {
+      console.info('[cotation] ✅ Cotation présente dans Historique :', invoice_number);
+      return;
+    }
+    // 2) Absente → relancer ami-save-cotation (upsert tri-critères côté worker)
+    console.warn(`[cotation] ⚠️ Cotation absente Historique — rattrapage tentative ${_retry+1}/3 :`, invoice_number);
+    await apiCall('/webhook/ami-save-cotation', { cotations: [cotation] });
+    // 3) Re-vérifier après délai
+    setTimeout(() => {
+      _ensureCotationInHistorique({ invoice_number, cotation, _retry: _retry + 1 }).catch(() => {});
+    }, 5000);
+  } catch (e) {
+    console.warn('[cotation] Vérif Historique KO:', e.message);
   }
 }
 
@@ -2206,6 +2624,7 @@ if (typeof window !== 'undefined') {
   window._cotExtractNgapCodes    = _cotExtractNgapCodes;
   window._cotExtractNgapChips    = _cotExtractNgapChips;
   window._cotExtractCodesFromText = _cotExtractCodesFromText;
+  window._cotInferCodesFromText  = _cotInferCodesFromText;
   window._cotIsInfoSuggestion    = _cotIsInfoSuggestion;
   window._cotShowReCoteBar       = _cotShowReCoteBar;
   window._cotHideReCoteBar       = _cotHideReCoteBar;
@@ -3404,6 +3823,53 @@ function clrCot() {
 }
 
 function coterDepuisRoute(desc, nomPatient) {
+  // 🛡️ HARMONISATION CARNET ↔ TOURNÉE (route IA) → Historique des soins
+  // ----------------------------------------------------------------------
+  // Marqueur _fromCarnet pour que _cotationPipeline déclenche après-coup
+  // _ensureCotationInHistorique (vérif présence dans planning_patients +
+  // rattrapage ami-save-cotation si absente — upsert tri-critères = zéro
+  // doublon). Pré-résolution patient_id par nom pour que le worker fasse
+  // un PATCH sur la bonne ligne (Critère 2 : patient_id+date_soin).
+  window._editingCotation = null;
+  (async () => {
+    try {
+      if (!nomPatient || typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') {
+        // Pas de patient connu → marquer simplement pour ensureHistorique
+        window._editingCotation = { _fromCarnet: true, _fromTournee: true };
+        return;
+      }
+      const _rows = await _idbGetAll(PATIENTS_STORE);
+      const _low  = nomPatient.toLowerCase().trim();
+      const _hit  = _rows.find(r =>
+        ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_low) ||
+        ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_low)
+      );
+      const _ed = {
+        _fromCarnet:  true,
+        _fromTournee: true,
+      };
+      if (_hit) {
+        _ed.patientId = _hit.id;
+        // Pré-détection cotation existante AUJOURD'HUI pour ce patient (toutes sources)
+        try {
+          const _p = { ...((typeof _dec === 'function' ? _dec(_hit._data) : {}) || {}) };
+          if (Array.isArray(_p.cotations)) {
+            const _todayStr = new Date().toISOString().slice(0, 10);
+            const _existIdx = _p.cotations.findIndex(c => (c.date || '').slice(0,10) === _todayStr);
+            if (_existIdx >= 0) {
+              _ed.cotationIdx    = _existIdx;
+              _ed.invoice_number = _p.cotations[_existIdx].invoice_number || null;
+              _ed._autoDetected  = true;
+            }
+          }
+        } catch (_) {}
+      }
+      window._editingCotation = _ed;
+    } catch (_) {
+      window._editingCotation = { _fromCarnet: true, _fromTournee: true };
+    }
+  })();
+
   navTo('cot', null);
   setTimeout(() => {
     const elTxt = $('f-txt'); if (elTxt) { elTxt.value = desc; elTxt.focus(); }

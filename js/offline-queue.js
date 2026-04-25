@@ -49,8 +49,24 @@ async function syncOfflineQueue() {
 
   for (const item of q) {
     try {
-      const { _queued_at, _id, ...payload } = item;
-      const result = await apiCall('/webhook/ami-calcul', payload);
+      const { _queued_at, _id, _saveTarget, ...payload } = item;
+      // 🛡️ Renforcement Carnet→Historique : si la cotation a déjà été
+      // calculée (mode local NGAP, _saveTarget posé par _cotationLocalPersist),
+      // on rejoue directement sur /ami-save-cotation (upsert tri-critères
+      // worker, pas de risque de doublon). Sinon → /ami-calcul comme avant.
+      let result;
+      if (_saveTarget === '/webhook/ami-save-cotation') {
+        const _saveRes = await apiCall('/webhook/ami-save-cotation', { cotations: [payload] });
+        // Normaliser la réponse pour le reste du pipeline IDB en aval
+        result = (_saveRes?.ok)
+          ? { actes: payload.actes || [], total: payload.total || 0,
+              part_amo: payload.part_amo || 0, part_amc: payload.part_amc || 0,
+              part_patient: payload.part_patient || 0,
+              invoice_number: payload.invoice_number || null }
+          : null;
+      } else {
+        result = await apiCall('/webhook/ami-calcul', payload);
+      }
       // Si l'API retourne une cotation valide avec actes, sauvegarder en IDB
       if (result?.actes?.length && result?.total > 0) {
         const _CODES_MAJ_OQ = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
