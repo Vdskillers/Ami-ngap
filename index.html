@@ -1217,10 +1217,6 @@
       <div class="ni nurse-only" data-v="live"><span class="nic">▶️</span> Pilotage journée</div>
       <div class="ni" data-v="pla"><span class="nic">📅</span> Planning</div>
       <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique <span class="ni-alert-badge orange" id="nav-his-badge" style="display:none"></span></div>
-      <div class="ni nurse-only" data-v="outils-ordos"><span class="nic">💊</span> Ordonnances <span id="ordo-nav-badge" style="display:none;background:rgba(255,181,71,.2);color:var(--w);border-radius:20px;font-size:9px;padding:1px 7px;margin-left:4px;font-family:var(--fm)"></span></div>
-      <div class="ni" data-v="pilulier"><span class="nic">💊</span> Semainier / Pilulier</div>
-      <div class="ni" data-v="constantes"><span class="nic">📊</span> Constantes patients</div>
-      <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
       <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
       <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
       <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
@@ -1228,14 +1224,7 @@
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Outils pratiques</div>
-      <div class="ni nurse-only" data-v="tresor"><span class="nic">💸</span> Trésorerie <span id="tresor-attente-badge" style="font-size:10px;color:var(--w);margin-left:4px;font-family:var(--fm)"></span></div>
-      <div class="ni nurse-only" data-v="rapport"><span class="nic">📄</span> Rapport mensuel</div>
-      <div class="ni nurse-only" data-v="dash"><span class="nic">📊</span> Dashboard & Statistiques <span class="ni-alert-badge red" id="nav-dash-badge" style="display:none"></span></div>
-      <div class="ni nurse-only" data-v="copilote"><span class="nic">🤖</span> Copilote IA</div>
-      <div class="ni" data-v="compte-rendu"><span class="nic">📋</span> Compte-rendu de passage</div>
-      <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
-      <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Charges & majorations</div>
-      <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
+      <div class="ni" data-v="outils-hub"><span class="nic">🛠️</span> Outils pratiques <span class="ni-alert-badge red" id="nav-outils-badge" style="display:none"></span></div>
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Cabinet</div>
@@ -1275,22 +1264,11 @@
             <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="imp" onclick="navTo('imp',this);toggleMobileMenu()"><span class="bn-ic">📂</span>Import</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pla" onclick="navTo('pla',this);toggleMobileMenu()"><span class="bn-ic">📅</span>Planning</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
-      <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-ordos" onclick="navTo('outils-ordos',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Ordonnances</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pilulier" onclick="navTo('pilulier',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Pilulier</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="constantes" onclick="navTo('constantes',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Constantes</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="bsi" onclick="navTo('bsi',this);toggleMobileMenu()"><span class="bn-ic">🩺</span>BSI</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-km" onclick="navTo('outils-km',this);toggleMobileMenu()"><span class="bn-ic">🚗</span>Km</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sig" onclick="navTo('sig',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Signatures</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="consentements" onclick="navTo('consentements',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Consent.</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="alertes-med" onclick="navTo('alertes-med',this);toggleMobileMenu()"><span class="bn-ic">⚠️</span>Interact.</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="tresor" onclick="navTo('tresor',this);toggleMobileMenu()"><span class="bn-ic">💸</span>Tréso</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="rapport" onclick="navTo('rapport',this);toggleMobileMenu()"><span class="bn-ic">📄</span>Rapport</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="dash" onclick="navTo('dash',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="copilote" onclick="navTo('copilote',this);toggleMobileMenu()"><span class="bn-ic">🤖</span>Copilote</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="compte-rendu" onclick="navTo('compte-rendu',this);toggleMobileMenu()"><span class="bn-ic">📋</span>CR Pass.</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="audit-cpam" onclick="navTo('audit-cpam',this);toggleMobileMenu()"><span class="bn-ic">🔍</span>Audit</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-charges" onclick="navTo('outils-charges',this);toggleMobileMenu()"><span class="bn-ic">💰</span>Charges</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-modeles" onclick="navTo('outils-modeles',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Modèles</button>
+      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-hub" onclick="navTo('outils-hub',this);toggleMobileMenu()"><span class="bn-ic">🛠️</span>Outils</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="cabinet" onclick="navTo('cabinet',this);toggleMobileMenu()"><span class="bn-ic">🏥</span>Cabinet</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ngap-ref" onclick="navTo('ngap-ref',this);toggleMobileMenu()"><span class="bn-ic">📚</span>Référentiel</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
@@ -2190,7 +2168,227 @@
     </section>
 
     <!-- DASHBOARD -->
-    <section class="view" id="view-dash">
+    
+
+    <!-- AIDE -->
+    <section class="view" id="view-aide">
+      <h1 class="pt">Documentation <em>&amp; FAQ</em></h1>
+      <p class="ps">Guide pratique · NGAP 2026 · Infirmières libérales</p>
+
+      <!-- Barre de recherche — filtre les questions/réponses chargées dynamiquement -->
+      <div style="max-width:480px;margin-bottom:24px">
+        <input type="text" id="faq-search" placeholder="Rechercher une question…" oninput="filterFaq()" style="width:100%;padding:10px 14px;box-sizing:border-box">
+      </div>
+
+      <div id="faq-no-result" style="display:none;text-align:center;padding:40px;color:var(--m)">
+        <div style="font-size:32px;margin-bottom:10px">🔍</div>
+        <p>Aucune question ne correspond.</p>
+      </div>
+
+      <!-- Contenu chargé depuis GUIDE_INFIRMIERES.md -->
+      <div id="faq-content">
+        <div style="text-align:center;padding:40px;color:var(--m)">
+          <div class="spin" style="width:32px;height:32px;border-width:3px;margin:0 auto 16px"></div>
+          <p style="font-size:13px">Chargement du guide…</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CARNET PATIENTS (nurse-only, 100% local chiffré) -->
+    <section class="view" id="view-patients">
+      <div class="hub-tabs" role="tablist" style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;border-bottom:1px solid var(--b);padding-bottom:0;overflow-x:auto">
+        <button type="button" class="hub-tab on" data-hub="patients" data-hub-tab="carnet" role="tab" aria-selected="true" onclick="patientsHubSwitchTab('carnet', this)" style="background:transparent;border:none;border-bottom:2px solid var(--a);padding:10px 16px;font-size:13px;font-weight:600;color:var(--a);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📋</span> Carnet</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="ordos" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('ordos', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💊</span> Ordonnances</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="pilulier" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('pilulier', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💊</span> Pilulier</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="constantes" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('constantes', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📊</span> Constantes</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="bsi" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('bsi', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🩺</span> BSI</button>
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-carnet" role="tabpanel">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <h1 class="pt" style="margin-bottom:0">Carnet <em>patients</em></h1>
+        <button onclick="showPatientsIntro()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
+      </div>
+      <p class="ps">Stockage 100% local chiffré · RGPD · Aucune donnée transmise au serveur</p>
+
+      <!-- Bandeau RGPD -->
+      <div class="priv" style="margin-bottom:20px"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Données 100% locales :</strong> Le carnet patients est chiffré et stocké uniquement sur votre appareil (IndexedDB). Aucune information patient ne quitte votre navigateur.</p></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="btn bp" onclick="openAddPatient()"><span>➕</span> Nouveau patient</button>
+        <button class="btn bv bsm" onclick="openPatientImportPicker()"><span>🗺️</span> Importer vers tournée</button>
+        <input type="text" id="pat-search" placeholder="🔍 Rechercher un patient..." oninput="loadPatients()" style="flex:1;min-width:180px;max-width:320px">
+        <button class="btn bs bsm" onclick="exportPatientData()">📥 Export RGPD</button>
+      </div>
+
+      <!-- Formulaire d'ajout/modification (masqué par défaut) -->
+      <div id="patient-form" style="display:none">
+        <div class="card" style="margin-bottom:16px">
+          <div class="ct" id="pat-form-title">➕ Nouveau patient</div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-prenom">Prénom *</label><input type="text" id="pat-prenom" placeholder="Marie"></div>
+            <div class="f"><label for="pat-nom">Nom *</label><input type="text" id="pat-nom" placeholder="DUPONT"></div>
+            <!-- Adresse structurée : rue + CP + ville -->
+            <div class="f" style="grid-column:1/-1">
+              <label for="pat-rue">Adresse <span style="font-size:10px;color:var(--a);font-family:var(--fm)">📍 pour la tournée IA</span></label>
+              <input type="text" id="pat-rue" placeholder="12 rue de la Paix" autocomplete="street-address" oninput="updatePatAddrPreview()">
+              <div id="pat-rue-sug" style="position:absolute;width:100%;z-index:300;margin-top:2px"></div>
+            </div>
+            <div class="f" style="position:relative">
+              <label for="pat-cp">Code postal *</label>
+              <input type="text" id="pat-cp" placeholder="06000" maxlength="5" inputmode="numeric" oninput="updatePatAddrPreview()" autocomplete="postal-code">
+              <div id="pat-cp-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
+            </div>
+            <div class="f" style="position:relative">
+              <label for="pat-ville">Ville *</label>
+              <input type="text" id="pat-ville" placeholder="Nice" autocomplete="address-level2" oninput="updatePatAddrPreview()">
+              <div id="pat-ville-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
+            </div>
+            <div id="pat-addr-preview" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);font-size:12px;font-family:var(--fm);color:var(--a)"></div>
+            <div id="pat-addr-warn" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.25);border-radius:var(--r);font-size:12px;color:var(--w)"></div>
+            <div class="f"><label for="pat-ddn">Date de naissance</label><input type="date" id="pat-ddn"></div>
+            <div class="f"><label for="pat-secu">N° Sécu <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="pat-secu" autocomplete="off" placeholder="1 85 06..."></div>
+          </div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-amo">Caisse AMO</label><input type="text" id="pat-amo" placeholder="CPAM Paris"></div>
+            <div class="f"><label for="pat-amc">Mutuelle AMC</label><input type="text" id="pat-amc" placeholder="MGEN, Harmonie..."></div>
+            <div class="f"><label for="pat-exo">Exonération</label><select id="pat-exo"><option value="">Aucune</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité</option><option value="accident">Accident travail</option><option value="cmu">CSS/C2S</option></select></div>
+            <div class="f"><label for="pat-medecin">Médecin référent</label><input type="text" id="pat-medecin" placeholder="Dr. Martin"></div>
+          </div>
+          <!-- 💊 Actes Récurrents à Réaliser -->
+          <div class="fg" style="margin-bottom:16px;background:rgba(0,212,170,.04);border:2px solid rgba(0,212,170,.25);border-radius:var(--r);padding:14px">
+            <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+              <div style="font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase">💊 Actes Récurrents à Réaliser</div>
+              <span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 8px;border-radius:20px;font-family:var(--fm)">⚡ Utilisé pour les cotations automatiques de la Tournée IA</span>
+            </div>
+            <div style="grid-column:1/-1;font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:10px;line-height:1.6">
+              Décrivez les soins habituels de ce patient en langage naturel. Ces informations seront utilisées automatiquement pour générer les cotations lors de la <strong style="color:var(--t)">Tournée IA</strong> et du <strong style="color:var(--t)">Pilotage de journée</strong>.<br>
+              <span style="color:var(--a)">Si ce champ est vide</span>, le champ <strong>Pathologies</strong> ci-dessous sera automatiquement <strong>converti en actes médicaux NGAP applicables</strong> pour générer la cotation.
+            </div>
+            <div class="f" style="grid-column:1/-1">
+              <label for="pat-actes-recurrents">Soins habituels <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(ex : injection insuline SC matin, pansement complexe, perfusion 3x/semaine…)</span></label>
+              <textarea id="pat-actes-recurrents" placeholder="Ex : Injection insuline SC 2x/jour + surveillance glycémie&#10;Ex : Pansement complexe jambe droite + AMI4&#10;Ex : Soins de nursing complets, patient grabataire&#10;Ex : Perfusion antibiotique 3x/semaine + IFD domicile" style="min-height:90px;font-family:var(--fm);font-size:12px" maxlength="500"></textarea>
+            </div>
+          </div>
+
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-allergies" style="color:var(--d)">Allergies ⚠️</label><input type="text" id="pat-allergies" placeholder="Pénicilline, Aspirine..."></div>
+            <div class="f">
+              <label for="pat-pathologies">Pathologies <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(converti en actes NGAP si Actes Récurrents vide)</span></label>
+              <input type="text" id="pat-pathologies" placeholder="Diabète type 2, HTA...">
+              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:4px;line-height:1.5">
+                💡 Si le champ <em>Actes Récurrents</em> est vide, AMI convertira automatiquement ces pathologies en actes médicaux NGAP applicables (injections, pansements, bilans…) pour la Tournée IA et le Pilotage de journée.
+              </div>
+            </div>
+            <div class="f"><label for="pat-traitements">Traitements en cours</label><input type="text" id="pat-traitements" placeholder="Metformine, Bisoprolol..."></div>
+            <div class="f"><label for="pat-ordo-date">Ordonnance valide jusqu'au</label><input type="date" id="pat-ordo-date"></div>
+          </div>
+          <div class="fg" style="margin-bottom:16px">
+            <div class="f"><label for="pat-contact-nom">Contact urgence</label><input type="text" id="pat-contact-nom" placeholder="Jean DUPONT (fils)"></div>
+            <div class="f"><label for="pat-contact-tel">Tél. urgence</label><input type="tel" id="pat-contact-tel" placeholder="06 12 34 56 78"></div>
+          </div>
+          <!-- Heure de passage préférée -->
+          <div class="fg" style="margin-bottom:16px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:var(--r);padding:14px">
+            <div style="grid-column:1/-1;font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🕐 Tournée — Contrainte horaire</div>
+            <div class="f"><label for="pat-heure-preferee">Heure de passage préférée <span style="font-size:10px;color:var(--m);font-family:var(--fm)">(ex : 08:30)</span></label><input type="time" id="pat-heure-preferee" placeholder="08:30"></div>
+            <div class="f" style="display:flex;align-items:center;gap:10px;padding-top:22px">
+              <input type="checkbox" id="pat-respecter-horaire" style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0">
+              <label for="pat-respecter-horaire" style="font-size:13px;cursor:pointer;margin:0">
+                <strong>Respecter cet horaire</strong><br>
+                <span style="font-size:11px;color:var(--m);font-family:var(--fm)">La tournée sera contrainte par cette heure lors de l'optimisation</span>
+              </label>
+            </div>
+          </div>
+          <div class="f" style="margin-bottom:16px"><label for="pat-notes">Notes libres</label><textarea id="pat-notes" placeholder="Observations, habitudes, préférences..." style="min-height:80px"></textarea></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn bp" onclick="savePatient()"><span>💾</span> Enregistrer</button>
+            <button class="btn bs" onclick="closePatientForm()">Annuler</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Détail patient (masqué par défaut) -->
+      <div id="patient-detail" style="display:none"></div>
+
+      <!-- Liste patients -->
+      <div id="patients-list" class="accs"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-ordos" role="tabpanel" style="display:none">
+
+      <h1 class="pt">Ordonnances <em>& renouvellements</em></h1>
+      <p class="ps">Suivi des validités · Alertes expiration · Rappels renouvellement</p>
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">➕ Enregistrer une ordonnance</div>
+        <div class="msg e" id="ordo-msg" style="display:none"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:12px">
+          <div class="af"><label>Patient *</label><input type="text" id="ordo-patient" placeholder="Nom Prénom"></div>
+          <div class="af"><label>Médecin prescripteur</label><input type="text" id="ordo-medecin" placeholder="Nom du médecin"></div>
+          <div class="af"><label>Date de prescription *</label><input type="date" id="ordo-date"></div>
+          <div class="af"><label>Durée de validité (jours)</label>
+            <select id="ordo-duree" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+              <option value="30">30 jours</option>
+              <option value="60">60 jours</option>
+              <option value="90">90 jours</option>
+              <option value="180">6 mois</option>
+              <option value="365">1 an</option>
+            </select>
+          </div>
+          <div class="af" style="grid-column:1/-1"><label>Actes prescrits</label><input type="text" id="ordo-actes" placeholder="Ex: Injections SC insuline 2x/jour, pansement jambe droite"></div>
+        </div>
+        <button class="btn bp" onclick="addOrdonnance()"><span>➕</span> Enregistrer</button>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div class="ct" style="margin-bottom:0">📋 Mes ordonnances</div>
+          <select id="ordo-filtre" onchange="renderOrdonnances()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px">
+            <option value="all">Toutes</option>
+            <option value="active">Actives</option>
+            <option value="alerte">⚠️ En alerte (&lt; 21 jours)</option>
+            <option value="expiree">Expirées</option>
+          </select>
+        </div>
+        <div id="ordo-list"></div>
+      </div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-pilulier" role="tabpanel" style="display:none">
+
+      <div id="admin-pilulier-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Pilulier avec vos propres données de démonstration.</div>
+      <div id="pilulier-root"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-constantes" role="tabpanel" style="display:none">
+
+      <div id="admin-constantes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Constantes avec vos propres données de démonstration.</div>
+      <div id="constantes-root"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-bsi" role="tabpanel" style="display:none">
+
+      <div id="admin-bsi-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module BSI. Toutes les fonctionnalités sont opérationnelles.</div>
+      <div id="bsi-root"></div>
+    
+      </div>
+    </section>
+
+    <section class="view" id="view-outils-hub">
+      <h1 class="pt">🛠️ Outils <em>pratiques</em></h1>
+      <p class="ps">Tableau de bord · Comptabilité · Rapports · Copilote IA · Conformité · Modèles</p>
+
+      <div class="hub-tabs" role="tablist" style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;border-bottom:1px solid var(--b);padding-bottom:0;overflow-x:auto">
+        <button type="button" class="hub-tab on" data-hub="outils" data-hub-tab="dash" role="tab" aria-selected="true" onclick="outilsHubSwitchTab('dash', this)" style="background:transparent;border:none;border-bottom:2px solid var(--a);padding:10px 16px;font-size:13px;font-weight:600;color:var(--a);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📊</span> Dashboard</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="tresor" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('tresor', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💸</span> Trésorerie</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="rapport" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('rapport', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📄</span> Rapport</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="copilote" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('copilote', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🤖</span> Copilote</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="cr" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('cr', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📋</span> CR Passage</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="audit" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('audit', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🔍</span> Audit CPAM</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="charges" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('charges', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💰</span> Charges</button>
+        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="modeles" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('modeles', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📝</span> Modèles</button>
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-dash" role="tabpanel">
+
       <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
       <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Analyse horaire</p>
 
@@ -2362,146 +2560,10 @@
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser tout</button>
         <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
       </div>
-    </section>
-
-    <!-- AIDE -->
-    <section class="view" id="view-aide">
-      <h1 class="pt">Documentation <em>&amp; FAQ</em></h1>
-      <p class="ps">Guide pratique · NGAP 2026 · Infirmières libérales</p>
-
-      <!-- Barre de recherche — filtre les questions/réponses chargées dynamiquement -->
-      <div style="max-width:480px;margin-bottom:24px">
-        <input type="text" id="faq-search" placeholder="Rechercher une question…" oninput="filterFaq()" style="width:100%;padding:10px 14px;box-sizing:border-box">
+    
       </div>
+      <div class="hub-panel" id="hub-panel-outils-tresor" role="tabpanel" style="display:none">
 
-      <div id="faq-no-result" style="display:none;text-align:center;padding:40px;color:var(--m)">
-        <div style="font-size:32px;margin-bottom:10px">🔍</div>
-        <p>Aucune question ne correspond.</p>
-      </div>
-
-      <!-- Contenu chargé depuis GUIDE_INFIRMIERES.md -->
-      <div id="faq-content">
-        <div style="text-align:center;padding:40px;color:var(--m)">
-          <div class="spin" style="width:32px;height:32px;border-width:3px;margin:0 auto 16px"></div>
-          <p style="font-size:13px">Chargement du guide…</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- CARNET PATIENTS (nurse-only, 100% local chiffré) -->
-    <section class="view" id="view-patients">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-        <h1 class="pt" style="margin-bottom:0">Carnet <em>patients</em></h1>
-        <button onclick="showPatientsIntro()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
-      </div>
-      <p class="ps">Stockage 100% local chiffré · RGPD · Aucune donnée transmise au serveur</p>
-
-      <!-- Bandeau RGPD -->
-      <div class="priv" style="margin-bottom:20px"><span style="font-size:16px;flex-shrink:0;margin-top:1px">🔒</span><p><strong>Données 100% locales :</strong> Le carnet patients est chiffré et stocké uniquement sur votre appareil (IndexedDB). Aucune information patient ne quitte votre navigateur.</p></div>
-
-      <!-- Actions -->
-      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-        <button class="btn bp" onclick="openAddPatient()"><span>➕</span> Nouveau patient</button>
-        <button class="btn bv bsm" onclick="openPatientImportPicker()"><span>🗺️</span> Importer vers tournée</button>
-        <input type="text" id="pat-search" placeholder="🔍 Rechercher un patient..." oninput="loadPatients()" style="flex:1;min-width:180px;max-width:320px">
-        <button class="btn bs bsm" onclick="exportPatientData()">📥 Export RGPD</button>
-      </div>
-
-      <!-- Formulaire d'ajout/modification (masqué par défaut) -->
-      <div id="patient-form" style="display:none">
-        <div class="card" style="margin-bottom:16px">
-          <div class="ct" id="pat-form-title">➕ Nouveau patient</div>
-          <div class="fg" style="margin-bottom:16px">
-            <div class="f"><label for="pat-prenom">Prénom *</label><input type="text" id="pat-prenom" placeholder="Marie"></div>
-            <div class="f"><label for="pat-nom">Nom *</label><input type="text" id="pat-nom" placeholder="DUPONT"></div>
-            <!-- Adresse structurée : rue + CP + ville -->
-            <div class="f" style="grid-column:1/-1">
-              <label for="pat-rue">Adresse <span style="font-size:10px;color:var(--a);font-family:var(--fm)">📍 pour la tournée IA</span></label>
-              <input type="text" id="pat-rue" placeholder="12 rue de la Paix" autocomplete="street-address" oninput="updatePatAddrPreview()">
-              <div id="pat-rue-sug" style="position:absolute;width:100%;z-index:300;margin-top:2px"></div>
-            </div>
-            <div class="f" style="position:relative">
-              <label for="pat-cp">Code postal *</label>
-              <input type="text" id="pat-cp" placeholder="06000" maxlength="5" inputmode="numeric" oninput="updatePatAddrPreview()" autocomplete="postal-code">
-              <div id="pat-cp-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
-            </div>
-            <div class="f" style="position:relative">
-              <label for="pat-ville">Ville *</label>
-              <input type="text" id="pat-ville" placeholder="Nice" autocomplete="address-level2" oninput="updatePatAddrPreview()">
-              <div id="pat-ville-sug" style="position:absolute;top:100%;left:0;right:0;z-index:300;margin-top:2px"></div>
-            </div>
-            <div id="pat-addr-preview" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:var(--r);font-size:12px;font-family:var(--fm);color:var(--a)"></div>
-            <div id="pat-addr-warn" style="grid-column:1/-1;display:none;padding:8px 12px;background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.25);border-radius:var(--r);font-size:12px;color:var(--w)"></div>
-            <div class="f"><label for="pat-ddn">Date de naissance</label><input type="date" id="pat-ddn"></div>
-            <div class="f"><label for="pat-secu">N° Sécu <span style="font-size:9px;opacity:.5">(local)</span></label><input type="text" id="pat-secu" autocomplete="off" placeholder="1 85 06..."></div>
-          </div>
-          <div class="fg" style="margin-bottom:16px">
-            <div class="f"><label for="pat-amo">Caisse AMO</label><input type="text" id="pat-amo" placeholder="CPAM Paris"></div>
-            <div class="f"><label for="pat-amc">Mutuelle AMC</label><input type="text" id="pat-amc" placeholder="MGEN, Harmonie..."></div>
-            <div class="f"><label for="pat-exo">Exonération</label><select id="pat-exo"><option value="">Aucune</option><option value="ALD">ALD — 100% SS</option><option value="maternite">Maternité</option><option value="accident">Accident travail</option><option value="cmu">CSS/C2S</option></select></div>
-            <div class="f"><label for="pat-medecin">Médecin référent</label><input type="text" id="pat-medecin" placeholder="Dr. Martin"></div>
-          </div>
-          <!-- 💊 Actes Récurrents à Réaliser -->
-          <div class="fg" style="margin-bottom:16px;background:rgba(0,212,170,.04);border:2px solid rgba(0,212,170,.25);border-radius:var(--r);padding:14px">
-            <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-              <div style="font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase">💊 Actes Récurrents à Réaliser</div>
-              <span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);border:1px solid rgba(0,212,170,.3);padding:2px 8px;border-radius:20px;font-family:var(--fm)">⚡ Utilisé pour les cotations automatiques de la Tournée IA</span>
-            </div>
-            <div style="grid-column:1/-1;font-size:11px;color:var(--m);font-family:var(--fm);margin-bottom:10px;line-height:1.6">
-              Décrivez les soins habituels de ce patient en langage naturel. Ces informations seront utilisées automatiquement pour générer les cotations lors de la <strong style="color:var(--t)">Tournée IA</strong> et du <strong style="color:var(--t)">Pilotage de journée</strong>.<br>
-              <span style="color:var(--a)">Si ce champ est vide</span>, le champ <strong>Pathologies</strong> ci-dessous sera automatiquement <strong>converti en actes médicaux NGAP applicables</strong> pour générer la cotation.
-            </div>
-            <div class="f" style="grid-column:1/-1">
-              <label for="pat-actes-recurrents">Soins habituels <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(ex : injection insuline SC matin, pansement complexe, perfusion 3x/semaine…)</span></label>
-              <textarea id="pat-actes-recurrents" placeholder="Ex : Injection insuline SC 2x/jour + surveillance glycémie&#10;Ex : Pansement complexe jambe droite + AMI4&#10;Ex : Soins de nursing complets, patient grabataire&#10;Ex : Perfusion antibiotique 3x/semaine + IFD domicile" style="min-height:90px;font-family:var(--fm);font-size:12px" maxlength="500"></textarea>
-            </div>
-          </div>
-
-          <div class="fg" style="margin-bottom:16px">
-            <div class="f"><label for="pat-allergies" style="color:var(--d)">Allergies ⚠️</label><input type="text" id="pat-allergies" placeholder="Pénicilline, Aspirine..."></div>
-            <div class="f">
-              <label for="pat-pathologies">Pathologies <span style="font-size:10px;color:var(--a);font-family:var(--fm)">(converti en actes NGAP si Actes Récurrents vide)</span></label>
-              <input type="text" id="pat-pathologies" placeholder="Diabète type 2, HTA...">
-              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:4px;line-height:1.5">
-                💡 Si le champ <em>Actes Récurrents</em> est vide, AMI convertira automatiquement ces pathologies en actes médicaux NGAP applicables (injections, pansements, bilans…) pour la Tournée IA et le Pilotage de journée.
-              </div>
-            </div>
-            <div class="f"><label for="pat-traitements">Traitements en cours</label><input type="text" id="pat-traitements" placeholder="Metformine, Bisoprolol..."></div>
-            <div class="f"><label for="pat-ordo-date">Ordonnance valide jusqu'au</label><input type="date" id="pat-ordo-date"></div>
-          </div>
-          <div class="fg" style="margin-bottom:16px">
-            <div class="f"><label for="pat-contact-nom">Contact urgence</label><input type="text" id="pat-contact-nom" placeholder="Jean DUPONT (fils)"></div>
-            <div class="f"><label for="pat-contact-tel">Tél. urgence</label><input type="tel" id="pat-contact-tel" placeholder="06 12 34 56 78"></div>
-          </div>
-          <!-- Heure de passage préférée -->
-          <div class="fg" style="margin-bottom:16px;background:rgba(0,212,170,.04);border:1px solid rgba(0,212,170,.15);border-radius:var(--r);padding:14px">
-            <div style="grid-column:1/-1;font-family:var(--fm);font-size:10px;color:var(--a);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🕐 Tournée — Contrainte horaire</div>
-            <div class="f"><label for="pat-heure-preferee">Heure de passage préférée <span style="font-size:10px;color:var(--m);font-family:var(--fm)">(ex : 08:30)</span></label><input type="time" id="pat-heure-preferee" placeholder="08:30"></div>
-            <div class="f" style="display:flex;align-items:center;gap:10px;padding-top:22px">
-              <input type="checkbox" id="pat-respecter-horaire" style="width:18px;height:18px;accent-color:var(--a);flex-shrink:0">
-              <label for="pat-respecter-horaire" style="font-size:13px;cursor:pointer;margin:0">
-                <strong>Respecter cet horaire</strong><br>
-                <span style="font-size:11px;color:var(--m);font-family:var(--fm)">La tournée sera contrainte par cette heure lors de l'optimisation</span>
-              </label>
-            </div>
-          </div>
-          <div class="f" style="margin-bottom:16px"><label for="pat-notes">Notes libres</label><textarea id="pat-notes" placeholder="Observations, habitudes, préférences..." style="min-height:80px"></textarea></div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn bp" onclick="savePatient()"><span>💾</span> Enregistrer</button>
-            <button class="btn bs" onclick="closePatientForm()">Annuler</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Détail patient (masqué par défaut) -->
-      <div id="patient-detail" style="display:none"></div>
-
-      <!-- Liste patients -->
-      <div id="patients-list" class="accs"></div>
-    </section>
-
-    <!-- TRÉSORERIE & EXPORT COMPTABLE -->
-    <section class="view" id="view-tresor">
       <h1 class="pt">Trésorerie <em>& Comptabilité</em></h1>
       <p class="ps">Suivi remboursements AMO/AMC · Export CSV · Checklist CPAM</p>
 
@@ -2539,13 +2601,10 @@
 
       <!-- Tableau principal -->
       <div id="tresor-body"></div>
-    </section>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-rapport" role="tabpanel" style="display:none">
 
-    <!-- STATISTIQUES AVANCÉES -->
-
-
-    <!-- RAPPORT MENSUEL -->
-    <section class="view" id="view-rapport">
       <h1 class="pt">Rapport <em>d'activité</em></h1>
       <p class="ps">Rapport mensuel complet · Export PDF · Pour votre comptable et l'URSSAF</p>
 
@@ -2609,10 +2668,10 @@
         <div class="ai in" style="font-size:12px">💡 Format HTML — ouvrez dans Chrome → Fichier → Imprimer → Enregistrer en PDF pour un PDF propre</div>
         <div class="ai su" style="font-size:12px">✅ Conforme URSSAF · N° ADELI, RPPS, N° factures séquentiels, version NGAP</div>
       </div>
-    </section>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-copilote" role="tabpanel" style="display:none">
 
-    <!-- COPILOTE IA -->
-    <section class="view" id="view-copilote">
       <h1 class="pt">Copilote <em>IA</em></h1>
       <p class="ps">Expert NGAP disponible 24h/24 · Posez n'importe quelle question · Suggestions proactives</p>
       <!-- Notice admin (masquée par défaut, activée par auth.js en mode admin) -->
@@ -2621,7 +2680,176 @@
       </div>
       <!-- Interface injectée dynamiquement par copilote.js → initCopiloteSection() -->
       <div id="copilote-chat-area"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-cr" role="tabpanel" style="display:none">
+
+      <div id="admin-cr-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Compte-rendu avec vos propres données.</div>
+      <div id="compte-rendu-root"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-audit" role="tabpanel" style="display:none">
+
+      <div id="admin-audit-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Le simulateur analyse les cotations de votre compte admin. En production, chaque infirmière voit uniquement ses propres données.</div>
+      <div id="audit-cpam-root"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-charges" role="tabpanel" style="display:none">
+
+      <h1 class="pt">Charges <em>& majorations</em></h1>
+      <p class="ps">URSSAF · CARPIMKO · Estimation IR · Net journalier · Simulateur de majoration</p>
+
+      <!-- ─────────── 1. SIMULATEUR ANNUEL DE CHARGES & NET ─────────── -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">💰 Simulateur annuel — charges & net réel</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:16px">Saisissez votre chiffre d'affaires annuel pour estimer vos charges et votre revenu net réel.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px">
+          <div class="af">
+            <label for="calc-ca-annuel">CA annuel brut (€)</label>
+            <input type="number" id="calc-ca-annuel" placeholder="Ex: 65000" min="0" step="100" oninput="calculerCharges()">
+          </div>
+          <div class="af">
+            <label for="calc-frais-reel">Frais réels si > abattement 10% (€)</label>
+            <input type="number" id="calc-frais-reel" placeholder="Laissez vide = abattement forfaitaire" min="0" step="100" oninput="calculerCharges()">
+          </div>
+        </div>
+        <div id="calc-result"></div>
+      </div>
+
+      <!-- ─────────── 2. SIMULATEUR DE MAJORATION (ex-onglet fusionné) ─────────── -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">⚡ Simulateur de majoration</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:16px">Calcul instantané du montant applicable selon heure, jour et contexte du soin.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+          <div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+              <div class="af"><label>Heure du soin</label><input type="time" id="sim-heure" value="08:00" oninput="simulerMajoration()"></div>
+              <div class="af"><label>Jour</label>
+                <select id="sim-jour" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+                  <option value="lundi">Lundi</option>
+                  <option value="mardi">Mardi</option>
+                  <option value="mercredi">Mercredi</option>
+                  <option value="jeudi">Jeudi</option>
+                  <option value="vendredi">Vendredi</option>
+                  <option value="samedi">Samedi</option>
+                  <option value="dimanche">Dimanche</option>
+                  <option value="ferie">Jour férié</option>
+                </select>
+              </div>
+            </div>
+            <div class="af" style="margin-bottom:14px"><label>Acte principal</label>
+              <select id="sim-acte" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+                <option value="AMI1">AMI1 — 3,15 €</option>
+                <option value="AMI2">AMI2 — 6,30 €</option>
+                <option value="AMI3">AMI3 — 9,45 €</option>
+                <option value="AMI4">AMI4 — 12,60 €</option>
+                <option value="AMI5">AMI5 — 15,75 €</option>
+                <option value="BSA">BSA — 13,00 €</option>
+                <option value="BSB">BSB — 18,20 €</option>
+                <option value="BSC">BSC — 28,70 €</option>
+                <option value="AIS1">AIS1 — 2,65 €</option>
+                <option value="AIS3">AIS3 — 7,95 €</option>
+              </select>
+            </div>
+            <div class="af" style="margin-bottom:10px"><label>Distance (km, 0 = pas d'IK)</label><input type="number" id="sim-km" placeholder="0" min="0" step="1" value="0" oninput="simulerMajoration()"></div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                <input type="checkbox" id="sim-domicile" checked onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+                📍 Visite à domicile (IFD)
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                <input type="checkbox" id="sim-enfant" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+                👶 Patient enfant &lt; 7 ans (MIE)
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                <input type="checkbox" id="sim-coordination" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+                🤝 Coordination pluridisciplinaire (MCI)
+              </label>
+            </div>
+            <button class="btn bp" onclick="simulerMajoration()"><span>⚡</span> Calculer</button>
+          </div>
+          <div>
+            <div id="sim-result" style="border:1px solid var(--b);border-radius:var(--r);padding:14px;background:var(--s);min-height:160px">
+              <div style="color:var(--m);text-align:center;padding:30px;font-size:13px">
+                Renseignez les paramètres du soin pour calculer le montant applicable.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────── 3. REPÈRES 2024/2026 ─────────── -->
+      <div class="card">
+        <div class="ct">📊 Repères 2024</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:12px">
+          <div class="ai in">💡 Taux moyen charges IDEL : ~47% du CA</div>
+          <div class="ai in">💡 Abattement forfaitaire frais : 10% (min 448 €)</div>
+          <div class="ai in">💡 CARPIMKO forfait annuel : ~892 €</div>
+          <div class="ai in">💡 Barème IK infirmier 2025/2026 : 0,636 €/km (5 CV thermique) · non revalorisé</div>
+        </div>
+      </div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-outils-modeles" role="tabpanel" style="display:none">
+
+      <h1 class="pt">Modèles <em>de soins</em></h1>
+      <p class="ps">Bibliothèque de descriptions pré-remplies · Cotation en 1 clic</p>
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <input type="text" id="modeles-search" placeholder="🔍 Rechercher un modèle..." oninput="renderModeles()" style="flex:1;min-width:160px">
+          <select id="modeles-categorie" onchange="renderModeles()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
+            <option value="">Toutes catégories</option>
+            <option value="injection">💉 Injection</option>
+            <option value="pansement">🩹 Pansement</option>
+            <option value="toilette">🧼 Toilette</option>
+            <option value="prelevement">🩸 Prélèvement</option>
+            <option value="perfusion">💊 Perfusion</option>
+            <option value="bilan">📋 Bilan</option>
+            <option value="autre">📝 Autre</option>
+          </select>
+        </div>
+        <div id="modeles-list"></div>
+      </div>
+      <div class="card" id="modele-form-section">
+        <div class="ct" id="modele-form-title">✏️ Nouveau modèle</div>
+        <input type="hidden" id="modele-edit-id" value="">
+        <div class="msg e" id="modele-msg" style="display:none"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px">
+          <div class="af"><label>Titre du modèle *</label><input type="text" id="modele-new-titre" placeholder="Ex: Injection insuline matin"></div>
+          <div class="af"><label>Catégorie</label>
+            <select id="modele-new-cat" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+              <option value="injection">💉 Injection</option>
+              <option value="pansement">🩹 Pansement</option>
+              <option value="toilette">🧼 Toilette</option>
+              <option value="prelevement">🩸 Prélèvement</option>
+              <option value="perfusion">💊 Perfusion</option>
+              <option value="bilan">📋 Bilan</option>
+              <option value="autre">📝 Autre</option>
+            </select>
+          </div>
+        </div>
+        <div class="af" style="margin-bottom:14px">
+          <label>Description du soin *</label>
+          <textarea id="modele-new-texte" placeholder="Description complète du soin, telle qu'elle sera insérée dans la cotation..." style="min-height:90px"></textarea>
+        </div>
+        <button class="btn bp" onclick="sauvegarderModele()"><span>💾</span> Sauvegarder le modèle</button>
+      </div>
+    
+      </div>
     </section>
+
+
+    <!-- TRÉSORERIE & EXPORT COMPTABLE -->
+    
+
+    <!-- STATISTIQUES AVANCÉES -->
+
+
+    <!-- RAPPORT MENSUEL -->
+    
+
+    <!-- COPILOTE IA -->
+    
 
     <!-- RÉFÉRENTIEL NGAP -->
     <section class="view" id="view-ngap-ref">
@@ -2896,100 +3124,7 @@
     ═════════════════════════════════════════════ -->
 
     <!-- CALCUL CHARGES & NET RÉEL -->
-    <section class="view" id="view-outils-charges">
-      <h1 class="pt">Charges <em>& majorations</em></h1>
-      <p class="ps">URSSAF · CARPIMKO · Estimation IR · Net journalier · Simulateur de majoration</p>
-
-      <!-- ─────────── 1. SIMULATEUR ANNUEL DE CHARGES & NET ─────────── -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="ct">💰 Simulateur annuel — charges & net réel</div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:16px">Saisissez votre chiffre d'affaires annuel pour estimer vos charges et votre revenu net réel.</p>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px">
-          <div class="af">
-            <label for="calc-ca-annuel">CA annuel brut (€)</label>
-            <input type="number" id="calc-ca-annuel" placeholder="Ex: 65000" min="0" step="100" oninput="calculerCharges()">
-          </div>
-          <div class="af">
-            <label for="calc-frais-reel">Frais réels si > abattement 10% (€)</label>
-            <input type="number" id="calc-frais-reel" placeholder="Laissez vide = abattement forfaitaire" min="0" step="100" oninput="calculerCharges()">
-          </div>
-        </div>
-        <div id="calc-result"></div>
-      </div>
-
-      <!-- ─────────── 2. SIMULATEUR DE MAJORATION (ex-onglet fusionné) ─────────── -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="ct">⚡ Simulateur de majoration</div>
-        <p style="font-size:12px;color:var(--m);margin-bottom:16px">Calcul instantané du montant applicable selon heure, jour et contexte du soin.</p>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
-          <div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-              <div class="af"><label>Heure du soin</label><input type="time" id="sim-heure" value="08:00" oninput="simulerMajoration()"></div>
-              <div class="af"><label>Jour</label>
-                <select id="sim-jour" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
-                  <option value="lundi">Lundi</option>
-                  <option value="mardi">Mardi</option>
-                  <option value="mercredi">Mercredi</option>
-                  <option value="jeudi">Jeudi</option>
-                  <option value="vendredi">Vendredi</option>
-                  <option value="samedi">Samedi</option>
-                  <option value="dimanche">Dimanche</option>
-                  <option value="ferie">Jour férié</option>
-                </select>
-              </div>
-            </div>
-            <div class="af" style="margin-bottom:14px"><label>Acte principal</label>
-              <select id="sim-acte" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
-                <option value="AMI1">AMI1 — 3,15 €</option>
-                <option value="AMI2">AMI2 — 6,30 €</option>
-                <option value="AMI3">AMI3 — 9,45 €</option>
-                <option value="AMI4">AMI4 — 12,60 €</option>
-                <option value="AMI5">AMI5 — 15,75 €</option>
-                <option value="BSA">BSA — 13,00 €</option>
-                <option value="BSB">BSB — 18,20 €</option>
-                <option value="BSC">BSC — 28,70 €</option>
-                <option value="AIS1">AIS1 — 2,65 €</option>
-                <option value="AIS3">AIS3 — 7,95 €</option>
-              </select>
-            </div>
-            <div class="af" style="margin-bottom:10px"><label>Distance (km, 0 = pas d'IK)</label><input type="number" id="sim-km" placeholder="0" min="0" step="1" value="0" oninput="simulerMajoration()"></div>
-            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-                <input type="checkbox" id="sim-domicile" checked onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
-                📍 Visite à domicile (IFD)
-              </label>
-              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-                <input type="checkbox" id="sim-enfant" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
-                👶 Patient enfant &lt; 7 ans (MIE)
-              </label>
-              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-                <input type="checkbox" id="sim-coordination" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
-                🤝 Coordination pluridisciplinaire (MCI)
-              </label>
-            </div>
-            <button class="btn bp" onclick="simulerMajoration()"><span>⚡</span> Calculer</button>
-          </div>
-          <div>
-            <div id="sim-result" style="border:1px solid var(--b);border-radius:var(--r);padding:14px;background:var(--s);min-height:160px">
-              <div style="color:var(--m);text-align:center;padding:30px;font-size:13px">
-                Renseignez les paramètres du soin pour calculer le montant applicable.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ─────────── 3. REPÈRES 2024/2026 ─────────── -->
-      <div class="card">
-        <div class="ct">📊 Repères 2024</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:12px">
-          <div class="ai in">💡 Taux moyen charges IDEL : ~47% du CA</div>
-          <div class="ai in">💡 Abattement forfaitaire frais : 10% (min 448 €)</div>
-          <div class="ai in">💡 CARPIMKO forfait annuel : ~892 €</div>
-          <div class="ai in">💡 Barème IK infirmier 2025/2026 : 0,636 €/km (5 CV thermique) · non revalorisé</div>
-        </div>
-      </div>
-    </section>
+    
 
     <!-- JOURNAL KILOMÉTRIQUE -->
     <section class="view" id="view-outils-km">
@@ -3047,88 +3182,10 @@
     </section>
 
     <!-- MODÈLES DE SOINS -->
-    <section class="view" id="view-outils-modeles">
-      <h1 class="pt">Modèles <em>de soins</em></h1>
-      <p class="ps">Bibliothèque de descriptions pré-remplies · Cotation en 1 clic</p>
-      <div class="card" style="margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-          <input type="text" id="modeles-search" placeholder="🔍 Rechercher un modèle..." oninput="renderModeles()" style="flex:1;min-width:160px">
-          <select id="modeles-categorie" onchange="renderModeles()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
-            <option value="">Toutes catégories</option>
-            <option value="injection">💉 Injection</option>
-            <option value="pansement">🩹 Pansement</option>
-            <option value="toilette">🧼 Toilette</option>
-            <option value="prelevement">🩸 Prélèvement</option>
-            <option value="perfusion">💊 Perfusion</option>
-            <option value="bilan">📋 Bilan</option>
-            <option value="autre">📝 Autre</option>
-          </select>
-        </div>
-        <div id="modeles-list"></div>
-      </div>
-      <div class="card" id="modele-form-section">
-        <div class="ct" id="modele-form-title">✏️ Nouveau modèle</div>
-        <input type="hidden" id="modele-edit-id" value="">
-        <div class="msg e" id="modele-msg" style="display:none"></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:10px">
-          <div class="af"><label>Titre du modèle *</label><input type="text" id="modele-new-titre" placeholder="Ex: Injection insuline matin"></div>
-          <div class="af"><label>Catégorie</label>
-            <select id="modele-new-cat" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
-              <option value="injection">💉 Injection</option>
-              <option value="pansement">🩹 Pansement</option>
-              <option value="toilette">🧼 Toilette</option>
-              <option value="prelevement">🩸 Prélèvement</option>
-              <option value="perfusion">💊 Perfusion</option>
-              <option value="bilan">📋 Bilan</option>
-              <option value="autre">📝 Autre</option>
-            </select>
-          </div>
-        </div>
-        <div class="af" style="margin-bottom:14px">
-          <label>Description du soin *</label>
-          <textarea id="modele-new-texte" placeholder="Description complète du soin, telle qu'elle sera insérée dans la cotation..." style="min-height:90px"></textarea>
-        </div>
-        <button class="btn bp" onclick="sauvegarderModele()"><span>💾</span> Sauvegarder le modèle</button>
-      </div>
-    </section>
+    
 
     <!-- SUIVI ORDONNANCES -->
-    <section class="view" id="view-outils-ordos">
-      <h1 class="pt">Ordonnances <em>& renouvellements</em></h1>
-      <p class="ps">Suivi des validités · Alertes expiration · Rappels renouvellement</p>
-      <div class="card" style="margin-bottom:16px">
-        <div class="ct">➕ Enregistrer une ordonnance</div>
-        <div class="msg e" id="ordo-msg" style="display:none"></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:12px">
-          <div class="af"><label>Patient *</label><input type="text" id="ordo-patient" placeholder="Nom Prénom"></div>
-          <div class="af"><label>Médecin prescripteur</label><input type="text" id="ordo-medecin" placeholder="Nom du médecin"></div>
-          <div class="af"><label>Date de prescription *</label><input type="date" id="ordo-date"></div>
-          <div class="af"><label>Durée de validité (jours)</label>
-            <select id="ordo-duree" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
-              <option value="30">30 jours</option>
-              <option value="60">60 jours</option>
-              <option value="90">90 jours</option>
-              <option value="180">6 mois</option>
-              <option value="365">1 an</option>
-            </select>
-          </div>
-          <div class="af" style="grid-column:1/-1"><label>Actes prescrits</label><input type="text" id="ordo-actes" placeholder="Ex: Injections SC insuline 2x/jour, pansement jambe droite"></div>
-        </div>
-        <button class="btn bp" onclick="addOrdonnance()"><span>➕</span> Enregistrer</button>
-      </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-          <div class="ct" style="margin-bottom:0">📋 Mes ordonnances</div>
-          <select id="ordo-filtre" onchange="renderOrdonnances()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px">
-            <option value="all">Toutes</option>
-            <option value="active">Actives</option>
-            <option value="alerte">⚠️ En alerte (&lt; 21 jours)</option>
-            <option value="expiree">Expirées</option>
-          </select>
-        </div>
-        <div id="ordo-list"></div>
-      </div>
-    </section>
+    
 
     <!-- ════════════════════════════════════════════
          CABINET MULTI-IDE
@@ -3225,34 +3282,22 @@
     <!-- ══════════════════════════════════════════
          CONSTANTES PATIENTS
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-constantes">
-      <div id="admin-constantes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Constantes avec vos propres données de démonstration.</div>
-      <div id="constantes-root"></div>
-    </section>
+    
 
     <!-- ══════════════════════════════════════════
          COMPTE-RENDU DE PASSAGE
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-compte-rendu">
-      <div id="admin-cr-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Compte-rendu avec vos propres données.</div>
-      <div id="compte-rendu-root"></div>
-    </section>
+    
 
     <!-- ══════════════════════════════════════════
          SEMAINIER / PILULIER
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-pilulier">
-      <div id="admin-pilulier-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Pilulier avec vos propres données de démonstration.</div>
-      <div id="pilulier-root"></div>
-    </section>
+    
 
     <!-- ══════════════════════════════════════════
          BSI — BILAN DE SOINS INFIRMIERS
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-bsi">
-      <div id="admin-bsi-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module BSI. Toutes les fonctionnalités sont opérationnelles.</div>
-      <div id="bsi-root"></div>
-    </section>
+    
 
     <!-- ══════════════════════════════════════════
          CONSENTEMENTS ÉCLAIRÉS
@@ -3273,10 +3318,7 @@
     <!-- ══════════════════════════════════════════
          SIMULATEUR AUDIT CPAM
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-audit-cpam">
-      <div id="admin-audit-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Le simulateur analyse les cotations de votre compte admin. En production, chaque infirmière voit uniquement ses propres données.</div>
-      <div id="audit-cpam-root"></div>
-    </section>
+    
 
     <!-- ══════════════════════════════════════════
          CONFORMITÉ CABINET — scoring + auto-correction + risque prédictif
@@ -4553,6 +4595,124 @@ document.addEventListener('keydown', function(e){
     if(m && m.classList.contains('open')) closeRagDualModal();
   }
 });
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     HUBS À ONGLETS (Carnet patients & Outils pratiques) — v3.10
+     ────────────────────────────────────────────────────────────────────
+     • patientsHubSwitchTab(tab, btn)  → 5 onglets : carnet / ordos /
+                                         pilulier / constantes / bsi
+     • outilsHubSwitchTab(tab, btn)    → 8 onglets : dash / tresor /
+                                         rapport / copilote / cr / audit /
+                                         charges / modeles
+     • Patches navTo(...) pour back-compat : redirige les anciens data-v
+       directement vers le bon hub + le bon onglet (transparent pour les
+       autres modules JS qui utilisent encore ces alias).
+═══════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  /* ── Logique générique de switch d'onglet d'un hub ─────────────────── */
+  function _hubSwitch(hubName, tab, btn) {
+    if (!tab) return;
+    // 1) UI des onglets : actif = couleur accent + bordure basse verte
+    var tabs = document.querySelectorAll('.hub-tab[data-hub="' + hubName + '"]');
+    tabs.forEach(function(t) {
+      var isActive = t.getAttribute('data-hub-tab') === tab;
+      t.classList.toggle('on', isActive);
+      t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      t.style.color             = isActive ? 'var(--a)' : 'var(--m)';
+      t.style.borderBottomColor = isActive ? 'var(--a)' : 'transparent';
+    });
+    // 2) Affichage du panel correspondant
+    var panels = document.querySelectorAll(
+      '.hub-panel[id^="hub-panel-' + hubName + '-"]');
+    panels.forEach(function(p) {
+      p.style.display = (p.id === 'hub-panel-' + hubName + '-' + tab) ? '' : 'none';
+    });
+    // 3) Persister le dernier onglet ouvert (pour reprise après navTo)
+    try { sessionStorage.setItem('ami:hub:' + hubName, tab); } catch(_) {}
+  }
+
+  /* ── Hub Carnet patients ───────────────────────────────────────────── */
+  window.patientsHubSwitchTab = function(tab, btn) {
+    _hubSwitch('patients', tab, btn);
+  };
+
+  /* ── Hub Outils pratiques ──────────────────────────────────────────── */
+  window.outilsHubSwitchTab = function(tab, btn) {
+    _hubSwitch('outils', tab, btn);
+  };
+
+  /* ── Restauration de l'onglet actif quand on (re)navigue vers un hub ─ */
+  function _restoreHubTab(hubName) {
+    try {
+      var saved = sessionStorage.getItem('ami:hub:' + hubName);
+      if (!saved) return;
+      // Vérifier que cet onglet existe bien dans le DOM
+      var t = document.querySelector(
+        '.hub-tab[data-hub="' + hubName + '"][data-hub-tab="' + saved + '"]');
+      if (t) _hubSwitch(hubName, saved, t);
+    } catch(_) {}
+  }
+
+  /* ── Mapping back-compat : ancien data-v → (hub, tab) ──────────────── */
+  var HUB_REDIRECTS = {
+    // Carnet patients
+    'outils-ordos': ['patients', 'ordos'],
+    'pilulier'    : ['patients', 'pilulier'],
+    'constantes'  : ['patients', 'constantes'],
+    'bsi'         : ['patients', 'bsi'],
+    // Outils pratiques
+    'dash'         : ['outils', 'dash'],
+    'tresor'       : ['outils', 'tresor'],
+    'rapport'      : ['outils', 'rapport'],
+    'copilote'     : ['outils', 'copilote'],
+    'compte-rendu' : ['outils', 'cr'],
+    'audit-cpam'   : ['outils', 'audit'],
+    'outils-charges': ['outils', 'charges'],
+    'outils-modeles': ['outils', 'modeles']
+  };
+
+  /* ── Patch navTo : intercepte les anciens alias et redirige proprement
+        vers le hub + l'onglet correspondant. Conserve la signature et le
+        comportement standard pour toutes les autres vues. ───────────── */
+  function _patchNavTo() {
+    if (typeof window.navTo !== 'function') {
+      setTimeout(_patchNavTo, 200);
+      return;
+    }
+    if (window.navTo._hubsPatched) return;
+    var _origNavTo = window.navTo;
+
+    window.navTo = function(view, btn) {
+      var redirect = HUB_REDIRECTS[view];
+      if (redirect) {
+        var hubName = redirect[0];
+        var tab     = redirect[1];
+        var hubView = (hubName === 'patients') ? 'patients' : 'outils-hub';
+        var hubBtn  = document.querySelector('[data-v="' + hubView + '"]') || btn || null;
+        _origNavTo(hubView, hubBtn);
+        setTimeout(function() {
+          var t = document.querySelector(
+            '.hub-tab[data-hub="' + hubName + '"][data-hub-tab="' + tab + '"]');
+          _hubSwitch(hubName, tab, t);
+        }, 80);
+        return;
+      }
+
+      // Vue normale → appel original puis éventuelle restauration d'onglet
+      var ret = _origNavTo(view, btn);
+      if (view === 'patients')   setTimeout(function(){ _restoreHubTab('patients'); }, 80);
+      if (view === 'outils-hub') setTimeout(function(){ _restoreHubTab('outils');   }, 80);
+      return ret;
+    };
+
+    window.navTo._hubsPatched = true;
+  }
+  _patchNavTo();
+})();
 </script>
 
 </body>
