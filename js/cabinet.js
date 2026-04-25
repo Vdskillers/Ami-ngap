@@ -221,16 +221,124 @@ async function renderCabinetSection() {
     root.innerHTML = `<div class="card"><div class="msg e">Erreur chargement : ${e.message}</div></div>`;
   }
 
-  /* ── Widgets déplacés depuis le Dashboard (v3.9+) ──
-     Le widget 🛡️ Conformité cabinet et la section 📊 Statistiques cabinet
-     vivent désormais dans la vue « Cabinet & synchronisation ».
-     On les rafraîchit ici pour qu'ils suivent le cycle de vie de la vue
-     (navigation + clic sur ↻ Actualiser). Non bloquant. */
+  /* ── v3.10 : Le rendu de la Conformité et du Dashboard cabinet est désormais
+     déféré au clic sur les onglets correspondants (cabSwitchTab).
+     Si l'onglet actif au moment du chargement de la vue est l'un d'eux,
+     on déclenche le rendu dans cabSwitchTab. Le badge compliance reste
+     rafraîchi ici car il est aussi affiché ailleurs (header). */
   try { if (typeof renderComplianceBadge === 'function') renderComplianceBadge(); }
-  catch (e) { console.warn('[compliance widget]', e.message); }
-  try { if (typeof loadDashCabinet === 'function') setTimeout(loadDashCabinet, 100); }
-  catch (e) { console.warn('[dash cabinet]', e.message); }
+  catch (e) { console.warn('[compliance badge]', e.message); }
+
+  /* Si l'utilisateur a déjà ouvert un autre onglet précédemment dans la session,
+     on rafraîchit son contenu pour qu'il soit à jour à chaque navigation vers la vue. */
+  try {
+    const activeTab = document.querySelector('.cab-tab.on')?.getAttribute('data-cab-tab');
+    if (activeTab && activeTab !== 'sync' && typeof window.cabSwitchTab === 'function') {
+      window.cabSwitchTab(activeTab, document.querySelector(`.cab-tab[data-cab-tab="${activeTab}"]`));
+    }
+  } catch (e) { console.warn('[cabSwitchTab refresh]', e.message); }
 }
+
+/* ════════════════════════════════════════════════
+   3-bis. SWITCH D'ONGLETS DANS LA VUE CABINET (v3.10)
+   ────────────────────────────────────────────────
+   La vue Cabinet est désormais organisée en 4 onglets :
+     • sync          — Synchronisation (par défaut, rendu par renderCabinetSection)
+     • dashboard     — Statistiques + Revenus IDE + Simulateur + Objectif CA
+     • transmissions — Cahier de liaison (déplacé depuis l'ancien onglet)
+     • conformite    — Tableau de bord Conformité + opportunités Avenant 11
+
+   Les rendus lourds (dashboard/conformité/transmissions) sont déclenchés à
+   la demande au moment du clic sur l'onglet, pour ne pas alourdir la vue
+   par défaut.
+═══════════════════════════════════════════════════ */
+window.cabSwitchTab = function (tab, btn) {
+  if (!tab) tab = 'sync';
+
+  // 1) Mise à jour visuelle des onglets (active = couleur accent + bordure basse)
+  const tabs = document.querySelectorAll('.cab-tab[data-cab-tab]');
+  tabs.forEach(t => {
+    const isActive = t.getAttribute('data-cab-tab') === tab;
+    t.classList.toggle('on', isActive);
+    t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    t.style.color           = isActive ? 'var(--a)' : 'var(--m)';
+    t.style.borderBottomColor = isActive ? 'var(--a)' : 'transparent';
+  });
+
+  // 2) Affichage du panneau correspondant
+  const panels = document.querySelectorAll('.cab-panel[id^="cab-panel-"]');
+  panels.forEach(p => {
+    const isActive = p.id === 'cab-panel-' + tab;
+    p.style.display = isActive ? '' : 'none';
+  });
+
+  // 3) Rendu différé selon l'onglet
+  switch (tab) {
+    case 'dashboard':
+      try {
+        if (typeof loadDashCabinet === 'function') {
+          setTimeout(() => loadDashCabinet(), 50);
+        }
+      } catch (e) { console.warn('[cabSwitchTab dashboard]', e.message); }
+      break;
+
+    case 'transmissions':
+      try {
+        if (typeof renderTransmissions === 'function') {
+          setTimeout(() => renderTransmissions(), 50);
+        }
+      } catch (e) { console.warn('[cabSwitchTab transmissions]', e.message); }
+      break;
+
+    case 'conformite':
+      try {
+        if (typeof renderComplianceBadge === 'function') renderComplianceBadge();
+      } catch (e) { console.warn('[cabSwitchTab conformite badge]', e.message); }
+      try {
+        if (typeof renderComplianceDashboard === 'function') {
+          setTimeout(() => {
+            renderComplianceDashboard().catch(err => {
+              console.warn('[cabSwitchTab renderComplianceDashboard]', err);
+            });
+          }, 50);
+        }
+      } catch (e) { console.warn('[cabSwitchTab conformite dashboard]', e.message); }
+      break;
+
+    case 'sync':
+    default:
+      // Le panneau sync est rendu par renderCabinetSection lors de la navigation
+      // vers la vue cabinet — rien à faire ici.
+      break;
+  }
+};
+
+/* ── Back-compat : intercepter les anciens navTo('transmissions', ...) qui
+   pourraient subsister dans d'autres modules. On redirige vers la vue Cabinet
+   et on active automatiquement l'onglet Transmissions. ── */
+(function _patchNavToForTransmissions() {
+  if (typeof window.navTo !== 'function') {
+    setTimeout(_patchNavToForTransmissions, 200);
+    return;
+  }
+  if (window.navTo._cabinetTransmPatched) return;
+  const _origNavTo = window.navTo;
+  window.navTo = function (view, btn) {
+    if (view === 'transmissions') {
+      const cabBtn = document.querySelector('[data-v="cabinet"]') || btn || null;
+      _origNavTo('cabinet', cabBtn);
+      setTimeout(() => {
+        if (typeof window.cabSwitchTab === 'function') {
+          window.cabSwitchTab('transmissions',
+            document.querySelector('.cab-tab[data-cab-tab="transmissions"]'));
+        }
+      }, 120);
+      return;
+    }
+    return _origNavTo(view, btn);
+  };
+  window.navTo._cabinetTransmPatched = true;
+})();
 
 /* ── Pas de cabinet — formulaire créer/rejoindre ── */
 function _renderNoCabinet(root) {
@@ -456,12 +564,7 @@ function _renderCabinetDashboard(root, d) {
         <div class="ai in">⚠️ Les données patients restent anonymisées lors du partage</div>
         <div class="ai in">⚠️ Aucune synchronisation automatique sans votre accord</div>
       </div>
-    </div>
-
-    <!-- 🛡️ Tableau de bord Conformité (intégré depuis l'ancien onglet "Conformité cabinet") -->
-    <!-- Rendu par renderComplianceDashboard() dans compliance-engine.js                   -->
-    <!-- Inclut les opportunités Avenant 11 détectées via complianceA11OpportunitiesAll()  -->
-    <div id="compliance-block"></div>`;
+    </div>`;
 
   // ✅ Affichage automatique de l'état de synchro après rendu
   // Utilise le tracking local en priorité — visible sans avoir à cliquer
@@ -471,14 +574,8 @@ function _renderCabinetDashboard(root, d) {
     }
   }, 250);
 
-  // 🛡️ Rendu du tableau de bord conformité (intégré — ex onglet "Conformité cabinet")
-  setTimeout(() => {
-    if (typeof renderComplianceDashboard === 'function') {
-      renderComplianceDashboard().catch(err => {
-        console.warn('[cabinet.js] renderComplianceDashboard failed:', err);
-      });
-    }
-  }, 350);
+  // 🛡️ Le rendu du tableau de bord conformité est maintenant déféré
+  //    au clic sur l'onglet "Conformité" — voir cabSwitchTab() ci-dessous.
 }
 
 /* ════════════════════════════════════════════════
