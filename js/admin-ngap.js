@@ -97,6 +97,10 @@ function _render() {
       <button class="btn bs bsm" onclick="admNgapRunTests()" title="Rejouer les 58 tests (50 cliniques + 8 structurels) sur le référentiel en cours d'édition">🧪 Tests</button>
       <button class="btn bs bsm" onclick="admNgapToggleInstruction()" title="Appliquer une correction en langage naturel (ex: 'Passe AMI14 à 45€')">🪄 Instruction</button>
       <button class="btn bs bsm" onclick="admNgapSuggList()" title="Voir les suggestions des infirmières" id="adm-ngap-sugg-btn">📬 Suggestions <span id="adm-ngap-sugg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px"></span></button>
+      <button class="btn bs bsm" onclick="admNgapImportFile()" title="Charger un fichier JSON de référentiel (ex: NGAP_2026.4_STRICT_247_DUAL_RAG.json) — remplace le référentiel en mémoire et active le bouton Enregistrer" style="background:linear-gradient(135deg,rgba(0,212,170,.15),rgba(0,212,170,.05));border-color:rgba(0,212,170,.4);color:#00d4aa">
+        📂 Charger un fichier JSON
+      </button>
+      <input type="file" id="adm-ngap-file-input" accept=".json,application/json" style="display:none" onchange="admNgapImportFileChosen(event)">
       <div style="flex:1"></div>
       <button class="btn bp bsm" onclick="admNgapSavePrompt()" ${dirty ? '' : 'disabled style="opacity:.4;cursor:not-allowed"'} title="Enregistrer une nouvelle version">
         💾 Enregistrer une nouvelle version
@@ -832,6 +836,94 @@ window.admNgapReset = function() {
   _NG.edit = JSON.parse(_NG.originalJson);
   _render();
   _toast('info', 'Modifications annulées', 'Le référentiel a été restauré.');
+};
+
+/* ── Import d'un fichier JSON (ex: NGAP_2026.4_STRICT_247_DUAL_RAG.json) ─── */
+window.admNgapImportFile = function() {
+  const input = document.getElementById('adm-ngap-file-input');
+  if (!input) { _toast('error', 'Erreur', 'Champ fichier introuvable.'); return; }
+  input.value = ''; // permet de re-sélectionner le même fichier
+  input.click();
+};
+
+window.admNgapImportFileChosen = async function(ev) {
+  const file = ev?.target?.files?.[0];
+  if (!file) return;
+  if (!/\.json$/i.test(file.name)) {
+    _toast('error', 'Fichier invalide', 'Sélectionnez un fichier .json');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    _toast('error', 'Fichier trop volumineux', `${(file.size/1024/1024).toFixed(1)} Mo > 5 Mo max.`);
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    let parsed;
+    try { parsed = JSON.parse(text); }
+    catch (e) { _toast('error', 'JSON invalide', e.message); return; }
+
+    // Validations structurelles minimales
+    if (!parsed || typeof parsed !== 'object') {
+      _toast('error', 'Format invalide', 'Le fichier ne contient pas un objet JSON.');
+      return;
+    }
+    const requiredKeys = ['version', 'lettres_cles', 'forfaits_bsi', 'majorations',
+                          'actes_chapitre_I', 'actes_chapitre_II',
+                          'incompatibilites', 'derogations_taux_plein'];
+    const missing = requiredKeys.filter(k => parsed[k] == null);
+    if (missing.length) {
+      _toast('error', 'Référentiel incomplet',
+        `Clés manquantes : ${missing.slice(0,3).join(', ')}${missing.length>3?'…':''}`);
+      return;
+    }
+
+    // Confirmation utilisateur — affiche un résumé avant remplacement
+    const nLC    = Object.keys(parsed.lettres_cles || {}).length;
+    const nBSI   = Object.keys(parsed.forfaits_bsi || {}).length;
+    const nMaj   = Object.keys(parsed.majorations || {}).length;
+    const nA1    = (parsed.actes_chapitre_I  || []).length;
+    const nA2    = (parsed.actes_chapitre_II || []).length;
+    const nInc   = (parsed.incompatibilites || []).length;
+    const nDer   = (parsed.derogations_taux_plein || []).length;
+    const nIPA   = Object.keys(parsed.forfaits_ipa || {}).length;
+    const nALD   = Object.keys(parsed.codes_ald || {}).length;
+    const nPRADO = Object.keys(parsed.programmes_prado || {}).length;
+    const total  = nLC + nBSI + nMaj + nA1 + nA2 + nInc + nDer + nIPA + nALD + nPRADO;
+
+    const summary =
+      `Charger le référentiel suivant en mémoire ?\n\n` +
+      `Version : ${parsed.version}\n` +
+      `Source  : ${(parsed.source || '').slice(0, 80)}\n\n` +
+      `• Lettres-clés     : ${nLC}\n` +
+      `• Forfaits BSI     : ${nBSI}\n` +
+      `• Majorations      : ${nMaj}\n` +
+      `• Actes Chap I/II  : ${nA1} + ${nA2}\n` +
+      `• Incompatibilités : ${nInc}\n` +
+      `• Dérogations      : ${nDer}\n` +
+      `• Forfaits IPA     : ${nIPA}\n` +
+      `• Codes ALD        : ${nALD}\n` +
+      `• Programmes PRADO : ${nPRADO}\n\n` +
+      `Le référentiel sera chargé en mémoire (non sauvegardé). ` +
+      `Cliquez ensuite sur 💾 Enregistrer une nouvelle version pour le persister en base.`;
+
+    if (!confirm(summary)) {
+      _toast('info', 'Import annulé', 'Aucun changement.');
+      return;
+    }
+
+    // Remplacement en mémoire — _NG.edit devient le nouveau référentiel
+    // _NG.originalJson reste figé sur la version active en BDD → le moteur
+    // détecte _isDirty() = true et active le bouton 💾 Enregistrer.
+    _NG.edit = parsed;
+    _render();
+    _toast('success',
+      `Référentiel chargé : ${parsed.version}`,
+      `${total} items en mémoire. Cliquez sur 💾 Enregistrer pour activer en base.`);
+  } catch (e) {
+    _toast('error', 'Erreur de lecture', e.message);
+  }
 };
 
 /* ── Sauvegarde ──────────────────────────────── */
