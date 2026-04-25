@@ -463,12 +463,21 @@ async function _syncFromServer() {
     }
 
     // Cache : skip si même version + hash que la dernière pull
+    // ✅ FIX : on applique aussi si la version en mémoire ne matche pas la version serveur
+    //   (cas typique : le HTML statique a chargé une vieille version avant le bootstrap)
     if (lastPull
         && lastPull.version === remote.version
         && lastPull.ruleset_hash === remote.ruleset_hash) {
-      // Mais on applique quand même si window.NGAP_REFERENTIEL n'est pas encore chargé
-      if (!window.NGAP_REFERENTIEL) {
+      const memoryVersion = window.NGAP_REFERENTIEL && window.NGAP_REFERENTIEL.version;
+      const memoryMatchesServer = memoryVersion === remote.version;
+      // On applique si :
+      //  - aucun ref en mémoire, OU
+      //  - ref en mémoire avec version différente (= statique chargé d'abord)
+      if (!window.NGAP_REFERENTIEL || !memoryMatchesServer) {
         await _applyRefToMemory(refToApply);
+        _log('info',
+          `Sync serveur OK (cached) — version mémoire (${memoryVersion || 'aucune'}) `
+          + `mise à jour vers ${remote.version}${a11Filtered ? ' (A11 filtré)' : ''}`);
         return { source: 'server', applied: true, version: remote.version, cached: true, a11_filtered: a11Filtered };
       }
       return { source: 'server', applied: false, reason: 'unchanged', version: remote.version };
