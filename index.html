@@ -121,6 +121,22 @@
   .lp-rag-meta{font-family:var(--fm);font-size:10.5px;color:#a0bbd0;line-height:1.5;letter-spacing:.2px}
   .lp-rag-engine{margin-top:14px;padding:12px 16px;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.18);border-radius:10px;font-size:12.5px;color:#d0e4ee;line-height:1.55}
   .lp-rag-engine strong{color:#ffffff;font-weight:600}
+
+  /* Bouton + d'info RAG Dual + Modal */
+  .rag-info-btn{background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.3);color:#00d4aa;font-family:var(--fm);font-size:10.5px;font-weight:600;letter-spacing:.4px;padding:3px 10px;border-radius:14px;cursor:pointer;transition:all .18s;white-space:nowrap}
+  .rag-info-btn:hover{background:rgba(0,212,170,.15);border-color:rgba(0,212,170,.5);transform:translateY(-1px)}
+  .rag-info-btn:active{transform:translateY(0)}
+  #modal-rag-dual{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);padding:16px;overflow-y:auto;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+  #modal-rag-dual.open{display:flex;align-items:flex-start;justify-content:center;animation:ragModalFade .25s ease both}
+  @keyframes ragModalFade{from{opacity:0}to{opacity:1}}
+  .rag-modal-card{background:#0b0f14;border:1px solid rgba(30,45,61,.95);border-radius:16px;max-width:680px;width:100%;margin:5vh auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .rag-modal-head{padding:18px 22px;border-bottom:1px solid rgba(30,45,61,.95);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .rag-modal-title{font-family:var(--fs);font-size:17px;color:#fff;font-weight:600;margin:0;line-height:1.3}
+  .rag-modal-close{background:none;border:1px solid rgba(255,255,255,.15);color:#b8cdd8;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;transition:all .18s;flex-shrink:0}
+  .rag-modal-close:hover{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.3)}
+  .rag-modal-body{padding:20px 22px}
+  .rag-modal-intro{font-size:13px;color:#b8cdd8;margin:0 0 16px;line-height:1.55}
+  .rag-modal-intro strong{color:#fff;font-weight:600}
   .lp-sec-rgpd{background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12);border-radius:16px;padding:24px 28px;margin-bottom:52px}
   .lp-pill-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:12px}
   .lp-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:#d0e4ee;white-space:nowrap}
@@ -1476,7 +1492,10 @@
         <h1 class="pt" style="margin-bottom:0">Cotation <em>intelligente</em></h1>
         <button onclick="resetOnboarding()" style="background:none;border:1px solid rgba(0,212,170,.3);color:var(--a);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:var(--fm);white-space:nowrap;flex-shrink:0" onmouseenter="this.style.background='rgba(0,212,170,.1)'" onmouseleave="this.style.background='none'">📖 Revoir l'intro</button>
       </div>
-      <p class="ps">Agent IA NGAP · RAG Dual (247 STRICT + 850 ENRICHI) · Tarifs 2026</p>
+      <p class="ps" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Agent IA NGAP · RAG Dual (247 STRICT + 850 ENRICHI) · Tarifs 2026</span>
+        <button type="button" class="rag-info-btn" onclick="openRagDualModal()" aria-label="En savoir plus sur l'architecture RAG Dual">+ d'info</button>
+      </p>
 
       <div class="card cot-form-premium">
 
@@ -4651,5 +4670,72 @@ window._initTopbarExtras = function() {
   });
 })();
 </script>
+
+<!-- MODAL ARCHITECTURE RAG DUAL -->
+<div id="modal-rag-dual" role="dialog" aria-modal="true" aria-labelledby="rag-modal-title" onclick="if(event.target===this)closeRagDualModal()">
+  <div class="rag-modal-card" role="document">
+    <div class="rag-modal-head">
+      <h3 class="rag-modal-title" id="rag-modal-title">Architecture RAG Dual — séparation médico-légale</h3>
+      <button type="button" class="rag-modal-close" onclick="closeRagDualModal()" aria-label="Fermer">×</button>
+    </div>
+    <div class="rag-modal-body">
+      <p class="rag-modal-intro">
+        AMI utilise <strong>deux bases de connaissance distinctes</strong> avec marquage explicite,
+        pour garantir l'opposabilité en audit CPAM.
+      </p>
+
+      <div class="lp-rag-block lp-rag-strict">
+        <div class="lp-rag-tag">[247 STRICT — SOURCE DE VÉRITÉ NGAP — OPPOSABLE EN AUDIT CPAM]</div>
+        <div class="lp-rag-desc">
+          Ces informations sont 100% sourcées depuis le référentiel NGAP officiel
+          (ameli.fr, Légifrance UNCAM, articles CSS).
+          <strong>Elles font foi pour toute cotation et tout calcul tarifaire.</strong>
+        </div>
+        <div class="lp-rag-meta">
+          247 chunks vérifiés · Lettres-clés · Forfaits BSI/DI · Actes Chap I-II ·
+          Article 11B · CIR-9/2025 · IPA (avenant 9) · ALD (D.322-1 CSS) · PRADO
+        </div>
+      </div>
+
+      <div class="lp-rag-block lp-rag-enrichi">
+        <div class="lp-rag-tag">[850 ENRICHI — PÉDAGOGIE / CONTEXTE — NON OPPOSABLE]</div>
+        <div class="lp-rag-desc">
+          Ces informations sont des aides à la compréhension : cas pratiques illustratifs,
+          exemples de tournées, contexte clinique. Elles ne peuvent pas servir de base à une
+          cotation officielle.
+          <strong>En cas de contradiction avec [STRICT], la section [STRICT] prévaut.</strong>
+        </div>
+        <div class="lp-rag-meta">
+          850 chunks pédagogiques · Cas pratiques · Exemples cliniques ·
+          Vulgarisation · Contexte conversationnel pour l'IA
+        </div>
+      </div>
+
+      <div class="lp-rag-engine">
+        ⚙️ <strong>Le moteur de calcul</strong> (Recalcul NGAP Officiel) utilise <strong>uniquement</strong>
+        le référentiel vérifié de 242 entrées sourcées. Aucun chunk pédagogique ne pollue jamais
+        la chaîne de calcul médico-légale.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openRagDualModal(){
+  var m = document.getElementById('modal-rag-dual');
+  if(m){ m.classList.add('open'); document.body.style.overflow='hidden'; }
+}
+function closeRagDualModal(){
+  var m = document.getElementById('modal-rag-dual');
+  if(m){ m.classList.remove('open'); document.body.style.overflow=''; }
+}
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape'){
+    var m = document.getElementById('modal-rag-dual');
+    if(m && m.classList.contains('open')) closeRagDualModal();
+  }
+});
+</script>
+
 </body>
 </html>
