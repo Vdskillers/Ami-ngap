@@ -1261,6 +1261,13 @@ async function _cotationPipeline() {
       heure_soin: gv('f-hs'),
       exo: gv('f-exo'),
       ddn: gv('f-ddn'),  // utile pour majorations enfant <7 ans
+      // ⚡ v3.10 — Bypass sauvegarde Postgres dans N8N
+      // Le worker Cloudflare sauvegarde déjà dans Supabase (_saveCotationNurse).
+      // La sauvegarde dans N8N (nœud "Sauvegarder en BDD") est un DOUBLON qui
+      // ralentit le workflow et provoque des timeouts 502 (cold-start Postgres).
+      // _skip_db:true → le nœud "Mode spécial ?" route vers la réponse directe
+      // sans toucher à Postgres. Le mode 'verify' marche grâce à ce même flag.
+      _skip_db: true,
     };
 
     // Méta-données conservées côté client — réinjectées dans la réponse pour
@@ -1396,9 +1403,14 @@ async function _cotationPipeline() {
         cotationIdx:    _existRef?.cotationIdx     ?? -1,
         invoice_number: d.invoice_number,
         _autoDetected:  _existRef?._autoDetected   || false,
-        // Préserver _prevActes pour que renderCot puisse continuer à détecter
-        // les régressions d'acte principal entre les re-cotations successives
-        _prevActes:     _existRef?._prevActes      || null,
+        // ⚡ FIX régression d'acte fantôme : on enregistre les actes de la
+        // cotation qui vient d'être affichée, PAS ceux de l'originale.
+        // Comme ça, à la prochaine re-cotation, on compare au DERNIER état
+        // affiché et non au plus ancien — évite de proposer en boucle de
+        // remettre des actes que l'utilisateur a sciemment retirés.
+        _prevActes:     Array.isArray(d.actes) && d.actes.length
+          ? d.actes.map(a => ({ code: a.code, nom: a.nom }))
+          : (_existRef?._prevActes || null),
       };
     }
     // ── Mémoriser l'heure de soin dans le cache persistant (analyse horaire Dashboard) ──
@@ -2151,6 +2163,20 @@ function _cotAppendDesc(fragment) {
   const curNorm = cur.toLowerCase();
   const fragNorm = frag.toLowerCase();
   if (curNorm.includes(fragNorm)) return 'exists';
+  // ⚡ Check renforcé sur les codes NGAP : si le fragment commence par un code
+  // NGAP (AMI1, AMI4, BSC, MCI…) et que ce code exact est déjà présent dans le
+  // textarea (avec word boundary), considérer comme doublon.
+  // Évite d'ajouter « AMI1 Injection sous » si « AMI1 » est déjà là.
+  // Distingue bien AMI1 vs AMI10/AMI11 grâce à la frontière de mot (\b ou \W).
+  const codeMatch = frag.match(/^([A-Z]{2,4}\d+(?:[._/]\d+)?)\b/i);
+  if (codeMatch) {
+    const code = codeMatch[1].toUpperCase();
+    // Cherche le code en tant que mot entier dans le textarea
+    const re = new RegExp('(?:^|[^A-Za-z0-9_/.])' + code.replace(/[.+*?^$()[\]{}|\\]/g, '\\$&') + '(?:[^A-Za-z0-9_/.]|$)', 'i');
+    if (re.test(cur)) {
+      return 'exists';
+    }
+  }
   // Séparateur : « + » entre fragments pour une syntaxe lisible par l'IA
   const sep = cur ? (/[.,+]$/.test(cur) ? ' ' : ' + ') : '';
   el.value = cur + sep + frag;
