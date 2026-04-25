@@ -702,10 +702,10 @@ function openSignatureModal(invoiceId, context) {
         <div id="sig-info" style="font-family:var(--fm);font-size:10px;color:var(--m);
           margin-top:8px;text-align:right"></div>
 
-        <!-- ── Preuve médico-légale renforcée — 3 GARANTIES OBLIGATOIRES ── -->
+        <!-- ── Preuve médico-légale renforcée — 4 GARANTIES OBLIGATOIRES ── -->
         <div style="margin-top:14px;padding:12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r)">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">
-            🛡️ Preuve médico-légale (3 garanties)
+            🛡️ Preuve médico-légale (4 garanties)
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
             <button type="button" id="sig-photo-btn" class="btn bs bsm" onclick="captureProofPhoto()"
@@ -716,15 +716,22 @@ function openSignatureModal(invoiceId, context) {
               Photo hashée puis <strong>supprimée</strong> immédiatement · RGPD
             </span>
           </div>
-          <!-- Indicateurs live des 3 garanties (mis à jour pendant la signature) -->
+          <!-- Indicateurs live des 4 garanties (mis à jour pendant la signature) -->
           <div id="sig-proof-indicators" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;font-size:10px;font-family:var(--fm)">
-            <span id="sig-ind-iso" class="sig-ind sig-ind-ok" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(0,212,170,.12);color:var(--a);border-radius:4px">
+            <span id="sig-ind-hash" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px"
+              title="SHA-256(tracé + date + acte + patient) — toute modification invalide le hash">
+              ⏳ Hash SHA-256 (tracé+date+acte+patient)
+            </span>
+            <span id="sig-ind-iso" class="sig-ind sig-ind-ok" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(0,212,170,.12);color:var(--a);border-radius:4px"
+              title="Horodatage ISO 8601 — prouve quand le soin a eu lieu">
               ✔ Horodatage ISO 8601
             </span>
-            <span id="sig-ind-zone" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px">
+            <span id="sig-ind-zone" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px"
+              title="Lat/lng arrondis : prouve la zone sans tracer précisément">
               ⏳ Géozone floue (~1km)
             </span>
-            <span id="sig-ind-hmac" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px">
+            <span id="sig-ind-hmac" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px"
+              title="Signature serveur HMAC-SHA256 — impossible à antidater ou falsifier">
               ⏳ HMAC-SHA256 serveur
             </span>
           </div>
@@ -755,6 +762,7 @@ function openSignatureModal(invoiceId, context) {
   if (info) info.textContent = new Date().toLocaleString('fr-FR') + ' · Facture ' + (_currentInvoiceId || '—');
 
   // Reset indicateurs live (modal réutilisé)
+  _setProofIndicator('hash', 'pending');
   _setProofIndicator('zone', 'pending');
   _setProofIndicator('hmac', 'pending');
 
@@ -770,6 +778,7 @@ function _setProofIndicator(kind, state) {
   const el = document.getElementById('sig-ind-' + kind);
   if (!el) return;
   const labels = {
+    hash: { pending: '⏳ Hash SHA-256 (tracé+date+acte+patient)', ok: '✔ Hash SHA-256 (tracé+date+acte+patient)', fail: '⚠ Hash non calculé' },
     zone: { pending: '⏳ Géozone floue (~1km)',  ok: '✔ Géozone floue (~1km)',     fail: '⚠ Géozone indispo (fallback IP)' },
     hmac: { pending: '⏳ HMAC-SHA256 serveur',   ok: '✔ HMAC-SHA256 serveur',      fail: '⚠ HMAC en file d\'attente' },
     iso:  { pending: '⏳ Horodatage ISO 8601',   ok: '✔ Horodatage ISO 8601',      fail: '⚠ Horodatage ISO 8601' },
@@ -924,16 +933,20 @@ async function saveSignature() {
 
   // ── BRANCHE : signature patient (flow médico-légal complet) ──
   //
-  // GARANTIES MÉDICO-LÉGALES (chaque signature DOIT contenir ces 3 preuves) :
+  // GARANTIES MÉDICO-LÉGALES (chaque signature DOIT contenir ces 4 preuves) :
+  //   ✔ Hash SHA-256 — empreinte du tracé+date+acte+patient (toute modif invalide)
   //   ✔ Horodatage ISO 8601 — toISOString() retourne toujours UTC ISO 8601
   //   ✔ Géozone floue (~1km) — tentative GPS active + fallback IP côté worker
   //   ✔ Signature HMAC-SHA256 serveur — retry 3x + file d'attente offline
   //
+  // (Photo de présence reste optionnelle — si fournie, elle est aussi hashée.)
   const png       = _sigCanvas.toDataURL('image/png');
   const signedAt  = new Date().toISOString();   // ✔ ISO 8601 garanti
   const ctx       = _currentProofContext || {};
 
   // ── 1) Hash local de la preuve (empreinte opposable) ──
+  // Hash = SHA-256(PNG + timestamp + invoice + patient_id + actes)
+  // Toute modification ultérieure (PNG, date, acte, patient) invalide le hash.
   let signatureHash = '';
   try {
     signatureHash = await _computeProofHash({
@@ -944,6 +957,7 @@ async function saveSignature() {
       actes:      ctx.actes || [],
     });
   } catch (_) {}
+  _setProofIndicator('hash', signatureHash ? 'ok' : 'fail');
 
   // ── 2) Géozone floue — tentative ACTIVE (pas seulement passive) ──
   // Si openSignatureModal a déjà résolu _currentGeozone en arrière-plan, on l'utilise.
@@ -987,19 +1001,19 @@ async function saveSignature() {
     console.info('[AMI:Sig] HMAC indisponible — invoice ajouté à la file de retry :', _currentInvoiceId);
   }
 
-  // ── 4) Stockage local : PNG + toutes les preuves (3 garanties médico-légales) ──
+  // ── 4) Stockage local : PNG + toutes les preuves (4 garanties médico-légales) ──
   await _sigPut({
     invoice_id:  _currentInvoiceId,
     png,
     signed_at:   signedAt,                       // ✔ Horodatage ISO 8601
     user_agent:  navigator.userAgent.slice(0, 100),
     // Preuve médico-légale
-    signature_hash: signatureHash,               // SHA-256 du tracé+date+acte+patient
+    signature_hash: signatureHash,               // ✔ SHA-256 du tracé+date+acte+patient
     photo_hash:     _currentPhotoHash || null,
     geozone:        effectiveGeozone || null,    // ✔ Géozone (GPS ~1km ou fallback IP ~10km)
     server_cert:    serverCert || null,          // ✔ HMAC-SHA256 (ou null si offline → file d'attente)
     proof_payload:  proofPayload,
-    proof_version:  2,                           // v2 = 3 garanties activées
+    proof_version:  2,                           // v2 = 4 garanties activées
   });
 
   // ── 5) Sync PNG chiffré vers serveur (cadre existant) ──
