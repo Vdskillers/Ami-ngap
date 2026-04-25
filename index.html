@@ -1605,9 +1605,6 @@
             <span style="font-size:16px">⚡</span> Coter avec l'IA
           </button>
           <button class="btn bv" id="btn-verify" onclick="openVerify()"><span>🔍</span> Vérifier & corriger</button>
-          <button class="btn bp" id="btn-cot-local" onclick="cotationLocaleNGAP()" title="Calcul instantané avec le moteur NGAP officiel — sans appel à l'IA, idéal si le service IA est lent ou pour des cotations simples avec codes explicites (AMI 4, MCI…)">
-            <span style="font-size:16px">⚡</span> Cotation rapide NGAP
-          </button>
           <button class="btn bs" onclick="clrCot()">↺ Réinitialiser</button>
         </div>
 
@@ -4089,6 +4086,18 @@ document.addEventListener('click', function(e) {
         }
       }, 600);
     };
+
+    // 🔔 Garde-fou : si auth.js a déjà appelé showApp() AVANT que ce hook ne soit
+    // installé (ex: rechargement page avec session active, hot-reload, race condition),
+    // on initialise quand même les extras topbar pour que la cloche apparaisse.
+    // Détection : le conteneur #app est déjà affiché.
+    setTimeout(function() {
+      var appEl = document.getElementById('app');
+      var notifBtn = document.getElementById('top-notif-btn');
+      if (appEl && appEl.style.display !== 'none' && notifBtn && notifBtn.style.display === 'none') {
+        if (typeof window._initTopbarExtras === 'function') window._initTopbarExtras();
+      }
+    }, 800);
 
     // Chargement auto KPIs rapport + filtre hist à la navigation
     document.addEventListener('ui:navigate', function(e) {
