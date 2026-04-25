@@ -257,10 +257,28 @@ async function loadSystemHealth() {
   if (elView) elView.innerHTML = spinner;
 
   try {
-    const [logs, stats] = await Promise.all([
-      wpost('/webhook/admin-logs', {}),
-      wpost('/webhook/admin-stats', {}),
-    ]);
+    // ✅ v8.5 — Tente d'abord l'endpoint unifié /admin-syshealth (1 seul fetch),
+    //   fallback sur admin-logs + admin-stats si le worker ne supporte pas encore.
+    let logs, stats;
+    try {
+      const sh = await wpost('/webhook/admin-syshealth', {});
+      if (sh && sh.ok) {
+        // L'endpoint unifié retourne { logs, system_logs, stats, global_stats }
+        // → on adapte la forme pour rester compatible avec le reste du code
+        logs  = { ok: true, logs: sh.logs, system_logs: sh.system_logs, stats: sh.stats };
+        stats = { ok: true, stats: sh.global_stats };
+      } else {
+        throw new Error('admin-syshealth non disponible');
+      }
+    } catch (e) {
+      // Fallback ancien comportement (parallèle)
+      const [logsResp, statsResp] = await Promise.all([
+        wpost('/webhook/admin-logs', {}),
+        wpost('/webhook/admin-stats', {}),
+      ]);
+      logs = logsResp;
+      stats = statsResp;
+    }
 
     const sl = logs?.system_logs || [];
     const s  = stats?.stats || {};
