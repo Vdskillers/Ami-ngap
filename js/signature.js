@@ -823,6 +823,23 @@ async function saveSignature() {
     sigBtn.style.color = 'var(--a)';
   }
 
+  // ── 🛡️ Notifier les autres composants (cotation.js, etc.) ──────────────
+  // L'event permet à cotation.js de mettre à jour le badge preuve, masquer
+  // le bandeau « Aucune preuve terrain » dans le simulateur CPAM et le
+  // scoring IDE, et afficher un visuel positif « Preuve forte enregistrée ».
+  try {
+    document.dispatchEvent(new CustomEvent('ami:preuve_updated', {
+      detail: {
+        invoice_number: _currentInvoiceId,
+        type:           'signature_patient',
+        force_probante: 'FORTE',
+        hash_preuve:    signatureHash,
+        timestamp:      signedAt,
+        certifie_ide:   !!serverCert,
+      }
+    }));
+  } catch (_) {}
+
   // ── Reset état preuve ──
   _currentPhotoHash    = null;
   _currentGeozone      = null;

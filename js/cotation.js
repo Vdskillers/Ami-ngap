@@ -2651,6 +2651,51 @@ if (typeof window !== 'undefined' && !window._cotRecoteNavHookInstalled) {
   } catch (_) {}
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LISTENER ami:preuve_updated — rafraîchit l'UI cotation après signature
+   ───────────────────────────────────────────────────────────────────────────
+   Émis par signature.js après une signature patient réussie. Met à jour :
+   - le badge preuve (passe en FORTE) sans re-cotation N8N
+   - les blocs CPAM et Scoring qui mentionnaient « Aucune preuve terrain »
+   - le badge data-sig sur le bouton signature (déjà fait par signature.js)
+
+   Stratégie : on conserve la dernière cotation rendue dans window._lastCotData,
+   on patche son champ preuve_soin et on appelle renderCot pour re-render à
+   partir des données déjà en mémoire. Pas d'appel réseau. Pas de race condition.
+   ═══════════════════════════════════════════════════════════════════════════ */
+if (typeof window !== 'undefined' && !window._cotPreuveListenerInstalled) {
+  window._cotPreuveListenerInstalled = true;
+  document.addEventListener('ami:preuve_updated', function(ev) {
+    try {
+      const detail = ev?.detail || {};
+      // Vérifier qu'on a bien une cotation actuellement affichée
+      const last = window._lastCotData;
+      if (!last || typeof renderCot !== 'function') return;
+      // Vérifier que c'est bien la cotation actuellement affichée
+      // (l'invoice_number doit matcher pour éviter de mettre à jour la mauvaise)
+      if (detail.invoice_number && last.invoice_number && detail.invoice_number !== last.invoice_number) {
+        return; // event pour une autre cotation, on ignore
+      }
+      // Mise à jour preuve_soin dans la copie en mémoire
+      last.preuve_soin = {
+        type:           detail.type           || 'signature_patient',
+        force_probante: detail.force_probante || 'FORTE',
+        hash_preuve:    detail.hash_preuve    || '',
+        timestamp:      detail.timestamp      || new Date().toISOString(),
+        certifie_ide:   detail.certifie_ide   === true,
+      };
+      // Re-render — les blocs CPAM/scoring/badge preuve seront recalculés
+      renderCot(last);
+      // Toast de confirmation visuel
+      if (typeof showToast === 'function') {
+        showToast('ok', '🛡️ Preuve forte enregistrée', 'Signature patient validée — la cotation est maintenant pleinement opposable.');
+      }
+    } catch (e) {
+      console.warn('[cotation] listener ami:preuve_updated KO:', e.message);
+    }
+  });
+}
+
 /* Détecte si une suggestion est purement informative (non-actionnable).
    Ex: PROTECTION, RGPD, AUDIT, INFO, VIGILANCE — pas de code à ajouter. */
 function _cotIsInfoSuggestion(text) {
@@ -2824,6 +2869,9 @@ if (typeof window !== 'undefined') {
 function renderCot(d) {
   // Une cotation fraîche arrive → retire le FAB « Re-coter » s'il traîne
   try { _cotHideReCoteBar(); } catch (_) {}
+  // Sauvegarder en mémoire pour permettre au listener ami:preuve_updated
+  // de re-render après signature sans appel N8N
+  window._lastCotData = d;
   const a   = d.actes  || [];
   const al  = d.alerts || [];
   const op  = d.optimisations || [];
@@ -2869,16 +2917,51 @@ function renderCot(d) {
     : '';
 
   // ── Bloc simulation CPAM N8N v7 ─────────────────────────────────────────────
+  // Avec gestion intelligente de l'absence de preuve : si l'unique anomalie
+  // (ou l'anomalie principale) est l'absence de preuve terrain, on propose
+  // directement un bouton « ✍️ Faire signer » qui ouvre la modale signature.
   const cpam = d.cpam_simulation || {};
-  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK') ? (() => {
+  // Détecter si la cotation a déjà une preuve forte (signature/photo)
+  const _hasPreuveForte = preuve.force_probante === 'FORTE';
+  // Détecter les anomalies « preuve terrain absente »
+  const _isPreuveAnomaly = (txt) => /preuve\s+terrain|justificatif\s+opposable|absence.*[ée]l[ée]ment\s+justif/i.test(String(txt || ''));
+  const _filteredAnomalies = (cpam.anomalies || []).filter(a => !(_hasPreuveForte && _isPreuveAnomaly(a)));
+  // ID invoice pour ouvrir la modale signature directement depuis le bandeau
+  const _cpamInvoiceId = d.invoice_number || '';
+  const _cpamPatId = (window._editingCotation?.patientId) || '';
+  const _hasOnlyPreuveAnomaly = (cpam.anomalies || []).length > 0
+    && (cpam.anomalies || []).every(a => _isPreuveAnomaly(a));
+
+  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK' && _filteredAnomalies.length > 0) ? (() => {
     const isKO = cpam.niveau === 'CRITIQUE';
-    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}">
+    // Bouton signer : seulement si l'anomalie filtrée concerne la preuve terrain
+    // ET qu'on a un invoice_number (cotation déjà sauvée côté worker)
+    const _showSignBtn = !_hasPreuveForte && _cpamInvoiceId &&
+      _filteredAnomalies.some(a => _isPreuveAnomaly(a));
+    const _signBtnHtml = _showSignBtn ? `
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn bv bsm" onclick="openSignatureModal('${_cpamInvoiceId}', { patient_id: '${_cpamPatId}', invoice_number: '${_cpamInvoiceId}' })">
+          ✍️ Faire signer maintenant
+        </button>
+        <span style="font-size:10px;color:var(--m)">→ supprimera cette anomalie</span>
+      </div>` : '';
+    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}" data-cpam-bloc="1">
       <div style="font-size:11px;font-weight:700;color:${isKO ? '#ef4444' : '#f59e0b'};margin-bottom:6px">
         ${isKO ? '🚨' : '⚠️'} Simulation CPAM — ${cpam.decision || cpam.niveau}
       </div>
-      ${(cpam.anomalies||[]).map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
+      ${_filteredAnomalies.map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
+      ${_signBtnHtml}
     </div>`;
   })() : '';
+
+  // Si toutes les anomalies CPAM concernent la preuve ET qu'on a une preuve forte,
+  // afficher un bandeau positif de confirmation
+  const cpamSuccessBloc = (cpam.niveau && cpam.niveau !== 'OK' && _hasOnlyPreuveAnomaly && _hasPreuveForte) ? `
+    <div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(0,212,170,.08);border:1px solid #00b894" data-preuve-ok="1">
+      <div style="font-size:11px;font-weight:700;color:#00b894">
+        ✅ Preuve terrain enregistrée — Simulation CPAM conforme
+      </div>
+    </div>` : '';
 
   // ── Suggestions alternatives N8N v7 ─────────────────────────────────────────
   const suggBloc = sugg.length ? `<div style="margin-top:12px">
@@ -2924,10 +3007,17 @@ function renderCot(d) {
   </div>` : '';
 
   // ── Scoring infirmière N8N v7 ────────────────────────────────────────────────
+  // Si la cotation a maintenant une preuve forte ET que le scoring concerne
+  // uniquement l'absence de preuve (label « SURVEILLANCE » avec mention preuve),
+  // on masque le scoring (il n'est plus pertinent après signature).
   const scoring = d.infirmiere_scoring || {};
-  const scoringBloc = (scoring.level && scoring.level !== 'SAFE') ? (() => {
+  const _scoringMentionsPreuve = scoring.reasons && Array.isArray(scoring.reasons)
+    ? scoring.reasons.some(r => _isPreuveAnomaly(r))
+    : (scoring.level === 'SURVEILLANCE' && _hasOnlyPreuveAnomaly);
+  const _hideScoring = _hasPreuveForte && _scoringMentionsPreuve;
+  const scoringBloc = (!_hideScoring && scoring.level && scoring.level !== 'SAFE') ? (() => {
     const col = scoring.level === 'DANGER' ? '#ef4444' : '#f59e0b';
-    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px">
+    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px" data-scoring-bloc="1">
       <span style="color:${col};font-weight:700">${scoring.level === 'DANGER' ? '🚨' : '⚠️'} Scoring IDE : ${scoring.level}</span>
       ${scoring.score != null ? ` (${scoring.score} pts)` : ''}
     </div>`;
@@ -3146,6 +3236,7 @@ function renderCot(d) {
   ${opBloc}
   ${suggBloc}
   ${cpamBloc}
+  ${cpamSuccessBloc}
   ${scoringBloc}
 
   </div>`;
