@@ -1219,8 +1219,6 @@
       <div class="ni nurse-only" data-v="his"><span class="nic">📋</span> Historique <span class="ni-alert-badge orange" id="nav-his-badge" style="display:none"></span></div>
       <div class="ni nurse-only" data-v="outils-km"><span class="nic">🚗</span> Journal kilométrique</div>
       <div class="ni" data-v="sig"><span class="nic">✍️</span> Signatures électroniques</div>
-      <div class="ni" data-v="consentements"><span class="nic">✍️</span> Consentements éclairés</div>
-      <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Outils pratiques</div>
@@ -1266,8 +1264,6 @@
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="his" onclick="navTo('his',this);toggleMobileMenu()"><span class="bn-ic">📋</span>Historique</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-km" onclick="navTo('outils-km',this);toggleMobileMenu()"><span class="bn-ic">🚗</span>Km</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sig" onclick="navTo('sig',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Signatures</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="consentements" onclick="navTo('consentements',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Consent.</button>
-      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="alertes-med" onclick="navTo('alertes-med',this);toggleMobileMenu()"><span class="bn-ic">⚠️</span>Interact.</button>
       <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-hub" onclick="navTo('outils-hub',this);toggleMobileMenu()"><span class="bn-ic">🛠️</span>Outils</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="cabinet" onclick="navTo('cabinet',this);toggleMobileMenu()"><span class="bn-ic">🏥</span>Cabinet</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ngap-ref" onclick="navTo('ngap-ref',this);toggleMobileMenu()"><span class="bn-ic">📚</span>Référentiel</button>
@@ -2202,6 +2198,8 @@
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="pilulier" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('pilulier', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💊</span> Pilulier</button>
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="constantes" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('constantes', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📊</span> Constantes</button>
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="bsi" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('bsi', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🩺</span> BSI</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="consentements" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('consentements', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">✍️</span> Consentements</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="alertes-med" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('alertes-med', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">⚠️</span> Interactions</button>
       </div>
       <div class="hub-panel" id="hub-panel-patients-carnet" role="tabpanel">
 
@@ -2369,6 +2367,18 @@
 
       <div id="admin-bsi-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module BSI. Toutes les fonctionnalités sont opérationnelles.</div>
       <div id="bsi-root"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-consentements" role="tabpanel" style="display:none">
+
+      <div id="admin-consent-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Consentements. La signature et l'archivage sont pleinement fonctionnels.</div>
+      <div id="consentements-root"></div>
+    
+      </div>
+      <div class="hub-panel" id="hub-panel-patients-alertes-med" role="tabpanel" style="display:none">
+
+      <div id="admin-alertes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez la détection d'interactions médicamenteuses. Base ANSM 2026.</div>
+      <div id="alertes-med-root"></div>
     
       </div>
     </section>
@@ -3302,19 +3312,6 @@
     <!-- ══════════════════════════════════════════
          CONSENTEMENTS ÉCLAIRÉS
     ══════════════════════════════════════════ -->
-    <section class="view" id="view-consentements">
-      <div id="admin-consent-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Consentements. La signature et l'archivage sont pleinement fonctionnels.</div>
-      <div id="consentements-root"></div>
-    </section>
-
-    <!-- ══════════════════════════════════════════
-         ALERTES MÉDICAMENTEUSES
-    ══════════════════════════════════════════ -->
-    <section class="view" id="view-alertes-med">
-      <div id="admin-alertes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez la détection d'interactions médicamenteuses. Base ANSM 2026.</div>
-      <div id="alertes-med-root"></div>
-    </section>
-
     <!-- ══════════════════════════════════════════
          SIMULATEUR AUDIT CPAM
     ══════════════════════════════════════════ -->
@@ -4651,12 +4648,14 @@ document.addEventListener('keydown', function(e){
   /* ── Mapping (hub, onglet) → vue clinique attendue par les modules v2 ─ */
   var _CLINICAL_VIEW_MAP = {
     // Hub Carnet patients
-    'patients-pilulier'   : 'pilulier',
-    'patients-constantes' : 'constantes',
-    'patients-bsi'        : 'bsi',
+    'patients-pilulier'      : 'pilulier',
+    'patients-constantes'    : 'constantes',
+    'patients-bsi'           : 'bsi',
+    'patients-consentements' : 'consentements',
+    'patients-alertes-med'   : 'alertes-med',
     // Hub Outils pratiques
-    'outils-cr'           : 'compte-rendu',
-    'outils-audit'        : 'audit-cpam'
+    'outils-cr'              : 'compte-rendu',
+    'outils-audit'           : 'audit-cpam'
   };
 
   /* ── Hub Carnet patients ───────────────────────────────────────────── */
@@ -4684,19 +4683,21 @@ document.addEventListener('keydown', function(e){
   /* ── Mapping back-compat : ancien data-v → (hub, tab) ──────────────── */
   var HUB_REDIRECTS = {
     // Carnet patients
-    'outils-ordos': ['patients', 'ordos'],
-    'pilulier'    : ['patients', 'pilulier'],
-    'constantes'  : ['patients', 'constantes'],
-    'bsi'         : ['patients', 'bsi'],
+    'outils-ordos'   : ['patients', 'ordos'],
+    'pilulier'       : ['patients', 'pilulier'],
+    'constantes'     : ['patients', 'constantes'],
+    'bsi'            : ['patients', 'bsi'],
+    'consentements'  : ['patients', 'consentements'],
+    'alertes-med'    : ['patients', 'alertes-med'],
     // Outils pratiques
-    'dash'         : ['outils', 'dash'],
-    'tresor'       : ['outils', 'tresor'],
-    'rapport'      : ['outils', 'rapport'],
-    'copilote'     : ['outils', 'copilote'],
-    'compte-rendu' : ['outils', 'cr'],
-    'audit-cpam'   : ['outils', 'audit'],
-    'outils-charges': ['outils', 'charges'],
-    'outils-modeles': ['outils', 'modeles']
+    'dash'           : ['outils', 'dash'],
+    'tresor'         : ['outils', 'tresor'],
+    'rapport'        : ['outils', 'rapport'],
+    'copilote'       : ['outils', 'copilote'],
+    'compte-rendu'   : ['outils', 'cr'],
+    'audit-cpam'     : ['outils', 'audit'],
+    'outils-charges' : ['outils', 'charges'],
+    'outils-modeles' : ['outils', 'modeles']
   };
 
   /* ── Patch navTo : intercepte les anciens alias et redirige proprement
