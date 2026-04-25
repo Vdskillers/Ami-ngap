@@ -514,15 +514,19 @@ async function bootstrap() {
     // ═══════════════════════════════════════════════════════════
     // PHASE 1 — Override IDB v2 (Avenant 11 push manuel)
     // ═══════════════════════════════════════════════════════════
-    // Si un override v2 est présent, il prime sur le pull serveur
-    // (parce qu'il peut être programmé pour une date future avec
-    //  hot-swap atomique tarifs+moteur). Le pull serveur ne fournit
-    //  que le référentiel, pas le code moteur.
+    // Si un override v2 est ACTIVÉ MAINTENANT, il prime sur le pull serveur
+    // (parce qu'il peut inclure le hot-swap atomique tarifs+moteur).
+    // Si l'override est PROGRAMMÉ pour le futur, on continue vers le pull
+    // serveur pour récupérer quand même la version active courante (BDD).
+    // Le pull serveur ne fournit que le référentiel, pas le code moteur,
+    // mais c'est suffisant pour afficher la bonne version dans l'app.
     if (meta) {
       const result = await _bootstrapFromIDB(meta);
-      // Si un override IDB est appliqué OU programmé, on s'arrête là
-      if (result.bootstrap === true || result.scheduled_for) return result;
-      // Sinon (override désactivé/rollback), on tombe dans le pull serveur
+      // Si un override IDB est APPLIQUÉ (actif maintenant), on s'arrête là
+      if (result.bootstrap === true) return result;
+      // Si l'override est seulement PROGRAMMÉ (futur), on continue vers le pull
+      // serveur — l'override A11 prendra le relais à sa date d'activation.
+      // Sinon (override désactivé/rollback), on tombe aussi dans le pull serveur.
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -533,7 +537,16 @@ async function bootstrap() {
     // ngap-engine/ngap_referentiel_2026.json reste utilisable.
     const pullResult = await _syncFromServer();
     if (pullResult.applied) {
-      return { active_source: 'server_sync', bootstrap: true, version: pullResult.version };
+      // Si un override A11 était programmé, on conserve l'info pour
+      // que l'UI puisse afficher "version active actuelle + A11 prévu pour..."
+      const scheduled_for = (meta && meta.scheduled && meta.activation_date)
+        ? meta.activation_date : null;
+      return {
+        active_source: 'server_sync',
+        bootstrap: true,
+        version: pullResult.version,
+        ...(scheduled_for ? { scheduled_a11_for: scheduled_for } : {}),
+      };
     }
 
     // PHASE 3 — Fallback statique (rien fait — index.html prend le relais)
