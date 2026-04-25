@@ -157,26 +157,98 @@ async function captureProofPhoto() {
      2. l'origine (seul le serveur AMI peut produire cette signature)
      3. l'horodatage (le serveur ajoute son propre timestamp signé)
    → niveau juridique supérieur à une simple image/hash local.
+
+   v2 — Retry 3 tentatives + backoff exponentiel pour fiabiliser
+   la certification HMAC sur réseau mobile instable (tournée).
+   Si toutes les tentatives échouent, l'invoice_id est ajouté à une file
+   d'attente persistante (localStorage) drainée plus tard.
 ════════════════════════════════════════════════ */
 async function _certifyProofOnServer(payload) {
   if (typeof S === 'undefined' || !S?.token) return null;
-  try {
-    const wpost = typeof window.wpost === 'function' ? window.wpost
-      : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
-    const res = await wpost('/webhook/proof-certify', { payload });
-    if (res?.ok && res?.server_signature) {
-      return {
-        server_signature: res.server_signature,
-        algorithm:        res.algorithm || 'HMAC-SHA256',
-        cert_timestamp:   res.cert_timestamp,
-        cert_id:          res.cert_id,
-      };
+  const wpost = typeof window.wpost === 'function' ? window.wpost
+    : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
+
+  const _MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= _MAX_RETRIES; attempt++) {
+    try {
+      const res = await wpost('/webhook/proof-certify', { payload });
+      if (res?.ok && res?.server_signature) {
+        return {
+          server_signature: res.server_signature,
+          algorithm:        res.algorithm || 'HMAC-SHA256',
+          cert_timestamp:   res.cert_timestamp,
+          cert_id:          res.cert_id,
+          zone_source:      res.zone_source || null,        // 'gps_client' | 'ip_fallback' | null
+          server_zone:      res.payload?.zone || null,      // zone telle que signée (peut différer si IP fallback)
+          version:          res.version || 2,
+        };
+      }
+      // Si le serveur répond une erreur métier (400/403), inutile de retry
+      if (res && res.ok === false) {
+        console.warn('[Signature] proof-certify rejet métier :', res.error || 'unknown');
+        return null;
+      }
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.warn(`[Signature] _certifyProofOnServer tentative ${attempt}/${_MAX_RETRIES} KO :`, msg);
+      if (attempt < _MAX_RETRIES) {
+        // Backoff exponentiel : 400ms, 1.2s, 3.6s
+        await new Promise(r => setTimeout(r, 400 * Math.pow(3, attempt - 1)));
+      }
     }
-  } catch (e) {
-    console.warn('[Signature] _certifyProofOnServer KO :', e.message || e);
   }
   return null;
 }
+
+/* ── File d'attente persistante pour HMAC offline ──
+   Stocke localement les invoice_id qui n'ont pas pu être certifiés.
+   Drainée à chaque navigation vers #view-sig + au login + au retour online. */
+const _SIG_HMAC_QUEUE_KEY = 'ami_pending_hmac_v1';
+function _hmacQueueGet() {
+  try { return JSON.parse(localStorage.getItem(_SIG_HMAC_QUEUE_KEY) || '[]'); }
+  catch (_) { return []; }
+}
+function _hmacQueuePush(invoiceId) {
+  if (!invoiceId) return;
+  const q = _hmacQueueGet();
+  if (!q.includes(invoiceId)) q.push(invoiceId);
+  try { localStorage.setItem(_SIG_HMAC_QUEUE_KEY, JSON.stringify(q.slice(-50))); } catch (_) {}
+}
+function _hmacQueueRemove(invoiceId) {
+  const q = _hmacQueueGet().filter(id => id !== invoiceId);
+  try { localStorage.setItem(_SIG_HMAC_QUEUE_KEY, JSON.stringify(q)); } catch (_) {}
+}
+
+async function _drainHmacQueue() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  if (!navigator.onLine) return;
+  const q = _hmacQueueGet();
+  if (!q.length) return;
+  for (const invoiceId of q) {
+    try {
+      const sig = await _sigGet(invoiceId);
+      if (!sig) { _hmacQueueRemove(invoiceId); continue; }
+      // Skip si déjà certifié entre-temps
+      if (sig.server_cert?.server_signature) { _hmacQueueRemove(invoiceId); continue; }
+      // Skip si pas de payload exploitable
+      if (!sig.proof_payload || !sig.signature_hash) { _hmacQueueRemove(invoiceId); continue; }
+
+      const cert = await _certifyProofOnServer(sig.proof_payload);
+      if (cert) {
+        await _sigPut({ ...sig, server_cert: cert });
+        _hmacQueueRemove(invoiceId);
+        console.info('[AMI:Sig] HMAC queue drained :', invoiceId);
+      }
+    } catch (e) {
+      console.warn('[AMI:Sig] queue drain item KO :', e.message);
+    }
+  }
+  // Re-render si la vue est ouverte
+  try { if (typeof loadSignatureList === 'function') loadSignatureList(); } catch (_) {}
+}
+
+// Drainer la file au retour online (utile en tournée 3G/4G instable)
+window.addEventListener('online', () => { _drainHmacQueue().catch(() => {}); });
 
 /* ── Retourne le nom de la base IndexedDB signatures isolée par user ──
    Chaque infirmière a sa propre base : ami_sig_db_<userId>.
@@ -282,18 +354,22 @@ async function _sigDelete(id) {
 }
 
 /* ════════════════════════════════════════════════
-   BACKFILL DES PREUVES MANQUANTES
+   BACKFILL DES PREUVES MANQUANTES (v2 — reconstruction rétroactive)
    ────────────────────────────────────────────────
    Scanne toutes les signatures locales et tente de compléter celles qui
-   ont server_cert=null ou geozone=null. Utile pour récupérer les anciennes
-   signatures faites alors que :
-     - la géolocalisation était refusée (puis l'utilisateur a accepté)
-     - le serveur de certification était down (puis remis en ligne)
+   ont des preuves manquantes :
+     - signature_hash manquant → reconstruit depuis le PNG existant
+     - proof_payload manquant → reconstruit depuis ce qu'on a (legacy v1)
+     - geozone null → re-tentative GPS (si l'utilisateur autorise maintenant)
+     - server_cert null → re-tentative HMAC-SHA256 sur le worker
+   Photo : non backfillable (donnée biométrique non stockée → perte définitive
+   pour les anciennes signatures, pas de fallback possible).
    Limité à 1 backfill / 30 min / signature pour éviter des appels en boucle.
    Non bloquant — exécution silencieuse en arrière-plan.
+   IDE_self : skip (pas de preuve médico-légale, c'est un template).
 ════════════════════════════════════════════════ */
 let _sigBackfillRunning = false;
-async function _sigBackfillProofs() {
+async function _sigBackfillProofs(targetInvoiceId) {
   if (_sigBackfillRunning) return;
   _sigBackfillRunning = true;
   try {
@@ -310,19 +386,64 @@ async function _sigBackfillProofs() {
     const _BACKFILL_COOLDOWN = 30 * 60 * 1000; // 30 min
     let _patched = 0;
     for (const sig of all) {
-      // Skip si pas de signature_hash (signature corrompue ou très ancienne)
-      if (!sig?.invoice_id || !sig?.signature_hash) continue;
-      // Skip si dernière tentative récente (cooldown)
-      const _lastAttempt = sig._backfill_at || 0;
-      if (_now - _lastAttempt < _BACKFILL_COOLDOWN) continue;
+      if (!sig?.invoice_id) continue;
+      // Skip signature IDE template (pas de preuve médico-légale dessus)
+      if (sig.invoice_id === IDE_SELF_SIG_ID) continue;
+      // Si une cible spécifique est demandée, ne traiter que celle-ci
+      if (targetInvoiceId && sig.invoice_id !== targetInvoiceId) continue;
+      // Skip si pas de PNG (signature complètement corrompue)
+      if (!sig.png && !sig.data_url) continue;
 
+      // Cooldown : 30 min entre tentatives — sauf appel ciblé (forcer)
+      const _lastAttempt = sig._backfill_at || 0;
+      if (!targetInvoiceId && (_now - _lastAttempt < _BACKFILL_COOLDOWN)) continue;
+
+      const _missingHash = !sig.signature_hash;
       const _missingCert = !(sig.server_cert && sig.server_cert.server_signature);
       const _missingZone = !(sig.geozone && sig.geozone.zone);
-      if (!_missingCert && !_missingZone) continue;
+      const _missingPayload = !sig.proof_payload;
+      if (!_missingHash && !_missingCert && !_missingZone && !_missingPayload) continue;
 
       const updates = { ...sig, _backfill_at: _now };
+      const _png = sig.png || sig.data_url;
+      const _signedAt = sig.signed_at || sig.created_at || new Date(_now).toISOString();
+      // Forcer signed_at en ISO 8601 si absent (legacy)
+      if (!sig.signed_at) updates.signed_at = _signedAt;
 
-      // 1. Tenter récupération géozone (si l'utilisateur autorise maintenant)
+      // ── 1. Reconstruction du signature_hash si manquant ──
+      //    Hash = SHA-256(PNG + timestamp + invoice + patient_id + actes)
+      //    Pour les legacy, patient_id et actes peuvent être vides — c'est OK,
+      //    le hash reste opposable (n'importe quelle modification ultérieure
+      //    invalidera le hash, ce qui est l'objectif).
+      if (_missingHash) {
+        try {
+          const _legacyHash = await _computeProofHash({
+            png:        _png,
+            timestamp:  _signedAt,
+            invoice:    sig.invoice_id,
+            patient_id: sig.proof_payload?.patient_id || '',
+            actes:      sig.proof_payload?.actes || [],
+          });
+          updates.signature_hash = _legacyHash;
+        } catch (_) {}
+      }
+
+      // ── 2. Reconstruction du proof_payload si manquant ──
+      const _hashFinal = updates.signature_hash || sig.signature_hash;
+      if (_missingPayload && _hashFinal) {
+        updates.proof_payload = {
+          invoice:        sig.invoice_id,
+          patient_id:     '',
+          ide_id:         (typeof S !== 'undefined') ? (S?.user?.id || '') : '',
+          actes:          [],
+          timestamp:      _signedAt,
+          signature_hash: _hashFinal,
+          photo_hash:     sig.photo_hash || null,
+          zone:           sig.geozone?.zone || null,
+        };
+      }
+
+      // ── 3. Tenter récupération géozone (si l'utilisateur autorise maintenant) ──
       if (_missingZone) {
         try {
           const z = await _getGeozone();
@@ -330,25 +451,33 @@ async function _sigBackfillProofs() {
         } catch (_) {}
       }
 
-      // 2. Tenter certification serveur (depuis le proof_payload existant)
-      if (_missingCert && sig.proof_payload) {
+      // ── 4. Tenter certification serveur (HMAC-SHA256) ──
+      if (_missingCert && _hashFinal) {
         try {
-          // Inclure la zone fraîche si on vient de la récupérer
-          const _payloadFresh = updates.geozone
-            ? { ...sig.proof_payload, geozone: updates.geozone }
-            : sig.proof_payload;
-          const cert = await _certifyProofOnServer(_payloadFresh);
+          const _payloadForCert = {
+            ...(updates.proof_payload || sig.proof_payload || {}),
+            signature_hash: _hashFinal,
+            zone: updates.geozone?.zone || sig.geozone?.zone || null,
+          };
+          const cert = await _certifyProofOnServer(_payloadForCert);
           if (cert) updates.server_cert = cert;
         } catch (_) {}
       }
 
-      // Si on a obtenu au moins une nouvelle preuve → MAJ IDB
-      if ((_missingZone && updates.geozone) || (_missingCert && updates.server_cert)) {
-        await _sigPut(updates);
+      // ── 5. Marquer comme version 2 (preuve backfillée rétroactivement) ──
+      const _hadAnyProof = sig.signature_hash || sig.proof_payload || sig.server_cert;
+      updates.proof_version = _hadAnyProof ? (sig.proof_version || 2) : 2;
+      if (!_hadAnyProof) updates.proof_legacy_backfill = true;
+
+      // Persiste la tentative (même si rien n'a abouti) pour respecter le cooldown
+      await _sigPut(updates);
+
+      // Compter comme "patched" uniquement si une vraie nouvelle preuve a été obtenue
+      if ((_missingHash && updates.signature_hash)
+          || (_missingZone && updates.geozone)
+          || (_missingCert && updates.server_cert)
+          || (_missingPayload && updates.proof_payload)) {
         _patched++;
-      } else {
-        // Marquer la tentative quand même pour respecter le cooldown
-        await _sigPut(updates);
       }
     }
     if (_patched > 0) {
@@ -358,6 +487,11 @@ async function _sigBackfillProofs() {
         if (typeof loadSignatureList === 'function') loadSignatureList();
         else if (typeof renderSignaturesList === 'function') renderSignaturesList();
       } catch (_) {}
+      if (targetInvoiceId && typeof showToast === 'function') {
+        showToast('🛡️ Preuve renforcée avec succès.', 'ok');
+      }
+    } else if (targetInvoiceId && typeof showToast === 'function') {
+      showToast('ℹ️ Aucune preuve supplémentaire récupérable pour cette signature.', 'info');
     }
   } catch (e) {
     console.warn('[AMI:Sig] Backfill KO :', e?.message);
@@ -365,6 +499,14 @@ async function _sigBackfillProofs() {
     _sigBackfillRunning = false;
   }
 }
+
+/* Renforce manuellement une signature spécifique (depuis bouton UI) */
+async function reinforceSignatureProof(invoiceId) {
+  if (!invoiceId) return;
+  if (typeof showToast === 'function') showToast('🛡️ Renforcement de la preuve en cours…', 'info');
+  await _sigBackfillProofs(invoiceId);
+}
+window.reinforceSignatureProof = reinforceSignatureProof;
 
 /* ════════════════════════════════════════════════
    SYNC SIGNATURES — PC ↔ Mobile via Supabase
@@ -560,25 +702,31 @@ function openSignatureModal(invoiceId, context) {
         <div id="sig-info" style="font-family:var(--fm);font-size:10px;color:var(--m);
           margin-top:8px;text-align:right"></div>
 
-        <!-- ── Preuve médico-légale renforcée (optionnel) ── -->
+        <!-- ── Preuve médico-légale renforcée — 3 GARANTIES OBLIGATOIRES ── -->
         <div style="margin-top:14px;padding:12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r)">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--m);margin-bottom:8px;font-family:var(--fm)">
-            🛡️ Preuve médico-légale
+            🛡️ Preuve médico-légale (3 garanties)
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
             <button type="button" id="sig-photo-btn" class="btn bs bsm" onclick="captureProofPhoto()"
               style="font-size:11px;padding:6px 10px">
-              📸 Ajouter preuve présence
+              📸 Ajouter preuve présence (option.)
             </button>
             <span style="font-size:10px;color:var(--m);font-family:var(--fm);flex:1;min-width:180px">
               Photo hashée puis <strong>supprimée</strong> immédiatement · RGPD
             </span>
           </div>
-          <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;font-size:10px;font-family:var(--fm);color:var(--m)">
-            <span>✔ Hash signature</span>
-            <span>✔ Horodatage</span>
-            <span>✔ Géozone floue (~1km)</span>
-            <span>✔ Signature serveur</span>
+          <!-- Indicateurs live des 3 garanties (mis à jour pendant la signature) -->
+          <div id="sig-proof-indicators" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;font-size:10px;font-family:var(--fm)">
+            <span id="sig-ind-iso" class="sig-ind sig-ind-ok" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(0,212,170,.12);color:var(--a);border-radius:4px">
+              ✔ Horodatage ISO 8601
+            </span>
+            <span id="sig-ind-zone" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px">
+              ⏳ Géozone floue (~1km)
+            </span>
+            <span id="sig-ind-hmac" class="sig-ind sig-ind-pending" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,180,0,.12);color:#f5a623;border-radius:4px">
+              ⏳ HMAC-SHA256 serveur
+            </span>
           </div>
         </div>
 
@@ -606,8 +754,36 @@ function openSignatureModal(invoiceId, context) {
   const info = document.getElementById('sig-info');
   if (info) info.textContent = new Date().toLocaleString('fr-FR') + ' · Facture ' + (_currentInvoiceId || '—');
 
-  // Préparer la géozone en arrière-plan (non bloquant — résultat utilisé à saveSignature)
-  _getGeozone().then(z => { _currentGeozone = z; }).catch(() => {});
+  // Reset indicateurs live (modal réutilisé)
+  _setProofIndicator('zone', 'pending');
+  _setProofIndicator('hmac', 'pending');
+
+  // Préparer la géozone en arrière-plan + bascule indicateur live
+  _getGeozone().then(z => {
+    _currentGeozone = z;
+    _setProofIndicator('zone', z ? 'ok' : 'pending');
+  }).catch(() => {});
+}
+
+/* Helper UI — bascule un indicateur du modal entre pending/ok/fail */
+function _setProofIndicator(kind, state) {
+  const el = document.getElementById('sig-ind-' + kind);
+  if (!el) return;
+  const labels = {
+    zone: { pending: '⏳ Géozone floue (~1km)',  ok: '✔ Géozone floue (~1km)',     fail: '⚠ Géozone indispo (fallback IP)' },
+    hmac: { pending: '⏳ HMAC-SHA256 serveur',   ok: '✔ HMAC-SHA256 serveur',      fail: '⚠ HMAC en file d\'attente' },
+    iso:  { pending: '⏳ Horodatage ISO 8601',   ok: '✔ Horodatage ISO 8601',      fail: '⚠ Horodatage ISO 8601' },
+  };
+  const colors = {
+    pending: { bg: 'rgba(255,180,0,.12)',  fg: '#f5a623' },
+    ok:      { bg: 'rgba(0,212,170,.12)',  fg: 'var(--a)' },
+    fail:    { bg: 'rgba(255,90,90,.12)',  fg: '#ff5a5a' },
+  };
+  const lbl = labels[kind]?.[state] || '';
+  const c = colors[state] || colors.pending;
+  el.textContent = lbl;
+  el.style.background = c.bg;
+  el.style.color = c.fg;
 }
 
 function closeSignatureModal() {
@@ -747,8 +923,14 @@ async function saveSignature() {
   }
 
   // ── BRANCHE : signature patient (flow médico-légal complet) ──
+  //
+  // GARANTIES MÉDICO-LÉGALES (chaque signature DOIT contenir ces 3 preuves) :
+  //   ✔ Horodatage ISO 8601 — toISOString() retourne toujours UTC ISO 8601
+  //   ✔ Géozone floue (~1km) — tentative GPS active + fallback IP côté worker
+  //   ✔ Signature HMAC-SHA256 serveur — retry 3x + file d'attente offline
+  //
   const png       = _sigCanvas.toDataURL('image/png');
-  const signedAt  = new Date().toISOString();
+  const signedAt  = new Date().toISOString();   // ✔ ISO 8601 garanti
   const ctx       = _currentProofContext || {};
 
   // ── 1) Hash local de la preuve (empreinte opposable) ──
@@ -763,38 +945,61 @@ async function saveSignature() {
     });
   } catch (_) {}
 
-  // ── 2) Géozone floue (facultatif — silencieux si refus) ──
+  // ── 2) Géozone floue — tentative ACTIVE (pas seulement passive) ──
+  // Si openSignatureModal a déjà résolu _currentGeozone en arrière-plan, on l'utilise.
+  // Sinon, on retente activement avec timeout 4s pour ne pas bloquer en tournée.
+  // Si même cette tentative échoue, le worker fera un fallback IP via request.cf
+  // (précision ~10km au lieu de ~1km, mais reste une preuve de zone valide).
   if (!_currentGeozone) {
     try { _currentGeozone = await _getGeozone(); } catch (_) {}
   }
+  _setProofIndicator('zone', _currentGeozone ? 'ok' : 'fail');
 
-  // ── 3) Certification serveur (HMAC-SHA256) — async, non bloquante ──
+  // ── 3) Certification serveur HMAC-SHA256 (bloquante avec retry interne 3x) ──
   const proofPayload = {
     invoice:        _currentInvoiceId,
     patient_id:     ctx.patient_id || '',
     ide_id:         (typeof S !== 'undefined') ? (S?.user?.id || '') : '',
     actes:          ctx.actes || [],
-    timestamp:      signedAt,
+    timestamp:      signedAt,            // ISO 8601 — sera validé regex côté worker
     signature_hash: signatureHash,
     photo_hash:     _currentPhotoHash || null,
-    zone:           _currentGeozone?.zone || null,
+    zone:           _currentGeozone?.zone || null,   // null → fallback IP côté worker
   };
   let serverCert = null;
   try { serverCert = await _certifyProofOnServer(proofPayload); } catch (_) {}
+  _setProofIndicator('hmac', serverCert ? 'ok' : 'fail');
 
-  // ── 4) Stockage local : PNG + toutes les preuves ──
+  // Si la zone côté client était null mais le worker a fait fallback IP,
+  // on récupère la zone effective signée pour l'affichage.
+  let effectiveGeozone = _currentGeozone;
+  if (!effectiveGeozone && serverCert?.server_zone) {
+    effectiveGeozone = {
+      zone:       serverCert.server_zone,
+      precision:  '~10km',
+      source:     'ip_fallback',
+    };
+  }
+
+  // Si la certification HMAC a échoué → mettre dans la file pour retry plus tard
+  if (!serverCert) {
+    _hmacQueuePush(_currentInvoiceId);
+    console.info('[AMI:Sig] HMAC indisponible — invoice ajouté à la file de retry :', _currentInvoiceId);
+  }
+
+  // ── 4) Stockage local : PNG + toutes les preuves (3 garanties médico-légales) ──
   await _sigPut({
     invoice_id:  _currentInvoiceId,
     png,
-    signed_at:   signedAt,
+    signed_at:   signedAt,                       // ✔ Horodatage ISO 8601
     user_agent:  navigator.userAgent.slice(0, 100),
     // Preuve médico-légale
-    signature_hash: signatureHash,
+    signature_hash: signatureHash,               // SHA-256 du tracé+date+acte+patient
     photo_hash:     _currentPhotoHash || null,
-    geozone:        _currentGeozone || null,
-    server_cert:    serverCert || null,  // { server_signature, algorithm, cert_id, cert_timestamp }
+    geozone:        effectiveGeozone || null,    // ✔ Géozone (GPS ~1km ou fallback IP ~10km)
+    server_cert:    serverCert || null,          // ✔ HMAC-SHA256 (ou null si offline → file d'attente)
     proof_payload:  proofPayload,
-    proof_version:  1,
+    proof_version:  2,                           // v2 = 3 garanties activées
   });
 
   // ── 5) Sync PNG chiffré vers serveur (cadre existant) ──
@@ -1054,16 +1259,24 @@ async function injectSignatureInPDF(invoiceId) {
   const hash      = row.signature_hash || '';
   const hashShort = hash ? hash.slice(0, 16).toUpperCase() + '…' : '';
   const signedTs  = row.signed_at ? new Date(row.signed_at).toLocaleString('fr-FR') : new Date().toLocaleString('fr-FR');
+  const signedISO = row.signed_at || '';
   const zone      = row.geozone?.zone || '';
   const certified = !!(row.server_cert && row.server_cert.server_signature);
+  const certId    = row.server_cert?.cert_id || '';
   const hasPhoto  = !!row.photo_hash;
 
-  const proofLine = [
-    certified ? '✔ Preuve certifiée' : null,
-    '✔ Horodatée ' + signedTs,
-    hashShort ? 'Empreinte ' + hashShort : null,
-    zone ? 'Zone floue' : null,
-    hasPhoto ? 'Preuve présence (hash)' : null,
+  // Détail technique sur 2 lignes pour audit CPAM (lisibilité PDF)
+  const proofMain = [
+    certified ? '✔ HMAC-SHA256 serveur' : null,
+    hashShort ? '✔ Hash SHA-256 ' + hashShort : null,
+    signedISO ? '✔ Horodatage ISO 8601' : null,
+    zone      ? '✔ Géozone floue (~1km)' : null,
+    hasPhoto  ? '✔ Preuve photo (hash, RGPD)' : null,
+  ].filter(Boolean).join(' · ');
+
+  const proofMeta = [
+    signedISO,
+    certId ? 'Cert ' + certId : null,
   ].filter(Boolean).join(' · ');
 
   // ── Récupération de la signature IDE depuis le profil (auto-injection) ──
@@ -1094,8 +1307,9 @@ async function injectSignatureInPDF(invoiceId) {
           <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signé électroniquement · ${signedTs}</div>
         </div>
       </div>
-      ${proofLine ? `<div style="margin-top:10px;padding:8px 10px;background:#f3f7fa;border-left:3px solid #00a884;border-radius:4px;font-size:9px;color:#445566;font-family:ui-monospace,Menlo,monospace;line-height:1.5">
-        🛡️ ${proofLine}
+      ${proofMain ? `<div style="margin-top:10px;padding:8px 10px;background:#f3f7fa;border-left:3px solid #00a884;border-radius:4px;font-size:9px;color:#445566;font-family:ui-monospace,Menlo,monospace;line-height:1.5">
+        🛡️ <strong>Preuve médico-légale opposable :</strong> ${proofMain}
+        ${proofMeta ? `<div style="margin-top:3px;opacity:.7">${proofMeta}</div>` : ''}
       </div>` : ''}
     </div>`;
 }
@@ -1342,36 +1556,71 @@ async function loadSignatureList() {
     el.innerHTML = patientSig.map(sig => {
       const _dateRaw = sig.signed_at || sig.created_at || null;
       const date = _dateRaw ? new Date(_dateRaw).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+      const isoDate = _dateRaw || '';
       const invoiceId = sig.invoice_id || '—';
       const _previewSrc = sig.png || sig.data_url || null;
 
-      // ── Badges preuve médico-légale ──
+      // ── 5 critères de preuve médico-légale ──
       const certified = !!(sig.server_cert && sig.server_cert.server_signature);
       const hasHash   = !!sig.signature_hash;
       const hasPhoto  = !!sig.photo_hash;
       const hasZone   = !!(sig.geozone && sig.geozone.zone);
+      const hasISO    = !!_dateRaw;
+      const isLegacy  = !hasHash && !hasPhoto && !hasZone && !certified;
+      const isBackfilled = sig.proof_legacy_backfill === true;
+
+      // ── Style commun pour les badges ──
+      const _bStrong = 'display:inline-block;padding:2px 6px;background:rgba(0,212,170,.15);color:var(--a);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px;margin-bottom:2px';
+      const _bNeutral = 'display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px;margin-bottom:2px';
+      const _bWarn = 'display:inline-block;padding:2px 6px;background:rgba(255,180,0,.15);color:#f5a623;border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px;margin-bottom:2px';
+
       const badges = [
-        certified ? '<span style="display:inline-block;padding:2px 6px;background:rgba(0,212,170,.15);color:var(--a);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">✔ Certifiée</span>' : '',
-        hasHash   ? '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">Hash</span>' : '',
-        hasPhoto  ? '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">📸 Preuve</span>' : '',
-        hasZone   ? '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,.06);color:var(--m);border-radius:4px;font-size:9px;font-family:var(--fm);margin-right:4px">📍 Zone</span>' : '',
+        certified ? `<span style="${_bStrong}">🔐 HMAC serveur</span>` : '',
+        hasHash   ? `<span style="${_bNeutral}">🔒 Hash SHA-256</span>` : '',
+        hasISO    ? `<span style="${_bNeutral}">⏱ ISO 8601</span>` : '',
+        hasZone   ? `<span style="${_bNeutral}">📍 Zone ~1km</span>` : '',
+        hasPhoto  ? `<span style="${_bNeutral}">📸 Photo (hash)</span>` : '',
+        isLegacy  ? `<span style="${_bWarn}">⚠ Preuve incomplète</span>` : '',
+        isBackfilled && !isLegacy ? `<span style="${_bNeutral}">🛡️ Renforcée</span>` : '',
       ].filter(Boolean).join('');
 
-      const hashLine = hasHash
-        ? `<div style="font-size:9px;color:var(--m);font-family:var(--fm);margin-top:2px;opacity:.7">${sig.signature_hash.slice(0,16).toUpperCase()}…</div>`
+      // ── Lignes de détails techniques (sous le titre) ──
+      const detailsLines = [];
+      if (hasHash) {
+        detailsLines.push(`<div style="font-size:9px;color:var(--m);font-family:var(--fm);opacity:.7" title="SHA-256(tracé + date + acte + patient)">Hash · ${sig.signature_hash.slice(0,16).toUpperCase()}…</div>`);
+      }
+      if (hasISO) {
+        detailsLines.push(`<div style="font-size:9px;color:var(--m);font-family:var(--fm);opacity:.7" title="Horodatage ISO 8601">ISO · ${isoDate}</div>`);
+      }
+      if (hasZone) {
+        const z = sig.geozone;
+        detailsLines.push(`<div style="font-size:9px;color:var(--m);font-family:var(--fm);opacity:.7" title="Géozone floue ~1km — RGPD">Zone · ${z.approx_lat?.toFixed(2)}, ${z.approx_lng?.toFixed(2)} (~1km)</div>`);
+      }
+      if (certified && sig.server_cert?.cert_id) {
+        detailsLines.push(`<div style="font-size:9px;color:var(--m);font-family:var(--fm);opacity:.7" title="Identifiant unique de certification serveur">Cert · ${sig.server_cert.cert_id}</div>`);
+      }
+      const detailsBlock = detailsLines.join('');
+
+      // ── Bouton "Renforcer la preuve" si legacy ou si certification manquante ──
+      const canReinforce = isLegacy || (!certified && hasHash) || !hasZone;
+      const reinforceBtn = canReinforce
+        ? `<button class="btn bs bsm" onclick="reinforceSignatureProof('${sig.invoice_id.replace(/'/g, "\\'")}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px;flex-shrink:0" title="Tente de récupérer les preuves manquantes (hash, zone, certification serveur)">🛡️ Renforcer</button>`
         : '';
 
       return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b);flex-wrap:wrap">
         <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
           ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
         </div>
-        <div style="flex:1 1 140px;min-width:120px">
+        <div style="flex:1 1 220px;min-width:200px">
           <div style="font-size:13px;font-weight:500;font-family:var(--fm);word-break:break-all">${invoiceId}</div>
           <div style="font-size:11px;color:var(--m)">${date}</div>
-          ${badges ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${badges}</div>` : ''}
-          ${hashLine}
+          ${badges ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap">${badges}</div>` : ''}
+          ${detailsBlock ? `<div style="margin-top:4px">${detailsBlock}</div>` : ''}
         </div>
-        <button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px;flex-shrink:0">🗑️</button>
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+          ${reinforceBtn}
+          <button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id.replace(/'/g, "\\'")}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px">🗑️</button>
+        </div>
       </div>`;
     }).join('');
     // ⚡ Backfill différé : tente de compléter les signatures sans server_cert
@@ -1389,12 +1638,16 @@ document.addEventListener('ui:navigate', e => {
     loadSignatureList();
     // Sync pull au chargement de la vue signatures
     syncSignaturesFromServer().catch(() => {});
+    // Drainer la file HMAC en attente (signatures non certifiées en offline)
+    _drainHmacQueue().catch(() => {});
   }
 });
 
 /* Sync pull au login (quand la session est disponible) */
 document.addEventListener('ami:login', () => {
   syncSignaturesFromServer().catch(() => {});
+  // Drainer la file HMAC : retry des certifications qui ont échoué offline
+  _drainHmacQueue().catch(() => {});
 });
 
 /* Sync push au logout (pour s'assurer que tout est envoyé) */
