@@ -1,8 +1,8 @@
 /**
- * NGAP ENGINE v1 — Moteur déclaratif basé sur le référentiel JSON
+ * NGAP ENGINE v2 — Moteur déclaratif STRICT-247
  * ================================================================
- * Source de vérité : ngap_referentiel_2026.json
- * 
+ * Source de vérité : ngap_referentiel_2026.json (247 chunks STRICT du DUAL_RAG)
+ * Aligné sur : NGAP_2026.4_STRICT_247_DUAL_RAG
  * Usage :
  *   const engine = new NGAPEngine(referentiel);
  *   const result = engine.compute({
@@ -31,18 +31,24 @@ class NGAPEngine {
     this.ref = referentiel;
     // Index pour lookup O(1)
     this._index = {};
-    [...referentiel.actes_chapitre_I, ...referentiel.actes_chapitre_II].forEach(a => {
-      // Indexer par code interne ET code facturation
+    // Actes Chap I + Chap II — STRICT n'a plus de code_facturation, code uniquement
+    [...(referentiel.actes_chapitre_I || []), ...(referentiel.actes_chapitre_II || [])].forEach(a => {
       this._index[a.code] = a;
-      if (a.code_facturation) this._index[a.code_facturation] = a;
     });
-    Object.entries(referentiel.forfaits_bsi).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
-    Object.entries(referentiel.deplacements).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
-    Object.entries(referentiel.majorations).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
-    // Alias majorations
+    Object.entries(referentiel.forfaits_bsi || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
+    Object.entries(referentiel.forfaits_di || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
+    Object.entries(referentiel.deplacements || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
+    Object.entries(referentiel.majorations || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
+    Object.entries(referentiel.telesoin || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
+    Object.entries(referentiel.forfaits_ipa || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
+    // Alias majorations (codes courts utilisés par le moteur de détection horaire)
     this._index['NUIT'] = this._index['ISN_NUIT'];
     this._index['NUIT_PROF'] = this._index['ISN_NUIT_PROFONDE'];
     this._index['DIM'] = this._index['ISD'];
+    // Alias IK (code générique calculé dynamiquement, pas de tarif fixe)
+    if (!this._index['IK']) {
+      this._index['IK'] = { code: 'IK', label: 'Indemnité kilométrique', tarif: 0, tarif_om: 0 };
+    }
   }
 
   // ─── Normalisation de code (AMI 4,1 → AMI4.1 → AMI4_1) ─────────
@@ -110,20 +116,23 @@ class NGAPEngine {
   // ─── Application incompatibilités du référentiel (format groupe_a/groupe_b) ─
   applyIncompatibilities(actes, alerts) {
     let result = [...actes];
-    for (const rule of this.ref.incompatibilites) {
-      const presentInA = rule.groupe_a.some(c => 
+    for (const rule of (this.ref.incompatibilites || [])) {
+      const groupeA = rule.groupe_a || [];
+      const groupeB = rule.groupe_b || [];
+      const presentInA = groupeA.some(c =>
         result.some(a => this.normCode(a.code) === this.normCode(c))
       );
-      const presentInB = rule.groupe_b.some(c => 
+      const presentInB = groupeB.some(c =>
         result.some(a => this.normCode(a.code) === this.normCode(c))
       );
       if (presentInA && presentInB) {
-        const groupeASupp = rule.supprimer === 'groupe_a' ? rule.groupe_a : rule.groupe_b;
+        const groupeASupp = rule.supprimer === 'groupe_a' ? groupeA : groupeB;
         const codesToRemove = groupeASupp.map(c => this.normCode(c));
         const beforeLen = result.length;
         result = result.filter(a => !codesToRemove.includes(this.normCode(a.code)));
         if (beforeLen !== result.length) {
-          alerts.push(`${rule.severity === 'critical' ? '🚨' : '⚠️'} ${rule.msg}`);
+          const icon = rule.severity === 'critical' ? '🚨' : '⚠️';
+          alerts.push(`${icon} ${rule.label || 'Incompatibilité NGAP'}`);
         }
       }
     }
@@ -134,73 +143,103 @@ class NGAPEngine {
   isDerogatoireCumul(codeA, codeB) {
     const a = this.normCode(codeA);
     const b = this.normCode(codeB);
-    for (const d of this.ref.derogations_taux_plein) {
-      const inA = d.codes_groupe_a.some(c => this.normCode(c) === a);
-      const inB = d.codes_groupe_b.some(c => this.normCode(c) === b);
-      const inA2 = d.codes_groupe_a.some(c => this.normCode(c) === b);
-      const inB2 = d.codes_groupe_b.some(c => this.normCode(c) === a);
+    for (const d of (this.ref.derogations_taux_plein || [])) {
+      const groupeA = d.groupe_a || [];
+      const groupeB = d.groupe_b || [];
+      // Cas spécial Article 5bis : groupe_b === ['mêmes codes'] → tous les codes du groupe_a se cumulent ENTRE EUX
+      const memesCodes = groupeB.length === 1 && /m[êe]mes\s+codes/i.test(groupeB[0]);
+      if (memesCodes) {
+        const inA1 = groupeA.some(c => this.normCode(c) === a);
+        const inA2 = groupeA.some(c => this.normCode(c) === b);
+        if (inA1 && inA2) return true;
+        continue;
+      }
+      const inA = groupeA.some(c => this.normCode(c) === a);
+      const inB = groupeB.some(c => this.normCode(c) === b);
+      const inA2 = groupeA.some(c => this.normCode(c) === b);
+      const inB2 = groupeB.some(c => this.normCode(c) === a);
       if ((inA && inB) || (inA2 && inB2)) return true;
-      // Cas spécial 5bis: tous codes du groupe entre eux
-      if (d.codes_groupe_b[0] === 'mêmes codes' && inA && d.codes_groupe_a.some(c => this.normCode(c) === b)) return true;
     }
     return false;
   }
 
+  // ─── Helpers de classification basés sur le référentiel STRICT ──
+  isMajorationCode(code) {
+    const c = this.normCode(code);
+    // Majorations du référentiel + alias horaires + IK/IFD/IFI
+    if (this.ref.majorations && this.ref.majorations[c]) return true;
+    if (this.ref.deplacements && this.ref.deplacements[c]) return true;
+    if (['NUIT', 'NUIT_PROF', 'DIM', 'IK'].includes(c)) return true;
+    return false;
+  }
+  isBSICode(code) {
+    const c = this.normCode(code);
+    return !!(this.ref.forfaits_bsi && this.ref.forfaits_bsi[c]);
+  }
+  isDICode(code) {
+    const c = this.normCode(code);
+    return !!(this.ref.forfaits_di && this.ref.forfaits_di[c]);
+  }
+  isTelesoinCode(code) {
+    const c = this.normCode(code);
+    return !!(this.ref.telesoin && this.ref.telesoin[c]);
+  }
+  isIPACode(code) {
+    const c = this.normCode(code);
+    return !!(this.ref.forfaits_ipa && this.ref.forfaits_ipa[c]);
+  }
+
   // ─── Application de l'article 11B (coefficients) ───────────────
   applyArticle11B(actes, alerts) {
-    const isMajoration = (c) => ['IFD','IFI','IK','MCI','MIE','MAU','NUIT','NUIT_PROF','DIM','ISN_NUIT','ISN_NUIT_PROFONDE','ISD'].includes(this.normCode(c));
-    const isBSI = (c) => ['BSA','BSB','BSC'].includes(this.normCode(c));
-    const isDI  = (c) => ['DI2.5','DI1.2'].includes(this.normCode(c));
-    const isTele= (c) => ['TLS','TLD','TLL','TMI','RQD'].includes(this.normCode(c));
-    
-    // Forfaits / majorations / téléconsultations restent à coefficient 1
+    const isMajoration = (c) => this.isMajorationCode(c);
+    const isBSI = (c) => this.isBSICode(c);
+    const isDI = (c) => this.isDICode(c);
+    const isTele = (c) => this.isTelesoinCode(c);
+    const isIPA = (c) => this.isIPACode(c);
+
+    // Forfaits / majorations / téléconsultations / IPA restent à coefficient 1
     let result = actes.map(a => {
-      if (isMajoration(a.code) || isBSI(a.code) || isDI(a.code) || isTele(a.code)) {
+      if (isMajoration(a.code) || isBSI(a.code) || isDI(a.code) || isTele(a.code) || isIPA(a.code)) {
         return { ...a, coefficient_applique: 1, taux: 'plein_majoration_ou_forfait' };
       }
       return a;
     });
 
     // Actes techniques (AMI/AMX/AIS) — application 11B
-    const techActs = result.filter(a => 
-      !isMajoration(a.code) && !isBSI(a.code) && !isDI(a.code) && !isTele(a.code)
+    const techActs = result.filter(a =>
+      !isMajoration(a.code) && !isBSI(a.code) && !isDI(a.code) && !isTele(a.code) && !isIPA(a.code)
     );
-    
+
     if (techActs.length === 0) return result;
 
     // Tri par tarif décroissant — le plus valorisé devient principal
     techActs.sort((a, b) => (b._tarif_base || 0) - (a._tarif_base || 0));
-    
-    // Séparer les actes "dérogatoires taux plein" : ils restent à 100% indépendamment du rang
-    const tauxPleinIndices = new Set();
-    
+
     // 1er acte = principal à 100%
     techActs[0].coefficient_applique = 1;
     techActs[0].taux = 'plein_principal';
-    tauxPleinIndices.add(0);
-    
+
     // 2e acte : 50% sauf dérogation taux plein
     if (techActs.length >= 2) {
       const a = techActs[1];
-      const isCumulTauxPlein = techActs.slice(0, 1).some(b => 
-        this.isDerogatoireCumul(a.code, b.code)
-      ) || result.some(b => isBSI(b.code) && this.isDerogatoireCumul(a.code, b.code));
+      const isCumulTauxPlein =
+        techActs.slice(0, 1).some(b => this.isDerogatoireCumul(a.code, b.code)) ||
+        result.some(b => isBSI(b.code) && this.isDerogatoireCumul(a.code, b.code));
       if (isCumulTauxPlein) {
         a.coefficient_applique = 1;
         a.taux = 'plein_derogatoire';
-        tauxPleinIndices.add(1);
       } else {
         a.coefficient_applique = 0.5;
         a.taux = 'demi_tarif_art11B';
       }
     }
-    
+
     // 3e acte et au-delà : 0€ SAUF dérogation explicite taux plein
     for (let i = 2; i < techActs.length; i++) {
       const a = techActs[i];
-      const isCumulTauxPlein = techActs.slice(0, i).some(b => 
-        this.isDerogatoireCumul(a.code, b.code)
-      ) || result.some(b => isBSI(b.code) && this.isDerogatoireCumul(a.code, b.code));
+      const isCumulTauxPlein =
+        techActs.slice(0, i).some(b => this.isDerogatoireCumul(a.code, b.code)) ||
+        result.some(b => isBSI(b.code) && this.isDerogatoireCumul(a.code, b.code));
       if (isCumulTauxPlein) {
         a.coefficient_applique = 1;
         a.taux = 'plein_derogatoire';
@@ -210,10 +249,7 @@ class NGAPEngine {
         alerts.push(`ℹ️ Article 11B : ${a.code} en 3e position → non facturable (honoraires nuls)`);
       }
     }
-    
-    // Reconstituer result : techActs ont été modifiés in-place, mais on les retrouve dans result
-    // La référence d'objet dans techActs est la MÊME que dans result (filter ne clone pas)
-    // Donc result est déjà à jour automatiquement. On retourne tel quel.
+
     return result;
   }
 
@@ -284,13 +320,12 @@ class NGAPEngine {
       }
       const tarif = this.getTarif(acte, zone);
       actes.push({
-        code: acte.code_facturation || acte.code,
-        _code_interne: acte.code,
+        code: acte.code,
         label: acte.label,
         coefficient: acte.coefficient,
         _tarif_base: tarif,
-        chapitre: acte.chapitre,
         article: acte.article,
+        chunk_id: acte.chunk_id || null,
         ...item,
       });
     }
@@ -364,8 +399,8 @@ class NGAPEngine {
         coefficient: a.coefficient_applique != null ? a.coefficient_applique : 1,
         tarif_final: a._tarif_final,
         taux: a.taux,
-        chapitre: a.chapitre,
         article: a.article,
+        chunk_id: a.chunk_id,
         auto_added: a._auto_added || false,
       })),
       total,
