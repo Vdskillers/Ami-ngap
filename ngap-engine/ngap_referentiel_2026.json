@@ -1,9 +1,9 @@
 {
-  "version": "NGAP_2026.4_STRICT_247_DUAL_RAG",
-  "source": "AI_Agent_AMI_v15_NGAP2026_4_DUAL_RAG.json — nœud \"RAG NGAP Dual\" — NGAP_CHUNKS_STRICT (247 chunks 100% sourcés)",
+  "version": "NGAP_2026.4_STRICT_247_DUAL_RAG_AVENANT11",
+  "source": "AI_Agent_AMI_v15_NGAP2026_4_DUAL_RAG.json — STRICT 247 chunks + Avenant 11 du 31/03/2026 (UNCAM/FNI/SNIIL/CI/UNOCAM) + Loi n°2025-581 du 27/06/2025 + Décret 2023-736 (vaccinations)",
   "date_compilation": "2026-04-25",
   "nb_chunks_strict": 247,
-  "doctrine": "Source de vérité unique opposable en audit CPAM. Aucune donnée hors STRICT.",
+  "doctrine": "Source de vérité unique opposable en audit CPAM. STRICT 247 chunks 100% sourcés (NGAP Titre XVI ameli.fr, Légifrance UNCAM, CSS, Avenant 9 IPA, CIR-9/2025, Article D.322-1 ALD) ENRICHI des nouveautés Avenant 11 (CIA/CIB, MSG/MSD/MIR, IDER, accès direct plaies). Tarifs AMI date-aware via le moteur (3,15€ → 3,35€ au 01/11/2026 → 3,45€ au 01/11/2027).",
   "lettres_cles": {
     "AMI": {
       "code": "AMI",
@@ -11,7 +11,22 @@
       "tarif": 3.15,
       "tarif_om": 3.3,
       "source": "NGAP Titre XVI - ameli.fr",
-      "chunk_id": "strict_lc_ami"
+      "chunk_id": "strict_lc_ami",
+      "valeur": 3.15,
+      "valeur_om": 3.3,
+      "calendrier_avenant_11": {
+        "2026-11-01": {
+          "valeur": 3.35,
+          "valeur_om": 3.5,
+          "source": "Avenant 11 - étape 1 (+0.20€)"
+        },
+        "2027-11-01": {
+          "valeur": 3.45,
+          "valeur_om": 3.6,
+          "source": "Avenant 11 - étape 2 (+0.10€)"
+        },
+        "note": "Revalorisation totale +9.5% après 16 ans de gel de la lettre-clé AMI (gelée depuis 2009)"
+      }
     },
     "AMX": {
       "code": "AMX",
@@ -19,7 +34,19 @@
       "tarif": 3.15,
       "tarif_om": 3.3,
       "source": "NGAP Titre XVI - ameli.fr",
-      "chunk_id": "strict_lc_amx"
+      "chunk_id": "strict_lc_amx",
+      "valeur": 3.15,
+      "valeur_om": 3.3,
+      "calendrier_avenant_11": {
+        "2026-11-01": {
+          "valeur": 3.35,
+          "valeur_om": 3.5
+        },
+        "2027-11-01": {
+          "valeur": 3.45,
+          "valeur_om": 3.6
+        }
+      }
     },
     "AIS": {
       "code": "AIS",
@@ -27,7 +54,9 @@
       "tarif": 2.65,
       "tarif_om": 2.7,
       "source": "NGAP Titre XVI - ameli.fr",
-      "chunk_id": "strict_lc_ais"
+      "chunk_id": "strict_lc_ais",
+      "valeur": 2.65,
+      "valeur_om": 2.7
     },
     "DI": {
       "code": "DI",
@@ -35,7 +64,9 @@
       "tarif": 10,
       "tarif_om": 10,
       "source": "NGAP Titre XVI - ameli.fr",
-      "chunk_id": "strict_lc_di"
+      "chunk_id": "strict_lc_di",
+      "valeur": 10,
+      "valeur_om": 10
     },
     "TMI": {
       "code": "TMI",
@@ -43,7 +74,45 @@
       "tarif": 3.15,
       "tarif_om": 3.3,
       "source": "NGAP Titre XVI - ameli.fr",
-      "chunk_id": "strict_lc_tmi"
+      "chunk_id": "strict_lc_tmi",
+      "valeur": 3.15,
+      "valeur_om": 3.3,
+      "calendrier_avenant_11": {
+        "2026-11-01": {
+          "valeur": 3.35,
+          "valeur_om": 3.5
+        },
+        "2027-11-01": {
+          "valeur": 3.45,
+          "valeur_om": 3.6
+        },
+        "note": "TMI = valeur identique à AMI (télésoin infirmier)"
+      }
+    },
+    "CIA": {
+      "valeur": 20.0,
+      "valeur_om": 20.0,
+      "label": "Consultation Infirmière Instauration Insuline (diabète T2)",
+      "source": "Avenant 11 - 2026",
+      "non_cumul_autres_actes": true,
+      "seance_dediee": true
+    },
+    "CIB": {
+      "valeur": 20.0,
+      "valeur_om": 20.0,
+      "label": "Consultation Infirmière Bilan Prévention (suivi post-bilan âges-clés)",
+      "source": "Avenant 11 - applicable 01/07/2027 sous réserve HAS",
+      "non_cumul_autres_actes": true,
+      "seance_dediee": true
+    },
+    "RKD": {
+      "valeur": 3.0,
+      "valeur_om": 3.0,
+      "label": "Remise Kit Dépistage Cancer Colorectal (par IDEL ou IPA)",
+      "source": "Avenant 11 - 2026",
+      "complement_test_realise": 2.0,
+      "prise_en_charge": "100% Assurance Maladie",
+      "applicable_a_compter_de": "2027-01-01"
     }
   },
   "forfaits_bsi": {
@@ -130,7 +199,10 @@
       "tarif_om": 0.35,
       "maximum": null,
       "source": "NGAP Titre XVI",
-      "chunk_id": "strict_depl_ik_plaine"
+      "chunk_id": "strict_depl_ik_plaine",
+      "tarif_par_km": 0.35,
+      "tarif_om_par_km": 0.35,
+      "code_facturation": "IK"
     },
     "IK_MONTAGNE": {
       "code": "IK_MONTAGNE",
@@ -139,7 +211,10 @@
       "tarif_om": 0.5,
       "maximum": null,
       "source": "NGAP Titre XVI",
-      "chunk_id": "strict_depl_ik_montagne"
+      "chunk_id": "strict_depl_ik_montagne",
+      "tarif_par_km": 0.5,
+      "tarif_om_par_km": 0.5,
+      "code_facturation": "IK"
     },
     "IK_PIED_SKI": {
       "code": "IK_PIED_SKI",
@@ -148,7 +223,10 @@
       "tarif_om": 3.4,
       "maximum": null,
       "source": "NGAP Titre XVI",
-      "chunk_id": "strict_depl_ik_pied_ski"
+      "chunk_id": "strict_depl_ik_pied_ski",
+      "tarif_par_km": 3.4,
+      "tarif_om_par_km": 3.4,
+      "code_facturation": "IK"
     }
   },
   "ik_plafonnement": {
@@ -270,6 +348,51 @@
       "conditions": null,
       "source": "NGAP Titre XVI",
       "chunk_id": "strict_maj_isn_nuit_profonde"
+    },
+    "MSG": {
+      "tarif": 3.1,
+      "tarif_om": 3.1,
+      "label": "Majoration Soins Gériatriques (patients les plus dépendants)",
+      "associe_a": [
+        "BSC"
+      ],
+      "conditions": {
+        "score_SEGA_initial": ">= 35",
+        "score_SEGA_phase_2": ">= 32",
+        "patient_cible": "patients les plus dépendants, environ 40 000 bénéficiaires",
+        "frequence": "journalière (associée au BSC quotidien)"
+      },
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "impact_rémunération": "+11% pour BSC + MSG combinés",
+      "source": "Avenant 11"
+    },
+    "MSD": {
+      "tarif": 7.0,
+      "tarif_om": 7.0,
+      "label": "Majoration Scolaire Diabète (enfant scolarisé <16 ans)",
+      "conditions": {
+        "contexte": "intervention en milieu scolaire ou périscolaire",
+        "patient_cible": "enfants diabétiques scolarisés de moins de 16 ans",
+        "cumul_avec": [
+          "AMI1 (lecture glycémie)",
+          "AMI1 (bolus pompe)"
+        ]
+      },
+      "applicable_a_compter_de": "2027-01-01",
+      "source": "Avenant 11"
+    },
+    "MIR": {
+      "tarif": 15.0,
+      "tarif_om": 15.0,
+      "label": "Majoration Intervention Régulée (SAMU/SAS — soins non programmés)",
+      "conditions": {
+        "demande": "régulation médicale SAMU ou SAS",
+        "infirmier": "volontaire inscrit SAS via CPTS du territoire",
+        "plafond": "20 MIR/semaine/infirmier",
+        "cumul_avec": "acte technique effectué OU AMI1.35 si levée de doute"
+      },
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "source": "Avenant 11 — soins non programmés PDSA/SAS"
     }
   },
   "telesoin": {
@@ -317,831 +440,969 @@
   "actes_chapitre_I": [
     {
       "code_chunk_id": "strict_act1_ami1_5_ponction",
-      "code": "AMI1.5",
+      "code": "AMI1_5_PONCTION",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1.5,
       "label": "Prélèvement par ponction veineuse directe",
       "tarif": 4.73,
       "tarif_om": 4.95,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami5_saignee",
-      "code": "AMI5",
+      "code": "AMI5_SAIGNEE",
       "lettre_cle": "AMI",
       "coefficient": 5,
       "label": "Saignée",
       "tarif": 15.75,
       "tarif_om": 16.5,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_prelev_autre",
-      "code": "AMI1",
+      "code": "AMI1_PRELEV_AUTRE",
       "lettre_cle": "AMI",
       "coefficient": 1,
       "label": "Prélèvement aseptique cutané/muqueux/selles/urine pour examens cyto/bactério/myco/virologique/parasitologique",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_inj_iv_directe",
-      "code": "AMI2",
+      "code": "AMI2_INJ_IV_DIRECTE",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Injection intraveineuse directe isolée",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_5_inj_iv_serie",
-      "code": "AMI1.5",
+      "code": "AMI1_5_INJ_IV_SERIE",
       "lettre_cle": "AMI",
       "coefficient": 1.5,
       "label": "Injection intraveineuse directe en série",
       "tarif": 4.73,
       "tarif_om": 4.95,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_inj_iv_enfant",
-      "code": "AMI2",
+      "code": "AMI2_INJ_IV_ENFANT",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Injection intraveineuse directe chez enfant <5 ans",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_inj_im",
-      "code": "AMI1",
+      "code": "AMI1_INJ_IM",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1,
       "label": "Injection intramusculaire",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami5_besredka",
-      "code": "AMI5",
+      "code": "AMI5_BESREDKA",
       "lettre_cle": "AMI",
       "coefficient": 5,
       "label": "Injection sérum origine humaine/animale méthode Besredka (avec surveillance)",
       "tarif": 15.75,
       "tarif_om": 16.5,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_inj_sc",
-      "code": "AMI1",
+      "code": "AMI1_INJ_SC",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1,
       "label": "Injection sous-cutanée",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_inj_id",
-      "code": "AMI1",
+      "code": "AMI1_INJ_ID",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1,
       "label": "Injection intradermique",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_inj_allerg",
-      "code": "AMI3",
+      "code": "AMI3_INJ_ALLERG",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Injection allergène (hyposensibilisation, surveillance, dossier, transmission médecin)",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_5_implant",
-      "code": "AMI2.5",
+      "code": "AMI2_5_IMPLANT",
       "lettre_cle": "AMI",
       "coefficient": 2.5,
       "label": "Injection implant sous-cutané (Zoladex, Décapeptyl, Énantone)",
       "tarif": 7.88,
       "tarif_om": 8.25,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_inj_rectal",
-      "code": "AMI2",
+      "code": "AMI2_INJ_RECTAL",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Injection en goutte à goutte par voie rectale",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_4_vacc_presc",
-      "code": "AMI2.4",
+      "code": "AMI2_4_VACC_PRESC",
       "lettre_cle": "AMI/AMX",
       "coefficient": 2.4,
       "label": "Vaccination AVEC prescription médicale ou si vaccin sans prescription",
       "tarif": 7.56,
       "tarif_om": 7.92,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2.4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_05_vacc_ss_presc",
-      "code": "AMI3.05",
+      "code": "AMI3_05_VACC_SS_PRESC",
       "lettre_cle": "AMI/AMX",
       "coefficient": 3.05,
       "label": "Vaccination SANS prescription médicale (compétence élargie)",
       "tarif": 9.61,
       "tarif_om": 10.01,
-      "article": "Chap I art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3.05",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_stomie",
-      "code": "AMI3",
+      "code": "AMI3_STOMIE",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Pansement de stomie",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_tracheo",
-      "code": "AMI3",
+      "code": "AMI3_TRACHEO",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Pansement trachéotomie (avec aspiration et changement canule éventuel)",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_fils_moins_10",
-      "code": "AMI2",
+      "code": "AMI2_FILS_MOINS_10",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Ablation fils/agrafes ≤10 (avec pansement éventuel)",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_fils_plus_10",
-      "code": "AMI4",
+      "code": "AMI4_FILS_PLUS_10",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Ablation fils/agrafes >10 (avec pansement éventuel)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_pans_op_etendu",
-      "code": "AMI3",
+      "code": "AMI3_PANS_OP_ETENDU",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Pansement plaies opératoires étendues/multiples (abdominoplastie, chirurgie mammaire)",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_pans_varices",
-      "code": "AMI3",
+      "code": "AMI3_PANS_VARICES",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Pansement post-op exérèses varices/ligatures veines perforantes",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_pans_autre",
-      "code": "AMI2",
+      "code": "AMI2_PANS_AUTRE",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Autre pansement",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami11_bilan_plaie",
-      "code": "AMI11",
+      "code": "AMI11_BILAN_PLAIE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 11,
       "label": "Bilan 1ère prise en charge d'une plaie nécessitant pansement lourd et complexe",
       "tarif": 34.65,
       "tarif_om": 36.3,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": "1",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI11",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_brulure_5pct",
-      "code": "AMI4",
+      "code": "AMI4_BRULURE_5PCT",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement brûlure étendue ou plaie chimique/thermique >5% surface corporelle",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_brulure_radio",
-      "code": "AMI4",
+      "code": "AMI4_BRULURE_RADIO",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement brûlure post-radiothérapie >2% surface corporelle",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_ulcere_60cm2",
-      "code": "AMI4",
+      "code": "AMI4_ULCERE_60CM2",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement ulcère étendu ou greffe cutanée >60 cm²",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_amputation",
-      "code": "AMI4",
+      "code": "AMI4_AMPUTATION",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement amputation (détersion, épluchage, régularisation)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_fistule_dig",
-      "code": "AMI4",
+      "code": "AMI4_FISTULE_DIG",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement fistule digestive",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_perte_substance",
-      "code": "AMI4",
+      "code": "AMI4_PERTE_SUBSTANCE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement pertes substance traumatique/néoplasique avec lésions profondes (sous-aponévrotiques, musculaires, tendineuses, osseuses)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_mechage",
-      "code": "AMI4",
+      "code": "AMI4_MECHAGE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement nécessitant méchage ou irrigation",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_escarre_profonde",
-      "code": "AMI4",
+      "code": "AMI4_ESCARRE_PROFONDE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement escarre profonde et étendue (atteinte muscles/tendons)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_osteosynthese",
-      "code": "AMI4",
+      "code": "AMI4_OSTEOSYNTHESE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement chirurgical avec matériel d'ostéosynthèse extériorisé",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami5_1_ulcere_compression",
-      "code": "AMI5.1",
+      "code": "AMI5_1_ULCERE_COMPRESSION",
       "lettre_cle": "AMI/AMX",
       "coefficient": 5.1,
       "label": "Pansement ulcère ou greffe cutanée AVEC pose de compression",
       "tarif": 16.07,
       "tarif_om": 16.83,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI5.1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_1_analgesie_topique",
-      "code": "AMI1.1",
+      "code": "AMI1_1_ANALGESIE_TOPIQUE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1.1,
       "label": "Analgésie topique préalable (EMLA) à pansement ulcère/escarre",
       "tarif": 3.47,
       "tarif_om": 3.63,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": "8",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_6_tpn_pose",
-      "code": "AMI4.6",
+      "code": "AMI4_6_TPN_POSE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4.6,
       "label": "Pose système traitement par pression négative (TPN console + pansement à usage unique)",
       "tarif": 14.49,
       "tarif_om": 15.18,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4.6",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_1_tpn_pans_add",
-      "code": "AMI2.1",
+      "code": "AMI2_1_TPN_PANS_ADD",
       "lettre_cle": "AMI/AMX",
       "coefficient": 2.1,
       "label": "Mise en place pansement additionnel TPN (sans changement console)",
       "tarif": 6.62,
       "tarif_om": 6.93,
-      "article": "Chap I art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2.1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_sonde_gastrique",
-      "code": "AMI3",
+      "code": "AMI3_SONDE_GASTRIQUE",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Pose sonde gastrique",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_alim_enterale",
-      "code": "AMI3",
+      "code": "AMI3_ALIM_ENTERALE",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Alimentation entérale par gavage/déclive/nutri-pompe (avec surveillance), par séance",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_alim_jejunale",
-      "code": "AMI4",
+      "code": "AMI4_ALIM_JEJUNALE",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Alimentation entérale voie jéjunale (sondage stomie + pansement + surveillance)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_5_aerosol",
-      "code": "AMI1.5",
+      "code": "AMI1_5_AEROSOL",
       "lettre_cle": "AMI",
       "coefficient": 1.5,
       "label": "Séance d'aérosol",
       "tarif": 4.73,
       "tarif_om": 4.95,
-      "article": "Chap I art 5",
+      "article": "5",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_lavage_sinus",
-      "code": "AMI2",
+      "code": "AMI2_LAVAGE_SINUS",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Lavage d'un sinus",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 5",
+      "article": "5",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_25_inj_vaginale",
-      "code": "AMI1.25",
+      "code": "AMI1_25_INJ_VAGINALE",
       "lettre_cle": "AMI",
       "coefficient": 1.25,
       "label": "Injection vaginale",
       "tarif": 3.94,
       "tarif_om": 4.13,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.25",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_5_gyne_curie",
-      "code": "AMI1.5",
+      "code": "AMI1_5_GYNE_CURIE",
       "lettre_cle": "AMI",
       "coefficient": 1.5,
       "label": "Soins gynécologiques au décours immédiat curiethérapie",
       "tarif": 4.73,
       "tarif_om": 4.95,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_cath_uret_f",
-      "code": "AMI3",
+      "code": "AMI3_CATH_URET_F",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Cathétérisme urétral femme",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_cath_uret_h",
-      "code": "AMI4",
+      "code": "AMI4_CATH_URET_H",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Cathétérisme urétral homme",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_chgt_sonde_f",
-      "code": "AMI3",
+      "code": "AMI3_CHGT_SONDE_F",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Changement sonde urinaire à demeure femme",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_chgt_sonde_h",
-      "code": "AMI4",
+      "code": "AMI4_CHGT_SONDE_H",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Changement sonde urinaire à demeure homme",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_5_autosondage",
-      "code": "AMI3.5",
+      "code": "AMI3_5_AUTOSONDAGE",
       "lettre_cle": "AMI",
       "coefficient": 3.5,
       "label": "Éducation autosondage (avec sondage éventuel, max 10 séances)",
       "tarif": 11.03,
       "tarif_om": 11.55,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": "total 10",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_5_vessie_neur",
-      "code": "AMI4.5",
+      "code": "AMI4_5_VESSIE_NEUR",
       "lettre_cle": "AMI",
       "coefficient": 4.5,
       "label": "Réadaptation vessie neurologique (avec sondage éventuel)",
       "tarif": 14.18,
       "tarif_om": 14.85,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_25_lavage_vesical",
-      "code": "AMI1.25",
+      "code": "AMI1_25_LAVAGE_VESICAL",
       "lettre_cle": "AMI",
       "coefficient": 1.25,
       "label": "Instillation/lavage vésical (sonde en place)",
       "tarif": 3.94,
       "tarif_om": 4.13,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.25",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_etui_penien",
-      "code": "AMI1",
+      "code": "AMI1_ETUI_PENIEN",
       "lettre_cle": "AMI",
       "coefficient": 1,
       "label": "Pose isolée étui pénien (1 fois/24h)",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": "1",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami2_retrait_sonde",
-      "code": "AMI2",
+      "code": "AMI2_RETRAIT_SONDE",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Retrait sonde urinaire",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap I art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_25_bouche_radio",
-      "code": "AMI1.25",
+      "code": "AMI1_25_BOUCHE_RADIO",
       "lettre_cle": "AMI",
       "coefficient": 1.25,
       "label": "Soins de bouche avec produits médicamenteux au décours radiothérapie",
       "tarif": 3.94,
       "tarif_om": 4.13,
-      "article": "Chap I art 7",
+      "article": "7",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.25",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_lavement",
-      "code": "AMI3",
+      "code": "AMI3_LAVEMENT",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Lavement évacuateur ou médicamenteux",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 7",
+      "article": "7",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami3_fecalome",
-      "code": "AMI3",
+      "code": "AMI3_FECALOME",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Extraction fécalome ou extraction manuelle des selles",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap I art 7",
+      "article": "7",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_25_pulverisation",
-      "code": "AMI1.25",
+      "code": "AMI1_25_PULVERISATION",
       "lettre_cle": "AMI",
       "coefficient": 1.25,
       "label": "Pulvérisation produit(s) médicamenteux",
       "tarif": 3.94,
       "tarif_om": 4.13,
-      "article": "Chap I art 8",
+      "article": "8",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.25",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami0_5_test_tubercu",
-      "code": "AMI0.5",
+      "code": "AMI0_5_TEST_TUBERCU",
       "lettre_cle": "AMI",
       "coefficient": 0.5,
       "label": "Réalisation test tuberculinique",
       "tarif": 1.58,
       "tarif_om": 1.65,
-      "article": "Chap I art 8",
+      "article": "8",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI0.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_lecture_timbre",
-      "code": "AMI1",
+      "code": "AMI1_LECTURE_TIMBRE",
       "lettre_cle": "AMI",
       "coefficient": 1,
       "label": "Lecture timbre tuberculinique + transmission médecin",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 8",
+      "article": "8",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_2_surv_psy_neuro",
-      "code": "AMI1.2",
+      "code": "AMI1_2_SURV_PSY_NEURO",
       "lettre_cle": "AMI",
       "coefficient": 1.2,
       "label": "Administration/surveillance thérapeutique orale à domicile (troubles psychiatriques/cognitifs/neurodégénératifs) — par passage",
       "tarif": 3.78,
       "tarif_om": 3.96,
-      "article": "Chap I art 10",
+      "article": "10",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_2_surv_ap",
-      "code": "AMI1.2",
+      "code": "AMI1_2_SURV_AP",
       "lettre_cle": "AMI",
       "coefficient": 1.2,
       "label": "Surveillance thérapeutique orale (psy/cognitif) au-delà du 1er mois",
       "tarif": 3.78,
       "tarif_om": 3.96,
-      "article": "Chap I art 10",
+      "article": "10",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1.2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_surv_traitement",
-      "code": "AMI1",
+      "code": "AMI1_SURV_TRAITEMENT",
       "lettre_cle": "AMI",
       "coefficient": 1,
       "label": "Surveillance/observation patient lors mise en œuvre ou modification traitement (max 15 passages)",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap I art 10",
+      "article": "10",
       "maximum": "total 15",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami5_1_accomp_prise_med_init",
-      "code": "AMI5.1",
+      "code": "AMI5_1_ACCOMP_PRISE_MED_INIT",
       "lettre_cle": "AMI",
       "coefficient": 5.1,
       "label": "Accompagnement prise médicamenteuse — séance INITIALE (patient non dépendant polymédiqué fragile)",
       "tarif": 16.07,
       "tarif_om": 16.83,
-      "article": "Chap I art 10",
+      "article": "10",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI5.1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami4_6_accomp_prise_med_2_3",
-      "code": "AMI4.6",
+      "code": "AMI4_6_ACCOMP_PRISE_MED_2_3",
       "lettre_cle": "AMI",
       "coefficient": 4.6,
       "label": "Accompagnement prise médicamenteuse — 2e et 3e séances",
       "tarif": 14.49,
       "tarif_om": 15.18,
-      "article": "Chap I art 10",
+      "article": "10",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AMI4.6",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ais3_seance_soins",
-      "code": "AIS3",
+      "code": "AIS3_SEANCE_SOINS",
       "lettre_cle": "AIS",
       "coefficient": 3,
       "label": "Séance soins infirmiers (1/2 heure, max 4/24h)",
       "tarif": 7.95,
       "tarif_om": 8.1,
-      "article": "Chap I art 11",
+      "article": "11",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AIS3",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ais3_1_prog_aide",
-      "code": "AIS3.1",
+      "code": "AIS3_1_PROG_AIDE",
       "lettre_cle": "AIS",
       "coefficient": 3.1,
       "label": "Programme aide personnalisée (1/2 heure, max 4/24h)",
       "tarif": 8.22,
       "tarif_om": 8.37,
-      "article": "Chap I art 11",
+      "article": "11",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AIS3.1",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ais4_surv_hebdo",
-      "code": "AIS4",
+      "code": "AIS4_SURV_HEBDO",
       "lettre_cle": "AIS",
       "coefficient": 4,
       "label": "Séance hebdomadaire surveillance clinique infirmière + prévention",
       "tarif": 10.6,
       "tarif_om": 10.8,
-      "article": "Chap I art 11",
+      "article": "11",
       "maximum": "1",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AIS4",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_di_bsi_initial",
-      "code": "DI2.5",
+      "code": "DI_BSI_INITIAL",
       "lettre_cle": "DI",
       "coefficient": 2.5,
       "label": "BSI initial (élaboration bilan dématérialisé 3 volets: admin + médical + facturation)",
       "tarif": 25,
       "tarif_om": 25,
-      "article": "Chap I art 12",
+      "article": "12",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "DI2.5",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_di_bsi_renouvellement",
-      "code": "DI1.2",
+      "code": "DI_BSI_RENOUVELLEMENT",
       "lettre_cle": "DI",
       "coefficient": 1.2,
       "label": "BSI renouvellement (à 12 mois)",
       "tarif": 12,
       "tarif_om": 12,
-      "article": "Chap I art 12",
+      "article": "12",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "DI1.2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_di_bsi_intermediaire",
-      "code": "DI1.2",
+      "code": "DI_BSI_INTERMEDIAIRE",
       "lettre_cle": "DI",
       "coefficient": 1.2,
       "label": "BSI intermédiaire (max 2/an si situation clinique évolutive)",
       "tarif": 12,
       "tarif_om": 12,
-      "article": "Chap I art 12",
+      "article": "12",
       "maximum": "2",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "DI1.2",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_bsa",
@@ -1151,9 +1412,11 @@
       "label": "Forfait journalier BSI — dépendance LÉGÈRE",
       "tarif": 13,
       "tarif_om": 13.25,
-      "article": "Chap I art 12",
+      "article": "12",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "BSA",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_bsb",
@@ -1163,9 +1426,11 @@
       "label": "Forfait journalier BSI — dépendance INTERMÉDIAIRE",
       "tarif": 18.2,
       "tarif_om": 18.55,
-      "article": "Chap I art 12",
+      "article": "12",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "BSB",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_bsc",
@@ -1175,491 +1440,780 @@
       "label": "Forfait journalier BSI — dépendance LOURDE",
       "tarif": 28.7,
       "tarif_om": 29.25,
-      "article": "Chap I art 12",
+      "article": "12",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "BSC",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ais13_garde_jour",
-      "code": "AIS13",
+      "code": "AIS13_GARDE_JOUR",
       "lettre_cle": "AIS",
       "coefficient": 13,
       "label": "Garde malade domicile 6h (8h-20h)",
       "tarif": 34.45,
       "tarif_om": 35.1,
-      "article": "Chap I art 13",
+      "article": "13",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AIS13",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ais16_garde_nuit",
-      "code": "AIS16",
+      "code": "AIS16_GARDE_NUIT",
       "lettre_cle": "AIS",
       "coefficient": 16,
       "label": "Garde malade domicile 6h (20h-8h)",
       "tarif": 42.4,
       "tarif_om": 43.2,
-      "article": "Chap I art 13",
+      "article": "13",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "AIS16",
+      "chapitre": "I"
     },
     {
       "code_chunk_id": "strict_act1_ami1_6_telesurv_pans",
-      "code": "TMI",
+      "code": "AMI1_6_TELESURV_PANS",
       "lettre_cle": "AMI",
       "coefficient": 1.6,
       "label": "Acte surveillance à distance (télésoin vidéo) d'un pansement",
       "tarif": 5.04,
       "tarif_om": 5.28,
-      "article": "Chap I art 14",
+      "article": "14",
       "maximum": "4",
-      "source": "NGAP Titre XVI Chapitre I"
+      "source": "NGAP Titre XVI Chapitre I",
+      "code_facturation": "TMI",
+      "chapitre": "I"
+    },
+    {
+      "code": "AMI2_02_PANS_NON_CHIR_AVT11",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 2.02,
+      "tarif": 6.36,
+      "tarif_om": 6.67,
+      "label": "Autre pansement — plaie non chirurgicale (Avenant 11)",
+      "code_facturation": "AMI2.02",
+      "chapitre": "I",
+      "article": "3",
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "acces_direct_a_compter_de": "2027-01-01",
+      "prescription_requise": "non requise à compter 01/01/2027 (accès direct)",
+      "source": "Avenant 11"
+    },
+    {
+      "code": "AMI2_02_PANS_CHIR_SIMPLE_AVT11",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 2.02,
+      "tarif": 6.36,
+      "tarif_om": 6.67,
+      "label": "Autre pansement — plaie chirurgicale simple (Avenant 11)",
+      "code_facturation": "AMI2.02",
+      "chapitre": "I",
+      "article": "3",
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "prescription_requise": "oui (prescription médicale obligatoire)",
+      "source": "Avenant 11"
+    },
+    {
+      "code": "AMI3_48_BILAN_PLAIE_SIMPLE_ANNUEL",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 3.48,
+      "tarif": 10.96,
+      "tarif_om": 11.48,
+      "label": "Bilan infirmier annuel — plaie à risque de complication/récidive",
+      "code_facturation": "AMI3.48",
+      "chapitre": "I",
+      "article": "3",
+      "applicable_a_compter_de": "2027-01-01",
+      "max_par_patient": 1,
+      "periode_reference": "12 mois consécutifs",
+      "inclus": "réalisation du pansement",
+      "non_cumul": [
+        "forfait soins infirmiers journalier (BSA/BSB/BSC)",
+        "AMI11 (bilan initial plaie complexe)"
+      ],
+      "accessibilite": "accès direct ou prescription",
+      "cible_ALD": [
+        "ALD 15 (Alzheimer)",
+        "ALD 23 (affections psychiatriques)",
+        "autres ALD nécessitant plaie à risque"
+      ],
+      "obligations_tracabilite": [
+        "Compte rendu intégré au dossier de soins infirmiers",
+        "Versement DMP"
+      ],
+      "source": "Avenant 11"
+    },
+    {
+      "code": "AMI2_9_BILAN_PLAIE_SPECIFIQUE",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 2.9,
+      "tarif": 9.14,
+      "tarif_om": 9.57,
+      "label": "Bilan de plaie spécifique (Avenant 11)",
+      "code_facturation": "AMI2.9",
+      "chapitre": "I",
+      "article": "3",
+      "applicable_a_compter_de": "2027-01-01",
+      "source": "Avenant 11 (Orion Santé — à confirmer par arrêté)"
+    },
+    {
+      "code": "AMI1_LECTURE_GLYCEMIE_SCOLAIRE",
+      "lettre_cle": "AMI",
+      "coefficient": 1,
+      "tarif": 3.15,
+      "tarif_om": 3.3,
+      "label": "Lecture et analyse de la valeur glycémique — enfant scolarisé <16 ans",
+      "code_facturation": "AMI1",
+      "chapitre": "I",
+      "article": "dispositions_spéciales",
+      "applicable_a_compter_de": "2027-01-01",
+      "cible": "enfants scolarisés de moins de 16 ans, diabétiques",
+      "majoration_associee": "MSD (7€)",
+      "contexte": "école / périscolaire",
+      "source": "Avenant 11"
+    },
+    {
+      "code": "AMI1_BOLUS_POMPE_SCOLAIRE",
+      "lettre_cle": "AMI",
+      "coefficient": 1,
+      "tarif": 3.15,
+      "tarif_om": 3.3,
+      "label": "Administration bolus insuline via pompe — enfant scolarisé <16 ans",
+      "code_facturation": "AMI1",
+      "chapitre": "I",
+      "article": "dispositions_spéciales",
+      "applicable_a_compter_de": "2027-01-01",
+      "cible": "enfants scolarisés de moins de 16 ans, diabétiques sous pompe",
+      "majoration_associee": "MSD (7€)",
+      "contexte": "école / périscolaire",
+      "source": "Avenant 11"
+    },
+    {
+      "code": "AMI1_48_ADMIN_ALZHEIMER_DELIRANT",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 1.48,
+      "tarif": 4.66,
+      "tarif_om": 4.88,
+      "label": "Administration médicamenteuse — patient ALD Alzheimer ou troubles délirants",
+      "code_facturation": "AMI1.48",
+      "chapitre": "I",
+      "article": "dispositions_spéciales",
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "cible_ALD": [
+        "ALD 15 (Alzheimer)",
+        "Troubles délirants"
+      ],
+      "source": "Avenant 11"
+    },
+    {
+      "code": "AMI1_2_ADMIN_TROUBLES_NEURO_PSY_COG",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 1.2,
+      "tarif": 3.78,
+      "tarif_om": 3.96,
+      "label": "Administration médicamenteuse — troubles neurologiques, psychiatriques ou cognitifs (étendu A11)",
+      "code_facturation": "AMI1.2",
+      "chapitre": "I",
+      "article": "dispositions_spéciales",
+      "note_extension": "Avenant 11 étend l'acte existant à l'ensemble des troubles neuro/psy/cognitifs",
+      "source": "Avenant 6 (création) + Avenant 11 (extension)"
+    },
+    {
+      "code": "AMI3_77_SURVEILLANCE_HEBDO",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": 3.77,
+      "tarif": 11.88,
+      "tarif_om": 12.44,
+      "label": "Surveillance clinique et thérapeutique globale HEBDOMADAIRE",
+      "code_facturation": "AMI3.77",
+      "chapitre": "I",
+      "article": "surveillance",
+      "applicable_a_compter_de": "2028-01-01",
+      "contenu": [
+        "Surveillance clinique adaptée à l'état du patient (TA, SpO2, FR, œdèmes)",
+        "Tolérance médicamenteuse",
+        "Gestion des traitements",
+        "Préparation du pilulier le cas échéant",
+        "Identification de stocks inadaptés de produits de santé",
+        "Information sur le bon usage des médicaments"
+      ],
+      "max_par_semaine": 1,
+      "source": "Avenant 11 - nouveaux actes surveillance 2028"
+    },
+    {
+      "code": "AMI_SURVEILLANCE_AIGU",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": null,
+      "label": "Acte de surveillance clinique pour situations AIGUES (coefficient précisé par arrêté)",
+      "code_facturation": "à préciser",
+      "chapitre": "I",
+      "article": "surveillance",
+      "applicable_a_compter_de": "2028-01-01",
+      "source": "Avenant 11 - nouveaux actes surveillance 2028",
+      "statut": "modalités en cours de définition"
+    },
+    {
+      "code": "AMI1_35_LEVEE_DE_DOUTE",
+      "lettre_cle": "AMI",
+      "coefficient": 1.35,
+      "tarif": 4.25,
+      "tarif_om": 4.46,
+      "label": "Acte de levée de doute (SAMU/SAS — intervention régulation sans acte infirmier réalisé)",
+      "code_facturation": "AMI1.35",
+      "chapitre": "I",
+      "article": "soins_non_programmes",
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "conditions": [
+        "Intervention sur demande de la régulation SAMU/SAS",
+        "IDEL volontaire inscrit SAS via CPTS",
+        "Aucun acte infirmier NGAP prévu réalisé (si acte → coter l'acte technique)"
+      ],
+      "source": "Avenant 11 — soins non programmés"
+    },
+    {
+      "code": "AMI_INSTILLATION_COLLYRE",
+      "lettre_cle": "AMI/AMX",
+      "coefficient": null,
+      "label": "Instillation de collyre (cotation précisée par arrêté Avenant 11)",
+      "code_facturation": "à préciser",
+      "chapitre": "I",
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "regles_specifiques": {
+        "facturable_une_fois_par_passage": true,
+        "peu_importe_nombre_administrations": true,
+        "justificatif_requis": "preuve que patient ne peut pas s'auto-administrer",
+        "cible_ALD": [
+          "ALD 15 (Alzheimer)",
+          "ALD 23 (affections psychiatriques)",
+          "patients handicap moteur/visuel sévère"
+        ],
+        "identification_patient": "NIR + code CIM"
+      },
+      "source": "Avenant 11"
     }
   ],
   "actes_chapitre_II": [
     {
       "code_chunk_id": "strict_act2_ami4_cath_peritoneal",
-      "code": "AMI4",
+      "code": "AMI4_CATH_PERITONEAL",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Entretien cathéter péritonéal (avec pansement)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_cath_ext_site",
-      "code": "AMI4",
+      "code": "AMI4_CATH_EXT_SITE",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Entretien cathéter extériorisé/site implantable/cathéter veineux central PICC (avec pansement)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 1",
+      "article": "1",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami5_inj_intrathec",
-      "code": "AMI5",
+      "code": "AMI5_INJ_INTRATHEC",
       "lettre_cle": "AMI",
       "coefficient": 5,
       "label": "Injection analgésique(s) (sauf 1ère) par cathéter intrathécal/péridural",
       "tarif": 15.75,
       "tarif_om": 16.5,
-      "article": "Chap II art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI5",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_inj_iv_site_implante",
-      "code": "AMI4",
+      "code": "AMI4_INJ_IV_SITE_IMPLANTE",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Injection IV par site implanté (avec héparinisation + pansement)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami3_inj_iv_cath_central",
-      "code": "AMI3",
+      "code": "AMI3_INJ_IV_CATH_CENTRAL",
       "lettre_cle": "AMI",
       "coefficient": 3,
       "label": "Injection IV par cathéter central (avec héparinisation + pansement)",
       "tarif": 9.45,
       "tarif_om": 9.9,
-      "article": "Chap II art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI3",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami1_prelev_cath_central",
-      "code": "AMI1",
+      "code": "AMI1_PRELEV_CATH_CENTRAL",
       "lettre_cle": "AMI",
       "coefficient": 1,
       "label": "Prélèvement sanguin sur cathéter veineux central extériorisé ou chambre implantable",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap II art 2",
+      "article": "2",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI1",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami9_perf_courte",
-      "code": "AMI9",
+      "code": "AMI9_PERF_COURTE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 9,
       "label": "Forfait perfusion COURTE ≤1h sous SURVEILLANCE CONTINUE",
       "tarif": 28.35,
       "tarif_om": 29.7,
-      "article": "Chap II art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI9",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami6_suppl_horaire_perf_courte",
-      "code": "AMI6",
+      "code": "AMI6_SUPPL_HORAIRE_PERF_COURTE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 6,
       "label": "Supplément forfaitaire surveillance continue d'une perfusion AU-DELÀ de la 1ère heure (par heure, max 5h)",
       "tarif": 18.9,
       "tarif_om": 19.8,
-      "article": "Chap II art 3",
+      "article": "3",
       "maximum": "total 5",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI6",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami14_perf_longue",
-      "code": "AMI14",
+      "code": "AMI14_PERF_LONGUE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 14,
       "label": "Forfait perfusion >1h avec ORGANISATION DE SURVEILLANCE (sans surveillance continue)",
       "tarif": 44.1,
       "tarif_om": 46.2,
-      "article": "Chap II art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI14",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_org_surveillance",
-      "code": "AMI4",
+      "code": "AMI4_ORG_SURVEILLANCE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Forfait organisation surveillance perfusion (planification + coordination), par jour",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami5_retrait_perf",
-      "code": "AMI5",
+      "code": "AMI5_RETRAIT_PERF",
       "lettre_cle": "AMI/AMX",
       "coefficient": 5,
       "label": "Forfait arrêt et retrait dispositif perfusion (avec pansement, dossier, transmission médecin)",
       "tarif": 15.75,
       "tarif_om": 16.5,
-      "article": "Chap II art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI5",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_1_chgt_flacon",
-      "code": "AMI4.1",
+      "code": "AMI4_1_CHGT_FLACON",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4.1,
       "label": "Changement flacon(s) ou branchement Y sur dispositif en place / débranchement / déplacement / contrôle débit (perfusion sans surveillance continue, hors séance pose)",
       "tarif": 12.92,
       "tarif_om": 13.53,
-      "article": "Chap II art 3",
+      "article": "3",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4.1",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami5_aerosol_prophy",
-      "code": "AMI5",
+      "code": "AMI5_AEROSOL_PROPHY",
       "lettre_cle": "AMI",
       "coefficient": 5,
       "label": "Séance aérosol à visée prophylactique (immunodéprimé/cancéreux)",
       "tarif": 15.75,
       "tarif_om": 16.5,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI5",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami1_5_inj_im_sc_cancer",
-      "code": "AMI1.5",
+      "code": "AMI1_5_INJ_IM_SC_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1.5,
       "label": "Injection IM ou SC (patient immunodéprimé/cancéreux)",
       "tarif": 4.73,
       "tarif_om": 4.95,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI1.5",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami2_5_inj_iv_cancer",
-      "code": "AMI2.5",
+      "code": "AMI2_5_INJ_IV_CANCER",
       "lettre_cle": "AMI",
       "coefficient": 2.5,
       "label": "Injection IV (patient immunodéprimé/cancéreux)",
       "tarif": 7.88,
       "tarif_om": 8.25,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI2.5",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami7_inj_chimio",
-      "code": "AMI7",
+      "code": "AMI7_INJ_CHIMIO",
       "lettre_cle": "AMI",
       "coefficient": 7,
       "label": "Injection IV produit de chimiothérapie anticancéreuse",
       "tarif": 22.05,
       "tarif_om": 23.1,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI7",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami10_perf_courte_cancer",
-      "code": "AMI10",
+      "code": "AMI10_PERF_COURTE_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 10,
       "label": "Forfait perfusion COURTE ≤1h sous surveillance continue — patient immunodéprimé/cancéreux",
       "tarif": 31.5,
       "tarif_om": 33,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI10",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami6_suppl_horaire_cancer",
-      "code": "AMI6",
+      "code": "AMI6_SUPPL_HORAIRE_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 6,
       "label": "Supplément forfaitaire surveillance continue au-delà de la 1ère heure (cancer/immunodéprimé), par heure (max 5h)",
       "tarif": 18.9,
       "tarif_om": 19.8,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": "total 5",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI6",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami15_perf_longue_cancer",
-      "code": "AMI15",
+      "code": "AMI15_PERF_LONGUE_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 15,
       "label": "Forfait perfusion >1h avec organisation surveillance — patient immunodéprimé/cancéreux",
       "tarif": 47.25,
       "tarif_om": 49.5,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI15",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_org_surv_cancer",
-      "code": "AMI4",
+      "code": "AMI4_ORG_SURV_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Forfait organisation surveillance perfusion (cancer/immunodéprimé), par jour",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami5_retrait_perf_cancer",
-      "code": "AMI5",
+      "code": "AMI5_RETRAIT_PERF_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 5,
       "label": "Forfait arrêt et retrait dispositif perfusion (cancer/immunodéprimé)",
       "tarif": 15.75,
       "tarif_om": 16.5,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI5",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_1_chgt_flacon_cancer",
-      "code": "AMI4.1",
+      "code": "AMI4_1_CHGT_FLACON_CANCER",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4.1,
       "label": "Changement flacon / branchement Y / débranchement / contrôle débit (cancer/immunodéprimé)",
       "tarif": 12.92,
       "tarif_om": 13.53,
-      "article": "Chap II art 4",
+      "article": "4",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4.1",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami15_perf_muco",
-      "code": "AMI15",
+      "code": "AMI15_PERF_MUCO",
       "lettre_cle": "AMI/AMX",
       "coefficient": 15,
       "label": "Séance perfusion IV antibiotiques sous surveillance continue (mucoviscidose)",
       "tarif": 47.25,
       "tarif_om": 49.5,
-      "article": "Chap II art 5",
+      "article": "5",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI15",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami1_surv_diab_insulino",
-      "code": "AMI1",
+      "code": "AMI1_SURV_DIAB_INSULINO",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1,
       "label": "Surveillance/observation patient diabétique insulino-traité (adaptation doses, fiche surveillance)",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap II art 5bis",
+      "article": "5bis",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI1",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami1_inj_insuline",
-      "code": "AMI1",
+      "code": "AMI1_INJ_INSULINE",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1,
       "label": "Injection sous-cutanée d'insuline",
       "tarif": 3.15,
       "tarif_om": 3.3,
-      "article": "Chap II art 5bis",
+      "article": "5bis",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI1",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_surv_hebdo_75ans",
-      "code": "AMI4",
+      "code": "AMI4_SURV_HEBDO_75ANS",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Séance hebdomadaire surveillance clinique + prévention (insulino-traité >75 ans)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 5bis",
+      "article": "5bis",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_pans_pied_diab",
-      "code": "AMI4",
+      "code": "AMI4_PANS_PIED_DIAB",
       "lettre_cle": "AMI/AMX",
       "coefficient": 4,
       "label": "Pansement lourd et complexe (diabétique insulino-traité, asepsie + détersion + défibrination)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 5bis",
+      "article": "5bis",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami1_1_analgesie_topique_diab",
-      "code": "AMI1.1",
+      "code": "AMI1_1_ANALGESIE_TOPIQUE_DIAB",
       "lettre_cle": "AMI/AMX",
       "coefficient": 1.1,
       "label": "Analgésie topique préalable au pansement (diabétique)",
       "tarif": 3.47,
       "tarif_om": 3.63,
-      "article": "Chap II art 5bis",
+      "article": "5bis",
       "maximum": "8",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI1.1",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami5_8_bpco_ic",
-      "code": "AMI5.8",
+      "code": "AMI5_8_BPCO_IC",
       "lettre_cle": "AMI/AMX",
       "coefficient": 5.8,
       "label": "Séance domicile surveillance + prévention post-hospit décompensation IC ou exacerbation BPCO",
       "tarif": 18.27,
       "tarif_om": 19.14,
-      "article": "Chap II art 5ter",
+      "article": "5ter",
       "maximum": "total 15",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI5.8",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_irrig_colique",
-      "code": "AMI4",
+      "code": "AMI4_IRRIG_COLIQUE",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Irrigation colique post-stomie définitive (max 20 séances)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 6",
+      "article": "6",
       "maximum": "total 20",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_dialyse_perit",
-      "code": "AMI4",
+      "code": "AMI4_DIALYSE_PERIT",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Dialyse péritonéale (max 4 séances/jour)",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 6",
+      "article": "6",
       "maximum": "4",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_dialyse_cycl_br",
-      "code": "AMI4",
+      "code": "AMI4_DIALYSE_CYCL_BR",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Dialyse péritonéale par cycleur — branchement/débranchement",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_dialyse_cycl_surv",
-      "code": "AMI4",
+      "code": "AMI4_DIALYSE_CYCL_SURV",
       "lettre_cle": "AMI",
       "coefficient": 4,
       "label": "Dialyse péritonéale par cycleur — organisation surveillance par 12h",
       "tarif": 12.6,
       "tarif_om": 13.2,
-      "article": "Chap II art 6",
+      "article": "6",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami3_9_surv_postop",
-      "code": "AMI3.9",
+      "code": "AMI3_9_SURV_POSTOP",
       "lettre_cle": "AMI",
       "coefficient": 3.9,
       "label": "Séance surveillance clinique + accompagnement postopératoire (chirurgie ambulatoire ou RAAC)",
       "tarif": 12.29,
       "tarif_om": 12.87,
-      "article": "Chap II art 7",
+      "article": "7",
       "maximum": "total 3",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI3.9",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami4_2_cath_perinerveux",
-      "code": "AMI4.2",
+      "code": "AMI4_2_CATH_PERINERVEUX",
       "lettre_cle": "AMI",
       "coefficient": 4.2,
       "label": "Séance surveillance/retrait cathéter périnerveux pour analgésie post-op",
       "tarif": 13.23,
       "tarif_om": 13.86,
-      "article": "Chap II art 7",
+      "article": "7",
       "maximum": "1",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI4.2",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami2_retrait_sonde_uri",
-      "code": "AMI2",
+      "code": "AMI2_RETRAIT_SONDE_URI",
       "lettre_cle": "AMI",
       "coefficient": 2,
       "label": "Retrait sonde urinaire (post-op)",
       "tarif": 6.3,
       "tarif_om": 6.6,
-      "article": "Chap II art 7",
+      "article": "7",
       "maximum": null,
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI2",
+      "chapitre": "II"
     },
     {
       "code_chunk_id": "strict_act2_ami2_8_surv_drain_redon",
-      "code": "AMI2.8",
+      "code": "AMI2_8_SURV_DRAIN_REDON",
       "lettre_cle": "AMI",
       "coefficient": 2.8,
       "label": "Surveillance drain redon ou retrait postopératoire drain (max 2 séances)",
       "tarif": 8.82,
       "tarif_om": 9.24,
-      "article": "Chap II art 7",
+      "article": "7",
       "maximum": "total 2",
-      "source": "NGAP Titre XVI Chapitre II"
+      "source": "NGAP Titre XVI Chapitre II",
+      "code_facturation": "AMI2.8",
+      "chapitre": "II"
     }
   ],
   "regles_article_11B": {
@@ -1768,7 +2322,8 @@
       "supprimer": "groupe_a",
       "severity": "critical",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_1"
+      "chunk_id": "strict_incompat_1",
+      "msg": "AIS + BSI interdit — AIS supprimé (BSI prioritaire)"
     },
     {
       "label": "BSA + BSB/BSC : un seul forfait BSI/jour, BSA supprimé",
@@ -1782,7 +2337,8 @@
       "supprimer": "groupe_a",
       "severity": "critical",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_2"
+      "chunk_id": "strict_incompat_2",
+      "msg": "BSA + BSB/BSC : un seul forfait BSI/jour, BSA supprimé"
     },
     {
       "label": "BSB + BSC exclusifs, BSB supprimé (BSC prioritaire)",
@@ -1795,7 +2351,8 @@
       "supprimer": "groupe_a",
       "severity": "critical",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_3"
+      "chunk_id": "strict_incompat_3",
+      "msg": "BSB + BSC exclusifs, BSB supprimé (BSC prioritaire)"
     },
     {
       "label": "NUIT_PROF prioritaire sur NUIT et DIM",
@@ -1809,7 +2366,8 @@
       "supprimer": "groupe_a",
       "severity": "warning",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_4"
+      "chunk_id": "strict_incompat_4",
+      "msg": "NUIT_PROF prioritaire sur NUIT et DIM"
     },
     {
       "label": "NUIT + DIM non cumulables, NUIT prioritaire",
@@ -1822,7 +2380,8 @@
       "supprimer": "groupe_a",
       "severity": "warning",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_5"
+      "chunk_id": "strict_incompat_5",
+      "msg": "NUIT + DIM non cumulables, NUIT prioritaire"
     },
     {
       "label": "CIR-9/2025 : AMI14 + AMI15 même jour interdits — AMI14 supprimé (AMI15 prioritaire si cancer)",
@@ -1837,7 +2396,8 @@
       "supprimer": "groupe_a",
       "severity": "critical",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_6"
+      "chunk_id": "strict_incompat_6",
+      "msg": "CIR-9/2025 : AMI14 + AMI15 même jour interdits — AMI14 supprimé (AMI15 prioritaire si cancer)"
     },
     {
       "label": "MCI + BSI interdit — MCI supprimée",
@@ -1852,7 +2412,8 @@
       "supprimer": "groupe_a",
       "severity": "critical",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_7"
+      "chunk_id": "strict_incompat_7",
+      "msg": "MCI + BSI interdit — MCI supprimée"
     },
     {
       "label": "MAU + BSI interdit — MAU supprimée",
@@ -1867,7 +2428,8 @@
       "supprimer": "groupe_a",
       "severity": "critical",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_8"
+      "chunk_id": "strict_incompat_8",
+      "msg": "MAU + BSI interdit — MAU supprimée"
     },
     {
       "label": "MAU + MCI non cumulables — MAU supprimée",
@@ -1880,7 +2442,8 @@
       "supprimer": "groupe_a",
       "severity": "warning",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_9"
+      "chunk_id": "strict_incompat_9",
+      "msg": "MAU + MCI non cumulables — MAU supprimée"
     },
     {
       "label": "Surveillances post-op (AMI3",
@@ -1893,7 +2456,8 @@
       "supprimer": "groupe_a",
       "severity": "warning",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_10"
+      "chunk_id": "strict_incompat_10",
+      "msg": "Surveillances post-op (AMI3"
     },
     {
       "label": "Éducation autosondage/vessie neuro non cumulables avec cathétérisme",
@@ -1908,7 +2472,8 @@
       "supprimer": "groupe_a",
       "severity": "warning",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_11"
+      "chunk_id": "strict_incompat_11",
+      "msg": "Éducation autosondage/vessie neuro non cumulables avec cathétérisme"
     },
     {
       "label": "Bilan plaie initial AMI11 NON cumulable avec MCI — MCI supprimée",
@@ -1921,7 +2486,65 @@
       "supprimer": "groupe_a",
       "severity": "warning",
       "source": "NGAP officielle",
-      "chunk_id": "strict_incompat_12"
+      "chunk_id": "strict_incompat_12",
+      "msg": "Bilan plaie initial AMI11 NON cumulable avec MCI — MCI supprimée"
+    },
+    {
+      "groupe_a": [
+        "AMI3.48"
+      ],
+      "groupe_b": [
+        "AMI11"
+      ],
+      "supprimer": "groupe_a",
+      "msg": "AMI3.48 (bilan plaie simple) NON cumulable avec AMI11 (bilan plaie complexe)",
+      "severity": "critical",
+      "source": "Avenant 11"
+    },
+    {
+      "groupe_a": [
+        "AMI3.48"
+      ],
+      "groupe_b": [
+        "BSA",
+        "BSB",
+        "BSC"
+      ],
+      "supprimer": "groupe_a",
+      "msg": "AMI3.48 (bilan plaie simple annuel) NON cumulable avec BSI — AMI3.48 supprimé",
+      "severity": "critical",
+      "source": "Avenant 11"
+    },
+    {
+      "groupe_a": [
+        "CIA",
+        "CIB"
+      ],
+      "groupe_b": [
+        "AMI",
+        "AMX",
+        "BSA",
+        "BSB",
+        "BSC",
+        "AIS"
+      ],
+      "supprimer": "groupe_a",
+      "msg": "Consultations CIA/CIB en séance dédiée — aucun cumul autre acte technique/dépendance",
+      "severity": "critical",
+      "source": "Avenant 11"
+    },
+    {
+      "groupe_a": [
+        "MSG"
+      ],
+      "groupe_b": [
+        "BSA",
+        "BSB"
+      ],
+      "supprimer": "groupe_a",
+      "msg": "MSG réservée au BSC uniquement (patients les plus dépendants score SEGA ≥ 35)",
+      "severity": "critical",
+      "source": "Avenant 11"
     }
   ],
   "derogations_taux_plein": [
@@ -1938,7 +2561,18 @@
         "AMI1.1"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_1"
+      "chunk_id": "strict_deroga_1",
+      "codes_groupe_a": [
+        "AMI4",
+        "AMI11",
+        "AMI5.1",
+        "AMI4.6",
+        "AMI2.1"
+      ],
+      "codes_groupe_b": [
+        "AMI1.1"
+      ],
+      "msg": "Pansement complexe + analgésie topique = cumul taux plein (Chap I art 3)"
     },
     {
       "label": "Surveillance post-op + retrait sonde/drain = cumul taux plein (Avenant 6 — Chap II art 7)",
@@ -1950,7 +2584,15 @@
         "AMI2.8"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_2"
+      "chunk_id": "strict_deroga_2",
+      "codes_groupe_a": [
+        "AMI3.9"
+      ],
+      "codes_groupe_b": [
+        "AMI2",
+        "AMI2.8"
+      ],
+      "msg": "Surveillance post-op + retrait sonde/drain = cumul taux plein (Avenant 6 — Chap II art 7)"
     },
     {
       "label": "Cathéter périnerveux + retrait sonde/drain = cumul taux plein (Avenant 6 — Chap II art 7)",
@@ -1962,7 +2604,15 @@
         "AMI2.8"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_3"
+      "chunk_id": "strict_deroga_3",
+      "codes_groupe_a": [
+        "AMI4.2"
+      ],
+      "codes_groupe_b": [
+        "AMI2",
+        "AMI2.8"
+      ],
+      "msg": "Cathéter périnerveux + retrait sonde/drain = cumul taux plein (Avenant 6 — Chap II art 7)"
     },
     {
       "label": "BSI/AIS + perfusion = cumul taux plein (dérogation Chap II art 3-5)",
@@ -1982,7 +2632,23 @@
         "AMI6"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_4"
+      "chunk_id": "strict_deroga_4",
+      "codes_groupe_a": [
+        "AIS3",
+        "BSA",
+        "BSB",
+        "BSC"
+      ],
+      "codes_groupe_b": [
+        "AMI9",
+        "AMI10",
+        "AMI14",
+        "AMI15",
+        "AMI5",
+        "AMI4.1",
+        "AMI6"
+      ],
+      "msg": "BSI/AIS + perfusion = cumul taux plein (dérogation Chap II art 3-5)"
     },
     {
       "label": "BSI/AIS + pansement complexe = cumul taux plein",
@@ -1999,7 +2665,20 @@
         "AMI4.6"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_5"
+      "chunk_id": "strict_deroga_5",
+      "codes_groupe_a": [
+        "AIS3",
+        "BSA",
+        "BSB",
+        "BSC"
+      ],
+      "codes_groupe_b": [
+        "AMI4",
+        "AMI11",
+        "AMI5.1",
+        "AMI4.6"
+      ],
+      "msg": "BSI/AIS + pansement complexe = cumul taux plein"
     },
     {
       "label": "BSI/AIS + surveillance BPCO/IC = cumul taux plein",
@@ -2013,7 +2692,17 @@
         "AMI5.8"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_6"
+      "chunk_id": "strict_deroga_6",
+      "codes_groupe_a": [
+        "AIS3",
+        "BSA",
+        "BSB",
+        "BSC"
+      ],
+      "codes_groupe_b": [
+        "AMI5.8"
+      ],
+      "msg": "BSI/AIS + surveillance BPCO/IC = cumul taux plein"
     },
     {
       "label": "BSI/AIS + ponction veineuse = cumul taux plein",
@@ -2027,7 +2716,17 @@
         "AMI1.5"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_7"
+      "chunk_id": "strict_deroga_7",
+      "codes_groupe_a": [
+        "AIS3",
+        "BSA",
+        "BSB",
+        "BSC"
+      ],
+      "codes_groupe_b": [
+        "AMI1.5"
+      ],
+      "msg": "BSI/AIS + ponction veineuse = cumul taux plein"
     },
     {
       "label": "Article 5bis (insulino-traité): tous les actes cumulent à taux plein entre eux",
@@ -2041,7 +2740,17 @@
         "mêmes codes"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_8"
+      "chunk_id": "strict_deroga_8",
+      "codes_groupe_a": [
+        "AMI1_SURV_DIAB_INSULINO",
+        "AMI1_INJ_INSULINE",
+        "AMI4_PANS_PIED_DIAB",
+        "AMI1.1"
+      ],
+      "codes_groupe_b": [
+        "mêmes codes"
+      ],
+      "msg": "Article 5bis (insulino-traité): tous les actes cumulent à taux plein entre eux"
     },
     {
       "label": "Supplément horaire AMI6 cumule à taux plein avec perfusion courte AMI9/AMI10 (Chap II art 3-4)",
@@ -2056,14 +2765,97 @@
         "AMX6"
       ],
       "source": "NGAP officielle",
-      "chunk_id": "strict_deroga_9"
+      "chunk_id": "strict_deroga_9",
+      "codes_groupe_a": [
+        "AMI9",
+        "AMI10",
+        "AMX9",
+        "AMX10"
+      ],
+      "codes_groupe_b": [
+        "AMI6",
+        "AMX6"
+      ],
+      "msg": "Supplément horaire AMI6 cumule à taux plein avec perfusion courte AMI9/AMI10 (Chap II art 3-4)"
+    },
+    {
+      "codes_groupe_a": [
+        "CIA",
+        "CIB"
+      ],
+      "codes_groupe_b": [
+        "IFD",
+        "IK"
+      ],
+      "msg": "Consultations infirmières CIA/CIB : seuls frais de déplacement cumulables (taux plein)"
+    },
+    {
+      "codes_groupe_a": [
+        "MIR"
+      ],
+      "codes_groupe_b": [
+        "AMI1.35",
+        "AMI",
+        "AMX"
+      ],
+      "msg": "Majoration MIR (intervention régulée) cumule à taux plein avec acte réalisé ou levée de doute"
+    },
+    {
+      "codes_groupe_a": [
+        "MSG"
+      ],
+      "codes_groupe_b": [
+        "BSC"
+      ],
+      "msg": "Majoration Soins Gériatriques cumule avec BSC (non décotable)"
+    },
+    {
+      "codes_groupe_a": [
+        "AMI2.4",
+        "AMI3.05"
+      ],
+      "codes_groupe_b": [
+        "AMI1",
+        "AMI1.5",
+        "AMI2",
+        "AMI2.1",
+        "AMI2.5",
+        "AMI3",
+        "AMI3.5",
+        "AMI4",
+        "AMI4.1",
+        "AMI4.2",
+        "AMI4.5",
+        "AMI4.6",
+        "AMI5",
+        "AMI5.1",
+        "AMI5.2",
+        "AMI5.8",
+        "AMI6",
+        "AMI7",
+        "AMI8",
+        "AMI9",
+        "AMI10",
+        "AMI11",
+        "AMI14",
+        "AMI15",
+        "AMX1",
+        "AMX2",
+        "AMX4",
+        "AMX5",
+        "AMX9",
+        "AMX10",
+        "AMX14",
+        "AMX15",
+        "AIS3",
+        "BSA",
+        "BSB",
+        "BSC"
+      ],
+      "msg": "Vaccinations à domicile (AMI2.4 / AMI3.05) : cumul taux plein avec tout autre acte (art. 11B - dérogation Avenant 9 confirmée 2023)"
     }
   ],
-  "note_5bis": {
-    "libelle": "Article 5bis: TOUS ces actes se cumulent ENTRE EUX à TAUX PLEIN par dérogation à l'article 11B. Avec BSI: appliquer le 11B (1er à 100%, 2e à 50%).",
-    "chunk_id": "strict_note_5bis",
-    "source": "NGAP Titre XVI Chap II article 5bis"
-  },
+  "note_5bis": "Article 5bis: TOUS ces actes se cumulent ENTRE EUX à TAUX PLEIN par dérogation à l'article 11B. Avec BSI: appliquer le 11B (1er à 100%, 2e à 50%).",
   "forfaits_ipa": {
     "PAI_1_6": {
       "code": "PAI_1_6",
@@ -2496,5 +3288,428 @@
     "gratuite_patient": "Tous les programmes PRADO sont gratuits pour le patient",
     "unique_code_ngap_specifique": "Seul AMI 5",
     "source": "ameli.fr - Service Prado infirmier + arrêté UNCAM 2017"
+  },
+  "format": "DUAL_v2 — STRICT-247 + Avenant11 + compat-validateur-worker-v8.x",
+  "notes_version": {
+    "avenant_11": {
+      "date_signature": "2026-03-31",
+      "signataires": [
+        "UNCAM",
+        "FNI",
+        "SNIIL",
+        "Convergence Infirmière",
+        "UNOCAM"
+      ],
+      "enveloppe": "500 M€ / 503 M€ sur 2026-2029",
+      "approbation_ministerielle": "transmis aux ministères le 01/04/2026",
+      "entree_en_vigueur": "6 mois après parution JO (article L.162-14-1-1 CSS) — estimé novembre 2026",
+      "resume": "Revalorisation AMI/AMX +9.5% en 2 étapes, création consultations infirmières (CIA/CIB 20€), accès direct plaies non chirurgicales (01/01/2027), infirmier référent IDER pour ALD, nouveaux actes surveillance hebdomadaire (01/01/2028), diabète pédiatrique scolarisé, kit dépistage colorectal, majoration soins gériatriques (MSG), soins non programmés PDSA/SAS."
+    },
+    "loi_profession_infirmiere": {
+      "reference": "Loi n°2025-581 du 27 juin 2025 (adoption Sénat 05/05/2025, promulgation 27/06/2025)",
+      "apports": [
+        "Reconnaissance du diagnostic infirmier",
+        "Consultation infirmière",
+        "Accès direct aux infirmiers (plaies non chirurgicales, prises de sang courantes)",
+        "Prescription limitée (petit matériel, cicatrisation)",
+        "Autonomie renforcée"
+      ]
+    },
+    "cir_9_2025": {
+      "date_application": "25/06/2025",
+      "objet": "Encadrement perfusions longues (AMI 14/15 = forfait journalier)"
+    }
+  },
+  "consultations_infirmieres": {
+    "CIA_INSULINE_DT2": {
+      "code_facturation": "CIA",
+      "tarif": 20.0,
+      "tarif_om": 20.0,
+      "label": "Consultation Instauration traitement initial par insuline — diabète Type 2",
+      "applicable_a_compter_de": "parution JO Avenant 11 (estimé printemps/été 2026)",
+      "conditions": {
+        "patient": "diabétique type 2 débutant un traitement par insuline",
+        "duree": "dans les 6 premiers mois suivant l'instauration du traitement",
+        "max_par_patient": 4,
+        "seance_dediee": true,
+        "non_cumul": [
+          "tout acte technique",
+          "forfait dépendance (BSA/BSB/BSC)"
+        ],
+        "cumul_autorise": [
+          "frais_de_deplacement_uniquement"
+        ],
+        "tracabilite": "obligatoire — versement DMP recommandé"
+      },
+      "objectifs": [
+        "Éducation thérapeutique",
+        "Autonomie du patient",
+        "Maîtrise des gestes d'autosoin",
+        "Gestion pompe/stylo",
+        "Prévention hypoglycémie"
+      ]
+    },
+    "CIB_POST_BILAN_PREVENTION": {
+      "code_facturation": "CIB",
+      "tarif": 20.0,
+      "tarif_om": 20.0,
+      "label": "Consultation Suivi post-Bilan Prévention aux âges-clés",
+      "applicable_a_compter_de": "2027-07-01 (sous réserve avis favorable HAS)",
+      "conditions": {
+        "patient": "patient ayant réalisé un Bilan Prévention aux âges-clés",
+        "max_par_patient": 4,
+        "seance_dediee": true,
+        "non_cumul": [
+          "tout acte technique",
+          "forfait dépendance"
+        ],
+        "cumul_autorise": [
+          "frais_de_deplacement_uniquement"
+        ]
+      },
+      "objectifs": [
+        "Évaluation mesures hygiéno-diététiques",
+        "Évaluation santé mentale",
+        "Évaluation couverture vaccinale",
+        "Repérage des risques"
+      ]
+    },
+    "consultations_futures_2028": {
+      "themes_identifies": [
+        "Retour d'hospitalisation post-AVC",
+        "Santé mentale",
+        "Situations d'urgence / soins non programmés"
+      ],
+      "statut": "négociations conventionnelles prévues"
+    }
+  },
+  "indemnites_astreinte": {
+    "IAS_PDSA": {
+      "tarif": 52.0,
+      "tarif_om": 52.0,
+      "label": "Indemnité d'Astreinte — Permanence Des Soins Ambulatoire (PDSA)",
+      "unite": "par tranche de 4 heures",
+      "conditions": {
+        "infirmier_volontaire": true,
+        "plages_horaires": "plages PDSA définies",
+        "cumul_avec": "actes NGAP réalisés en astreinte + MIR si régulation"
+      },
+      "applicable_a_compter_de": "parution JO Avenant 11",
+      "source": "Avenant 11"
+    }
+  },
+  "infirmier_referent_IDER": {
+    "designation": "IDER (ou IPA référent pour IPA)",
+    "applicable_a_compter_de": "2027-01-01",
+    "cible": "patients >16 ans en ALD (Affection Longue Durée)",
+    "focus": [
+      "personnes âgées",
+      "perte d'autonomie",
+      "situation de handicap"
+    ],
+    "missions": [
+      "Coordination avec médecin traitant et pharmacien correspondant",
+      "Consultation mensuelle à domicile",
+      "Prévention, suivi et recours",
+      "Éviter ruptures de parcours de soins",
+      "Alimentation régulière du DMP",
+      "Interlocuteur privilégié en cas d'hospitalisation du patient"
+    ],
+    "procedure_designation": {
+      "choix": "libre choix du patient",
+      "accord_requis": "accord obligatoire de l'infirmier",
+      "possibilite_partage": "au sein du même cabinet",
+      "changement": "possible à tout moment par le patient",
+      "declaration": "téléservice ou formulaire"
+    },
+    "parcours_renforce_patients_vulnerables": {
+      "applicable_a_compter_de": "2027-07-01",
+      "modalites": [
+        "Plan de suivi personnalisé",
+        "Visites mensuelles à domicile",
+        "Cadre coordonné avec le médecin traitant"
+      ]
+    },
+    "source": "Avenant 11"
+  },
+  "ipa_pratique_avancee": {
+    "tarif_seance_avant_A11": 16.0,
+    "tarif_consultation_apres_A11": 20.0,
+    "statut_nouveau": "consultation (anciennement séance)",
+    "applicable_a_compter_de": "parution JO Avenant 11 — hausse principale 01/11/2027",
+    "evolutions_A11": [
+      "Séance IPA requalifiée en consultation",
+      "Revalorisation 16€ → 20€ (certaines sources mentionnent 21€)",
+      "Ajout de forfaits de suivi pour prises en charge renforcées",
+      "Accès direct pour les patients",
+      "Accès direct en structure d'exercice coordonné"
+    ],
+    "aides_formation": {
+      "existe": true,
+      "statut": "majorée par Avenant 11"
+    },
+    "source": "Avenant 11"
+  },
+  "dispositif_equilibres": {
+    "objectif": "Faire évoluer le mode de rémunération des IDEL volontaires en zones très sous-dotées",
+    "taux_horaire": {
+      "metropole": 54.0,
+      "DROM": 57.0
+    },
+    "part_variable_annuelle_max": 2000.0,
+    "critere_part_variable": "atteinte des objectifs d'activités",
+    "objectif_deploiement": "200 équipes en 2 ans",
+    "source": "Avenant 11"
+  },
+  "regulation_remplacants": {
+    "zones_sur_dotees": {
+      "plafond_activite_remplacant": "30% de l'activité du cabinet",
+      "applicable_a_compter_de": "2028-01-01"
+    },
+    "installation": {
+      "conditions": "remplacements sous contrat pendant 24 mois au cours des 6 années précédentes",
+      "source": "Avenant 6 (2019)"
+    },
+    "zones_sous_dotees": {
+      "contrat_sante_solidarite": true,
+      "aide_forfaitaire_equipement": true,
+      "prise_en_charge_cotisations_allocations_familiales": true
+    },
+    "source": "Avenant 11 + Avenant 1 + Avenant 6"
+  },
+  "competences_vaccinales_2023": {
+    "decret_reference": "Décret n°2023-736 du 08/08/2023",
+    "texte_precedent": "Décret n°2022-610 du 21/04/2022",
+    "code_sante_publique": "article R.4311-5-1",
+    "prescription_autonome": {
+      "age_minimum_patient": 11,
+      "formation_requise": {
+        "duree": "10h30",
+        "modalite": "présentiel ou distance",
+        "organismes": [
+          "ANDPC",
+          "ANFH",
+          "autres agréés"
+        ],
+        "declaration": "ONI + FIF-PL ou équivalent"
+      },
+      "vaccins_autorises": [
+        "Grippe saisonnière",
+        "Diphtérie",
+        "Tétanos",
+        "Poliomyélite",
+        "Coqueluche",
+        "HPV (papillomavirus)",
+        "Pneumocoque (infections invasives)",
+        "Hépatite A",
+        "Hépatite B",
+        "Méningocoque A",
+        "Méningocoque B",
+        "Méningocoque C",
+        "Méningocoque Y",
+        "Méningocoque W",
+        "Rage (si indication)",
+        "Zona (adulte ≥65 ans)",
+        "Covid-19 (≥5 ans)"
+      ],
+      "exclusions": [
+        "Vaccins vivants atténués chez patients immunodéprimés (BCG, ROR)",
+        "Patients avec antécédents de réaction allergique sévère à l'ovalbumine",
+        "Réactions graves à vaccination antérieure"
+      ]
+    },
+    "administration_sans_prescription_specifique": {
+      "grippe_saisonniere": {
+        "depuis": "2018-09-26",
+        "condition": "personnes majeures éligibles recommandations + mineurs ≥11 ans",
+        "cotation": "AMI2.4"
+      },
+      "covid_19": {
+        "depuis": "2021-2023",
+        "age_minimum": 5,
+        "cotation": "AMI2.4"
+      }
+    },
+    "derogation_article_11B": {
+      "actes_vaccination_domicile": "cumul à taux plein avec tout autre acte associé",
+      "reference": "art. 11B NGAP - dérogation"
+    },
+    "facturation_sans_prescription": {
+      "prescripteur": "n° Assurance Maladie de l'infirmier lui-même",
+      "feuille_soins_papier": "attestation obligatoire + SCOR"
+    },
+    "suppression_supplement_grippe": {
+      "effet": "AMI1 supplément grippe SUPPRIMÉ depuis 2023",
+      "remplacement": "AMI2.4 simple (sans ajout)"
+    },
+    "supplement_covid_campagne_2025_2026": {
+      "debut_metropole": "2025-10-14",
+      "fin": "2026-02-28 (grippe) / 2026-01-31 (covid)",
+      "co_administration": "possible même séance, sites distincts, aucun intervalle minimum"
+    }
+  },
+  "depistage_cancer_colorectal": {
+    "code_traceur": "RKD",
+    "tarif_remise_kit": 3.0,
+    "tarif_test_realise": 2.0,
+    "tarif_total_si_test_realise": 5.0,
+    "prise_en_charge": "100% Assurance Maladie",
+    "professionnels_autorises": [
+      "IDEL",
+      "IPA"
+    ],
+    "applicable_a_compter_de": "2027-01-01 (Avenant 11)",
+    "objectif": "Renforcer dépistage organisé du cancer colorectal",
+    "source": "Avenant 11"
+  },
+  "diabete_pediatrique_scolarise": {
+    "cible": "enfants diabétiques scolarisés de moins de 16 ans",
+    "applicable_a_compter_de": "2027-01-01",
+    "actes_specifiques": {
+      "lecture_glycemie": {
+        "code": "AMI1",
+        "tarif": 3.15,
+        "description": "Lecture et analyse de la valeur glycémique"
+      },
+      "bolus_pompe": {
+        "code": "AMI1",
+        "tarif": 3.15,
+        "description": "Administration d'un bolus d'insuline via pompe"
+      }
+    },
+    "majoration_specifique": {
+      "code": "MSD",
+      "tarif": 7.0,
+      "description": "Majoration Scolaire Diabète"
+    },
+    "cumul": {
+      "MSD_avec_AMI1": true,
+      "contexte": "milieu scolaire ou périscolaire"
+    },
+    "source": "Avenant 11"
+  },
+  "acces_direct_sans_prescription": {
+    "base_legale": "Loi n°2025-581 du 27/06/2025 + Avenant 11 du 31/03/2026",
+    "applicable_a_compter_de": "2027-01-01 (pour pansements) / parution JO (autres actes)",
+    "actes_concernes": [
+      {
+        "acte": "Pansements de plaies NON chirurgicales",
+        "cotation": "AMI2.02 (ou bilan AMI3.48)",
+        "date_effet": "2027-01-01",
+        "note": "peut continuer à être prescrit mais accès direct possible"
+      },
+      {
+        "acte": "Prises de sang courantes",
+        "cotation": "AMI1.5 (ponction veineuse)",
+        "note": "certaines conditions à préciser"
+      },
+      {
+        "acte": "Prescription petit matériel médical",
+        "contexte": "cicatrisation, pansements",
+        "note": "pouvoir de prescription infirmier limité"
+      }
+    ],
+    "validite_prescription_jusqu_a_cicatrisation": {
+      "avant_A11": "durée non limitée",
+      "apres_A11": "3 mois max",
+      "source": "Avenant 11"
+    },
+    "regles_specifiques": [
+      "Diagnostic infirmier reconnu",
+      "Évaluation des besoins du patient",
+      "Médecin traitant informé de l'évolution",
+      "Traçabilité DMP fortement recommandée"
+    ]
+  },
+  "contexte_reglementaire_2026": {
+    "PLFSS_2026": {
+      "logique": "Maîtrise des dépenses de santé — encadrement/uniformisation facturation",
+      "impact": "Renforcement contrôles CPAM, indus",
+      "veille": "obligatoire"
+    },
+    "decret_infirmier_2025": {
+      "date": "2025-12-26",
+      "objet": "Mise en oeuvre consultations autonomes infirmières",
+      "reference": "décret d'application Loi Profession Infirmière"
+    }
+  },
+  "tarifs_officiels_snapshot_2026": {
+    "date_snapshot": "2026-04-24",
+    "statut_AMI": "3.15€ (pré-hausse Avenant 11 — hausse 01/11/2026 = 3.35€)",
+    "actes_principaux_2026": {
+      "AMI1": 3.15,
+      "AMI1.5": 4.73,
+      "AMI2": 6.3,
+      "AMI2.4": 7.56,
+      "AMI3": 9.45,
+      "AMI3.05": 9.61,
+      "AMI4": 12.6,
+      "AMI4.6": 14.49,
+      "AMI5.1": 16.07,
+      "AMI11": 34.65,
+      "BSA": 13.0,
+      "BSB": 18.2,
+      "BSC": 28.7,
+      "DI_INITIAL": 25.0,
+      "DI_RENOUVELLEMENT": 12.0,
+      "IFD": 2.75,
+      "IFI": 2.75,
+      "IK_PLAINE_PAR_KM": 0.35,
+      "IK_MONTAGNE_PAR_KM": 0.5,
+      "IK_PIED_SKI_PAR_KM": 3.4,
+      "MAU": 1.35,
+      "MCI": 5.0,
+      "MIE": 3.15,
+      "ISD_DIMANCHE": 8.5,
+      "ISN_NUIT": 9.15,
+      "ISN_NUIT_PROFONDE": 18.3
+    },
+    "projections_2026_11": {
+      "AMI1": 3.35,
+      "AMI2": 6.7,
+      "AMI4": 13.4,
+      "AMI11": 36.85
+    },
+    "projections_2027_11": {
+      "AMI1": 3.45,
+      "AMI2": 6.9,
+      "AMI4": 13.8,
+      "AMI11": 37.95
+    }
+  },
+  "checklist_anti_audit_cpam": {
+    "prescription": [
+      "Ordonnance obligatoire pour tout acte SAUF exceptions (vaccins autorisés, accès direct A11)",
+      "Conserver prescription archivée >3 ans"
+    ],
+    "tracabilite": [
+      "Dossier de soins infirmiers complet",
+      "Signature patient horodatée (à chaque passage)",
+      "Versement DMP recommandé",
+      "Compte rendu bilans (AMI11, AMI3.48, CIA, CIB)"
+    ],
+    "facturation": [
+      "Respecter article 11B (1 acte à 100%, 2e à 50%, reste non facturable) sauf dérogations listées",
+      "IFD ≠ IFI (IFI uniquement avec BSI, max 4/jour)",
+      "IK : distance × 2 (aller-retour), abattement 300-399km = 50%, >=400km = 0%",
+      "1 seul BSI/jour/patient (BSC prioritaire si > BSB > BSA)",
+      "Jamais AIS + BSI (incompatible)",
+      "Pas de MCI avec BSI/MAU",
+      "Pas de MAU avec MCI/AMX/BSI",
+      "CIR-9/2025 : 1x AMI14 ou AMI15 par jour max"
+    ],
+    "nouveautes_A11_points_attention": [
+      "CIA/CIB = séance DÉDIÉE uniquement (pas d'autre acte)",
+      "MSG uniquement avec BSC (pas BSA/BSB)",
+      "Bilan plaie AMI3.48 max 1x/12 mois, pas avec BSI, pas avec AMI11",
+      "MIR plafond 20/semaine/infirmier",
+      "Accès direct plaies = seulement plaies NON chirurgicales (01/01/2027)"
+    ],
+    "conservation_documents": {
+      "ordonnances": "3 ans minimum",
+      "factures": "10 ans (obligation comptable)",
+      "dossier_soins": "illimité (responsabilité médico-légale)",
+      "preuves_soins": "stockage hash-only (RGPD)"
+    }
   }
 }
