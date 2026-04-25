@@ -1235,18 +1235,16 @@ async function _cotationPipeline() {
     // pas un fallback local.
     const _viaFab = !!window._cotFromReCoteFAB;
 
-    // ⚡ NE PAS forcer N8N par défaut sur « Coter avec l'IA » :
-    // Le worker a sa propre logique intelligente (Smart Engine v8 + RL + circuit
-    // breaker + fallback local NGAP). Forcer N8N systématiquement provoque des
-    // erreurs 502 quand le service est en cold-start (Render).
-    // Le force_n8n est réservé aux cas où l'utilisateur veut explicitement
-    // une vérification IA, c'est-à-dire :
-    //   - clic sur le FAB « Re-coter avec les ajouts » (correction iterative)
-    //   - clic sur « Vérifier & corriger » (modale Verify, déjà géré ailleurs)
-    // Pour le bouton « Coter avec l'IA » par défaut → on laisse le worker
-    // décider, ce qui garantit toujours une réponse même si N8N est down.
+    // ⚡ « Coter avec l'IA » FORCE N8N PAR DÉFAUT (intention utilisateur claire).
+    // Stratégie en deux temps :
+    //   1) 1er appel avec _force_n8n: true → tente vraiment N8N (bypass cache,
+    //      circuit breaker, smart engine). Si N8N répond → on a la vraie IA.
+    //   2) Si N8N indisponible (502) → 2ème appel automatique SANS _force_n8n
+    //      → le worker bascule sur Smart Engine v8 + RL + fallback NGAP local.
+    // Garantit toujours une réponse, tout en privilégiant l'IA réelle.
+    // L'utilisateur ne voit pas la différence et n'a rien à cliquer.
 
-    const d = await apiCall('/webhook/ami-calcul', {
+    const _basePayload = {
       mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
       adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
@@ -1260,13 +1258,9 @@ async function _cotationPipeline() {
       // patient_nom → affiché dans l'historique (champ f-pt)
       ...((gv('f-pt') || '').trim() ? { patient_nom: (gv('f-pt') || '').trim() } : {}),
       // patient_id IDB → rattachement cotation ↔ fiche dans planning_patients
-      // Note : _prePatientId est résolu juste avant cet appel
       ...(_prePatientId ? { patient_id: _prePatientId } : {}),
       // invoice_number existant → le worker fera un PATCH au lieu d'un POST
       ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
-      // Drapeau FAB UNIQUEMENT : force N8N (bypass cache + circuit breaker)
-      // L'utilisateur a explicitement cliqué pour avoir une vraie correction IA.
-      ...(_viaFab ? { _force_n8n: true, _from_fab: true } : {}),
       // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
       preuve_soin: {
         type:         _preuveType,
@@ -1275,7 +1269,36 @@ async function _cotationPipeline() {
         certifie_ide: true,
         force_probante: _preuveForce,
       },
-    });
+    };
+
+    let d;
+    let _usedFallback = false;
+    try {
+      // 1ère tentative : force N8N (vraie IA)
+      d = await apiCall('/webhook/ami-calcul', {
+        ..._basePayload,
+        _force_n8n: true,
+        ...(_viaFab ? { _from_fab: true } : {}),
+      });
+      // Si le worker renvoie ok:false avec _force_n8n:true → c'est aussi un échec
+      if (d && d.ok === false && d._force_n8n) {
+        throw new Error(d.error || 'force_n8n_failed');
+      }
+    } catch (_n8nErr) {
+      const errMsg = _n8nErr?.message || '';
+      const is502 = /502|service.*indisponible|n8n.*indisponible|n8n_unavailable|force_n8n_failed/i.test(errMsg);
+      if (!is502) {
+        // Erreur autre que N8N down → propager
+        throw _n8nErr;
+      }
+      // N8N down : retry avec Smart Engine v8 + fallback worker
+      console.info('[cotation] N8N indisponible → bascule sur Smart Engine v8 (worker)');
+      _usedFallback = true;
+      d = await apiCall('/webhook/ami-calcul', _basePayload);
+      // Marqueur visuel discret pour informer l'utilisateur
+      d.alerts = d.alerts || [];
+      d.alerts.unshift('ℹ️ N8N (IA distante) temporairement indisponible — cotation calculée par le moteur Smart Engine v8 du serveur.');
+    }
     if (d.error) throw new Error(d.error);
 
     // ══ FALLBACK NGAP LOCAL ══
@@ -2360,6 +2383,12 @@ function _cotMinimalLocalCalc(codes, d) {
    ═══════════════════════════════════════════════════════════════════════════ */
 function _cotPrewarmN8N() {
   if (window._cotN8NPrewarmed) return;
+  // 🔒 Garde authentification : pas de prewarm tant que l'utilisateur n'est pas connecté.
+  // Sinon le worker renvoie 401 Unauthorized (pollution console + log admin).
+  if (!_cotIsAuthenticated()) {
+    // Réessayera au prochain navTo('cot') ou après login (auth-success event)
+    return;
+  }
   window._cotN8NPrewarmed = true;
   try {
     if (typeof apiCall !== 'function') return;
@@ -2383,6 +2412,8 @@ function _cotPrewarmN8N() {
    Une fois par session uniquement. */
 function _cotPrewarmN8N_FullPipeline() {
   if (window._cotN8NFullPrewarmed) return;
+  // 🔒 Idem : pas de prewarm si non authentifié
+  if (!_cotIsAuthenticated()) return;
   window._cotN8NFullPrewarmed = true;
   try {
     if (typeof apiCall !== 'function') return;
@@ -2397,6 +2428,44 @@ function _cotPrewarmN8N_FullPipeline() {
     });
     console.info('[cotation] Pré-warm N8N complet envoyé (pipeline IA)');
   } catch (_) {}
+}
+
+/* Détection robuste : l'utilisateur est-il connecté ?
+   Vérifie tous les indicateurs disponibles : token JWT, user en mémoire,
+   session storage, cookie. Tolérant aux variantes d'app. */
+function _cotIsAuthenticated() {
+  try {
+    // 1) Token JWT en mémoire
+    if (typeof window !== 'undefined') {
+      if (window.AUTH_TOKEN || window.JWT || window.SESSION_TOKEN) return true;
+      if (window.AMI_USER && (window.AMI_USER.id || window.AMI_USER.email)) return true;
+      if (window.currentUser && (window.currentUser.id || window.currentUser.email)) return true;
+    }
+    // 2) localStorage
+    if (typeof localStorage !== 'undefined') {
+      const keys = ['ami_token', 'auth_token', 'jwt', 'session_token', 'ami_session', 'ami_user'];
+      for (const k of keys) {
+        const v = localStorage.getItem(k);
+        if (v && v.length > 10) return true;
+      }
+    }
+    // 3) Présence du DOM "post-login" : la sidebar n'est visible qu'une fois loggué
+    if (typeof document !== 'undefined') {
+      // Si le formulaire de connexion est visible → pas connecté
+      const loginForm = document.getElementById('p-login') ||
+                        document.querySelector('[data-page="login"]') ||
+                        document.querySelector('.login-card');
+      if (loginForm && loginForm.offsetParent !== null) return false;
+      // Si la sidebar nav est visible → connecté
+      const nav = document.querySelector('.sidebar-nav') ||
+                  document.querySelector('#sidebar') ||
+                  document.querySelector('nav.main-nav');
+      if (nav && nav.offsetParent !== null) return true;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2428,22 +2497,55 @@ function _cotAutoFillDateHeure() {
 /* Hook sur navTo : déclencher le pré-warm dès qu'on entre sur la page cotation */
 if (typeof window !== 'undefined' && !window._cotPrewarmHookInstalled) {
   window._cotPrewarmHookInstalled = true;
-  // Si on ouvre directement sur 'cot' au chargement, prewarm dès maintenant
+  // ⚠️ Plus de pré-warm aveugle au DOMContentLoaded : le worker exige un token
+  // d'auth et renvoie 401 si l'utilisateur n'est pas encore connecté.
+  // Le prewarm est désormais conditionné par _cotIsAuthenticated() (côté
+  // _cotPrewarmN8N et _cotPrewarmN8N_FullPipeline) ET déclenché à 3 endroits :
+  //   1. Chargement direct sur la page cotation (URL = ?p=cot ou #cot)
+  //   2. Événement de login réussi (auth-success / ami:login)
+  //   3. Navigation vers la page cotation (hook navTo plus bas)
+
   try {
+    // 1) Chargement direct sur la page cotation
     if (typeof location !== 'undefined' && /[?&#]p=cot|#cot/.test(location.href)) {
-      setTimeout(_cotPrewarmN8N, 800);
-      setTimeout(_cotPrewarmN8N_FullPipeline, 1500);
+      // Délai plus long (3s) pour laisser le temps à l'auth de s'établir
+      setTimeout(_cotPrewarmN8N, 3000);
+      setTimeout(_cotPrewarmN8N_FullPipeline, 4500);
     }
   } catch (_) {}
-  // Pré-warm général au chargement de l'app (3s après DOMContentLoaded ou immédiat)
-  // pour que N8N soit déjà chaud quand l'utilisateur arrive sur la cotation.
+
   try {
-    const _doPrewarm = () => setTimeout(_cotPrewarmN8N, 3000);
+    // 2) Hook sur les événements de login — déclenche le prewarm dès que connecté
     if (typeof document !== 'undefined') {
+      const _onAuthSuccess = () => {
+        setTimeout(_cotPrewarmN8N, 1000);             // ping léger après login
+        setTimeout(_cotPrewarmN8N_FullPipeline, 3000); // pipeline complet 2s plus tard
+      };
+      // Plusieurs noms d'events possibles selon les versions de l'app
+      ['auth:success', 'ami:login', 'ami:auth-success', 'login:success', 'user:logged-in'].forEach(evt => {
+        document.addEventListener(evt, _onAuthSuccess, { once: false });
+      });
+    }
+  } catch (_) {}
+
+  try {
+    // 3) Polling léger : si déjà connecté quand cotation.js charge, déclencher
+    // après un court délai. Évite de manquer le prewarm si l'event login est
+    // émis avant que cotation.js soit prêt.
+    if (typeof document !== 'undefined') {
+      const _checkAndPrewarm = () => {
+        if (_cotIsAuthenticated()) {
+          _cotPrewarmN8N();
+          setTimeout(_cotPrewarmN8N_FullPipeline, 2000);
+        }
+      };
+      // 5s après DOMContentLoaded — laisse largement le temps à l'auth
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        _doPrewarm();
+        setTimeout(_checkAndPrewarm, 5000);
       } else {
-        document.addEventListener('DOMContentLoaded', _doPrewarm, { once: true });
+        document.addEventListener('DOMContentLoaded', () => {
+          setTimeout(_checkAndPrewarm, 5000);
+        }, { once: true });
       }
     }
   } catch (_) {}
@@ -2632,6 +2734,7 @@ if (typeof window !== 'undefined') {
   window._cotMinimalLocalCalc    = _cotMinimalLocalCalc;
   window._cotPrewarmN8N          = _cotPrewarmN8N;
   window._cotPrewarmN8N_FullPipeline = _cotPrewarmN8N_FullPipeline;
+  window._cotIsAuthenticated     = _cotIsAuthenticated;
   window._cotAutoFillDateHeure   = _cotAutoFillDateHeure;
   window.cotationLocaleNGAP      = cotationLocaleNGAP;
   // Bouton « Vérifier & corriger » (handlers inline du HTML)
