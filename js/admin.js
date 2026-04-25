@@ -42,12 +42,13 @@ function admTab(tab) {
   document.querySelectorAll('.adm-tab-section').forEach(sec => {
     sec.style.display = sec.dataset.tab === tab ? 'block' : 'none';
   });
-  if (tab === 'comptes')  { loadAdmComptes(); }
-  if (tab === 'stats')    { loadAdmStats(); }
-  if (tab === 'logs')     { loadAdmLogs(); }
-  if (tab === 'sante')    { loadSystemHealth(); }
-  if (tab === 'messages') { loadAdmMessages(); }
-  if (tab === 'ngap')     { if (typeof admNgapLoad === 'function') admNgapLoad(); }
+  if (tab === 'comptes')   { loadAdmComptes(); }
+  if (tab === 'stats')     { loadAdmStats(); }
+  if (tab === 'logs')      { loadAdmLogs(); }
+  if (tab === 'sante')     { loadSystemHealth(); }
+  if (tab === 'messages')  { loadAdmMessages(); }
+  if (tab === 'ngap')      { if (typeof admNgapLoad === 'function') admNgapLoad(); }
+  if (tab === 'incidents') { if (typeof loadAdmIncidents === 'function') loadAdmIncidents(); }
 }
 
 /* ════════════════════════════════════════════════

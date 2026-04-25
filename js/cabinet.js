@@ -818,7 +818,15 @@ async function cabinetPushSync() {
         const planPatients = typeof _loadPlanning === 'function'
           ? _loadPlanning()
           : null;
-        payload.data.planning = planPatients?.length ? planPatients : null;
+        // ⚡ Marquer chaque patient envoyé comme date verrouillée (_dateFixed: true).
+        //    Sans ça, un collègue qui reçoit pourrait re-stamper à SA date du jour si son
+        //    _savePlanning ne distingue pas une date "originale" d'une date "héritée".
+        const planSafe = planPatients?.length
+          ? planPatients.map(p => p && (p.date || p.date_soin || p.date_prevue)
+              ? { ...p, _dateFixed: true }
+              : p)
+          : null;
+        payload.data.planning = planSafe;
       } catch {}
     }
 
@@ -1158,17 +1166,29 @@ async function cabinetPullSync() {
       // ── Planning ─────────────────────────────────────────────────────
       if (item.what.includes('planning') && item.data?.planning) {
         try {
-          // Stocker le planning du collègue pour la vue cabinet (tournée combinée)
+          // 1) Stocker le planning du collègue pour la vue cabinet (tournée combinée)
+          //    On garde ce blob isolé par sender_id : pas de pollution du planning perso.
           localStorage.setItem(`ami_cabinet_planning_${item.sender_id}`, JSON.stringify(item.data.planning));
 
-          // ⚠️ FIX : si le planning local est vide, injecter directement dans _planningData
-          // pour que la vue "Planning hebdomadaire" se mette à jour sans rechargement
+          // 2) ⚠️ FIX : si le planning local est vide, injecter dans _planningData
+          //    pour que la vue "Planning hebdomadaire" se mette à jour sans rechargement.
+          //    Important : on PRÉSERVE les dates d'origine (envoyées par le collègue)
+          //    en marquant chaque patient comme _dateFixed=true → _savePlanning ne touche pas.
           const localPlan = typeof _loadPlanning === 'function' ? _loadPlanning() : null;
           if (!localPlan || !localPlan.length) {
-            const pts = Array.isArray(item.data.planning) ? item.data.planning : [];
+            const ptsRaw = Array.isArray(item.data.planning) ? item.data.planning : [];
+            // Marquer toutes les dates reçues comme verrouillées
+            const pts = ptsRaw.map(p => p && (p.date || p.date_soin || p.date_prevue)
+              ? { ...p, _dateFixed: true }
+              : p);
             if (pts.length) {
-              if (typeof _savePlanning === 'function') _savePlanning(pts);
-              if (window.APP) window.APP._planningData = { patients: pts, total: pts.length, source: 'cabinet_sync' };
+              // ⚡ _savePlanning retourne le tableau stampé — utiliser CE tableau pour
+              //    APP._planningData, sinon localStorage et mémoire divergent et au prochain
+              //    cycle de save les patients seraient re-stampés à la date du jour.
+              const stamped = (typeof _savePlanning === 'function')
+                ? (_savePlanning(pts) || pts)
+                : pts;
+              if (window.APP) window.APP._planningData = { patients: stamped, total: stamped.length, source: 'cabinet_sync' };
               if (typeof _renderPlanningIfVisible === 'function') _renderPlanningIfVisible();
             }
           }

@@ -1469,6 +1469,23 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   box-shadow:0 6px 32px rgba(0,212,170,.45) !important;
   transform:translateY(-2px) !important;
 }
+/* Bouton « Cotation rapide NGAP » — style violet distinct (mode local) */
+#btn-cot-local{
+  background:linear-gradient(135deg,#6366f1,#8b5cf6) !important;
+  color:#fff !important;
+  border:1px solid #6366f1 !important;
+  font-weight:600 !important;
+  padding:11px 20px !important;
+  box-shadow:0 4px 16px rgba(99,102,241,.25) !important;
+}
+#btn-cot-local:hover:not(:disabled){
+  box-shadow:0 6px 24px rgba(99,102,241,.4) !important;
+  transform:translateY(-2px) !important;
+  background:linear-gradient(135deg,#5558e3,#7c3aed) !important;
+}
+#btn-cot-local:active:not(:disabled){
+  transform:translateY(0) !important;
+}
 /* Mobile */
 @media(max-width:768px){
   .cot-section-icon{width:26px;height:26px;font-size:12px}
@@ -1476,4 +1493,5 @@ tbody tr:hover{background:var(--c)}tbody tr:last-child td{border-bottom:none}
   .cot-actions-bar{flex-direction:column}
   .cot-actions-bar .btn{width:100%;justify-content:center}
   .cot-btn-primary{font-size:14px !important;padding:12px 20px !important}
+  #btn-cot-local{font-size:13px !important;padding:11px 16px !important}
 }

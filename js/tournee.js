@@ -198,16 +198,33 @@ function _planningKey() {
 function _savePlanning(patients) {
   try {
     const key = _planningKey();
-    // ⚡ Fixer la date d'assignation sur chaque patient qui n'en a pas encore
-    // → sans ça, la date par défaut serait recalculée à chaque renderPlanning (= glissement quotidien)
-    const todayFixed = new Date().toISOString().split('T')[0];
-    const patientsWithDate = patients.map(p => {
-      if (p.date || p.date_soin || p.date_prevue) return p;
-      return { ...p, date: todayFixed, _dateFixed: true };
+    // ⚡ Date locale (pas UTC) pour le stamp — évite décalage timezone (lundi 23h FR ≠ mardi UTC)
+    const _now = new Date();
+    const todayFixed = [
+      _now.getFullYear(),
+      String(_now.getMonth() + 1).padStart(2, '0'),
+      String(_now.getDate()).padStart(2, '0'),
+    ].join('-');
+    // ⚡ Stamper la date d'assignation sur chaque patient sans date — JAMAIS écraser une date existante
+    // Sans ça, la date serait recalculée à chaque renderPlanning → glissement quotidien
+    const patientsWithDate = (patients || []).map(p => {
+      if (!p) return p;
+      // Date déjà présente → on la normalise au format YYYY-MM-DD si possible mais on la conserve
+      if (p.date || p.date_soin || p.date_prevue) {
+        // Marquer comme verrouillée pour empêcher tout futur écrasement
+        return { ...p, _dateFixed: true };
+      }
+      return { ...p, date: todayFixed, _dateFixed: true, _dateStampedAt: Date.now() };
     });
     const data = { patients: patientsWithDate, savedAt: Date.now() };
     localStorage.setItem(key, JSON.stringify(data));
-  } catch(e) { console.warn('[Planning] Save KO:', e.message); }
+    // ⚡ Retourner le tableau stampé pour que les appelants (sync serveur, render)
+    //    puissent utiliser les patients avec leurs dates verrouillées
+    return patientsWithDate;
+  } catch(e) {
+    console.warn('[Planning] Save KO:', e.message);
+    return patients;
+  }
 }
 
 function _loadPlanning() {
@@ -237,8 +254,17 @@ function _syncPlanningStorage() {
     || APP.importedData?.entries
     || [];
   if (patients.length) {
-    _savePlanning(patients);
-    _syncPlanningToServer(patients).catch(() => {});
+    // ⚡ FIX critique : _savePlanning() retourne le tableau STAMPÉ
+    //    (chaque patient sans date reçoit la date du jour + _dateFixed=true)
+    //    On envoie au serveur ces patients-LÀ, pas les bruts.
+    //    Sans ça, l'autre appareil pull les patients sans date et les re-stamp
+    //    à SA date du jour → glissement entre appareils.
+    const stamped = _savePlanning(patients) || patients;
+    // Mettre aussi APP._planningData en miroir pour cohérence mémoire
+    if (window.APP._planningData) {
+      window.APP._planningData.patients = stamped;
+    }
+    _syncPlanningToServer(stamped).catch(() => {});
   }
 }
 
@@ -246,7 +272,11 @@ function _syncPlanningStorage() {
    SYNC PLANNING HEBDOMADAIRE — navigateur ↔ mobile
    Blob AES-256 chiffré côté client — le worker stocke sans déchiffrer.
    Table weekly_planning : 1 ligne / infirmiere_id (upsert).
+   Protection concurrence : client_seen_updated_at envoyé pour éviter d'écraser
+   une version serveur plus récente (cas multi-appareils en édition simultanée).
 ════════════════════════════════════════════════════════════════════════ */
+let _lastSeenServerUpdatedAt = null; // mémorisé après chaque pull réussi
+
 async function _syncPlanningToServer(patients) {
   if (typeof S === 'undefined' || !S?.token) return;
   try {
@@ -256,7 +286,32 @@ async function _syncPlanningToServer(patients) {
     } else {
       encrypted_data = JSON.stringify(patients);
     }
-    await wpost('/webhook/planning-push', { encrypted_data, updated_at: new Date().toISOString() });
+    const now = new Date().toISOString();
+    const res = await wpost('/webhook/planning-push', {
+      encrypted_data,
+      updated_at: now,
+      // ⚡ Concurrence optimiste : on dit au serveur "je base mon push sur cette version"
+      //    Si entre-temps un autre appareil a pushé, le serveur renvoie 409 conflict.
+      client_seen_updated_at: _lastSeenServerUpdatedAt || null,
+    });
+    if (res?.ok && res?.updated_at) {
+      _lastSeenServerUpdatedAt = res.updated_at; // mettre à jour notre référence locale
+    } else if (res?.conflict) {
+      // ⚡ Conflit détecté : un autre appareil a modifié entre-temps.
+      //    On pull pour fusionner, puis re-tente le push automatiquement.
+      console.warn('[AMI] Planning push CONFLIT — pull puis retry automatique');
+      _lastSeenServerUpdatedAt = res.server_updated_at || null;
+      try { await _syncPlanningFromServer(); } catch {}
+      // Re-tenter une seule fois (pas de boucle infinie)
+      try {
+        const res2 = await wpost('/webhook/planning-push', {
+          encrypted_data,
+          updated_at: new Date().toISOString(),
+          client_seen_updated_at: _lastSeenServerUpdatedAt,
+        });
+        if (res2?.ok && res2?.updated_at) _lastSeenServerUpdatedAt = res2.updated_at;
+      } catch {}
+    }
   } catch (e) { console.warn('[AMI] Planning push KO (silencieux):', e.message); }
 }
 
@@ -271,6 +326,11 @@ async function _syncPlanningFromServer() {
     const res = await wpost('/webhook/planning-pull', {});
     if (!res?.ok || !res.data?.encrypted_data) return;
 
+    // ⚡ Mémoriser updated_at serveur : prochain push enverra cette valeur en
+    //    `client_seen_updated_at` → le serveur peut détecter un conflit si un
+    //    autre appareil a pushé entre notre pull et notre push.
+    if (res.data.updated_at) _lastSeenServerUpdatedAt = res.data.updated_at;
+
     let remote = null;
     try {
       if (typeof _dec === 'function') {
@@ -281,25 +341,39 @@ async function _syncPlanningFromServer() {
     } catch {}
     if (!Array.isArray(remote) || !remote.length) return;
 
+    // ⚡ Préserver les dates serveur : marquer chaque patient déjà daté comme verrouillé
+    //    pour empêcher _savePlanning de toucher à sa date.
+    //    Sans ça, un patient sans `_dateFixed` mais avec `date` reçue du serveur
+    //    serait re-stampé à la date du jour si le code de save changeait.
+    const remoteSafe = remote.map(p => {
+      if (!p) return p;
+      if (p.date || p.date_soin || p.date_prevue) {
+        return { ...p, _dateFixed: true };
+      }
+      return p; // _savePlanning stampera ces seuls patients sans date
+    });
+
     // Utiliser les données distantes seulement si le local est vide
     // (la version locale fait foi si elle existe — évite d'écraser un travail en cours)
     const localSaved = _loadPlanning();
     if (!localSaved || !localSaved.length) {
-      _savePlanning(remote);
-      window.APP._planningData = { patients: remote, total: remote.length, source: 'planning_serveur' };
+      const stamped = _savePlanning(remoteSafe) || remoteSafe;
+      window.APP._planningData = { patients: stamped, total: stamped.length, source: 'planning_serveur' };
       _renderPlanningIfVisible();
-      console.info('[AMI] Planning sync depuis serveur :', remote.length, 'patient(s)');
+      console.info('[AMI] Planning sync depuis serveur :', stamped.length, 'patient(s)');
     } else {
-      // Fusion : ajouter les entrées distantes absentes localement (par id)
+      // ⚡ Fusion : ajouter les entrées distantes absentes localement (par id),
+      //    en préservant scrupuleusement les dates des deux côtés.
+      //    Les patients locaux GARDENT leur date locale (jamais écrasée par le serveur).
       const localIds = new Set(localSaved.map(p => p.id || p.patient_id || ''));
-      const toAdd = remote.filter(p => {
+      const toAdd = remoteSafe.filter(p => {
         const pid = p.id || p.patient_id || '';
         return pid && !localIds.has(pid);
       });
       if (toAdd.length) {
         const merged = [...localSaved, ...toAdd];
-        _savePlanning(merged);
-        window.APP._planningData = { patients: merged, total: merged.length, source: 'planning_fusionné' };
+        const stamped = _savePlanning(merged) || merged;
+        window.APP._planningData = { patients: stamped, total: stamped.length, source: 'planning_fusionné' };
         _renderPlanningIfVisible();
         console.info('[AMI] Planning fusion :', toAdd.length, 'patient(s) ajouté(s) depuis le serveur');
       }
@@ -313,9 +387,12 @@ document.addEventListener('app:update', e => {
   const d = e.detail.value;
   if (d?.patients?.length || d?.entries?.length) {
     const pats = d.patients || d.entries;
-    // Maintenir _planningData en sync avec importedData
-    window.APP._planningData = { patients: pats, total: pats.length, source: 'import' };
-    _savePlanning(pats);
+    // ⚡ _savePlanning retourne le tableau stampé (date verrouillée) — on l'utilise pour
+    //    que _planningData en mémoire reflète exactement ce qui est dans localStorage.
+    //    Sans ça, les patients en mémoire restent sans date et au prochain cycle
+    //    de save (autre événement), ils seraient re-stampés à la nouvelle date du jour.
+    const stamped = _savePlanning(pats) || pats;
+    window.APP._planningData = { patients: stamped, total: stamped.length, source: 'import' };
   }
 });
 
@@ -641,21 +718,36 @@ async function renderPlanning(d){
   });
 
   // ── Filtrer par semaine affichée ──────────────────────────────────────────
+  // ⚡ Helper local : convertit YYYY-MM-DD en Date locale (pas UTC)
+  //    new Date('2025-04-25') donne 2025-04-25T00:00:00 UTC = 2025-04-24 22h en France été
+  //    → un patient stampé "2025-04-25" peut tomber dans la mauvaise semaine. Fix ci-dessous.
+  const _parseDateLocal = (dateStr) => {
+    if (!dateStr) return null;
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+      const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      return isNaN(dt) ? null : dt;
+    }
+    const dt = new Date(dateStr);
+    return isNaN(dt) ? null : dt;
+  };
+
   const weekStart = weekDates[0];
-  const weekEnd   = weekDates[6];
+  const weekEnd   = new Date(weekDates[6]);
+  weekEnd.setHours(23, 59, 59, 999); // inclure la fin du dimanche
+
   const patientsThisWeek = patients.filter(p => {
-    // ⚡ Si pas de date fixée → inclure dans la semaine courante uniquement
+    // ⚡ Patients sans date → uniquement visibles sur la semaine courante (zone "non planifiés")
+    //    Jamais sur une semaine passée/future, pour éviter qu'ils apparaissent partout.
     if (!p.date) return _planningWeekOffset === 0;
-    try {
-      const pd = new Date(p.date);
-      if (isNaN(pd)) return _planningWeekOffset === 0;
-      return pd >= weekStart && pd <= weekEnd;
-    } catch { return true; }
+    const pd = _parseDateLocal(p.date);
+    if (!pd) return _planningWeekOffset === 0;
+    return pd >= weekStart && pd <= weekEnd;
   });
-  // Si la semaine filtrée est vide et qu'on est sur la semaine courante → afficher tous
-  const patientsToShow = (patientsThisWeek.length === 0 && _planningWeekOffset === 0)
-    ? patients
-    : patientsThisWeek;
+  // ⚡ FIX : ne JAMAIS retomber sur "tous les patients" si la semaine filtrée est vide.
+  //    Ce fallback créait un effet "tous les patients sur la semaine courante" qui contredit
+  //    le principe "un patient reste sur son jour". Si rien ce semaine → on affiche rien.
+  const patientsToShow = patientsThisWeek;
 
   // ── Distribution par jour de la semaine ──────────────────────────────────
   const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
@@ -807,12 +899,29 @@ async function renderPlanning(d){
   // ── Rendu carte patient (solo) ────────────────────────────────────────────
   function renderPatientCard(p, ideColor) {
     const nom     = p._nomAff || [p.prenom, p.nom].filter(Boolean).join(' ') || 'Patient';
-    const date    = p.date || todayISO;
+    // ⚡ Date affichée : la VRAIE date du patient, jamais de fallback à aujourd'hui.
+    //    Si date absente → badge "Non daté" (signalement clair, pas de mensonge UI).
+    //    Cela permet à l'infirmière d'identifier visuellement les patients à dater.
+    const dateRaw = p.date || p.date_soin || p.date_prevue || null;
     let dateAff   = '';
-    try {
-      const d2 = new Date(date);
-      if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
-    } catch {}
+    let dateBadgeStyle = 'background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2)';
+    if (dateRaw) {
+      try {
+        // ⚡ Si la date est déjà au format 'YYYY-MM-DD', l'extraire directement
+        //    (évite décalage UTC : new Date('2025-04-25') donne 2025-04-24 23h dans certaines zones)
+        let d2;
+        if (typeof dateRaw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateRaw)) {
+          const [y, m, day] = dateRaw.slice(0, 10).split('-').map(Number);
+          d2 = new Date(y, m - 1, day);
+        } else {
+          d2 = new Date(dateRaw);
+        }
+        if (!isNaN(d2)) dateAff = d2.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+      } catch {}
+    } else {
+      dateAff = 'Non daté';
+      dateBadgeStyle = 'background:rgba(245,158,11,.08);color:#f59e0b;border:1px solid rgba(245,158,11,.25)';
+    }
     const heure   = p.heure_soin || p.heure_preferee || p.heure || '';
     const actes   = (p.actes_recurrents || '').trim();
     // ⚡ Utiliser _enrichSoinLabel pour que "Diabète" ou "HTA" bruts soient
@@ -839,7 +948,7 @@ async function renderPlanning(d){
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px;flex-wrap:wrap">
         <div style="font-size:13px;font-weight:600;color:var(--t);overflow-wrap:anywhere;word-break:break-word;flex:1;min-width:100px">${nom}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
-          <span style="font-size:10px;font-family:var(--fm);background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">${dateAff}</span>
+          <span title="${dateRaw ? 'Date assignée au planning' : 'Aucune date — réimportez ce patient pour le placer sur un jour'}" style="font-size:10px;font-family:var(--fm);${dateBadgeStyle};padding:1px 7px;border-radius:20px;white-space:nowrap">${dateAff}</span>
           ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">⏰ ${heure}</span>` : ''}
           ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px">✅</span>` : ''}
         </div>
@@ -988,7 +1097,16 @@ async function renderPlanning(d){
     function resolveJour(p) {
       if (p.date) {
         try {
-          const pd = new Date(p.date);
+          // ⚡ FIX : si la date est au format YYYY-MM-DD, on l'interprète en LOCAL
+          //         (pas UTC). Sans ça, '2025-04-25' devient le 24 à 23h en France hiver
+          //         → le patient apparaît le jeudi au lieu du vendredi.
+          let pd;
+          if (typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(p.date)) {
+            const [y, m, day] = p.date.slice(0, 10).split('-').map(Number);
+            pd = new Date(y, m - 1, day);
+          } else {
+            pd = new Date(p.date);
+          }
           if (!isNaN(pd)) {
             const nj = pd.toLocaleDateString('fr-FR', { weekday:'long' }).toLowerCase();
             return JOURS.find(jj => nj.startsWith(jj)) || null;
@@ -1313,10 +1431,11 @@ function _planningRemovePatient(idx) {
     APP.importedData.total = newArr.length;
   }
 
-  // Persister localement + serveur
+  // Persister localement + serveur — utiliser le tableau stampé pour le sync serveur
   if (newArr.length) {
-    _savePlanning(newArr);
-    _syncPlanningToServer(newArr).catch(() => {});
+    const stamped = _savePlanning(newArr) || newArr;
+    if (planData) planData.patients = stamped;
+    _syncPlanningToServer(stamped).catch(() => {});
   } else {
     // Plus aucun patient : vider complètement
     _clearPlanning();
@@ -1337,8 +1456,9 @@ window._planningReassignIDE = function(newIdeId, patientIdx) {
     || [];
   if (patientIdx < 0 || patientIdx >= arr.length) return;
   arr[patientIdx] = { ...arr[patientIdx], _assignedIdes: [newIdeId], _assignedIde: newIdeId };
-  _savePlanning(arr);
-  _syncPlanningToServer(arr).catch(() => {});
+  const stamped = _savePlanning(arr) || arr;
+  if (planData) planData.patients = stamped;
+  _syncPlanningToServer(stamped).catch(() => {});
   renderPlanning({}).catch(() => {});
 };
 
@@ -1378,8 +1498,9 @@ window._planningToggleIDE = function(ideId, patientIdx, checked) {
     _assignedIde:  ides[0],   // rétrocompat : champ singleton = premier IDE de la liste
   };
 
-  _savePlanning(arr);
-  _syncPlanningToServer(arr).catch(() => {});
+  const stamped = _savePlanning(arr) || arr;
+  if (planData) planData.patients = stamped;
+  _syncPlanningToServer(stamped).catch(() => {});
   renderPlanning({}).catch(() => {});
 };
 

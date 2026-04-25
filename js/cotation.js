@@ -1235,6 +1235,12 @@ async function _cotationPipeline() {
     // pas un fallback local.
     const _viaFab = !!window._cotFromReCoteFAB;
 
+    // ⚡ FORCE N8N par défaut sur le bouton « Coter avec l'IA »
+    // L'utilisateur clique sur un bouton qui dit « avec l'IA » → il VEUT N8N.
+    // Le mode « NGAP local » utilise un autre chemin (cotationLocaleNGAP).
+    // Bypass uniquement si la cotation est déclenchée en arrière-plan (sync, etc.)
+    const _forceN8N = !window._cotSkipForceN8N;
+
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: txt,
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
@@ -1254,7 +1260,8 @@ async function _cotationPipeline() {
       // invoice_number existant → le worker fera un PATCH au lieu d'un POST
       ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
       // Drapeau FAB : force N8N (bypass cache / circuit breaker / fallback worker)
-      ...(_viaFab ? { _force_n8n: true, _from_fab: true } : {}),
+      // OU : bouton « Coter avec l'IA » par défaut → forçage IA réelle
+      ...((_viaFab || _forceN8N) ? { _force_n8n: true, ...(_viaFab ? { _from_fab: true } : {}) } : {}),
       // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
       preuve_soin: {
         type:         _preuveType,
@@ -1540,14 +1547,100 @@ async function _cotationPipeline() {
     try { if (typeof _cotHideReCoteBar === 'function') _cotHideReCoteBar(); } catch (_) {}
     _clearSlowTimers();
     $('cerr').style.display = 'flex';
-    // Message plus clair pour timeout IA
-    const isSlowTimeout = e.message && e.message.includes("prend plus de temps");
-    $('cerr-m').textContent = isSlowTimeout
-      ? "⏱️ L'IA a mis trop de temps à répondre. La cotation a été estimée automatiquement ci-dessous."
-      : e.message;
+    // Message plus clair selon le type d'erreur
+    const msgRaw = e.message || '';
+    const isSlowTimeout = msgRaw.includes("prend plus de temps");
+    const is502N8N = /502|N8N|Service de v[eé]rification IA/i.test(msgRaw);
+    let userMsg = msgRaw;
+    if (isSlowTimeout) {
+      userMsg = "⏱️ L'IA a mis trop de temps à répondre. Réessayez ou utilisez « Cotation rapide NGAP » pour un calcul local immédiat.";
+    } else if (is502N8N) {
+      userMsg = "🤖 Service IA temporairement indisponible (cold-start ou erreur réseau). Réessayez dans 15-30s ou utilisez « Cotation rapide NGAP » pour un calcul local immédiat.";
+    }
+    $('cerr-m').innerHTML = userMsg + (
+      is502N8N || isSlowTimeout
+        ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+             <button class="btn bp bsm" onclick="cotation()">🔄 Réessayer N8N</button>
+             <button class="btn bs bsm" onclick="cotationLocaleNGAP()">⚡ Cotation locale NGAP</button>
+           </div>`
+        : ''
+    );
     $('res-cot').classList.add('show');
   }
   ld('btn-cot', false);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COTATION LOCALE NGAP : calcule directement avec _cotMinimalLocalCalc
+   sans appeler N8N. Utile quand le service IA est down ou pour gagner du
+   temps sur des cotations simples. Bouton dédié ajouté dans l'UI.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function cotationLocaleNGAP() {
+  const txt = (gv('f-txt') || '').trim();
+  if (!txt) { alert('Veuillez saisir une description.'); return; }
+  ld('btn-cot-local', true);
+  // Cacher l'erreur précédente s'il y en a une
+  const cerr = $('cerr'); if (cerr) cerr.style.display = 'none';
+  try {
+    // 1) Extraire les codes NGAP du textarea
+    const result = _cotMinimalLocalCalc(
+      _cotExtractCodesFromText(txt),
+      { part_amo: null, part_amc: null, part_patient: null }
+    );
+    if (!result || !result.actes || !result.actes.length) {
+      throw new Error('Aucun code NGAP reconnu dans la description. Essayez : "AMI 4 + MCI" ou cliquez sur « Coter avec l\'IA ».');
+    }
+    // 2) Composer l'objet d compatible avec renderCot
+    const d = {
+      actes:        result.actes,
+      total:        result.total,
+      part_amo:     result.part_amo,
+      part_amc:     result.part_amc,
+      part_patient: result.part_patient,
+      alerts:       ['ℹ️ Cotation calculée localement (mode NGAP rapide, sans IA) — utilisez « Coter avec l\'IA » pour la validation IA complète.'],
+      optimisations: [],
+      suggestions_optimisation: [],
+      _local_only:  true,
+      _ngap_version: (typeof _COT_NGAP_VERSION !== 'undefined' ? _COT_NGAP_VERSION : 'NGAP 2026'),
+    };
+    // 3) Render
+    renderCot(d);
+    if (typeof showToast === 'function') {
+      showToast(`✅ Cotation locale NGAP : ${result.total.toFixed(2)} €`, 'su');
+    }
+  } catch (e) {
+    if (cerr) {
+      cerr.style.display = 'flex';
+      $('cerr-m').textContent = e.message;
+      $('res-cot').classList.add('show');
+    } else {
+      alert(e.message);
+    }
+  } finally {
+    ld('btn-cot-local', false);
+  }
+}
+
+/* Helper : extrait les codes NGAP d'un texte au format attendu par
+   _cotMinimalLocalCalc, en utilisant _cotExtractNgapChips puis en décomposant
+   les chips combo (AMI4 + MCI → 2 codes séparés). */
+function _cotExtractCodesFromText(txt) {
+  const chips = (typeof _cotExtractNgapChips === 'function')
+    ? _cotExtractNgapChips(txt || '')
+    : [];
+  const codes = [];
+  for (const c of chips) {
+    const parts = c.insert.split(/\s*\+\s*/);
+    for (const p of parts) {
+      const m = p.match(/^([A-Z][A-Z_]*)\s*(\d+(?:[._/]\d+)*)?/i);
+      if (m) {
+        const lettre = m[1].toUpperCase();
+        const coef   = m[2] || '';
+        codes.push({ code: lettre + coef });
+      }
+    }
+  }
+  return codes;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2112,6 +2205,7 @@ if (typeof window !== 'undefined') {
   window._cotClickAppend         = _cotClickAppend;
   window._cotExtractNgapCodes    = _cotExtractNgapCodes;
   window._cotExtractNgapChips    = _cotExtractNgapChips;
+  window._cotExtractCodesFromText = _cotExtractCodesFromText;
   window._cotIsInfoSuggestion    = _cotIsInfoSuggestion;
   window._cotShowReCoteBar       = _cotShowReCoteBar;
   window._cotHideReCoteBar       = _cotHideReCoteBar;
@@ -2120,6 +2214,7 @@ if (typeof window !== 'undefined') {
   window._cotPrewarmN8N          = _cotPrewarmN8N;
   window._cotPrewarmN8N_FullPipeline = _cotPrewarmN8N_FullPipeline;
   window._cotAutoFillDateHeure   = _cotAutoFillDateHeure;
+  window.cotationLocaleNGAP      = cotationLocaleNGAP;
   // Bouton « Vérifier & corriger » (handlers inline du HTML)
   if (typeof openVerify       === 'function') window.openVerify       = openVerify;
   if (typeof applyVerify      === 'function') window.applyVerify      = applyVerify;

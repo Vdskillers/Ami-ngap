@@ -657,6 +657,224 @@ window.renderNGAPExplorer = function() {
       </details>`).join('');
   };
 
+  // ═══════════════════════════════════════════════════════════════
+  // GARDE-FOU AVENANT 11 — non opposable CPAM avant le 01/11/2026
+  // ───────────────────────────────────────────────────────────────
+  // Les nouveautés Avenant 11 (CIA/CIB, IDER, MSG/MSD/MIR, accès
+  // direct, revalorisations AMI 3,15→3,35→3,45 €, etc.) ne sont
+  // PAS opposables CPAM avant le 01/11/2026 (étape 1) et 01/11/2027
+  // (étape 2). On masque toutes les sections A11 dans l'explorateur
+  // tant qu'on n'a pas franchi cette date — même si les clés sont
+  // pushées dans le référentiel.
+  // ═══════════════════════════════════════════════════════════════
+  const _A11_ACTIVE_DATE = new Date('2026-11-01T00:00:00');
+  const _isA11Active = Date.now() >= _A11_ACTIVE_DATE.getTime();
+
+  // ═══════════════════════════════════════════════════════════════
+  // SECTIONS RÉFÉRENTIEL 2026.4 — IPA, ALD, PRADO, Note 5bis
+  // (clés natives du référentiel actuel — toujours affichées)
+  // ═══════════════════════════════════════════════════════════════
+
+  // 🎓 IPA — Forfaits Pratique Avancée (PAI 1.6 / PAI 3 / PAI 5 / PAI 6 / MIP)
+  const renderIPAForfaits = () => {
+    const fipa = ref.forfaits_ipa || {};
+    const ripa = ref.regles_ipa || {};
+    const entries = Object.entries(fipa);
+    if (entries.length === 0) return '';
+
+    const cards = entries.map(([key, v]) => {
+      const isMaj = (v.lettre_cle === 'MIP');
+      const color = isMaj ? '#f59e0b' : '#10b981';
+      const bgRgb = isMaj ? '245,158,11' : '16,185,129';
+      const icon  = isMaj ? '⏱️' : '🎓';
+      const tarif   = v.tarif != null ? `${_fmt(v.tarif)} €` : '—';
+      const tarifOm = v.tarif_om != null ? `${_fmt(v.tarif_om)} €` : '';
+      const coef    = v.coefficient != null ? ` <span style="font-family:var(--fm);font-size:10px;color:var(--m)">coef ${v.coefficient}</span>` : '';
+      const lcle    = v.lettre_cle ? `<code style="background:rgba(${bgRgb},.15);color:${color};padding:1px 6px;border-radius:4px;font-family:var(--fm);font-size:10px">${_esc(v.lettre_cle)}</code>` : '';
+
+      const details = [];
+      if (v.max_par_an)               details.push(`<div>📊 <strong>Max/an :</strong> ${_esc(v.max_par_an)}</div>`);
+      if (v.min_intervalle)           details.push(`<div>⏱️ <strong>Intervalle min :</strong> ${_esc(v.min_intervalle)}</div>`);
+      if (v.frequence)                details.push(`<div>🔄 <strong>Fréquence :</strong> ${_esc(v.frequence)}</div>`);
+      if (v.realisation)              details.push(`<div>📍 <strong>Réalisation :</strong> ${_esc(v.realisation)}</div>`);
+      if (v.conditions)               details.push(`<div>⚙️ <strong>Conditions :</strong> ${_esc(v.conditions)}</div>`);
+      if (v.compte_rendu_obligatoire) details.push(`<div>📝 <strong>Compte-rendu :</strong> obligatoire</div>`);
+      if (Array.isArray(v.cumulable_avec) && v.cumulable_avec.length)
+        details.push(`<div>✅ <strong>Cumulable avec :</strong> ${v.cumulable_avec.map(_esc).join(', ')}</div>`);
+      if (Array.isArray(v.non_cumulable_avec) && v.non_cumulable_avec.length)
+        details.push(`<div>🚫 <strong>Non cumulable avec :</strong> ${v.non_cumulable_avec.map(_esc).join(', ')}</div>`);
+      if (Array.isArray(v.non_cumulable_meme_jour) && v.non_cumulable_meme_jour.length)
+        details.push(`<div>🚫 <strong>Non cumul. même jour :</strong> ${v.non_cumulable_meme_jour.map(_esc).join(', ')}</div>`);
+      if (v.source) details.push(`<div style="margin-top:4px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(v.source)}</div>`);
+
+      return `
+        <div style="padding:10px 12px;background:var(--ad,#0f172a);border-left:3px solid ${color};border-radius:6px;margin-bottom:8px">
+          <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">
+            <span style="font-size:14px">${icon}</span>
+            <code style="background:rgba(${bgRgb},.15);color:${color};padding:2px 8px;border-radius:4px;font-family:var(--fm);font-size:12px;font-weight:700">${_esc(key)}</code>
+            ${lcle}${coef}
+            <span style="margin-left:auto;font-family:var(--fm);color:${color};font-size:13px;font-weight:700">${tarif}${tarifOm ? ` <span style="font-size:10px;color:var(--m);font-weight:400">/ DROM ${tarifOm}</span>` : ''}</span>
+          </div>
+          ${v.label ? `<div style="font-size:12px;color:var(--t);line-height:1.5;margin-bottom:6px">${_esc(v.label)}</div>` : ''}
+          ${details.length ? `<details><summary style="cursor:pointer;font-size:11px;color:var(--m)">⚙️ Détails (${details.length})</summary>
+            <div style="margin-top:6px;font-size:11px;color:var(--t);line-height:1.7">${details.join('')}</div>
+          </details>` : ''}
+        </div>`;
+    }).join('');
+
+    const reglesEntries = Object.entries(ripa).filter(([k]) => k !== 'source');
+    const reglesHtml = reglesEntries.length ? `
+      <details style="margin-top:10px;background:var(--ad,#0f172a);border-left:3px solid #10b981;border-radius:6px;padding:8px 12px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#10b981;letter-spacing:.3px">📜 Règles transversales IPA (${reglesEntries.length})</summary>
+        <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+          ${reglesEntries.map(([k, v]) =>
+            `<div style="margin-bottom:6px"><strong style="color:#10b981">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(v)}</div>`
+          ).join('')}
+          ${ripa.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(ripa.source)}</div>` : ''}
+        </div>
+      </details>` : '';
+
+    return `
+      <div style="padding:10px 12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);border-radius:8px;margin-bottom:10px;font-size:11px;color:#10b981;line-height:1.6">
+        <strong>ℹ️ Pratique Avancée</strong> (Décret IPA 2018-633 + Avenant 9, mars 2023) — Lettre-clé <code style="background:rgba(16,185,129,.15);padding:1px 5px;border-radius:3px;font-family:var(--fm)">PAI = 10 €</code> métropole / 10,50 € DROM. Réservé aux infirmières titulaires du diplôme d'État IPA.
+      </div>
+      ${cards}
+      ${reglesHtml}`;
+  };
+
+  // 🩺 ALD — Affections de Longue Durée (32 codes officiels)
+  const renderALD = () => {
+    const ald = ref.codes_ald || {};
+    const rald = ref.regles_ald || {};
+    const entries = Object.entries(ald);
+    if (entries.length === 0) return '';
+
+    const rows = entries.map(([code, v]) => {
+      const num = code.replace(/^ALD_/, '');
+      return `
+        <tr style="border-bottom:1px solid var(--b)">
+          <td style="padding:6px 8px;vertical-align:top;width:80px"><code style="background:rgba(168,85,247,.15);color:#a855f7;padding:2px 6px;border-radius:4px;font-family:var(--fm);font-size:11px;font-weight:700">ALD ${_esc(num)}</code></td>
+          <td style="padding:6px 8px;font-size:12px;color:var(--t);line-height:1.5">
+            <strong>${_esc(v.libelle_officiel || '—')}</strong>
+            ${v.note ? `<div style="font-size:10px;color:var(--m);margin-top:2px;font-style:italic">${_esc(v.note)}</div>` : ''}
+          </td>
+        </tr>`;
+    }).join('');
+
+    const reglesEntries = Object.entries(rald).filter(([k]) => k !== 'source');
+    const reglesHtml = reglesEntries.length ? `
+      <details open style="margin-bottom:10px;background:var(--ad,#0f172a);border-left:3px solid #a855f7;border-radius:6px;padding:8px 12px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#a855f7;letter-spacing:.3px">📜 Règles ALD (${reglesEntries.length})</summary>
+        <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+          ${reglesEntries.map(([k, v]) =>
+            `<div style="margin-bottom:6px"><strong style="color:#a855f7">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(v)}</div>`
+          ).join('')}
+          ${rald.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(rald.source)}</div>` : ''}
+        </div>
+      </details>` : '';
+
+    return `
+      <div style="padding:10px 12px;background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.2);border-radius:8px;margin-bottom:10px;font-size:11px;color:#a855f7;line-height:1.6">
+        <strong>ℹ️ ALD = Affection de Longue Durée</strong> — Liste officielle des 30 ALD exonérantes (Décret n° 2011-77 du 19/01/2011 + arrêtés). Tiers payant intégral 100 % AMO sur les soins en lien direct avec l'affection.
+      </div>
+      ${reglesHtml}
+      <div style="overflow-x:auto;max-height:400px;overflow-y:auto;border:1px solid var(--b);border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead style="position:sticky;top:0;background:var(--s);z-index:1">
+            <tr>
+              <th style="padding:8px;text-align:left;color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:.5px;border-bottom:1px solid var(--b)">CODE</th>
+              <th style="padding:8px;text-align:left;color:var(--a);font-family:var(--fm);font-size:10px;letter-spacing:.5px;border-bottom:1px solid var(--b)">LIBELLÉ OFFICIEL</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  };
+
+  // 🏥 PRADO — Programmes de Retour à Domicile (7 programmes CPAM)
+  const renderPRADO = () => {
+    const prado = ref.programmes_prado || {};
+    const rprado = ref.regles_prado || {};
+    const entries = Object.entries(prado);
+    if (entries.length === 0) return '';
+
+    const palette = {
+      PRADO_MATERNITE: '#ec4899', PRADO_CHIRURGIE: '#0891b2',
+      PRADO_INSUFFISANCE_CARDIAQUE: '#ef4444', PRADO_BPCO: '#06b6d4',
+      PRADO_AVC_AIT: '#a855f7', PRADO_PERSONNES_AGEES: '#f59e0b',
+      PRADO_CANCER: '#6366f1'
+    };
+
+    const cards = entries.map(([key, v]) => {
+      const color = palette[key] || '#4fa8ff';
+      const details = [];
+      if (v.indication)        details.push(`<div>🎯 <strong>Indication :</strong> ${_esc(v.indication)}</div>`);
+      if (v.cotations_idel)    details.push(`<div>💰 <strong>Cotations IDEL :</strong> <code style="background:rgba(0,212,170,.12);padding:1px 4px;border-radius:3px;font-family:var(--fm);font-size:10px">${_esc(v.cotations_idel)}</code></div>`);
+      if (v.duree_suivi)       details.push(`<div>⏱️ <strong>Durée suivi :</strong> ${_esc(v.duree_suivi)}</div>`);
+      if (v.frequence_visites) details.push(`<div>🔄 <strong>Fréquence :</strong> ${_esc(v.frequence_visites)}</div>`);
+      if (v.role_idel)         details.push(`<div>👩‍⚕️ <strong>Rôle IDEL :</strong> ${_esc(v.role_idel)}</div>`);
+      if (v.note)              details.push(`<div style="margin-top:4px;font-size:10px;color:var(--m);font-style:italic">📝 ${_esc(v.note)}</div>`);
+
+      return `
+        <div style="padding:10px 12px;background:var(--ad,#0f172a);border-left:3px solid ${color};border-radius:6px;margin-bottom:8px">
+          <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+            <span style="font-size:14px">🏥</span>
+            <strong style="color:${color};font-size:12px">${_esc(v.libelle_officiel || key)}</strong>
+            ${v.date_creation ? `<span style="margin-left:auto;font-family:var(--fm);font-size:10px;color:var(--m)">depuis ${v.date_creation}</span>` : ''}
+          </div>
+          ${details.length ? `<details><summary style="cursor:pointer;font-size:11px;color:var(--m);margin-top:4px">📋 Détails du programme</summary>
+            <div style="margin-top:6px;font-size:11px;color:var(--t);line-height:1.7;padding-left:8px">${details.join('')}</div>
+          </details>` : ''}
+        </div>`;
+    }).join('');
+
+    const reglesEntries = Object.entries(rprado).filter(([k]) => k !== 'source');
+    const reglesHtml = reglesEntries.length ? `
+      <details open style="margin-bottom:10px;background:var(--ad,#0f172a);border-left:3px solid #4fa8ff;border-radius:6px;padding:8px 12px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#4fa8ff;letter-spacing:.3px">📜 Règles communes PRADO (${reglesEntries.length})</summary>
+        <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+          ${reglesEntries.map(([k, v]) =>
+            `<div style="margin-bottom:6px"><strong style="color:#4fa8ff">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(v)}</div>`
+          ).join('')}
+          ${rprado.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(rprado.source)}</div>` : ''}
+        </div>
+      </details>` : '';
+
+    return `
+      <div style="padding:10px 12px;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:8px;margin-bottom:10px;font-size:11px;color:#4fa8ff;line-height:1.6">
+        <strong>ℹ️ PRADO = Programme de Retour À Domicile</strong> — Service Assurance Maladie. Inscription IDEL gratuite via le Conseiller Assurance Maladie (CAM). Patient désigne son IDEL en fin d'hospitalisation. Gratuit pour le patient.
+      </div>
+      ${reglesHtml}
+      ${cards}`;
+  };
+
+  // ⚖️ Article 5bis — Note dérogatoire majeure
+  const renderNote5bis = () => {
+    const note = ref.note_5bis;
+    if (!note) return '';
+    return `
+      <div style="padding:14px 16px;background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(0,212,170,.02));border:1px solid rgba(0,212,170,.3);border-left:3px solid #00d4aa;border-radius:8px">
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <span style="font-size:22px;flex-shrink:0">⚖️</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--fi);font-weight:700;color:#00d4aa;font-size:13px;margin-bottom:6px">
+              Article 5bis NGAP — Dérogation à l'article 11B
+            </div>
+            <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(note)}</div>
+            <div style="margin-top:8px;padding:6px 10px;background:rgba(245,158,11,.08);border-left:3px solid #f59e0b;border-radius:4px;font-size:11px;color:#f59e0b">
+              ⚠️ <strong>Cas particulier BSI :</strong> dès qu'un BSI entre dans la séance, l'article 11B s'applique (1<sup>er</sup> à 100 %, 2<sup>e</sup> à 50 %).
+            </div>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  // Compteurs sections natives 2026.4
+  const nbIPA   = Object.keys(ref.forfaits_ipa || {}).length;
+  const nbALD   = Object.keys(ref.codes_ald || {}).length;
+  const nbPRADO = Object.keys(ref.programmes_prado || {}).length;
+
+  // Compteurs sections Avenant 11 (gardés pour novembre 2026)
   const nbConsult = Object.keys(ref.consultations_infirmieres || {}).filter(k => (ref.consultations_infirmieres[k] || {}).code_facturation).length;
   const nbAstreintes = Object.keys(ref.indemnites_astreinte || {}).length;
 
@@ -668,7 +886,7 @@ window.renderNGAPExplorer = function() {
       <div style="font-size:11px;color:var(--m);margin-top:4px">Compilé le ${_esc(ref.date_compilation || '?')} · ${_esc(ref.source || '')}</div>
     </div>
 
-    ${avenant11Banner}
+    ${_isA11Active ? avenant11Banner : ''}
 
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn bs bsm" onclick="document.querySelectorAll('#ngap-explorer details').forEach(d=>d.open=true)" style="font-size:11px">↓ Tout déplier</button>
@@ -687,14 +905,19 @@ window.renderNGAPExplorer = function() {
     ${section('🩺', 'Règles CIR-9/2025 (perfusions)', '', cir9Html, false)}
     ${section('🚫', 'Incompatibilités (cumuls interdits)', nInc, incHtml, false)}
     ${section('✅', 'Dérogations (cumuls à taux plein)', nDer, derHtml, false)}
-    ${nbConsult ? section('🩺', 'Consultations infirmières (Avenant 11)', nbConsult, renderConsultations(), false) : ''}
-    ${ref.infirmier_referent_IDER ? section('👥', 'Infirmier Référent IDER (Avenant 11)', '', renderIDER(), false) : ''}
-    ${ref.ipa_pratique_avancee ? section('🎓', 'IPA — Pratique Avancée (Avenant 11)', '', renderIPA(), false) : ''}
-    ${nbAstreintes ? section('🚨', 'Astreintes PDSA (Avenant 11)', nbAstreintes, renderAstreintes(), false) : ''}
-    ${ref.depistage_cancer_colorectal ? section('🎯', 'Dépistage cancer colorectal (Avenant 11)', '', renderDepistage(), false) : ''}
-    ${ref.diabete_pediatrique_scolarise ? section('🍭', 'Diabète pédiatrique scolarisé (Avenant 11)', '', renderDiabetePedia(), false) : ''}
-    ${ref.acces_direct_sans_prescription ? section('🔓', 'Accès direct sans prescription (Loi 2025 + A11)', '', renderAccesDirect(), false) : ''}
-    ${ref.checklist_anti_audit_cpam ? section('🛡️', 'Checklist anti-audit CPAM', '', renderChecklist(), false) : ''}
+    ${ref.note_5bis ? section('⚖️', 'Article 5bis — Dérogation 11B', '', renderNote5bis(), false) : ''}
+    ${nbIPA   ? section('🎓', 'IPA — Forfaits Pratique Avancée', nbIPA,   renderIPAForfaits(), false) : ''}
+    ${nbALD   ? section('🩺', 'ALD — Affections Longue Durée',   nbALD,   renderALD(),         false) : ''}
+    ${nbPRADO ? section('🏥', 'PRADO — Retour à domicile',       nbPRADO, renderPRADO(),       false) : ''}
+
+    ${_isA11Active && nbConsult ? section('🩺', 'Consultations infirmières (Avenant 11)', nbConsult, renderConsultations(), false) : ''}
+    ${_isA11Active && ref.infirmier_referent_IDER ? section('👥', 'Infirmier Référent IDER (Avenant 11)', '', renderIDER(), false) : ''}
+    ${_isA11Active && ref.ipa_pratique_avancee ? section('🎓', 'IPA — Pratique Avancée (Avenant 11)', '', renderIPA(), false) : ''}
+    ${_isA11Active && nbAstreintes ? section('🚨', 'Astreintes PDSA (Avenant 11)', nbAstreintes, renderAstreintes(), false) : ''}
+    ${_isA11Active && ref.depistage_cancer_colorectal ? section('🎯', 'Dépistage cancer colorectal (Avenant 11)', '', renderDepistage(), false) : ''}
+    ${_isA11Active && ref.diabete_pediatrique_scolarise ? section('🍭', 'Diabète pédiatrique scolarisé (Avenant 11)', '', renderDiabetePedia(), false) : ''}
+    ${_isA11Active && ref.acces_direct_sans_prescription ? section('🔓', 'Accès direct sans prescription (Loi 2025 + A11)', '', renderAccesDirect(), false) : ''}
+    ${_isA11Active && ref.checklist_anti_audit_cpam ? section('🛡️', 'Checklist anti-audit CPAM', '', renderChecklist(), false) : ''}
   `;
 };
 
@@ -736,6 +959,6 @@ document.addEventListener('ngap:ref_updated', (e) => {
   setTimeout(_init, 50);
 });
 
-console.info('[NGAP-Explorer] v1.1-avenant11 prêt — renderNGAPSearch, validateNGAPCumul, renderNGAPExplorer exposés.');
+console.info('[NGAP-Explorer] v1.2-ref2026.4 prêt — sections natives : IPA(forfaits_ipa) · ALD(codes_ald) · PRADO(programmes_prado) · Article 5bis · sections Avenant 11 masquées jusqu\'au 01/11/2026.');
 
 })();

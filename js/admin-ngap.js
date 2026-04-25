@@ -128,12 +128,17 @@ function _render() {
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:20px">
       ${_kpiCard('🔑','Lettres-clés', Object.keys(_NG.edit.lettres_cles||{}).length)}
       ${_kpiCard('💰','Forfaits BSI', Object.keys(_NG.edit.forfaits_bsi||{}).length)}
+      ${_kpiCard('📊','Forfaits DI',  Object.keys(_NG.edit.forfaits_di||{}).length)}
       ${_kpiCard('🚗','Déplacements', Object.keys(_NG.edit.deplacements||{}).length)}
       ${_kpiCard('⏱️','Majorations', Object.keys(_NG.edit.majorations||{}).length)}
+      ${_kpiCard('📞','Télésoin',    Object.keys(_NG.edit.telesoin||{}).length)}
       ${_kpiCard('📋','Actes chap. I', nbActes1)}
       ${_kpiCard('📋','Actes chap. II', nbActes2)}
       ${_kpiCard('🚫','Incompatibilités', nbIncomp)}
       ${_kpiCard('✅','Dérogations', nbDerog)}
+      ${_kpiCard('🎓','Forfaits IPA',  Object.keys(_NG.edit.forfaits_ipa||{}).length)}
+      ${_kpiCard('🩺','Codes ALD',     Object.keys(_NG.edit.codes_ald||{}).length)}
+      ${_kpiCard('🏥','Programmes PRADO', Object.keys(_NG.edit.programmes_prado||{}).length)}
     </div>
 
     <!-- ══ BLOC 1 : TARIFS ══ -->
@@ -156,6 +161,30 @@ function _render() {
     ${_blockHeader('🔗 Dérogations taux plein', 'Cumuls autorisés à 100 % malgré l’article 11B')}
     <div id="adm-ngap-b3" style="margin-bottom:26px">
       ${_renderDerogations()}
+    </div>
+
+    <!-- ══ BLOC 4 : FORFAITS IPA (Pratique Avancée) ══ -->
+    ${_blockHeader('🎓 Forfaits IPA — Pratique Avancée', 'PAI 1.6, PAI 3, PAI 5, PAI 6 + Majoration MIP (Avenant 9 — mars 2023)')}
+    <div id="adm-ngap-b4" style="margin-bottom:26px">
+      ${_renderForfaitsIPA()}
+    </div>
+
+    <!-- ══ BLOC 5 : CODES ALD (Affections Longue Durée) ══ -->
+    ${_blockHeader('🩺 Codes ALD — Affections Longue Durée', '32 ALD officielles (Décret n° 2011-77 + arrêtés). Lecture seule — référentiel CPAM.')}
+    <div id="adm-ngap-b5" style="margin-bottom:26px">
+      ${_renderCodesALD()}
+    </div>
+
+    <!-- ══ BLOC 6 : PROGRAMMES PRADO ══ -->
+    ${_blockHeader('🏥 Programmes PRADO — Retour à domicile', '7 programmes CPAM (Maternité, Chirurgie, IC, BPCO, AVC/AIT, Personnes âgées, Cancer)')}
+    <div id="adm-ngap-b6" style="margin-bottom:26px">
+      ${_renderProgrammesPRADO()}
+    </div>
+
+    <!-- ══ BLOC 7 : RÈGLES DOCUMENTAIRES (Article 11B, CIR-9, Note 5bis, etc.) ══ -->
+    ${_blockHeader('📜 Règles documentaires', 'Article 11B, CIR-9/2025, Note 5bis, règles IPA/ALD/PRADO — utilisées par le moteur, lecture seule.')}
+    <div id="adm-ngap-b7" style="margin-bottom:26px">
+      ${_renderReglesDocs()}
     </div>
 
     <!-- Footer sécurité -->
@@ -332,6 +361,255 @@ function _renderActesTable(filter) {
   </table>`;
 }
 
+/* ── Rendu Forfaits IPA (Pratique Avancée) ─────────────────── */
+function _renderForfaitsIPA() {
+  const fipa = _NG.edit.forfaits_ipa || {};
+  const ripa = _NG.edit.regles_ipa || {};
+  const entries = Object.entries(fipa);
+  if (entries.length === 0) {
+    return `<div class="empty" style="padding:20px;text-align:center;color:var(--m);font-size:12px">
+      Aucun forfait IPA dans le référentiel actuel.
+    </div>`;
+  }
+
+  const rows = entries.map(([code, obj]) => {
+    const isMaj = (obj.lettre_cle === 'MIP');
+    const tag = isMaj
+      ? `<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(245,158,11,.15);color:#f59e0b;font-family:var(--fm);font-size:10px;font-weight:600">MAJ</span>`
+      : `<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(16,185,129,.15);color:#10b981;font-family:var(--fm);font-size:10px;font-weight:600">FORF</span>`;
+    return `<tr style="border-bottom:1px solid var(--b)">
+      <td style="padding:4px 8px;font-family:var(--fm);color:var(--a);font-weight:600">${_esc(code)} ${tag}</td>
+      <td style="padding:4px 8px;font-size:11px;color:var(--t);max-width:340px">${_esc(obj.label || '')}</td>
+      <td style="padding:4px 8px;font-family:var(--fm);font-size:11px;color:var(--m);text-align:center">${obj.coefficient != null ? obj.coefficient : '—'}</td>
+      <td style="padding:4px 8px"><input type="number" step="0.01" min="0" value="${obj.tarif||0}" onchange="admNgapEditIPA('${_esc(code)}','tarif',this.value)" style="width:80px;padding:4px 6px;background:var(--s);border:1px solid var(--b);border-radius:6px;color:var(--t);font-family:var(--fm);font-size:12px"></td>
+      <td style="padding:4px 8px"><input type="number" step="0.01" min="0" value="${obj.tarif_om||0}" onchange="admNgapEditIPA('${_esc(code)}','tarif_om',this.value)" style="width:80px;padding:4px 6px;background:var(--s);border:1px solid var(--b);border-radius:6px;color:var(--t);font-family:var(--fm);font-size:12px"></td>
+    </tr>`;
+  }).join('');
+
+  // Aperçu règles (lecture seule)
+  const reglesEntries = Object.entries(ripa).filter(([k]) => k !== 'source');
+  const reglesHtml = reglesEntries.length ? `
+    <details style="margin-top:10px;background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px 12px">
+      <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#10b981;letter-spacing:.3px">📜 Règles IPA (${reglesEntries.length}) — utilisées par le moteur</summary>
+      <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+        ${reglesEntries.map(([k, v]) => `<div style="margin-bottom:6px"><strong style="color:#10b981">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(v)}</div>`).join('')}
+        ${ripa.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(ripa.source)}</div>` : ''}
+      </div>
+    </details>` : '';
+
+  return `
+    <div style="background:var(--bg,#0a0e1a);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px">
+        <span>FORFAITS IPA (${entries.length})</span>
+        <span style="color:#10b981">PAI = 10 € métropole / 10,50 € DROM</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead style="background:var(--s)"><tr style="text-align:left">
+            <th style="padding:6px 8px;font-family:var(--fm);color:var(--m);font-weight:500">Code</th>
+            <th style="padding:6px 8px;font-family:var(--fm);color:var(--m);font-weight:500">Libellé</th>
+            <th style="padding:6px 8px;font-family:var(--fm);color:var(--m);font-weight:500;text-align:center">Coef</th>
+            <th style="padding:6px 8px;font-family:var(--fm);color:var(--m);font-weight:500">Tarif €</th>
+            <th style="padding:6px 8px;font-family:var(--fm);color:var(--m);font-weight:500">Tarif OM €</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${reglesHtml}
+    </div>`;
+}
+
+/* ── Rendu Codes ALD (lecture seule) ─────────────────── */
+function _renderCodesALD() {
+  const ald = _NG.edit.codes_ald || {};
+  const rald = _NG.edit.regles_ald || {};
+  const entries = Object.entries(ald);
+  if (entries.length === 0) {
+    return `<div class="empty" style="padding:20px;text-align:center;color:var(--m);font-size:12px">
+      Aucun code ALD dans le référentiel actuel.
+    </div>`;
+  }
+
+  const rows = entries.map(([code, v]) => {
+    const num = code.replace(/^ALD_/, '');
+    return `<tr style="border-bottom:1px solid var(--b)">
+      <td style="padding:6px 8px;vertical-align:top;width:90px">
+        <code style="background:rgba(168,85,247,.15);color:#a855f7;padding:2px 6px;border-radius:4px;font-family:var(--fm);font-size:11px;font-weight:700">ALD ${_esc(num)}</code>
+      </td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--t);line-height:1.5">
+        <strong>${_esc(v.libelle_officiel || '—')}</strong>
+        ${v.note ? `<div style="font-size:10px;color:var(--m);margin-top:2px;font-style:italic">${_esc(v.note)}</div>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const reglesEntries = Object.entries(rald).filter(([k]) => k !== 'source');
+  const reglesHtml = reglesEntries.length ? `
+    <details open style="margin-bottom:12px;background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px 12px">
+      <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#a855f7;letter-spacing:.3px">📜 Règles ALD (${reglesEntries.length})</summary>
+      <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+        ${reglesEntries.map(([k, v]) => `<div style="margin-bottom:6px"><strong style="color:#a855f7">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(v)}</div>`).join('')}
+        ${rald.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(rald.source)}</div>` : ''}
+      </div>
+    </details>` : '';
+
+  return `
+    <div style="background:var(--bg,#0a0e1a);border:1px solid var(--b);border-radius:10px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px">
+        <span>${entries.length} CODES ALD</span>
+        <span style="color:#a855f7">Tiers payant intégral 100 % AMO</span>
+      </div>
+      ${reglesHtml}
+      <div style="overflow-x:auto;max-height:400px;overflow-y:auto;border:1px solid var(--b);border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead style="position:sticky;top:0;background:var(--s);z-index:1"><tr>
+            <th style="padding:8px;text-align:left;color:var(--m);font-family:var(--fm);font-size:10px;letter-spacing:.5px;border-bottom:1px solid var(--b)">CODE</th>
+            <th style="padding:8px;text-align:left;color:var(--m);font-family:var(--fm);font-size:10px;letter-spacing:.5px;border-bottom:1px solid var(--b)">LIBELLÉ OFFICIEL</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/* ── Rendu Programmes PRADO (lecture seule) ─────────────────── */
+function _renderProgrammesPRADO() {
+  const prado = _NG.edit.programmes_prado || {};
+  const rprado = _NG.edit.regles_prado || {};
+  const entries = Object.entries(prado);
+  if (entries.length === 0) {
+    return `<div class="empty" style="padding:20px;text-align:center;color:var(--m);font-size:12px">
+      Aucun programme PRADO dans le référentiel actuel.
+    </div>`;
+  }
+
+  const palette = {
+    PRADO_MATERNITE: '#ec4899', PRADO_CHIRURGIE: '#0891b2',
+    PRADO_INSUFFISANCE_CARDIAQUE: '#ef4444', PRADO_BPCO: '#06b6d4',
+    PRADO_AVC_AIT: '#a855f7', PRADO_PERSONNES_AGEES: '#f59e0b',
+    PRADO_CANCER: '#6366f1'
+  };
+
+  const cards = entries.map(([key, v]) => {
+    const color = palette[key] || '#4fa8ff';
+    const details = [];
+    if (v.indication)        details.push(`<div>🎯 <strong>Indication :</strong> ${_esc(v.indication)}</div>`);
+    if (v.cotations_idel)    details.push(`<div>💰 <strong>Cotations IDEL :</strong> <code style="background:rgba(0,212,170,.12);padding:1px 4px;border-radius:3px;font-family:var(--fm);font-size:10px">${_esc(v.cotations_idel)}</code></div>`);
+    if (v.duree_suivi)       details.push(`<div>⏱️ <strong>Durée suivi :</strong> ${_esc(v.duree_suivi)}</div>`);
+    if (v.frequence_visites) details.push(`<div>🔄 <strong>Fréquence :</strong> ${_esc(v.frequence_visites)}</div>`);
+    if (v.role_idel)         details.push(`<div>👩‍⚕️ <strong>Rôle IDEL :</strong> ${_esc(v.role_idel)}</div>`);
+    if (v.note)              details.push(`<div style="margin-top:4px;font-size:10px;color:var(--m);font-style:italic">📝 ${_esc(v.note)}</div>`);
+
+    return `
+      <div style="padding:10px 12px;background:var(--s);border-left:3px solid ${color};border-radius:6px;margin-bottom:8px">
+        <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+          <span style="font-size:14px">🏥</span>
+          <strong style="color:${color};font-size:12px">${_esc(v.libelle_officiel || key)}</strong>
+          ${v.date_creation ? `<span style="margin-left:auto;font-family:var(--fm);font-size:10px;color:var(--m)">depuis ${v.date_creation}</span>` : ''}
+        </div>
+        ${details.length ? `<details><summary style="cursor:pointer;font-size:11px;color:var(--m)">📋 Détails</summary>
+          <div style="margin-top:6px;font-size:11px;color:var(--t);line-height:1.7;padding-left:8px">${details.join('')}</div>
+        </details>` : ''}
+      </div>`;
+  }).join('');
+
+  const reglesEntries = Object.entries(rprado).filter(([k]) => k !== 'source');
+  const reglesHtml = reglesEntries.length ? `
+    <details open style="margin-bottom:12px;background:var(--bg,#0a0e1a);border:1px solid var(--b);border-radius:8px;padding:10px 12px">
+      <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#4fa8ff;letter-spacing:.3px">📜 Règles communes PRADO (${reglesEntries.length})</summary>
+      <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+        ${reglesEntries.map(([k, v]) => `<div style="margin-bottom:6px"><strong style="color:#4fa8ff">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(v)}</div>`).join('')}
+        ${rprado.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(rprado.source)}</div>` : ''}
+      </div>
+    </details>` : '';
+
+  return `
+    <div style="background:var(--bg,#0a0e1a);border:1px solid var(--b);border-radius:10px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px">
+        <span>${entries.length} PROGRAMMES PRADO</span>
+        <span style="color:#4fa8ff">Inscription IDEL gratuite via CAM</span>
+      </div>
+      ${reglesHtml}
+      ${cards}
+    </div>`;
+}
+
+/* ── Rendu Règles documentaires (Article 11B, CIR-9, Note 5bis…) ─────────────────── */
+function _renderReglesDocs() {
+  const ed = _NG.edit;
+  const blocks = [];
+
+  // Article 5bis (note dérogatoire majeure)
+  if (ed.note_5bis) {
+    blocks.push(`
+      <div style="padding:12px 14px;background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(0,212,170,.02));border:1px solid rgba(0,212,170,.3);border-left:3px solid #00d4aa;border-radius:8px;margin-bottom:10px">
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <span style="font-size:20px;flex-shrink:0">⚖️</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--fi);font-weight:700;color:#00d4aa;font-size:12px;margin-bottom:4px">Article 5bis NGAP</div>
+            <div style="font-size:11px;color:var(--t);line-height:1.6">${_esc(ed.note_5bis)}</div>
+          </div>
+        </div>
+      </div>`);
+  }
+
+  // Règles article 11B
+  if (ed.regles_article_11B) {
+    const r = ed.regles_article_11B;
+    const items = Object.entries(r).filter(([k]) => k !== 'source');
+    blocks.push(`
+      <details style="margin-bottom:8px;background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#f59e0b;letter-spacing:.3px">⚖️ Article 11B — Règle de coefficient (${items.length})</summary>
+        <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+          ${items.map(([k, v]) => `<div style="margin-bottom:6px"><strong style="color:#f59e0b">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}</div>`).join('')}
+          ${r.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(r.source)}</div>` : ''}
+        </div>
+      </details>`);
+  }
+
+  // Règles CIR-9/2025 (perfusions)
+  if (ed.regles_cir9_2025) {
+    const r = ed.regles_cir9_2025;
+    const items = Object.entries(r).filter(([k]) => k !== 'source');
+    blocks.push(`
+      <details style="margin-bottom:8px;background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#0891b2;letter-spacing:.3px">🩺 CIR-9/2025 — Règles perfusions (${items.length})</summary>
+        <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+          ${items.map(([k, v]) => `<div style="margin-bottom:6px"><strong style="color:#0891b2">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}</div>`).join('')}
+          ${r.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(r.source)}</div>` : ''}
+        </div>
+      </details>`);
+  }
+
+  // Plafonnement IK
+  if (ed.ik_plafonnement) {
+    const r = ed.ik_plafonnement;
+    const items = Object.entries(r).filter(([k]) => k !== 'source');
+    blocks.push(`
+      <details style="margin-bottom:8px;background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:#a78bfa;letter-spacing:.3px">🚗 Plafonnement IK (${items.length})</summary>
+        <div style="margin-top:8px;font-size:11px;color:var(--t);line-height:1.7">
+          ${items.map(([k, v]) => `<div style="margin-bottom:6px"><strong style="color:#a78bfa">${_esc(k.replace(/_/g, ' '))} :</strong> ${_esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}</div>`).join('')}
+          ${r.source ? `<div style="margin-top:6px;font-size:10px;color:var(--m);font-style:italic">📚 ${_esc(r.source)}</div>` : ''}
+        </div>
+      </details>`);
+  }
+
+  if (blocks.length === 0) {
+    return `<div class="empty" style="padding:20px;text-align:center;color:var(--m);font-size:12px">
+      Aucune règle documentaire dans le référentiel actuel.
+    </div>`;
+  }
+
+  return `
+    <div style="background:var(--bg,#0a0e1a);border:1px solid var(--b);border-radius:10px;padding:14px">
+      <div style="margin-bottom:10px;font-family:var(--fm);font-size:11px;color:var(--m);letter-spacing:.5px">
+        ${blocks.length} BLOC${blocks.length > 1 ? 'S' : ''} DE RÈGLES — APPLIQUÉES PAR LE MOTEUR
+      </div>
+      ${blocks.join('')}
+    </div>`;
+}
+
 /* ── Rendu Incompatibilités ─────────────────── */
 function _renderIncompatibilites() {
   const list = _NG.edit.incompatibilites || [];
@@ -479,6 +757,11 @@ window.admNgapEditDeplacement = function(code, field, val) {
 window.admNgapEditMaj = function(code, field, val) {
   if (!_NG.edit.majorations[code]) return;
   _NG.edit.majorations[code][field] = _num(val);
+  _refreshHeader();
+};
+window.admNgapEditIPA = function(code, field, val) {
+  if (!_NG.edit.forfaits_ipa || !_NG.edit.forfaits_ipa[code]) return;
+  _NG.edit.forfaits_ipa[code][field] = _num(val);
   _refreshHeader();
 };
 window.admNgapEditActe = function(chap, idx, field, val) {
