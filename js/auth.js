@@ -236,20 +236,6 @@ function showApp(){
           const btn = mobileGrid.querySelector(`.bn-item[data-v="${v}"]`);
           if(btn) btn.classList.remove('nurse-only');
         });
-
-        // Injecter bouton Cabinet mobile si absent (admin se connecte en premier)
-        if (!document.getElementById('btn-cabinet-mobile')) {
-          const btnCabM = document.createElement('button');
-          btnCabM.id = 'btn-cabinet-mobile';
-          btnCabM.className = 'bn-item';
-          btnCabM.style.cssText = 'background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none';
-          btnCabM.innerHTML = '<span class="bn-ic">🏥</span>Cabinet';
-          btnCabM.setAttribute('data-v', 'cabinet');
-          btnCabM.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', null); if (typeof toggleMobileMenu === 'function') toggleMobileMenu(); };
-          const btnQuitter2 = mobileGrid.querySelector('[onclick*="logout"]');
-          if (btnQuitter2) mobileGrid.insertBefore(btnCabM, btnQuitter2);
-          else mobileGrid.appendChild(btnCabM);
-        }
       };
       setTimeout(_injectAdminMobile, 200);
     }
@@ -274,25 +260,8 @@ function showApp(){
 
     // ── Le lien cabinet est dans le HTML statique (section Système)
     // Il est nurse-only donc visible automatiquement côté infirmière ──
-
-    // ── Injecter "Cabinet" dans le menu mobile Plus (une seule fois) ──
-    const _injectCabinetMobile = () => {
-      if (document.getElementById('btn-cabinet-mobile')) return;
-      const mobileGrid = document.querySelector('#mobile-menu > div');
-      if (!mobileGrid) { setTimeout(_injectCabinetMobile, 200); return; }
-      const btnCab = document.createElement('button');
-      btnCab.id = 'btn-cabinet-mobile';
-      btnCab.className = 'bn-item nurse-only';
-      btnCab.style.cssText = 'background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none';
-      btnCab.innerHTML = '<span class="bn-ic">🏥</span>Cabinet';
-      btnCab.setAttribute('data-v', 'cabinet');
-      btnCab.onclick = () => { if (typeof navTo === 'function') navTo('cabinet', null); if (typeof toggleMobileMenu === 'function') toggleMobileMenu(); };
-      // Insérer avant le bouton "Quitter"
-      const btnQuitter = mobileGrid.querySelector('[onclick*="logout"]');
-      if (btnQuitter) mobileGrid.insertBefore(btnCab, btnQuitter);
-      else mobileGrid.appendChild(btnCab);
-    };
-    setTimeout(_injectCabinetMobile, 250);
+    // ── Le bouton Cabinet du menu mobile est aussi dans le HTML statique
+    // (data-v="cabinet" nurse-only) — plus besoin d'injection dynamique ──
   }
 
   // Correction Leaflet après changement de layout
