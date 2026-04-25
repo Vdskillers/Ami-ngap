@@ -290,17 +290,7 @@ Fichier : `worker.js` (~10 000 lignes)
 - `isHallucination(data)` — détection IA hallucinée
 - `parseAIResponse(raw)` — parser universel (GPT/Grok/Claude)
 
-### Constantes critiques
-```js
-SUPA_URL              = 'https://ycsprblaruusaegohcid.supabase.co/rest/v1'
-N8N_URL               = 'https://n8n-6fyl.onrender.com'
-ADMIN_EMAILS          = ['vdskillers@hotmail.com', 'julien.bonomelli@gmail.com']
-NGAP_VERSION_CURRENT  = '2026.1'  // référence backend (frontend = 2026.4)
-N8N_TIMEOUT_MS        = 50000
-PBKDF2_ITERATIONS     = 600000
-```
 
----
 
 ## 6. Workflows N8N
 
