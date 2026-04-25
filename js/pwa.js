@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════
-   pwa.js — AMI NGAP v1.0
+   pwa.js — AMI NGAP v2.0
    ────────────────────────────────────────────────
    PWA : Service Worker + Install + Offline UX
    + Cartes offline (tiles téléchargées)
