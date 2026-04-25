@@ -596,7 +596,7 @@
           <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit"> 🌙 Nuit (20h–23h)</label>
           <label class="lp-sim-tg"><input type="checkbox" id="sim-nuit2"> 🌘 Nuit profonde (23h–5h)</label>
           <label class="lp-sim-tg"><input type="checkbox" id="sim-dim"> 🗓 Dimanche / férié</label>
-          <label class="lp-sim-tg">📍 Distance : <input type="number" id="sim-km" value="5" min="0" max="80" step="1"> km</label>
+          <label class="lp-sim-tg">📍 Distance : <input type="number" id="lp-sim-km" value="5" min="0" max="80" step="1"> km</label>
         </div>
 
         <button type="button" class="lp-sim-btn" id="lp-sim-run">✦ Coter avec l'IA</button>
@@ -1234,9 +1234,8 @@
       <div class="ni" data-v="bsi"><span class="nic">🩺</span> BSI — Bilan soins infirmiers</div>
       <div class="ni" data-v="alertes-med"><span class="nic">⚠️</span> Alertes médicamenteuses</div>
       <div class="ni" data-v="audit-cpam"><span class="nic">🔍</span> Simulateur audit CPAM</div>
-      <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Calcul charges & net</div>
+      <div class="ni nurse-only" data-v="outils-charges"><span class="nic">💰</span> Charges & majorations</div>
       <div class="ni nurse-only" data-v="outils-modeles"><span class="nic">📝</span> Modèles de soins</div>
-      <div class="ni nurse-only" data-v="outils-simulation"><span class="nic">⚡</span> Simulateur majoration</div>
     </div>
     <div class="sl" style="margin-top:8px">
       <div class="slbl">Cabinet</div>
@@ -1280,21 +1279,20 @@
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-ordos" onclick="navTo('outils-ordos',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Ordonnances</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="pilulier" onclick="navTo('pilulier',this);toggleMobileMenu()"><span class="bn-ic">💊</span>Pilulier</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="constantes" onclick="navTo('constantes',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Constantes</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="bsi" onclick="navTo('bsi',this);toggleMobileMenu()"><span class="bn-ic">🩺</span>BSI</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-km" onclick="navTo('outils-km',this);toggleMobileMenu()"><span class="bn-ic">🚗</span>Km</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="sig" onclick="navTo('sig',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Signatures</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="consentements" onclick="navTo('consentements',this);toggleMobileMenu()"><span class="bn-ic">✍️</span>Consent.</button>
+      <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="alertes-med" onclick="navTo('alertes-med',this);toggleMobileMenu()"><span class="bn-ic">⚠️</span>Interact.</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="tresor" onclick="navTo('tresor',this);toggleMobileMenu()"><span class="bn-ic">💸</span>Tréso</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="rapport" onclick="navTo('rapport',this);toggleMobileMenu()"><span class="bn-ic">📄</span>Rapport</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="dash" onclick="navTo('dash',this);toggleMobileMenu()"><span class="bn-ic">📊</span>Stats</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="copilote" onclick="navTo('copilote',this);toggleMobileMenu()"><span class="bn-ic">🤖</span>Copilote</button>
       <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="transmissions" onclick="navTo('transmissions',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Transm.</button>
       <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="compte-rendu" onclick="navTo('compte-rendu',this);toggleMobileMenu()"><span class="bn-ic">📋</span>CR Pass.</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="bsi" onclick="navTo('bsi',this);toggleMobileMenu()"><span class="bn-ic">🩺</span>BSI</button>
-      <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="alertes-med" onclick="navTo('alertes-med',this);toggleMobileMenu()"><span class="bn-ic">⚠️</span>Interact.</button>
       <button class="bn-item" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="audit-cpam" onclick="navTo('audit-cpam',this);toggleMobileMenu()"><span class="bn-ic">🔍</span>Audit</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-charges" onclick="navTo('outils-charges',this);toggleMobileMenu()"><span class="bn-ic">💰</span>Charges</button>
       <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-modeles" onclick="navTo('outils-modeles',this);toggleMobileMenu()"><span class="bn-ic">📝</span>Modèles</button>
-      <button class="bn-item nurse-only" style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="outils-simulation" onclick="navTo('outils-simulation',this);toggleMobileMenu()"><span class="bn-ic">⚡</span>Simulation</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="ngap-ref" onclick="navTo('ngap-ref',this);toggleMobileMenu()"><span class="bn-ic">📚</span>Référentiel</button>
       <button class="bn-item nurse-only" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="contact" onclick="navTo('contact',this);toggleMobileMenu()"><span class="bn-ic">💬</span>Contact</button>
       <button class="bn-item" style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:12px 4px;height:auto;flex:none" data-v="aide" onclick="navTo('aide',this);toggleMobileMenu()"><span class="bn-ic">📖</span>Aide</button>
@@ -2900,10 +2898,12 @@
 
     <!-- CALCUL CHARGES & NET RÉEL -->
     <section class="view" id="view-outils-charges">
-      <h1 class="pt">Charges <em>& net réel</em></h1>
-      <p class="ps">URSSAF · CARPIMKO · Estimation IR · Revenu net journalier</p>
+      <h1 class="pt">Charges <em>& majorations</em></h1>
+      <p class="ps">URSSAF · CARPIMKO · Estimation IR · Net journalier · Simulateur de majoration</p>
+
+      <!-- ─────────── 1. SIMULATEUR ANNUEL DE CHARGES & NET ─────────── -->
       <div class="card" style="margin-bottom:16px">
-        <div class="ct">💰 Simulateur annuel</div>
+        <div class="ct">💰 Simulateur annuel — charges & net réel</div>
         <p style="font-size:12px;color:var(--m);margin-bottom:16px">Saisissez votre chiffre d'affaires annuel pour estimer vos charges et votre revenu net réel.</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px">
           <div class="af">
@@ -2917,6 +2917,70 @@
         </div>
         <div id="calc-result"></div>
       </div>
+
+      <!-- ─────────── 2. SIMULATEUR DE MAJORATION (ex-onglet fusionné) ─────────── -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="ct">⚡ Simulateur de majoration</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:16px">Calcul instantané du montant applicable selon heure, jour et contexte du soin.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+          <div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+              <div class="af"><label>Heure du soin</label><input type="time" id="sim-heure" value="08:00" oninput="simulerMajoration()"></div>
+              <div class="af"><label>Jour</label>
+                <select id="sim-jour" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+                  <option value="lundi">Lundi</option>
+                  <option value="mardi">Mardi</option>
+                  <option value="mercredi">Mercredi</option>
+                  <option value="jeudi">Jeudi</option>
+                  <option value="vendredi">Vendredi</option>
+                  <option value="samedi">Samedi</option>
+                  <option value="dimanche">Dimanche</option>
+                  <option value="ferie">Jour férié</option>
+                </select>
+              </div>
+            </div>
+            <div class="af" style="margin-bottom:14px"><label>Acte principal</label>
+              <select id="sim-acte" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
+                <option value="AMI1">AMI1 — 3,15 €</option>
+                <option value="AMI2">AMI2 — 6,30 €</option>
+                <option value="AMI3">AMI3 — 9,45 €</option>
+                <option value="AMI4">AMI4 — 12,60 €</option>
+                <option value="AMI5">AMI5 — 15,75 €</option>
+                <option value="BSA">BSA — 13,00 €</option>
+                <option value="BSB">BSB — 18,20 €</option>
+                <option value="BSC">BSC — 28,70 €</option>
+                <option value="AIS1">AIS1 — 2,65 €</option>
+                <option value="AIS3">AIS3 — 7,95 €</option>
+              </select>
+            </div>
+            <div class="af" style="margin-bottom:10px"><label>Distance (km, 0 = pas d'IK)</label><input type="number" id="sim-km" placeholder="0" min="0" step="1" value="0" oninput="simulerMajoration()"></div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                <input type="checkbox" id="sim-domicile" checked onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+                📍 Visite à domicile (IFD)
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                <input type="checkbox" id="sim-enfant" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+                👶 Patient enfant &lt; 7 ans (MIE)
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                <input type="checkbox" id="sim-coordination" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
+                🤝 Coordination pluridisciplinaire (MCI)
+              </label>
+            </div>
+            <button class="btn bp" onclick="simulerMajoration()"><span>⚡</span> Calculer</button>
+          </div>
+          <div>
+            <div id="sim-result" style="border:1px solid var(--b);border-radius:var(--r);padding:14px;background:var(--s);min-height:160px">
+              <div style="color:var(--m);text-align:center;padding:30px;font-size:13px">
+                Renseignez les paramètres du soin pour calculer le montant applicable.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────── 3. REPÈRES 2024/2026 ─────────── -->
       <div class="card">
         <div class="ct">📊 Repères 2024</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:12px">
@@ -3026,69 +3090,6 @@
           <textarea id="modele-new-texte" placeholder="Description complète du soin, telle qu'elle sera insérée dans la cotation..." style="min-height:90px"></textarea>
         </div>
         <button class="btn bp" onclick="sauvegarderModele()"><span>💾</span> Sauvegarder le modèle</button>
-      </div>
-    </section>
-
-    <!-- SIMULATEUR MAJORATION -->
-    <section class="view" id="view-outils-simulation">
-      <h1 class="pt">Simulateur <em>de majoration</em></h1>
-      <p class="ps">Calcul instantané du montant applicable selon heure, jour et contexte</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
-        <div class="card">
-          <div class="ct">⚙️ Paramètres du soin</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-            <div class="af"><label>Heure du soin</label><input type="time" id="sim-heure" value="08:00" oninput="simulerMajoration()"></div>
-            <div class="af"><label>Jour</label>
-              <select id="sim-jour" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
-                <option value="lundi">Lundi</option>
-                <option value="mardi">Mardi</option>
-                <option value="mercredi">Mercredi</option>
-                <option value="jeudi">Jeudi</option>
-                <option value="vendredi">Vendredi</option>
-                <option value="samedi">Samedi</option>
-                <option value="dimanche">Dimanche</option>
-                <option value="ferie">Jour férié</option>
-              </select>
-            </div>
-          </div>
-          <div class="af" style="margin-bottom:14px"><label>Acte principal</label>
-            <select id="sim-acte" onchange="simulerMajoration()" style="padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px;width:100%">
-              <option value="AMI1">AMI1 — 3,15 €</option>
-              <option value="AMI2">AMI2 — 6,30 €</option>
-              <option value="AMI3">AMI3 — 9,45 €</option>
-              <option value="AMI4">AMI4 — 12,60 €</option>
-              <option value="AMI5">AMI5 — 15,75 €</option>
-              <option value="BSA">BSA — 13,00 €</option>
-              <option value="BSB">BSB — 18,20 €</option>
-              <option value="BSC">BSC — 28,70 €</option>
-              <option value="AIS1">AIS1 — 2,65 €</option>
-              <option value="AIS3">AIS3 — 7,95 €</option>
-            </select>
-          </div>
-          <div class="af" style="margin-bottom:10px"><label>Distance (km, 0 = pas d'IK)</label><input type="number" id="sim-km" placeholder="0" min="0" step="1" value="0" oninput="simulerMajoration()"></div>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-              <input type="checkbox" id="sim-domicile" checked onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
-              📍 Visite à domicile (IFD)
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-              <input type="checkbox" id="sim-enfant" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
-              👶 Patient enfant &lt; 7 ans (MIE)
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-              <input type="checkbox" id="sim-coordination" onchange="simulerMajoration()" style="width:16px;height:16px;accent-color:var(--a)">
-              🤝 Coordination pluridisciplinaire (MCI)
-            </label>
-          </div>
-          <button class="btn bp" onclick="simulerMajoration()"><span>⚡</span> Calculer</button>
-        </div>
-        <div>
-          <div id="sim-result" class="card">
-            <div style="color:var(--m);text-align:center;padding:30px;font-size:13px">
-              Renseignez les paramètres du soin pour calculer le montant applicable.
-            </div>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -4287,7 +4288,7 @@ window._initTopbarExtras = function() {
   function simBuildResult(text){
     var acts = simDetectActs(text);
     var ctx = simGetContext(text);
-    var km = Math.max(0, Math.min(80, parseFloat(document.getElementById('sim-km').value) || 0));
+    var km = Math.max(0, Math.min(80, parseFloat(document.getElementById('lp-sim-km').value) || 0));
 
     /* Cas vide : aucun acte détecté */
     if(acts.length === 0){
