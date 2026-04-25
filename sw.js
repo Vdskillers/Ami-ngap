@@ -1,12 +1,13 @@
-/* sw.js — AMI NGAP Service Worker v3.8-TEST (SANDBOX)
-   ⚠️ VERSION SANDBOX — NE PAS DIFFUSER
+/* sw.js — AMI NGAP Service Worker v4.6
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
-   ✅ Chemins relatifs pour GitHub Pages /Ami-ngaptest/
+   ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
-   ✅ Préfixe cache isolé (amitest-) pour ne pas entrer en conflit avec la PWA prod
+   ✅ v4.6 — bump version + nettoyage résidus SANDBOX + fallback navigation durci
+   ✅ Navigation preload activé pour cold start plus rapide
+   ✅ Purge agressive des anciens caches (ami-* ET amitest-*)
 */
 
-const CACHE_VERSION = 'ami-v4.5';
+const CACHE_VERSION = 'ami-v4.6';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
@@ -57,18 +58,25 @@ self.addEventListener('install', function(e) {
 
 self.addEventListener('activate', function(e) {
   e.waitUntil(
-    caches.keys().then(function(keys) {
-      return Promise.all(
-        keys.filter(function(k) {
-          // Catch les anciens caches "ami-*" ET "amitest-*" (sandbox)
-          // qui ne correspondent plus au CACHE_VERSION courant.
-          // Sans cette suppression, caches.match() pouvait encore renvoyer
-          // l'ancien index.html depuis un ancien cache "amitest-v3.8-static".
-          var isAmi = k.startsWith('ami-') || k.startsWith('amitest-');
-          return isAmi && k !== CACHE_STATIC && k !== CACHE_TILES;
-        }).map(function(k) { return caches.delete(k); })
-      );
-    }).then(function() { return self.clients.claim(); })
+    Promise.all([
+      // Activer navigation preload : accélère le 1er chargement après install/reset.
+      // Sans ça, la PWA met 1-2s à démarrer car le SW doit booter avant la nav.
+      (self.registration.navigationPreload
+        ? self.registration.navigationPreload.enable().catch(function(){})
+        : Promise.resolve()),
+      caches.keys().then(function(keys) {
+        return Promise.all(
+          keys.filter(function(k) {
+            // Catch les anciens caches "ami-*" ET "amitest-*" (ancienne sandbox)
+            // qui ne correspondent plus au CACHE_VERSION courant.
+            // Sans cette suppression, caches.match() pouvait encore renvoyer
+            // l'ancien index.html depuis un ancien cache "amitest-v3.8-static".
+            var isAmi = k.startsWith('ami-') || k.startsWith('amitest-');
+            return isAmi && k !== CACHE_STATIC && k !== CACHE_TILES;
+          }).map(function(k) { return caches.delete(k); })
+        );
+      })
+    ]).then(function() { return self.clients.claim(); })
   );
 });
 
@@ -106,7 +114,7 @@ self.addEventListener('fetch', function(e) {
       url.pathname === '/' ||
       url.pathname.endsWith('/') ||
       url.pathname.endsWith('.html')) {
-    e.respondWith(networkFirst(req, CACHE_STATIC));
+    e.respondWith(networkFirst(req, CACHE_STATIC, e));
     return;
   }
 
@@ -116,6 +124,21 @@ self.addEventListener('fetch', function(e) {
 
 async function networkFirst(req, cacheName) {
   try {
+    // 1) Si navigation preload est dispo, on récupère sa réponse en priorité
+    //    (déjà lancée en parallèle par le navigateur dès l'événement fetch).
+    //    Ça réduit drastiquement le TTFB sur cold start de PWA.
+    var event = arguments[2]; // optionnel, passé par fetch handler
+    if (event && event.preloadResponse) {
+      try {
+        var preload = await event.preloadResponse;
+        if (preload && preload.ok) {
+          var cache0 = await caches.open(cacheName);
+          cache0.put(req, preload.clone());
+          return preload;
+        }
+      } catch(_) { /* preload pas dispo, on continue */ }
+    }
+
     var fresh = await fetch(req);
     if (fresh.ok) {
       var cache = await caches.open(cacheName);
@@ -132,8 +155,27 @@ async function networkFirst(req, cacheName) {
     // dinosaure et l'utilisateur croit que l'app est cassée.
     if (req.mode === 'navigate') {
       var fallback = await caches.match('./index.html')
-                  || await caches.match('./');
+                  || await caches.match('./')
+                  || await caches.match('/Ami-ngap/index.html')
+                  || await caches.match('/Ami-ngap/');
       if (fallback) return fallback;
+
+      // ⚠️ FILET DE DERNIER RECOURS : si même l'index.html n'est pas en cache
+      // (cas du tout premier lancement post "Effacer les données" sans réseau),
+      // on renvoie une page minimale qui tente de relancer correctement.
+      // Sans ça, Chrome affichait sa page d'erreur "page inexistante".
+      var html = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
+        + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        + '<title>AMI — Reconnexion…</title>'
+        + '<style>body{margin:0;background:#0b0f14;color:#e8eef5;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:24px}.b{max-width:340px}h1{color:#00d4aa;font-size:22px;margin:0 0 12px}p{font-size:14px;line-height:1.5;opacity:.85;margin:0 0 18px}a{display:inline-block;background:#00d4aa;color:#0b0f14;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600}</style>'
+        + '</head><body><div class="b"><h1>AMI</h1><p>Reconnexion en cours…<br>Si rien ne se passe, tape sur le bouton ci-dessous.</p>'
+        + '<a href="/Ami-ngap/index.html">Relancer AMI</a></div>'
+        + '<script>setTimeout(function(){location.replace("/Ami-ngap/index.html"+(location.hash||""));},800);</script>'
+        + '</body></html>';
+      return new Response(html, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
     }
     return new Response('Hors ligne', { status: 503 });
   }
