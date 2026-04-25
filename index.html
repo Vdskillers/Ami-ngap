@@ -4633,7 +4633,31 @@ document.addEventListener('keydown', function(e){
     });
     // 3) Persister le dernier onglet ouvert (pour reprise après navTo)
     try { sessionStorage.setItem('ami:hub:' + hubName, tab); } catch(_) {}
+
+    // 4) Réveiller les modules cliniques v2 — ils écoutent 'ui:navigate'
+    //    et peuplent leurs zones DOM (pilulier-root, bsi-root, etc.) sur cet
+    //    événement (cf. ui.js : "les modules cliniques v2 gèrent leur propre
+    //    listener ui:navigate dans leurs fichiers JS respectifs").
+    var clinicalView = _CLINICAL_VIEW_MAP[hubName + '-' + tab];
+    if (clinicalView) {
+      setTimeout(function() {
+        document.dispatchEvent(new CustomEvent('ui:navigate', {
+          detail: { view: clinicalView }
+        }));
+      }, 30);
+    }
   }
+
+  /* ── Mapping (hub, onglet) → vue clinique attendue par les modules v2 ─ */
+  var _CLINICAL_VIEW_MAP = {
+    // Hub Carnet patients
+    'patients-pilulier'   : 'pilulier',
+    'patients-constantes' : 'constantes',
+    'patients-bsi'        : 'bsi',
+    // Hub Outils pratiques
+    'outils-cr'           : 'compte-rendu',
+    'outils-audit'        : 'audit-cpam'
+  };
 
   /* ── Hub Carnet patients ───────────────────────────────────────────── */
   window.patientsHubSwitchTab = function(tab, btn) {
