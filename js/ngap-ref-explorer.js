@@ -380,69 +380,194 @@ window.renderNGAPExplorer = function() {
   const actes1Html = renderActesList(ref.actes_chapitre_I || [], 'I');
   const actes2Html = renderActesList(ref.actes_chapitre_II || [], 'II');
 
-  // Article 11B (principe)
-  const art11bHtml = ref.regles_article_11B ? `
-    <div style="padding:10px;background:rgba(79,168,255,.05);border-left:3px solid #4fa8ff;border-radius:6px;margin-bottom:10px">
-      <div style="font-family:var(--fm);font-size:11px;color:#4fa8ff;letter-spacing:.5px;margin-bottom:6px">📜 PRINCIPE GÉNÉRAL</div>
-      <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(ref.regles_article_11B.principe || '')}</div>
-    </div>
-    ${Array.isArray(ref.regles_article_11B.applicable_a) ? `
-      <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
-        <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🎯 S'APPLIQUE À</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">
-          ${ref.regles_article_11B.applicable_a.map(l => `<code style="padding:2px 7px;background:rgba(167,139,250,.15);color:#a78bfa;border-radius:4px;font-family:var(--fm);font-size:11px">${_esc(l)}</code>`).join('')}
-        </div>
-      </div>` : ''}
-    ${Array.isArray(ref.regles_article_11B.exceptions_taux_plein) ? `
-      <div style="padding:10px;background:rgba(16,185,129,.05);border-left:3px solid #10b981;border-radius:6px;margin-bottom:10px">
-        <div style="font-family:var(--fm);font-size:11px;color:#10b981;letter-spacing:.5px;margin-bottom:6px">✅ EXCEPTIONS À TAUX PLEIN</div>
-        <div style="font-size:12px;color:var(--t);line-height:1.6">
-          ${ref.regles_article_11B.exceptions_taux_plein.map(e => `• ${_esc(e)}`).join('<br>')}
-        </div>
-      </div>` : ''}
-    ${Array.isArray(ref.regles_article_11B.actes_non_decotables_jamais) ? `
-      <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
-        <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🛡️ JAMAIS DÉCOTÉS</div>
-        <div style="font-size:12px;color:var(--t);line-height:1.6">
-          ${ref.regles_article_11B.actes_non_decotables_jamais.map(e => `<code style="padding:2px 6px;background:var(--ad,#0f172a);border-radius:4px;font-family:var(--fm)">${_esc(e)}</code>`).join(' ')}
-        </div>
-      </div>` : ''}
-    ${ref.note_5bis ? `
-      <div style="padding:10px;background:rgba(245,158,11,.05);border-left:3px solid #f59e0b;border-radius:6px">
-        <div style="font-family:var(--fm);font-size:11px;color:#f59e0b;letter-spacing:.5px;margin-bottom:6px">📌 NOTE ARTICLE 5BIS (diabète insulino-traité)</div>
-        <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(ref.note_5bis)}</div>
-      </div>` : ''}` : '<p style="color:var(--m);font-size:12px">Règles article 11B non définies dans le référentiel.</p>';
+  // ─── Helper : extrait le libellé d'une règle quel que soit son format ───
+  // - Format STRICT_DUAL_RAG : { libelle: "...", chunk_id: "..." }
+  // - Format Avenant 11      : "string brute"
+  // - Cas indéterminé        : on stringify proprement
+  function _ruleLibelle(v) {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'object' && v.libelle) return String(v.libelle);
+    if (typeof v === 'object' && v.text)    return String(v.text);
+    if (typeof v === 'object' && v.label)   return String(v.label);
+    if (Array.isArray(v)) return v.map(_ruleLibelle).filter(Boolean).join(' · ');
+    if (typeof v === 'object') {
+      // Évite [object Object] : on prend la 1ère valeur string
+      const firstStr = Object.values(v).find(x => typeof x === 'string');
+      if (firstStr) return firstStr;
+      return JSON.stringify(v);
+    }
+    return String(v);
+  }
 
-  // CIR-9/2025
+  // Helper : extrait la liste des actes "non décotables" (format STRICT vs Avenant 11)
+  function _ruleArray(v) {
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === 'object' && v.libelle) {
+      // Format STRICT : split du libellé sur séparateurs courants
+      return String(v.libelle).split(/[,;·•]\s*|\s+et\s+/).map(s => s.trim()).filter(Boolean);
+    }
+    if (typeof v === 'string') return v.split(/[,;·•]\s*|\s+et\s+/).map(s => s.trim()).filter(Boolean);
+    return [];
+  }
+
+  // Article 11B (principe) — compatible STRICT_DUAL_RAG (sub-keys principe/applicable/exception_*/non_decotables)
+  // ET ancien format Avenant 11 (sub-keys principe/applicable_a/exceptions_taux_plein/actes_non_decotables_jamais)
+  let art11bHtml;
+  if (ref.regles_article_11B) {
+    const r = ref.regles_article_11B;
+
+    // Principe
+    const principeText = _ruleLibelle(r.principe);
+
+    // "Applicable à" — STRICT a r.applicable, ancien a r.applicable_a (array)
+    const applicableText = r.applicable_a
+      ? null  // géré comme array ci-dessous
+      : _ruleLibelle(r.applicable);
+    const applicableArray = Array.isArray(r.applicable_a) ? r.applicable_a : null;
+
+    // Exceptions taux plein
+    let exceptionsList = [];
+    if (Array.isArray(r.exceptions_taux_plein)) {
+      // Ancien format : array de strings
+      exceptionsList = r.exceptions_taux_plein.map(_ruleLibelle).filter(Boolean);
+    } else {
+      // Format STRICT : exception_1 ... exception_8 (chacune {libelle, chunk_id})
+      const excKeys = Object.keys(r).filter(k => /^exception_\d+$/.test(k)).sort();
+      exceptionsList = excKeys.map(k => _ruleLibelle(r[k])).filter(Boolean);
+    }
+
+    // Actes non décotables
+    const nonDecotablesText = r.actes_non_decotables_jamais
+      ? null
+      : _ruleLibelle(r.non_decotables);
+    const nonDecotablesArray = Array.isArray(r.actes_non_decotables_jamais)
+      ? r.actes_non_decotables_jamais
+      : (r.non_decotables ? _ruleArray(r.non_decotables) : null);
+
+    art11bHtml = `
+      ${principeText ? `
+        <div style="padding:10px;background:rgba(79,168,255,.05);border-left:3px solid #4fa8ff;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#4fa8ff;letter-spacing:.5px;margin-bottom:6px">📜 PRINCIPE GÉNÉRAL</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(principeText)}</div>
+        </div>` : ''}
+
+      ${applicableText ? `
+        <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🎯 S'APPLIQUE À</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(applicableText)}</div>
+        </div>` : ''}
+
+      ${applicableArray ? `
+        <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🎯 S'APPLIQUE À</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${applicableArray.map(l => `<code style="padding:2px 7px;background:rgba(167,139,250,.15);color:#a78bfa;border-radius:4px;font-family:var(--fm);font-size:11px">${_esc(_ruleLibelle(l))}</code>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${exceptionsList.length > 0 ? `
+        <div style="padding:10px;background:rgba(16,185,129,.05);border-left:3px solid #10b981;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#10b981;letter-spacing:.5px;margin-bottom:6px">✅ EXCEPTIONS À TAUX PLEIN (${exceptionsList.length})</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.7">
+            ${exceptionsList.map(e => `<div style="margin-bottom:4px">• ${_esc(e)}</div>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${nonDecotablesArray ? `
+        <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🛡️ JAMAIS DÉCOTÉS</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.6">
+            ${nonDecotablesArray.map(e => `<code style="padding:2px 6px;background:var(--ad,#0f172a);border-radius:4px;font-family:var(--fm);margin-right:4px;display:inline-block;margin-bottom:4px">${_esc(_ruleLibelle(e))}</code>`).join('')}
+          </div>
+        </div>` : (nonDecotablesText ? `
+        <div style="padding:10px;background:rgba(167,139,250,.05);border-left:3px solid #a78bfa;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#a78bfa;letter-spacing:.5px;margin-bottom:6px">🛡️ JAMAIS DÉCOTÉS</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.6">${_esc(nonDecotablesText)}</div>
+        </div>` : '')}
+
+      ${r.source ? `<div style="font-size:10px;color:var(--m);margin-top:6px;font-style:italic">Source : ${_esc(r.source)}</div>` : ''}`;
+  } else {
+    art11bHtml = '<p style="color:var(--m);font-size:12px">Règles article 11B non définies dans le référentiel.</p>';
+  }
+
+  // CIR-9/2025 — compatible STRICT (regle_1..N, interdit_1..N, exemple_1..N) ET Avenant 11 (regles[], interdits[], exemples[])
   const cir9 = ref.regles_cir9_2025;
-  const cir9Html = cir9 ? `
-    <div style="padding:10px;background:rgba(239,68,68,.05);border-left:3px solid #ef4444;border-radius:6px;margin-bottom:10px">
-      <div style="font-family:var(--fm);font-size:11px;color:#ef4444;letter-spacing:.5px;margin-bottom:6px">📅 APPLICABLE DEPUIS LE ${_esc(cir9.date_application || '?')}</div>
-      <div style="font-size:11px;color:var(--m);margin-bottom:8px">${_esc(cir9.reference || '')}</div>
-    </div>
-    ${Array.isArray(cir9.regles) ? `
-      <div style="padding:10px;background:rgba(0,212,170,.04);border-left:3px solid #00d4aa;border-radius:6px;margin-bottom:10px">
-        <div style="font-family:var(--fm);font-size:11px;color:#00d4aa;letter-spacing:.5px;margin-bottom:6px">✅ RÈGLES</div>
-        <div style="font-size:12px;color:var(--t);line-height:1.8">
-          ${cir9.regles.map(r => `• ${_esc(r)}`).join('<br>')}
-        </div>
-      </div>` : ''}
-    ${Array.isArray(cir9.interdits) ? `
+  let cir9Html;
+  if (cir9) {
+    // Date d'application
+    const dateApp = _ruleLibelle(cir9.date_application || cir9.dateref) || '?';
+    const ref9 = _ruleLibelle(cir9.reference);
+
+    // Règles : array (Avenant 11) ou regle_1..regle_N (STRICT)
+    let reglesList = [];
+    if (Array.isArray(cir9.regles)) {
+      reglesList = cir9.regles.map(_ruleLibelle).filter(Boolean);
+    } else {
+      const rKeys = Object.keys(cir9).filter(k => /^regle_\d+$/.test(k)).sort();
+      reglesList = rKeys.map(k => _ruleLibelle(cir9[k])).filter(Boolean);
+    }
+
+    // Interdits : array (Avenant 11) ou interdit_1..interdit_N (STRICT)
+    let interditsList = [];
+    if (Array.isArray(cir9.interdits)) {
+      interditsList = cir9.interdits.map(_ruleLibelle).filter(Boolean);
+    } else {
+      const iKeys = Object.keys(cir9).filter(k => /^interdit_\d+$/.test(k)).sort();
+      interditsList = iKeys.map(k => _ruleLibelle(cir9[k])).filter(Boolean);
+    }
+
+    // Exemples : array d'objets (Avenant 11) ou exemple_1..exemple_N (STRICT)
+    let exemplesList = [];
+    if (Array.isArray(cir9.exemples)) {
+      exemplesList = cir9.exemples;
+    } else {
+      const eKeys = Object.keys(cir9).filter(k => /^exemple_\d+$/.test(k)).sort();
+      exemplesList = eKeys.map(k => cir9[k]);
+    }
+
+    cir9Html = `
       <div style="padding:10px;background:rgba(239,68,68,.05);border-left:3px solid #ef4444;border-radius:6px;margin-bottom:10px">
-        <div style="font-family:var(--fm);font-size:11px;color:#ef4444;letter-spacing:.5px;margin-bottom:6px">🚫 INTERDITS</div>
-        <div style="font-size:12px;color:var(--t);line-height:1.8">
-          ${cir9.interdits.map(r => `• ${_esc(r)}`).join('<br>')}
-        </div>
-      </div>` : ''}
-    ${Array.isArray(cir9.exemples) ? `
-      <div style="padding:10px;background:rgba(79,168,255,.04);border-left:3px solid #4fa8ff;border-radius:6px">
-        <div style="font-family:var(--fm);font-size:11px;color:#4fa8ff;letter-spacing:.5px;margin-bottom:6px">💡 EXEMPLES CLINIQUES</div>
-        ${cir9.exemples.map(ex => `
-          <div style="margin-top:8px;font-size:12px;line-height:1.5">
-            <div style="color:var(--t);font-weight:600">📋 ${_esc(ex.cas || '')}</div>
-            <div style="color:var(--m);margin-top:2px;padding-left:12px">→ ${_esc(ex.cotation || '')}</div>
-          </div>`).join('')}
-      </div>` : ''}` : '<p style="color:var(--m);font-size:12px">Règles CIR-9/2025 non définies.</p>';
+        <div style="font-family:var(--fm);font-size:11px;color:#ef4444;letter-spacing:.5px;margin-bottom:6px">📅 APPLICABLE DEPUIS LE ${_esc(dateApp)}</div>
+        ${ref9 ? `<div style="font-size:11px;color:var(--m)">${_esc(ref9)}</div>` : ''}
+      </div>
+
+      ${reglesList.length > 0 ? `
+        <div style="padding:10px;background:rgba(0,212,170,.04);border-left:3px solid #00d4aa;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#00d4aa;letter-spacing:.5px;margin-bottom:6px">✅ RÈGLES (${reglesList.length})</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.7">
+            ${reglesList.map(r => `<div style="margin-bottom:4px">• ${_esc(r)}</div>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${interditsList.length > 0 ? `
+        <div style="padding:10px;background:rgba(239,68,68,.05);border-left:3px solid #ef4444;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#ef4444;letter-spacing:.5px;margin-bottom:6px">🚫 INTERDITS (${interditsList.length})</div>
+          <div style="font-size:12px;color:var(--t);line-height:1.7">
+            ${interditsList.map(r => `<div style="margin-bottom:4px">• ${_esc(r)}</div>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${exemplesList.length > 0 ? `
+        <div style="padding:10px;background:rgba(79,168,255,.04);border-left:3px solid #4fa8ff;border-radius:6px;margin-bottom:10px">
+          <div style="font-family:var(--fm);font-size:11px;color:#4fa8ff;letter-spacing:.5px;margin-bottom:6px">💡 EXEMPLES CLINIQUES (${exemplesList.length})</div>
+          ${exemplesList.map(ex => {
+            // Avenant 11 : { cas, cotation }
+            // STRICT : { libelle, chunk_id } — libelle contient déjà le cas + cotation
+            if (ex && typeof ex === 'object' && ex.cas) {
+              return `<div style="margin-top:6px;font-size:12px;line-height:1.5">
+                <div style="color:var(--t);font-weight:600">📋 ${_esc(ex.cas)}</div>
+                <div style="color:var(--m);margin-top:2px;padding-left:12px">→ ${_esc(ex.cotation || '')}</div>
+              </div>`;
+            }
+            return `<div style="margin-top:6px;font-size:12px;line-height:1.5;color:var(--t)">📋 ${_esc(_ruleLibelle(ex))}</div>`;
+          }).join('')}
+        </div>` : ''}
+
+      ${cir9.source ? `<div style="font-size:10px;color:var(--m);margin-top:6px;font-style:italic">Source : ${_esc(_ruleLibelle(cir9.source))}</div>` : ''}`;
+  } else {
+    cir9Html = '<p style="color:var(--m);font-size:12px">Règles CIR-9/2025 non définies.</p>';
+  }
 
   // Incompatibilités
   const incHtml = (ref.incompatibilites || []).map((r, i) => {
