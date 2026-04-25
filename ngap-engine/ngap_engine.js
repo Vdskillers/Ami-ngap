@@ -31,9 +31,19 @@ class NGAPEngine {
     this.ref = referentiel;
     // Index pour lookup O(1)
     this._index = {};
-    // Actes Chap I + Chap II — STRICT n'a plus de code_facturation, code uniquement
+    // Actes Chap I + Chap II — format DUAL :
+    //   - a.code   = slug (AMI1_5_PONCTION) — utilisé par le validateur worker
+    //   - a.code_facturation = code court (AMI1.5) — utilisé par les tests / front
+    // On indexe les DEUX pour permettre lookup avec n'importe lequel.
     [...(referentiel.actes_chapitre_I || []), ...(referentiel.actes_chapitre_II || [])].forEach(a => {
       this._index[a.code] = a;
+      if (a.code_facturation && a.code_facturation !== a.code) {
+        // On ne remplace PAS si déjà indexé (ex: plusieurs actes ont code_facturation='AMI4')
+        // Le premier rencontré gagne (= premier dans Chap I, suit l'ordre du référentiel)
+        if (!this._index[a.code_facturation]) {
+          this._index[a.code_facturation] = a;
+        }
+      }
     });
     Object.entries(referentiel.forfaits_bsi || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
     Object.entries(referentiel.forfaits_di || {}).forEach(([k, v]) => { this._index[k] = { ...v, code: k }; });
@@ -319,13 +329,17 @@ class NGAPEngine {
         }
       }
       const tarif = this.getTarif(acte, zone);
+      // ✅ DUAL : si code_facturation existe (= acte avec slug), on l'utilise pour la sortie
+      // (lisibilité : "AMI14" plutôt que "AMI14_PERF_LONGUE")
+      const codeOut = acte.code_facturation || acte.code;
       actes.push({
-        code: acte.code,
+        code: codeOut,
+        _slug: acte.code,                  // slug interne préservé pour traçabilité
         label: acte.label,
         coefficient: acte.coefficient,
         _tarif_base: tarif,
         article: acte.article,
-        chunk_id: acte.chunk_id || null,
+        chunk_id: acte.chunk_id || acte.code_chunk_id || null,
         ...item,
       });
     }
