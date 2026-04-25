@@ -1226,9 +1226,27 @@ async function _cotationPipeline() {
     // La photo / signature ne sont JAMAIS transmises — uniquement leur hash
     // La géolocalisation est floue (département uniquement — RGPD compatible)
     const _sigEl = document.querySelector('[data-last-sig-hash]');
-    const _sigHash = _sigEl?.dataset?.lastSigHash || '';
-    const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
-    const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
+    let _sigHash = _sigEl?.dataset?.lastSigHash || '';
+    let _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
+    let _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
+
+    // ⚡ Préserver une preuve FORTE existante lors d'une re-cotation.
+    // Si la cotation actuelle (en mémoire) a déjà été signée, on conserve
+    // la métadonnée preuve_soin pour que le worker ne dégrade pas en STANDARD.
+    // Sources possibles, par priorité décroissante :
+    //   1. Le DOM (data-last-sig-hash) — signature posée dans la session courante
+    //   2. _lastCotData.preuve_soin — dernière cotation rendue dans renderCot()
+    //   3. _editingCotation.cotation.preuve_soin — cotation chargée pour édition
+    if (!_sigHash) {
+      const _lastPreuve = (window._lastCotData?.preuve_soin)
+        || (window._editingCotation?.cotation?.preuve_soin)
+        || null;
+      if (_lastPreuve && _lastPreuve.force_probante === 'FORTE' && _lastPreuve.hash_preuve) {
+        _sigHash     = _lastPreuve.hash_preuve;
+        _preuveType  = _lastPreuve.type || 'signature_patient';
+        _preuveForce = 'FORTE';
+      }
+    }
 
     // Si on est passé par le FAB « Re-coter avec les ajouts », on force N8N :
     // l'utilisateur a explicitement cliqué pour AVOIR une vraie correction IA,
@@ -1642,8 +1660,16 @@ async function _cotationPipeline() {
       }
 
       // Injection directe du bouton de signature dans la card résultat
+      // ⚡ Conditions d'affichage :
+      //   - Pas déjà signé (sinon afficher juste un badge « Signé » via data-sig)
+      //   - Pas de bandeau CPAM avec bouton signer (sinon doublon visuel)
+      // Si aucune des deux conditions ci-dessus, on n'injecte rien : le bouton
+      // CPAM du dessus suffit, ou la signature est déjà faite.
       const _cbody = $('cbody');
-      if (_cbody && !_cbody.querySelector('.sig-btn-wrap')) {
+      const _alreadySigned = d.preuve_soin?.force_probante === 'FORTE';
+      const _hasCpamSignBtn = !!_cbody?.querySelector('[data-cpam-bloc="1"] button[onclick*="openSignatureModal"]');
+      const _shouldShowBottomBtn = !_alreadySigned && !_hasCpamSignBtn;
+      if (_cbody && !_cbody.querySelector('.sig-btn-wrap') && _shouldShowBottomBtn) {
         const _wrap = document.createElement('div');
         _wrap.className = 'sig-btn-wrap';
         _wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
@@ -2941,10 +2967,11 @@ function renderCot(d) {
     const _signBtnHtml = _showSignBtn ? `
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn bv bsm" onclick="openSignatureModal('${_cpamInvoiceId}', { patient_id: '${_cpamPatId}', invoice_number: '${_cpamInvoiceId}' })">
-          ✍️ Faire signer maintenant
+          ✍️ Faire signer le patient maintenant
         </button>
         <span style="font-size:10px;color:var(--m)">→ supprimera cette anomalie</span>
-      </div>` : '';
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:var(--m)">Signature stockée localement · non transmise</div>` : '';
     return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}" data-cpam-bloc="1">
       <div style="font-size:11px;font-weight:700;color:${isKO ? '#ef4444' : '#f59e0b'};margin-bottom:6px">
         ${isKO ? '🚨' : '⚠️'} Simulation CPAM — ${cpam.decision || cpam.niveau}

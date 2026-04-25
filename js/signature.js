@@ -282,6 +282,91 @@ async function _sigDelete(id) {
 }
 
 /* ════════════════════════════════════════════════
+   BACKFILL DES PREUVES MANQUANTES
+   ────────────────────────────────────────────────
+   Scanne toutes les signatures locales et tente de compléter celles qui
+   ont server_cert=null ou geozone=null. Utile pour récupérer les anciennes
+   signatures faites alors que :
+     - la géolocalisation était refusée (puis l'utilisateur a accepté)
+     - le serveur de certification était down (puis remis en ligne)
+   Limité à 1 backfill / 30 min / signature pour éviter des appels en boucle.
+   Non bloquant — exécution silencieuse en arrière-plan.
+════════════════════════════════════════════════ */
+let _sigBackfillRunning = false;
+async function _sigBackfillProofs() {
+  if (_sigBackfillRunning) return;
+  _sigBackfillRunning = true;
+  try {
+    const all = await _sigExec(db => new Promise((res) => {
+      const tx = db.transaction(SIG_STORE, 'readonly');
+      const req = tx.objectStore(SIG_STORE).getAll();
+      req.onsuccess = () => res(req.result || []);
+      req.onerror = () => res([]);
+    }));
+
+    if (!Array.isArray(all) || !all.length) return;
+
+    const _now = Date.now();
+    const _BACKFILL_COOLDOWN = 30 * 60 * 1000; // 30 min
+    let _patched = 0;
+    for (const sig of all) {
+      // Skip si pas de signature_hash (signature corrompue ou très ancienne)
+      if (!sig?.invoice_id || !sig?.signature_hash) continue;
+      // Skip si dernière tentative récente (cooldown)
+      const _lastAttempt = sig._backfill_at || 0;
+      if (_now - _lastAttempt < _BACKFILL_COOLDOWN) continue;
+
+      const _missingCert = !(sig.server_cert && sig.server_cert.server_signature);
+      const _missingZone = !(sig.geozone && sig.geozone.zone);
+      if (!_missingCert && !_missingZone) continue;
+
+      const updates = { ...sig, _backfill_at: _now };
+
+      // 1. Tenter récupération géozone (si l'utilisateur autorise maintenant)
+      if (_missingZone) {
+        try {
+          const z = await _getGeozone();
+          if (z) updates.geozone = z;
+        } catch (_) {}
+      }
+
+      // 2. Tenter certification serveur (depuis le proof_payload existant)
+      if (_missingCert && sig.proof_payload) {
+        try {
+          // Inclure la zone fraîche si on vient de la récupérer
+          const _payloadFresh = updates.geozone
+            ? { ...sig.proof_payload, geozone: updates.geozone }
+            : sig.proof_payload;
+          const cert = await _certifyProofOnServer(_payloadFresh);
+          if (cert) updates.server_cert = cert;
+        } catch (_) {}
+      }
+
+      // Si on a obtenu au moins une nouvelle preuve → MAJ IDB
+      if ((_missingZone && updates.geozone) || (_missingCert && updates.server_cert)) {
+        await _sigPut(updates);
+        _patched++;
+      } else {
+        // Marquer la tentative quand même pour respecter le cooldown
+        await _sigPut(updates);
+      }
+    }
+    if (_patched > 0) {
+      console.info(`[AMI:Sig] Backfill : ${_patched} signature(s) complétée(s)`);
+      // Re-render la liste si elle est visible
+      try {
+        if (typeof loadSignatureList === 'function') loadSignatureList();
+        else if (typeof renderSignaturesList === 'function') renderSignaturesList();
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[AMI:Sig] Backfill KO :', e?.message);
+  } finally {
+    _sigBackfillRunning = false;
+  }
+}
+
+/* ════════════════════════════════════════════════
    SYNC SIGNATURES — PC ↔ Mobile via Supabase
    ────────────────────────────────────────────────
    Les PNG sont chiffrés AES-256-GCM AVANT envoi.
@@ -768,17 +853,60 @@ async function saveSignature() {
       ? _consentCreateOrUpdate
       : (typeof window._consentCreateOrUpdate === 'function' ? window._consentCreateOrUpdate : null);
 
-    if (_pending && Array.isArray(_pending.types) && _pending.types.length
-        && _createFn && _pending.patient_id) {
-      const _dateSoin = _pending.date_soin || signedAt.slice(0, 10);
+    // ⚡ FALLBACK : si pas de _pending (ex: signature déclenchée depuis le bandeau
+    // CPAM, pas depuis le bouton sous la cotation), on infère les types de
+    // consentement depuis la cotation actuelle en mémoire (_lastCotData) :
+    //   - tout AMI4/AMI4.1/AMI14/AMI15/perfusion → "soin_complexe"
+    //   - tout BSA/BSB/BSC → "bsi"
+    //   - tout autre acte → "acte_general"
+    // Le patient_id est extrait de _lastCotData.patient_id ou window._editingCotation.
+    let _effectivePending = _pending;
+    if (!_effectivePending) {
+      const _lastCot = window._lastCotData;
+      const _patIdFallback = _lastCot?.patient_id
+        || window._editingCotation?.patientId
+        || _currentProofContext?.patient_id
+        || null;
+      if (_lastCot && _patIdFallback && Array.isArray(_lastCot.actes) && _lastCot.actes.length) {
+        const _codes = _lastCot.actes.map(a => String(a.code || '').toUpperCase());
+        const _types = new Set();
+        const _typesLabel = [];
+        if (_codes.some(c => /^AMI(4|14|15)/.test(c) || c.includes('AMI4.1') || /perfusion/i.test(c))) {
+          _types.add('soin_complexe');
+          _typesLabel.push('Soin complexe');
+        }
+        if (_codes.some(c => /^BS[ABC]$/.test(c))) {
+          _types.add('bsi');
+          _typesLabel.push('BSI');
+        }
+        // Si aucun type spécifique → consentement général « acte de soin »
+        if (!_types.size) {
+          _types.add('acte_general');
+          _typesLabel.push('Acte de soin');
+        }
+        _effectivePending = {
+          patient_id:    _patIdFallback,
+          types:         Array.from(_types),
+          types_label:   _typesLabel,
+          patient_nom:   _lastCot.patient_nom || '',
+          date_soin:     _lastCot.date_soin || signedAt.slice(0, 10),
+          _from_fallback: true,
+        };
+      }
+    }
+
+    if (_effectivePending && Array.isArray(_effectivePending.types) && _effectivePending.types.length
+        && _createFn && _effectivePending.patient_id) {
+      const _pendingForUse = _effectivePending;
+      const _dateSoin = _pendingForUse.date_soin || signedAt.slice(0, 10);
       const _createdLabels = [];
-      for (const _type of _pending.types) {
+      for (const _type of _pendingForUse.types) {
         try {
           await _createFn({
-            patient_id:       _pending.patient_id,
+            patient_id:       _pendingForUse.patient_id,
             type:             _type,
             signatureDataUrl: png,                // même signature que l'invoice
-            patient_nom:      _pending.patient_nom || '',
+            patient_nom:      _pendingForUse.patient_nom || '',
             qualite:          'Patient',
             date:             _dateSoin,
           });
@@ -790,10 +918,12 @@ async function saveSignature() {
           console.warn('[sig→consent] création KO pour', _type, ':', _cErr.message);
         }
       }
-      // Nettoyer l'état partagé
-      delete window._pendingConsentsByInvoice[_currentInvoiceId];
-      if (_pending.patient_id && window._pendingConsentsForPatient) {
-        delete window._pendingConsentsForPatient[_pending.patient_id];
+      // Nettoyer l'état partagé (uniquement si pending venait de cotation())
+      if (_pending) {
+        delete window._pendingConsentsByInvoice[_currentInvoiceId];
+        if (_pending.patient_id && window._pendingConsentsForPatient) {
+          delete window._pendingConsentsForPatient[_pending.patient_id];
+        }
       }
       // Feedback utilisateur
       if (_createdLabels.length && typeof showToast === 'function') {
@@ -1208,6 +1338,9 @@ async function loadSignatureList() {
         <button class="btn bs bsm" onclick="deleteSignature('${sig.invoice_id}').then(loadSignatureList)" style="font-size:11px;padding:6px 10px;flex-shrink:0">🗑️</button>
       </div>`;
     }).join('');
+    // ⚡ Backfill différé : tente de compléter les signatures sans server_cert
+    // ou geozone. Non bloquant — re-render automatique si succès.
+    setTimeout(() => { _sigBackfillProofs(); }, 500);
   } catch(e) {
     el.innerHTML = '<p style="color:var(--d);font-size:13px;padding:20px 0;text-align:center">Erreur de chargement des signatures.</p>';
     console.warn('[Signatures] loadSignatureList:', e);

@@ -478,197 +478,6 @@ window.renderNGAPExplorer = function() {
       </div>
     </div>`).join('') || '<p style="color:var(--m);font-size:12px">Aucune dérogation définie.</p>';
 
-  // ═══════════════════════════════════════════════════════════════
-  // AVENANT 11 — sections dédiées (consultations, IDER, IPA, etc.)
-  // ═══════════════════════════════════════════════════════════════
-  const isAvenant11 = (ref.version || '').includes('AVENANT11')
-    || ref.consultations_infirmieres
-    || ref.infirmier_referent_IDER
-    || ref.notes_version?.avenant_11;
-
-  // Bannière Avenant 11
-  const avenant11Banner = isAvenant11 ? `
-    <div style="padding:12px 14px;background:linear-gradient(135deg,rgba(168,85,247,.12),rgba(124,58,237,.04));border:1px solid rgba(168,85,247,.35);border-radius:10px;margin-bottom:14px">
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        <span style="font-size:22px;flex-shrink:0">🆕</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-family:var(--fi);font-weight:700;color:#a855f7;font-size:13px;margin-bottom:4px">
-            Avenant 11 — Signé le 31/03/2026
-          </div>
-          <div style="font-size:12px;color:var(--t);line-height:1.5">
-            Ce référentiel intègre les nouveautés de l'avenant 11 (CNAM/FNI/SNIIL/CI/UNOCAM) :
-            consultations infirmières <strong>CIA/CIB (20€)</strong>, majorations <strong>MSG/MSD/MIR</strong>,
-            infirmier référent <strong>IDER</strong>, nouveaux actes de surveillance, accès direct plaies.
-          </div>
-          <div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.08);border-left:3px solid #f59e0b;border-radius:4px;font-size:11px;color:#f59e0b">
-            ⏰ <strong>Revalorisation AMI</strong> : 3,15 € → 3,35 € au 01/11/2026 → 3,45 € au 01/11/2027 — <em>applicable automatiquement selon la date du soin</em>.
-          </div>
-        </div>
-      </div>
-    </div>` : '';
-
-  // Consultations infirmières (CIA / CIB)
-  const renderConsultations = () => {
-    const c = ref.consultations_infirmieres || {};
-    const items = Object.entries(c).filter(([k, v]) => v && typeof v === 'object' && v.code_facturation);
-    if (items.length === 0) return '';
-    const rows = items.map(([key, v]) => `
-      <div style="padding:10px;background:var(--ad,#0f172a);border-left:3px solid #a855f7;border-radius:6px;margin-bottom:8px">
-        <div style="display:flex;gap:10px;align-items:flex-start">
-          <span style="font-size:14px;flex-shrink:0">🩺</span>
-          <div style="flex:1">
-            <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-              <code style="background:rgba(168,85,247,.15);color:#a855f7;padding:2px 8px;border-radius:4px;font-family:var(--fm);font-size:12px">${_esc(v.code_facturation)}</code>
-              <strong style="color:var(--t);font-size:12px">${_esc(v.label || key)}</strong>
-              <span style="margin-left:auto;font-family:var(--fm);color:#a855f7;font-size:12px">${v.tarif} €</span>
-            </div>
-            ${v.applicable_a_compter_de ? `<div style="font-size:10px;color:var(--m);margin-top:4px">📅 ${_esc(v.applicable_a_compter_de)}</div>` : ''}
-            ${v.conditions ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--m)">⚙️ Conditions</summary>
-              <div style="margin-top:4px;padding-left:8px;font-size:11px;color:var(--t);line-height:1.6">
-                ${Object.entries(v.conditions).map(([ck, cv]) =>
-                  `<div>• <strong>${_esc(ck)}</strong>: ${_esc(Array.isArray(cv) ? cv.join(', ') : (typeof cv === 'object' ? JSON.stringify(cv) : String(cv)))}</div>`
-                ).join('')}
-              </div>
-            </details>` : ''}
-            ${Array.isArray(v.objectifs) ? `<div style="font-size:11px;color:var(--m);margin-top:4px">🎯 ${v.objectifs.map(_esc).join(' · ')}</div>` : ''}
-          </div>
-        </div>
-      </div>`).join('');
-    return rows;
-  };
-
-  // Infirmier Référent (IDER)
-  const renderIDER = () => {
-    const d = ref.infirmier_referent_IDER;
-    if (!d) return '';
-    return `
-      <div style="padding:12px;background:var(--ad,#0f172a);border-left:3px solid #4fa8ff;border-radius:6px">
-        <div style="font-size:12px;color:var(--t);line-height:1.6">
-          <div><strong style="color:#4fa8ff">👥 Désignation :</strong> ${_esc(d.designation || '—')}</div>
-          <div style="margin-top:4px"><strong style="color:#4fa8ff">📅 Applicable :</strong> ${_esc(d.applicable_a_compter_de || '—')}</div>
-          <div style="margin-top:4px"><strong style="color:#4fa8ff">🎯 Cible :</strong> ${_esc(d.cible || '—')}</div>
-          ${Array.isArray(d.missions) ? `<div style="margin-top:6px"><strong style="color:#4fa8ff">🏥 Missions :</strong><ul style="margin:4px 0 0 16px;color:var(--m)">${d.missions.map(m => `<li>${_esc(m)}</li>`).join('')}</ul></div>` : ''}
-          ${d.parcours_renforce_patients_vulnerables ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(79,168,255,.08);border-radius:4px;font-size:11px">
-            <strong>🔄 Parcours renforcé (${_esc(d.parcours_renforce_patients_vulnerables.applicable_a_compter_de || '?')})</strong> :
-            ${Array.isArray(d.parcours_renforce_patients_vulnerables.modalites) ? d.parcours_renforce_patients_vulnerables.modalites.map(_esc).join(' · ') : ''}
-          </div>` : ''}
-        </div>
-      </div>`;
-  };
-
-  // IPA (Infirmiers en Pratique Avancée)
-  const renderIPA = () => {
-    const d = ref.ipa_pratique_avancee;
-    if (!d) return '';
-    return `
-      <div style="padding:12px;background:var(--ad,#0f172a);border-left:3px solid #10b981;border-radius:6px">
-        <div style="font-size:12px;color:var(--t);line-height:1.6">
-          <div><strong style="color:#10b981">💰 Tarif avant A11 :</strong> ${d.tarif_seance_avant_A11} € (séance) → <strong>${d.tarif_consultation_apres_A11} €</strong> (consultation)</div>
-          <div style="margin-top:4px"><strong style="color:#10b981">📅 Applicable :</strong> ${_esc(d.applicable_a_compter_de || '—')}</div>
-          ${Array.isArray(d.evolutions_A11) ? `<div style="margin-top:6px"><strong style="color:#10b981">📈 Évolutions :</strong><ul style="margin:4px 0 0 16px;color:var(--m)">${d.evolutions_A11.map(e => `<li>${_esc(e)}</li>`).join('')}</ul></div>` : ''}
-        </div>
-      </div>`;
-  };
-
-  // Astreintes PDSA
-  const renderAstreintes = () => {
-    const a = ref.indemnites_astreinte;
-    if (!a) return '';
-    return Object.entries(a).map(([k, v]) => `
-      <div style="padding:10px;background:var(--ad,#0f172a);border-left:3px solid #ef4444;border-radius:6px;margin-bottom:6px">
-        <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-          <code style="background:rgba(239,68,68,.15);color:#ef4444;padding:2px 8px;border-radius:4px;font-family:var(--fm);font-size:12px">${_esc(k)}</code>
-          <strong style="color:var(--t);font-size:12px">${_esc(v.label || '')}</strong>
-          <span style="margin-left:auto;font-family:var(--fm);color:#ef4444;font-size:12px">${v.tarif} € / ${_esc(v.unite || '')}</span>
-        </div>
-        ${v.conditions ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--m)">⚙️ Conditions</summary>
-          <div style="margin-top:4px;padding-left:8px;font-size:11px;color:var(--t);line-height:1.6">
-            ${Object.entries(v.conditions).map(([ck, cv]) => `<div>• ${_esc(ck)}: ${_esc(String(cv))}</div>`).join('')}
-          </div>
-        </details>` : ''}
-      </div>`).join('');
-  };
-
-  // Kit dépistage colorectal
-  const renderDepistage = () => {
-    const d = ref.depistage_cancer_colorectal;
-    if (!d) return '';
-    return `
-      <div style="padding:12px;background:var(--ad,#0f172a);border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;color:var(--t);line-height:1.6">
-        <div><strong style="color:#f59e0b">🎯 Code traceur :</strong> <code style="background:rgba(245,158,11,.15);padding:1px 6px;border-radius:3px">${_esc(d.code_traceur || 'RKD')}</code></div>
-        <div style="margin-top:4px"><strong style="color:#f59e0b">💰 Remise kit :</strong> ${d.tarif_remise_kit} € · <strong>Test réalisé :</strong> +${d.tarif_test_realise} € (total ${d.tarif_total_si_test_realise} €)</div>
-        <div style="margin-top:4px"><strong style="color:#f59e0b">✅ Prise en charge :</strong> ${_esc(d.prise_en_charge || '100% AM')}</div>
-        <div style="margin-top:4px"><strong style="color:#f59e0b">📅 Applicable :</strong> ${_esc(d.applicable_a_compter_de || '—')}</div>
-      </div>`;
-  };
-
-  // Diabète pédiatrique scolarisé
-  const renderDiabetePedia = () => {
-    const d = ref.diabete_pediatrique_scolarise;
-    if (!d) return '';
-    const actes = d.actes_specifiques || {};
-    const maj = d.majoration_specifique || {};
-    return `
-      <div style="padding:12px;background:var(--ad,#0f172a);border-left:3px solid #ec4899;border-radius:6px;font-size:12px;color:var(--t);line-height:1.6">
-        <div><strong style="color:#ec4899">🎯 Cible :</strong> ${_esc(d.cible || '—')}</div>
-        <div style="margin-top:4px"><strong style="color:#ec4899">📅 Applicable :</strong> ${_esc(d.applicable_a_compter_de || '—')}</div>
-        <div style="margin-top:6px"><strong style="color:#ec4899">💉 Actes spécifiques :</strong></div>
-        <ul style="margin:2px 0 0 16px;color:var(--m);font-size:11px">
-          ${Object.entries(actes).map(([k, v]) => `<li><code style="background:rgba(236,72,153,.15);padding:1px 5px;border-radius:3px">${_esc(v.code || '')}</code> ${_esc(v.description || k)} — <strong style="color:var(--t)">${v.tarif} €</strong></li>`).join('')}
-        </ul>
-        ${maj.code ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(236,72,153,.08);border-radius:4px">
-          <strong style="color:#ec4899">➕ Majoration ${_esc(maj.code)} :</strong> ${maj.tarif} € — ${_esc(maj.description || '')}
-        </div>` : ''}
-      </div>`;
-  };
-
-  // Accès direct (loi infirmière + Avenant 11)
-  const renderAccesDirect = () => {
-    const d = ref.acces_direct_sans_prescription;
-    if (!d) return '';
-    return `
-      <div style="padding:12px;background:var(--ad,#0f172a);border-left:3px solid #0891b2;border-radius:6px;font-size:12px;color:var(--t);line-height:1.6">
-        <div><strong style="color:#0891b2">📜 Base légale :</strong> ${_esc(d.base_legale || '—')}</div>
-        <div style="margin-top:4px"><strong style="color:#0891b2">📅 Applicable :</strong> ${_esc(d.applicable_a_compter_de || '—')}</div>
-        ${Array.isArray(d.actes_concernes) ? `<div style="margin-top:6px"><strong style="color:#0891b2">✅ Actes concernés :</strong></div>
-          <ul style="margin:2px 0 0 16px;font-size:11px;color:var(--m)">
-            ${d.actes_concernes.map(a => `<li><strong style="color:var(--t)">${_esc(a.acte || '')}</strong> ${a.cotation ? `— <code style="background:rgba(8,145,178,.15);padding:1px 5px;border-radius:3px">${_esc(a.cotation)}</code>` : ''} ${a.date_effet ? `<span style="color:#0891b2">(${_esc(a.date_effet)})</span>` : ''}</li>`).join('')}
-          </ul>` : ''}
-        ${Array.isArray(d.regles_specifiques) ? `<div style="margin-top:6px"><strong style="color:#0891b2">🔒 Règles :</strong><ul style="margin:2px 0 0 16px;font-size:11px;color:var(--m)">${d.regles_specifiques.map(r => `<li>${_esc(r)}</li>`).join('')}</ul></div>` : ''}
-      </div>`;
-  };
-
-  // Checklist anti-audit CPAM
-  const renderChecklist = () => {
-    const d = ref.checklist_anti_audit_cpam;
-    if (!d) return '';
-    const blocs = [
-      { key: 'prescription',                   title: '📜 Prescription', color: '#f59e0b' },
-      { key: 'tracabilite',                    title: '📝 Traçabilité',  color: '#4fa8ff' },
-      { key: 'facturation',                    title: '💰 Facturation',  color: '#00d4aa' },
-      { key: 'nouveautes_A11_points_attention',title: '🆕 Points A11',   color: '#a855f7' },
-    ];
-    return blocs.filter(b => Array.isArray(d[b.key])).map(b => `
-      <details style="margin-bottom:6px;background:var(--ad,#0f172a);border-radius:6px;padding:8px 12px;border-left:3px solid ${b.color}">
-        <summary style="cursor:pointer;font-family:var(--fm);font-size:12px;color:${b.color};letter-spacing:.3px">${_esc(b.title)} (${d[b.key].length})</summary>
-        <ul style="margin:6px 0 0 16px;font-size:11px;color:var(--t);line-height:1.6">
-          ${d[b.key].map(r => `<li>${_esc(r)}</li>`).join('')}
-        </ul>
-      </details>`).join('');
-  };
-
-  // ═══════════════════════════════════════════════════════════════
-  // GARDE-FOU AVENANT 11 — non opposable CPAM avant le 01/11/2026
-  // ───────────────────────────────────────────────────────────────
-  // Les nouveautés Avenant 11 (CIA/CIB, IDER, MSG/MSD/MIR, accès
-  // direct, revalorisations AMI 3,15→3,35→3,45 €, etc.) ne sont
-  // PAS opposables CPAM avant le 01/11/2026 (étape 1) et 01/11/2027
-  // (étape 2). On masque toutes les sections A11 dans l'explorateur
-  // tant qu'on n'a pas franchi cette date — même si les clés sont
-  // pushées dans le référentiel.
-  // ═══════════════════════════════════════════════════════════════
-  const _A11_ACTIVE_DATE = new Date('2026-11-01T00:00:00');
-  const _isA11Active = Date.now() >= _A11_ACTIVE_DATE.getTime();
 
   // ═══════════════════════════════════════════════════════════════
   // SECTIONS RÉFÉRENTIEL 2026.4 — IPA, ALD, PRADO, Note 5bis
@@ -874,10 +683,6 @@ window.renderNGAPExplorer = function() {
   const nbALD   = Object.keys(ref.codes_ald || {}).length;
   const nbPRADO = Object.keys(ref.programmes_prado || {}).length;
 
-  // Compteurs sections Avenant 11 (gardés pour novembre 2026)
-  const nbConsult = Object.keys(ref.consultations_infirmieres || {}).filter(k => (ref.consultations_infirmieres[k] || {}).code_facturation).length;
-  const nbAstreintes = Object.keys(ref.indemnites_astreinte || {}).length;
-
   // ── Assemblage final ──
   container.innerHTML = `
     <div style="padding:10px 12px;background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(79,168,255,.04));border:1px solid rgba(0,212,170,.2);border-radius:8px;margin-bottom:14px">
@@ -886,7 +691,20 @@ window.renderNGAPExplorer = function() {
       <div style="font-size:11px;color:var(--m);margin-top:4px">Compilé le ${_esc(ref.date_compilation || '?')} · ${_esc(ref.source || '')}</div>
     </div>
 
-    ${_isA11Active ? avenant11Banner : ''}
+    <div style="padding:10px 14px;background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(0,212,170,.02));border:1px solid rgba(0,212,170,.3);border-left:3px solid #00d4aa;border-radius:8px;margin-bottom:14px">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <span style="font-size:20px;flex-shrink:0">🔒</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--fi);font-weight:700;color:#00d4aa;font-size:13px;margin-bottom:4px">
+            247 STRICT — Source de vérité opposable en audit CPAM
+          </div>
+          <div style="font-size:11px;color:var(--t);line-height:1.5">
+            Référentiel 100 % sourcé : NGAP Titre XVI (ameli.fr) · Légifrance UNCAM · Articles CSS · Avenant 9 IPA · CIR-9/2025 · Article D.322-1 (ALD).
+            Aucune donnée hors STRICT.
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn bs bsm" onclick="document.querySelectorAll('#ngap-explorer details').forEach(d=>d.open=true)" style="font-size:11px">↓ Tout déplier</button>
@@ -909,15 +727,6 @@ window.renderNGAPExplorer = function() {
     ${nbIPA   ? section('🎓', 'IPA — Forfaits Pratique Avancée', nbIPA,   renderIPAForfaits(), false) : ''}
     ${nbALD   ? section('🩺', 'ALD — Affections Longue Durée',   nbALD,   renderALD(),         false) : ''}
     ${nbPRADO ? section('🏥', 'PRADO — Retour à domicile',       nbPRADO, renderPRADO(),       false) : ''}
-
-    ${_isA11Active && nbConsult ? section('🩺', 'Consultations infirmières (Avenant 11)', nbConsult, renderConsultations(), false) : ''}
-    ${_isA11Active && ref.infirmier_referent_IDER ? section('👥', 'Infirmier Référent IDER (Avenant 11)', '', renderIDER(), false) : ''}
-    ${_isA11Active && ref.ipa_pratique_avancee ? section('🎓', 'IPA — Pratique Avancée (Avenant 11)', '', renderIPA(), false) : ''}
-    ${_isA11Active && nbAstreintes ? section('🚨', 'Astreintes PDSA (Avenant 11)', nbAstreintes, renderAstreintes(), false) : ''}
-    ${_isA11Active && ref.depistage_cancer_colorectal ? section('🎯', 'Dépistage cancer colorectal (Avenant 11)', '', renderDepistage(), false) : ''}
-    ${_isA11Active && ref.diabete_pediatrique_scolarise ? section('🍭', 'Diabète pédiatrique scolarisé (Avenant 11)', '', renderDiabetePedia(), false) : ''}
-    ${_isA11Active && ref.acces_direct_sans_prescription ? section('🔓', 'Accès direct sans prescription (Loi 2025 + A11)', '', renderAccesDirect(), false) : ''}
-    ${_isA11Active && ref.checklist_anti_audit_cpam ? section('🛡️', 'Checklist anti-audit CPAM', '', renderChecklist(), false) : ''}
   `;
 };
 
@@ -949,7 +758,7 @@ document.addEventListener('ui:navigate', (e) => {
   }
 });
 
-// Avenant 11 : re-render automatique quand le référentiel est mis à jour à chaud
+// Re-render automatique quand le référentiel est mis à jour à chaud
 // (push via NGAPUpdateManager → dispatch 'ngap:ref_updated')
 document.addEventListener('ngap:ref_updated', (e) => {
   if (window.console && console.info) {
@@ -959,6 +768,6 @@ document.addEventListener('ngap:ref_updated', (e) => {
   setTimeout(_init, 50);
 });
 
-console.info('[NGAP-Explorer] v1.2-ref2026.4 prêt — sections natives : IPA(forfaits_ipa) · ALD(codes_ald) · PRADO(programmes_prado) · Article 5bis · sections Avenant 11 masquées jusqu\'au 01/11/2026.');
+console.info('[NGAP-Explorer] v2.0-strict247 prêt — référentiel 100% STRICT (247 items NGAP officiels opposables CPAM, source AI_Agent v15 DUAL_RAG).');
 
 })();
