@@ -855,11 +855,15 @@ async function saveSignature() {
 
     // ⚡ FALLBACK : si pas de _pending (ex: signature déclenchée depuis le bandeau
     // CPAM, pas depuis le bouton sous la cotation), on infère les types de
-    // consentement depuis la cotation actuelle en mémoire (_lastCotData) :
-    //   - tout AMI4/AMI4.1/AMI14/AMI15/perfusion → "soin_complexe"
-    //   - tout BSA/BSB/BSC → "bsi"
-    //   - tout autre acte → "acte_general"
-    // Le patient_id est extrait de _lastCotData.patient_id ou window._editingCotation.
+    // consentement depuis la cotation actuelle en mémoire (_lastCotData).
+    // Mapping vers les VRAIS types de CONSENT_TEMPLATES (consentements.js) :
+    //   - AMI4/AMI4.1/AMI4.2 + texte "pansement/escarre/ulcère" → "pansement_complexe"
+    //   - AMI9/AMI14/AMI15 + texte "perfusion/voie veineuse" → "perfusion"
+    //   - AMI1 + texte "injection insuline/SC/IM/HBPM" → "injection_sc_im"
+    //   - texte "sonde urinaire/vésical" → "sonde_urinaire"
+    //   - texte "soins palliatifs/confort" → "soins_palliatifs"
+    //   - texte "photo/photographie" → "photo_soin"
+    // Si aucun type ne matche → on SKIP la création (pas de consentement orphelin).
     let _effectivePending = _pending;
     if (!_effectivePending) {
       const _lastCot = window._lastCotData;
@@ -869,29 +873,61 @@ async function saveSignature() {
         || null;
       if (_lastCot && _patIdFallback && Array.isArray(_lastCot.actes) && _lastCot.actes.length) {
         const _codes = _lastCot.actes.map(a => String(a.code || '').toUpperCase());
+        // Récupérer aussi les libellés/notes pour matcher des mots-clés
+        const _allText = (
+          (_lastCot.actes.map(a => (a.nom || '') + ' ' + (a.description || '')).join(' ')) +
+          ' ' + (_lastCot.notes || '')
+        ).toLowerCase();
         const _types = new Set();
         const _typesLabel = [];
-        if (_codes.some(c => /^AMI(4|14|15)/.test(c) || c.includes('AMI4.1') || /perfusion/i.test(c))) {
-          _types.add('soin_complexe');
-          _typesLabel.push('Soin complexe');
+        // Pansement complexe : AMI4 + texte évocateur
+        if (_codes.some(c => /^AMI4(\.|_)?/.test(c)) ||
+            /pansement.{0,20}complexe|escarre|ulc[eè]re|n[eé]crose|br[uû]l[uû]re/.test(_allText)) {
+          _types.add('pansement_complexe');
+          _typesLabel.push('Pansement complexe / Chirurgical');
         }
-        if (_codes.some(c => /^BS[ABC]$/.test(c))) {
-          _types.add('bsi');
-          _typesLabel.push('BSI');
+        // Perfusion : AMI9/AMI14/AMI15 + texte
+        if (_codes.some(c => /^AMI(9|14|15)/.test(c)) ||
+            /perfusion|voie\s+veineuse|i\.?v\.?\b|intraveineuse/.test(_allText)) {
+          _types.add('perfusion');
+          _typesLabel.push('Perfusion / Voie veineuse');
         }
-        // Si aucun type spécifique → consentement général « acte de soin »
-        if (!_types.size) {
-          _types.add('acte_general');
-          _typesLabel.push('Acte de soin');
+        // Injection SC/IM : AMI1 + texte injection
+        if (_codes.some(c => /^AMI1$/.test(c)) ||
+            /injection.{0,30}(insuline|sc|s\.c|im|i\.m|sous-?cutan|intra-?musculaire|hbpm|h[eé]parine|anticoagulant|vaccin)/.test(_allText)) {
+          _types.add('injection_sc_im');
+          _typesLabel.push('Injection SC/IM');
         }
-        _effectivePending = {
-          patient_id:    _patIdFallback,
-          types:         Array.from(_types),
-          types_label:   _typesLabel,
-          patient_nom:   _lastCot.patient_nom || '',
-          date_soin:     _lastCot.date_soin || signedAt.slice(0, 10),
-          _from_fallback: true,
-        };
+        // Sondage urinaire
+        if (/sond(?:age|e).{0,20}(urinaire|v[eé]sical|demeure)/.test(_allText)) {
+          _types.add('sonde_urinaire');
+          _typesLabel.push('Sondage urinaire');
+        }
+        // Soins palliatifs
+        if (/soin.{0,10}palliatif|soin.{0,10}confort|fin\s+de\s+vie/.test(_allText)) {
+          _types.add('soins_palliatifs');
+          _typesLabel.push('Soins palliatifs');
+        }
+        // Photo de soin
+        if (/photo(graphi)?[e\b]/.test(_allText)) {
+          _types.add('photo_soin');
+          _typesLabel.push('Photographie de soin');
+        }
+
+        // Si aucun type ne matche → on ne crée PAS de consentement orphelin
+        // (la signature reste valide comme preuve, mais sans consentement structuré)
+        if (_types.size > 0) {
+          _effectivePending = {
+            patient_id:    _patIdFallback,
+            types:         Array.from(_types),
+            types_label:   _typesLabel,
+            patient_nom:   _lastCot.patient_nom || '',
+            date_soin:     _lastCot.date_soin || signedAt.slice(0, 10),
+            _from_fallback: true,
+          };
+        } else {
+          console.info('[sig→consent] Aucun type de consentement spécifique détecté pour les actes :', _codes.join(', '), '— signature OK, pas de consentement créé');
+        }
       }
     }
 

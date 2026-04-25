@@ -1172,29 +1172,65 @@ async function _cotationPipeline() {
     // La photo / signature ne sont JAMAIS transmises — uniquement leur hash
     // La géolocalisation est floue (département uniquement — RGPD compatible)
     const _sigEl = document.querySelector('[data-last-sig-hash]');
-    const _sigHash = _sigEl?.dataset?.lastSigHash || '';
-    const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
-    const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
+    let _sigHash = _sigEl?.dataset?.lastSigHash || '';
+    let _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
+    let _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
 
-    const d = await apiCall('/webhook/ami-calcul', {
-      mode: 'ngap', texte: txt,
+    // ⚡ Préserver une preuve FORTE existante lors d'une re-cotation.
+    // Si la cotation actuelle (en mémoire) a déjà été signée, on conserve
+    // la métadonnée preuve_soin pour que le worker ne dégrade pas en STANDARD.
+    // Sources possibles, par priorité décroissante :
+    //   1. Le DOM (data-last-sig-hash) — signature posée dans la session courante
+    //   2. _lastCotData.preuve_soin — dernière cotation rendue dans renderCot()
+    //   3. _editingCotation.cotation.preuve_soin — cotation chargée pour édition
+    if (!_sigHash) {
+      const _lastPreuve = (window._lastCotData?.preuve_soin)
+        || (window._editingCotation?.cotation?.preuve_soin)
+        || null;
+      if (_lastPreuve && _lastPreuve.force_probante === 'FORTE' && _lastPreuve.hash_preuve) {
+        _sigHash     = _lastPreuve.hash_preuve;
+        _preuveType  = _lastPreuve.type || 'signature_patient';
+        _preuveForce = 'FORTE';
+      }
+    }
+
+    // Si on est passé par le FAB « Re-coter avec les ajouts », on force N8N :
+    // l'utilisateur a explicitement cliqué pour AVOIR une vraie correction IA.
+    const _viaFab = !!window._cotFromReCoteFAB;
+
+    // ⚡ PAYLOAD N8N MINIMAL — N8N n'a besoin QUE des éléments nécessaires
+    // au calcul de cotation. Tout le reste (infirmière, patient, prescripteur,
+    // preuve_soin, invoice_number) est passé en _client_meta et géré par le
+    // worker pour la sauvegarde Supabase.
+    // Bénéfices : -80% payload, RGPD renforcé (nom/prénom/sécu non transmis à N8N).
+    // _skip_db: true → bypass nœud Postgres N8N (déjà fait par worker), évite les 502.
+    const _n8nPayload = {
+      mode: 'ngap',
+      texte: txt,
+      date_soin: gv('f-ds'),
+      heure_soin: gv('f-hs'),
+      exo: gv('f-exo'),
+      ddn: gv('f-ddn'),
+      _skip_db: true,  // bypass sauvegarde Postgres N8N (worker fait Supabase)
+    };
+
+    // Méta-données conservées côté client — réinjectées dans la réponse pour
+    // la sauvegarde Supabase et le rendu (renderCot).
+    const _clientMeta = {
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
-      adeli: u.adeli || '', rpps: u.rpps || '', structure: u.structure || '',
-      ddn: gv('f-ddn'), amo: gv('f-amo'), amc: gv('f-amc'),
-      exo: gv('f-exo'), regl: gv('f-regl'),
-      date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
-      prescripteur_nom: gv('f-pr') || '',
+      adeli:     u.adeli || '',
+      rpps:      u.rpps || '',
+      structure: u.structure || '',
+      amo: gv('f-amo'),
+      amc: gv('f-amc'),
+      regl: gv('f-regl'),
+      patient_nom: (gv('f-pt') || '').trim(),
+      patient_id:  _prePatientId || null,
+      prescripteur_nom:  gv('f-pr') || '',
       prescripteur_rpps: gv('f-pr-rp') || '',
       date_prescription: gv('f-pr-dt') || '',
-      ...(prescripteur_id ? { prescripteur_id } : {}),
-      // patient_nom → affiché dans l'historique (champ f-pt)
-      ...((gv('f-pt') || '').trim() ? { patient_nom: (gv('f-pt') || '').trim() } : {}),
-      // patient_id IDB → rattachement cotation ↔ fiche dans planning_patients
-      // Note : _prePatientId est résolu juste avant cet appel
-      ...(_prePatientId ? { patient_id: _prePatientId } : {}),
-      // invoice_number existant → le worker fera un PATCH au lieu d'un POST
-      ...(_editRef?.invoice_number ? { invoice_number: _editRef.invoice_number } : {}),
-      // Preuve soin — N8N v7 : hash uniquement, jamais les données brutes
+      prescripteur_id:   prescripteur_id || null,
+      invoice_number: _editRef?.invoice_number || null,
       preuve_soin: {
         type:         _preuveType,
         timestamp:    new Date().toISOString(),
@@ -1202,8 +1238,62 @@ async function _cotationPipeline() {
         certifie_ide: true,
         force_probante: _preuveForce,
       },
-    });
+    };
+
+    let d;
+    let _usedFallback = false;
+    try {
+      // 1ère tentative : force N8N (vraie IA) avec payload minimal
+      d = await apiCall('/webhook/ami-calcul', {
+        ..._n8nPayload,
+        _force_n8n: true,
+        _client_meta: _clientMeta,
+        ...(_viaFab ? { _from_fab: true } : {}),
+      });
+      if (d && d.ok === false && d._force_n8n) {
+        throw new Error(d.error || 'force_n8n_failed');
+      }
+    } catch (_n8nErr) {
+      const errMsg = _n8nErr?.message || '';
+      const is502 = /502|service.*indisponible|n8n.*indisponible|n8n_unavailable|force_n8n_failed/i.test(errMsg);
+      if (!is502) throw _n8nErr;
+      // N8N down : retry sans _force_n8n (laisse le worker gérer fallback ou circuit breaker)
+      console.info('[cotation] N8N indisponible → retry sans _force_n8n (worker fallback)');
+      _usedFallback = true;
+      d = await apiCall('/webhook/ami-calcul', {
+        ..._n8nPayload,
+        _client_meta: _clientMeta,
+      });
+      d.alerts = d.alerts || [];
+      d.alerts.unshift('ℹ️ N8N (IA distante) temporairement indisponible — cotation calculée par le worker.');
+    }
     if (d.error) throw new Error(d.error);
+
+    // ⚡ RÉINJECTION DES MÉTA-DONNÉES CÔTÉ CLIENT
+    // N8N a calculé la cotation pure (actes, total, parts). On enrichit
+    // maintenant la réponse avec les données qui n'ont pas été envoyées à N8N
+    // mais qui sont nécessaires à la sauvegarde et à l'affichage.
+    if (!d.patient_nom && _clientMeta.patient_nom)         d.patient_nom = _clientMeta.patient_nom;
+    if (!d.patient_id && _clientMeta.patient_id)           d.patient_id = _clientMeta.patient_id;
+    if (!d.infirmiere && _clientMeta.infirmiere)           d.infirmiere = _clientMeta.infirmiere;
+    if (!d.adeli && _clientMeta.adeli)                     d.adeli = _clientMeta.adeli;
+    if (!d.rpps && _clientMeta.rpps)                       d.rpps = _clientMeta.rpps;
+    if (!d.structure && _clientMeta.structure)             d.structure = _clientMeta.structure;
+    if (!d.prescripteur_nom && _clientMeta.prescripteur_nom)   d.prescripteur_nom = _clientMeta.prescripteur_nom;
+    if (!d.prescripteur_rpps && _clientMeta.prescripteur_rpps) d.prescripteur_rpps = _clientMeta.prescripteur_rpps;
+    if (!d.date_prescription && _clientMeta.date_prescription) d.date_prescription = _clientMeta.date_prescription;
+    if (!d.prescripteur_id && _clientMeta.prescripteur_id)     d.prescripteur_id = _clientMeta.prescripteur_id;
+    // ⚡ Preuve_soin : préserver la version la plus FORTE entre celle envoyée
+    // au worker (_clientMeta) et celle retournée. Évite qu'une re-cotation
+    // après signature renvoie STANDARD et écrase l'affichage de la signature.
+    const _metaPreuveForce = _clientMeta.preuve_soin?.force_probante === 'FORTE';
+    if (!d.preuve_soin || (_metaPreuveForce && d.preuve_soin?.force_probante !== 'FORTE')) {
+      d.preuve_soin = _clientMeta.preuve_soin;
+    }
+    if (!d.invoice_number && _clientMeta.invoice_number)       d.invoice_number = _clientMeta.invoice_number;
+    if (!d.amo && _clientMeta.amo)   d.amo  = _clientMeta.amo;
+    if (!d.amc && _clientMeta.amc)   d.amc  = _clientMeta.amc;
+    if (!d.regl && _clientMeta.regl) d.regl = _clientMeta.regl;
     // Afficher le numéro de facture retourné par le worker (séquentiel CPAM)
     if (d.invoice_number && typeof displayInvoiceNumber === 'function') {
       displayInvoiceNumber(d.invoice_number);
@@ -1218,6 +1308,14 @@ async function _cotationPipeline() {
         cotationIdx:    _existRef?.cotationIdx     ?? -1,
         invoice_number: d.invoice_number,
         _autoDetected:  _existRef?._autoDetected   || false,
+        // ⚡ FIX régression d'acte fantôme : on enregistre les actes de la
+        // cotation qui vient d'être affichée, PAS ceux de l'originale.
+        // Comme ça, à la prochaine re-cotation, on compare au DERNIER état
+        // affiché et non au plus ancien — évite de proposer en boucle de
+        // remettre des actes que l'utilisateur a sciemment retirés.
+        _prevActes:     Array.isArray(d.actes) && d.actes.length
+          ? d.actes.map(a => ({ code: a.code, nom: a.nom }))
+          : (_existRef?._prevActes || null),
       };
     }
     // ── Mémoriser l'heure de soin dans le cache persistant (analyse horaire Dashboard) ──
@@ -1403,8 +1501,32 @@ async function _cotationPipeline() {
       }
 
       // Injection directe du bouton de signature dans la card résultat
+      // ⚡ Conditions d'affichage du bouton « Faire signer le patient » du bas :
+      //   - Pas déjà signé (sinon doublon avec le badge "Signé")
+      //   - Pas de bandeau CPAM avec bouton signer (sinon doublon visuel)
+      // On reproduit la même logique que le bandeau CPAM dans renderCot() :
+      // un bouton est affiché dans le bandeau CPAM si toutes ces conditions sont vraies :
+      //   - cpam.niveau existe et != 'OK'
+      //   - il reste des anomalies après filtrage des "preuve terrain"
+      //   - pas de preuve FORTE existante
+      //   - une anomalie restante mentionne "preuve terrain"
+      //   - invoice_number existe
       const _cbody = $('cbody');
-      if (_cbody && !_cbody.querySelector('.sig-btn-wrap')) {
+      const _alreadySigned = d.preuve_soin?.force_probante === 'FORTE';
+      const _isPreuveAnomaly_local = (txt) => /preuve\s+terrain|justificatif\s+opposable|absence.*[ée]l[ée]ment\s+justif/i.test(String(txt || ''));
+      const _hasPreuveForte_local = d.preuve_soin?.force_probante === 'FORTE';
+      const _cpamLocal = d.cpam_simulation || {};
+      const _anomaliesAll = _cpamLocal.anomalies || [];
+      const _anomaliesFiltered = _anomaliesAll.filter(a => !(_hasPreuveForte_local && _isPreuveAnomaly_local(a)));
+      const _hasCpamSignBtn = !!(
+        _cpamLocal.niveau && _cpamLocal.niveau !== 'OK' &&
+        _anomaliesFiltered.length > 0 &&
+        !_hasPreuveForte_local &&
+        _invoiceId &&
+        _anomaliesFiltered.some(a => _isPreuveAnomaly_local(a))
+      );
+      const _shouldShowBottomBtn = !_alreadySigned && !_hasCpamSignBtn;
+      if (_cbody && !_cbody.querySelector('.sig-btn-wrap') && _shouldShowBottomBtn) {
         const _wrap = document.createElement('div');
         _wrap.className = 'sig-btn-wrap';
         _wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
@@ -1454,6 +1576,9 @@ async function _cotationPipeline() {
 }
 
 function renderCot(d) {
+  // Sauvegarder en mémoire pour permettre au listener ami:preuve_updated
+  // de re-render après signature sans appel N8N
+  window._lastCotData = d;
   const a   = d.actes  || [];
   const al  = d.alerts || [];
   const op  = d.optimisations || [];
@@ -1499,16 +1624,52 @@ function renderCot(d) {
     : '';
 
   // ── Bloc simulation CPAM N8N v7 ─────────────────────────────────────────────
+  // Avec gestion intelligente de l'absence de preuve : si l'unique anomalie
+  // (ou l'anomalie principale) est l'absence de preuve terrain, on propose
+  // directement un bouton « ✍️ Faire signer » qui ouvre la modale signature.
   const cpam = d.cpam_simulation || {};
-  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK') ? (() => {
+  // Détecter si la cotation a déjà une preuve forte (signature/photo)
+  const _hasPreuveForte = preuve.force_probante === 'FORTE';
+  // Détecter les anomalies « preuve terrain absente »
+  const _isPreuveAnomaly = (txt) => /preuve\s+terrain|justificatif\s+opposable|absence.*[ée]l[ée]ment\s+justif/i.test(String(txt || ''));
+  const _filteredAnomalies = (cpam.anomalies || []).filter(a => !(_hasPreuveForte && _isPreuveAnomaly(a)));
+  // ID invoice pour ouvrir la modale signature directement depuis le bandeau
+  const _cpamInvoiceId = d.invoice_number || '';
+  const _cpamPatId = (window._editingCotation?.patientId) || '';
+  const _hasOnlyPreuveAnomaly = (cpam.anomalies || []).length > 0
+    && (cpam.anomalies || []).every(a => _isPreuveAnomaly(a));
+
+  const cpamBloc = (cpam.niveau && cpam.niveau !== 'OK' && _filteredAnomalies.length > 0) ? (() => {
     const isKO = cpam.niveau === 'CRITIQUE';
-    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}">
+    // Bouton signer : seulement si l'anomalie filtrée concerne la preuve terrain
+    // ET qu'on a un invoice_number (cotation déjà sauvée côté worker)
+    const _showSignBtn = !_hasPreuveForte && _cpamInvoiceId &&
+      _filteredAnomalies.some(a => _isPreuveAnomaly(a));
+    const _signBtnHtml = _showSignBtn ? `
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn bv bsm" onclick="openSignatureModal('${_cpamInvoiceId}', { patient_id: '${_cpamPatId}', invoice_number: '${_cpamInvoiceId}' })">
+          ✍️ Faire signer le patient maintenant
+        </button>
+        <span style="font-size:10px;color:var(--m)">→ supprimera cette anomalie</span>
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:var(--m)">Signature stockée localement · non transmise</div>` : '';
+    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;background:${isKO ? 'rgba(239,68,68,.08)' : 'rgba(251,191,36,.08)'};border:1px solid ${isKO ? '#ef4444' : '#f59e0b'}" data-cpam-bloc="1">
       <div style="font-size:11px;font-weight:700;color:${isKO ? '#ef4444' : '#f59e0b'};margin-bottom:6px">
         ${isKO ? '🚨' : '⚠️'} Simulation CPAM — ${cpam.decision || cpam.niveau}
       </div>
-      ${(cpam.anomalies||[]).map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
+      ${_filteredAnomalies.map(a => `<div style="font-size:11px;color:var(--fg);margin-bottom:2px">• ${a}</div>`).join('')}
+      ${_signBtnHtml}
     </div>`;
   })() : '';
+
+  // Si toutes les anomalies CPAM concernaient la preuve ET on a maintenant la preuve,
+  // afficher un bandeau positif de confirmation
+  const cpamSuccessBloc = (cpam.niveau && cpam.niveau !== 'OK' && _hasOnlyPreuveAnomaly && _hasPreuveForte) ? `
+    <div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(0,212,170,.08);border:1px solid #00b894" data-preuve-ok="1">
+      <div style="font-size:11px;font-weight:700;color:#00b894">
+        ✅ Preuve terrain enregistrée — Simulation CPAM conforme
+      </div>
+    </div>` : '';
 
   // ── Suggestions alternatives N8N v7 ─────────────────────────────────────────
   const suggBloc = sugg.length ? `<div style="margin-top:12px">
@@ -1522,10 +1683,16 @@ function renderCot(d) {
   </div>` : '';
 
   // ── Scoring infirmière N8N v7 ────────────────────────────────────────────────
+  // Si la cotation a maintenant une preuve forte ET que le scoring concerne
+  // uniquement l'absence de preuve, on masque le scoring (n'est plus pertinent).
   const scoring = d.infirmiere_scoring || {};
-  const scoringBloc = (scoring.level && scoring.level !== 'SAFE') ? (() => {
+  const _scoringMentionsPreuve = scoring.reasons && Array.isArray(scoring.reasons)
+    ? scoring.reasons.some(r => _isPreuveAnomaly(r))
+    : (scoring.level === 'SURVEILLANCE' && _hasOnlyPreuveAnomaly);
+  const _hideScoring = _hasPreuveForte && _scoringMentionsPreuve;
+  const scoringBloc = (!_hideScoring && scoring.level && scoring.level !== 'SAFE') ? (() => {
     const col = scoring.level === 'DANGER' ? '#ef4444' : '#f59e0b';
-    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px">
+    return `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid ${col};font-size:11px" data-scoring-bloc="1">
       <span style="color:${col};font-weight:700">${scoring.level === 'DANGER' ? '🚨' : '⚠️'} Scoring IDE : ${scoring.level}</span>
       ${scoring.score != null ? ` (${scoring.score} pts)` : ''}
     </div>`;
@@ -1655,9 +1822,58 @@ function renderCot(d) {
   ${opBloc}
   ${suggBloc}
   ${cpamBloc}
+  ${cpamSuccessBloc}
   ${scoringBloc}
 
   </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LISTENER ami:preuve_updated — rafraîchit l'UI cotation après signature
+   ───────────────────────────────────────────────────────────────────────────
+   Émis par signature.js après une signature patient réussie. Met à jour :
+   - le badge preuve (passe en FORTE) sans re-cotation N8N
+   - les blocs CPAM et Scoring qui mentionnaient « Aucune preuve terrain »
+   - le badge data-sig sur le bouton signature (déjà fait par signature.js)
+
+   Stratégie : on conserve la dernière cotation rendue dans window._lastCotData,
+   on patche son champ preuve_soin et on appelle renderCot pour re-render à
+   partir des données déjà en mémoire. Pas d'appel réseau. Pas de race condition.
+   ═══════════════════════════════════════════════════════════════════════════ */
+if (typeof window !== 'undefined' && !window._cotPreuveListenerInstalled) {
+  window._cotPreuveListenerInstalled = true;
+  document.addEventListener('ami:preuve_updated', function(ev) {
+    try {
+      const detail = ev?.detail || {};
+      const last = window._lastCotData;
+      if (!last || typeof renderCot !== 'function') return;
+      // Vérifier que c'est bien la cotation actuellement affichée
+      if (detail.invoice_number && last.invoice_number && detail.invoice_number !== last.invoice_number) {
+        return; // event pour une autre cotation, on ignore
+      }
+      // Mise à jour preuve_soin dans la copie en mémoire
+      last.preuve_soin = {
+        type:           detail.type           || 'signature_patient',
+        force_probante: detail.force_probante || 'FORTE',
+        hash_preuve:    detail.hash_preuve    || '',
+        timestamp:      detail.timestamp      || new Date().toISOString(),
+        certifie_ide:   detail.certifie_ide   === true,
+      };
+      // Re-render — renderCot retourne un STRING HTML qu'il faut assigner à cbody
+      // Sans cette assignation, le DOM ne se met pas à jour et le bandeau CPAM
+      // « Aucune preuve terrain » reste visible malgré la signature.
+      const _cbody = document.getElementById('cbody');
+      if (_cbody) {
+        _cbody.innerHTML = renderCot(last);
+      }
+      // Toast de confirmation visuel
+      if (typeof showToast === 'function') {
+        showToast('ok', '🛡️ Preuve forte enregistrée', 'Signature patient validée — la cotation est maintenant pleinement opposable.');
+      }
+    } catch (e) {
+      console.warn('[cotation] listener ami:preuve_updated KO:', e.message);
+    }
+  });
 }
 
 /* Sauvegarde le résultat re-coté dans la cotation existante du carnet patient */
