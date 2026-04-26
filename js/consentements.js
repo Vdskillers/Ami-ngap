@@ -27,7 +27,8 @@
    ════════════════════════════════════════════════ */
 
 const CONSENT_STORE = 'consentements';
-const CONSENT_DB_VERSION = 3; // bump : ajout index type + status + version
+const CONSENT_TOMBSTONE_STORE = 'consentements_tombstones';
+const CONSENT_DB_VERSION = 4; // bump : ajout store tombstones
 
 /* ── Hash SHA-256 (intégrité) ─────────────────── */
 async function _consentHash(s) {
@@ -53,6 +54,15 @@ async function _consentDb() {
       if (!s.indexNames.contains('type'))       s.createIndex('type',       'type',       { unique: false });
       if (!s.indexNames.contains('status'))     s.createIndex('status',     'status',     { unique: false });
       if (!s.indexNames.contains('pat_type'))   s.createIndex('pat_type',   ['patient_id','type'], { unique: false });
+
+      // Store des tombstones : un consentement supprimé = un payload_hash mémorisé
+      // → permet à consentSyncPull de filtrer les remontées d'un autre appareil
+      if (!db.objectStoreNames.contains(CONSENT_TOMBSTONE_STORE)) {
+        const t = db.createObjectStore(CONSENT_TOMBSTONE_STORE, { keyPath: 'payload_hash' });
+        t.createIndex('deleted_at',  'deleted_at',  { unique: false });
+        t.createIndex('synced',      'synced',      { unique: false });
+        t.createIndex('patient_id',  'patient_id',  { unique: false });
+      }
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(e.target.error);
@@ -87,6 +97,178 @@ async function _consentGetById(id) {
     req.onsuccess = e => resolve(e.target.result || null);
     req.onerror   = e => reject(e.target.error);
   });
+}
+
+/* ════════════════════════════════════════════════
+   TOMBSTONES — Suppression cross-device fiable
+   ────────────────────────────────────────────────
+   Un tombstone est l'empreinte (payload_hash) d'un consentement supprimé.
+   Stockés localement, synchronisés via le worker, ils empêchent les autres
+   appareils de réinjecter le consentement supprimé via consentSyncPull.
+═══════════════════════════════════════════════ */
+
+/** Ajoute un tombstone local (idempotent — UNIQUE sur payload_hash). */
+async function _consentTombstoneAdd({ payload_hash, patient_id, consent_type, consent_version }) {
+  if (!payload_hash) return false;
+  const db = await _consentDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CONSENT_TOMBSTONE_STORE, 'readwrite');
+    const obj = {
+      payload_hash,
+      patient_id:      patient_id || null,
+      consent_type:    consent_type || null,
+      consent_version: consent_version || null,
+      deleted_at:      new Date().toISOString(),
+      synced:          0, // 0 = pas encore poussé au serveur, 1 = poussé
+    };
+    const req = tx.objectStore(CONSENT_TOMBSTONE_STORE).put(obj);
+    req.onsuccess = () => resolve(true);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+/** Récupère tous les tombstones locaux (Set des payload_hash pour lookup O(1)). */
+async function _consentTombstoneGetSet() {
+  const db = await _consentDb();
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(CONSENT_TOMBSTONE_STORE)) return resolve(new Set());
+    const tx  = db.transaction(CONSENT_TOMBSTONE_STORE, 'readonly');
+    const req = tx.objectStore(CONSENT_TOMBSTONE_STORE).getAll();
+    req.onsuccess = e => {
+      const all = e.target.result || [];
+      resolve(new Set(all.map(t => t.payload_hash).filter(Boolean)));
+    };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+/** Récupère les tombstones non encore synchronisés vers le worker. */
+async function _consentTombstoneGetUnsynced() {
+  const db = await _consentDb();
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(CONSENT_TOMBSTONE_STORE)) return resolve([]);
+    const tx  = db.transaction(CONSENT_TOMBSTONE_STORE, 'readonly');
+    const req = tx.objectStore(CONSENT_TOMBSTONE_STORE).getAll();
+    req.onsuccess = e => resolve((e.target.result || []).filter(t => !t.synced));
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+/** Marque un lot de tombstones comme synchronisés vers le worker. */
+async function _consentTombstoneMarkSynced(payloadHashes) {
+  if (!payloadHashes?.length) return;
+  const db = await _consentDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CONSENT_TOMBSTONE_STORE, 'readwrite');
+    const st = tx.objectStore(CONSENT_TOMBSTONE_STORE);
+    let remaining = payloadHashes.length;
+    for (const h of payloadHashes) {
+      const r = st.get(h);
+      r.onsuccess = e => {
+        const rec = e.target.result;
+        if (rec) {
+          rec.synced = 1;
+          rec.synced_at = new Date().toISOString();
+          st.put(rec);
+        }
+        if (--remaining === 0) resolve(true);
+      };
+      r.onerror = () => { if (--remaining === 0) resolve(false); };
+    }
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+/**
+ * Pousse les tombstones non synchronisés vers le worker.
+ * Pattern fire-and-forget : non bloquant, retry au prochain appel si échec.
+ */
+async function _consentTombstonePush() {
+  try {
+    const unsynced = await _consentTombstoneGetUnsynced();
+    if (!unsynced.length) return { pushed: 0 };
+
+    const payload = {
+      tombstones: unsynced.map(t => ({
+        payload_hash:    t.payload_hash,
+        patient_id:      t.patient_id,
+        consent_type:    t.consent_type,
+        consent_version: t.consent_version,
+        deleted_at:      t.deleted_at,
+      })),
+    };
+
+    const resp = await _consentWpost('/webhook/consentements-tombstone', payload);
+    if (resp?.ok && (resp.recorded ?? 0) >= 0) {
+      // Marque comme synchronisés même si recorded=0 (cas merge-duplicates)
+      await _consentTombstoneMarkSynced(unsynced.map(t => t.payload_hash));
+      return { pushed: unsynced.length };
+    }
+    return { pushed: 0, error: 'unexpected_response' };
+  } catch (e) {
+    console.warn('[consentTombstonePush]', e.message);
+    return { pushed: 0, error: e.message };
+  }
+}
+
+/**
+ * Récupère les tombstones du serveur (de tous les appareils du user) et les
+ * applique localement : suppression effective des consentements correspondants
+ * dans l'IDB locale + insertion des tombstones manquants.
+ */
+async function _consentTombstonePull() {
+  try {
+    const resp = await _consentWpost('/webhook/consentements-tombstones-pull', {});
+    if (!resp?.ok || !Array.isArray(resp.tombstones)) return { applied: 0 };
+
+    const remoteTombs = resp.tombstones;
+    if (!remoteTombs.length) return { applied: 0 };
+
+    // 1. Insérer les tombstones manquants en local (déjà marqués synced=1)
+    const localSet = await _consentTombstoneGetSet();
+    const db = await _consentDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(CONSENT_TOMBSTONE_STORE, 'readwrite');
+      const st = tx.objectStore(CONSENT_TOMBSTONE_STORE);
+      for (const t of remoteTombs) {
+        if (!t.payload_hash) continue;
+        if (localSet.has(t.payload_hash)) continue;
+        st.put({
+          payload_hash:    t.payload_hash,
+          patient_id:      t.patient_id,
+          consent_type:    t.consent_type,
+          consent_version: t.consent_version,
+          deleted_at:      t.deleted_at,
+          synced:          1,
+          synced_at:       new Date().toISOString(),
+          _from_remote:    true,
+        });
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror    = e  => reject(e.target.error);
+    });
+
+    // 2. Construire un Set complet des hash supprimés (local + serveur)
+    const allTombs = new Set([...localSet, ...remoteTombs.map(t => t.payload_hash).filter(Boolean)]);
+
+    // 3. Supprimer de l'IDB locale les consentements dont le hash est dans le set
+    const allLocal = await _consentGetAllRaw();
+    let applied = 0;
+    for (const c of allLocal) {
+      if (c.payload_hash && allTombs.has(c.payload_hash)) {
+        await _consentDelete(c.id);
+        applied++;
+      }
+    }
+
+    if (applied > 0) {
+      console.info(`[consentTombstonePull] ${applied} consentement(s) supprimé(s) suite à tombstones distants.`);
+    }
+    return { applied };
+  } catch (e) {
+    console.warn('[consentTombstonePull]', e.message);
+    return { applied: 0, error: e.message };
+  }
 }
 
 async function _consentGetAllRaw() {
@@ -489,11 +671,28 @@ async function consentSyncPush() {
 /**
  * Récupère les consentements des autres appareils et merge dans l'IDB locale.
  * Dédup par (patient_id, type, version) — la version la plus haute gagne.
- * Retourne { pulled: N } pour que l'appelant puisse décider d'un re-render.
+ *
+ * ⚡ FIX résurrection : avant de réimporter, on récupère ET applique les tombstones
+ *    (locaux + serveur). Tout consentement remote dont le payload_hash est marqué
+ *    comme supprimé est IGNORÉ (et même supprimé localement s'il a survécu).
+ *
+ * Retourne { pulled: N, applied_tombstones: M }.
  */
 async function consentSyncPull() {
   const uid = APP?.user?.id;
   if (!uid) return { pulled: 0 };
+
+  // ── ÉTAPE 1 : Tombstones — pull serveur + apply local ──────────
+  // Doit s'exécuter AVANT le pull des consentements pour que les hash
+  // supprimés soient bien dans le set de filtrage.
+  let appliedTombstones = 0;
+  try {
+    const r = await _consentTombstonePull();
+    appliedTombstones = r?.applied || 0;
+  } catch (e) { console.warn('[consentSyncPull] tombstone pull KO:', e.message); }
+
+  // Set des hash supprimés (local IDB + serveur fraîchement pull)
+  const tombSet = await _consentTombstoneGetSet();
 
   try {
     // ✅ v8.7 — Tente boot-sync d'abord
@@ -504,7 +703,7 @@ async function consentSyncPull() {
     if (!resp) {
       resp = await _consentWpost('/webhook/consentements-pull', {});
     }
-    if (!resp?.data?.encrypted_data) return { pulled: 0 };
+    if (!resp?.data?.encrypted_data) return { pulled: 0, applied_tombstones: appliedTombstones };
 
     // Format AES-GCM de l'ancien code (incompatible) → forcer un push d'écrasement
     try {
@@ -512,7 +711,7 @@ async function consentSyncPull() {
       if (parsed?.iv !== undefined) {
         console.warn('[consentSyncPull] Format AES-GCM obsolète — push forcé pour corriger.');
         consentSyncPush().catch(() => {});
-        return { pulled: 0 };
+        return { pulled: 0, applied_tombstones: appliedTombstones };
       }
     } catch (_) { /* format btoa correct, continuer */ }
 
@@ -521,7 +720,7 @@ async function consentSyncPull() {
       // Payload illisible avec la clé actuelle → probablement corruption ou user différent
       console.warn('[consentSyncPull] Déchiffrement échoué — push forcé pour réécrire.');
       consentSyncPush().catch(() => {});
-      return { pulled: 0 };
+      return { pulled: 0, applied_tombstones: appliedTombstones };
     }
 
     // Index des consentements locaux par clé (patient_id, type, version)
@@ -533,8 +732,17 @@ async function consentSyncPull() {
     }
 
     let pulled = 0;
+    let blocked = 0;
     for (const r of remote) {
       if (!r?.patient_id || !r?.type) continue;
+
+      // ⚡ FIX résurrection : si ce consentement a été supprimé sur un autre appareil,
+      // on l'ignore. Sans ce filtre, il serait réinjecté ad vitam aeternam.
+      if (r.payload_hash && tombSet.has(r.payload_hash)) {
+        blocked++;
+        continue;
+      }
+
       const k = `${r.patient_id}|${r.type}|${r.version || 1}`;
       const local = byKey.get(k);
 
@@ -552,8 +760,10 @@ async function consentSyncPull() {
       pulled++;
     }
 
-    if (pulled > 0) console.info(`[consentSyncPull] ${pulled} consentement(s) importé(s) d'un autre appareil.`);
-    return { pulled };
+    if (pulled > 0)  console.info(`[consentSyncPull] ${pulled} consentement(s) importé(s) d'un autre appareil.`);
+    if (blocked > 0) console.info(`[consentSyncPull] ${blocked} consentement(s) bloqué(s) par tombstone.`);
+    if (appliedTombstones > 0) console.info(`[consentSyncPull] ${appliedTombstones} suppression(s) appliquée(s) depuis tombstones distants.`);
+    return { pulled, blocked, applied_tombstones: appliedTombstones };
   } catch (e) {
     console.warn('[consentSyncPull]', e.message);
     return { pulled: 0, error: e.message };
@@ -1248,6 +1458,18 @@ async function consentDeleteEntry(id) {
 
     await _consentDelete(c.id);
 
+    // Tombstone : empêche la résurrection via consentSyncPull d'un autre appareil
+    if (c.payload_hash) {
+      try {
+        await _consentTombstoneAdd({
+          payload_hash:    c.payload_hash,
+          patient_id:      c.patient_id,
+          consent_type:    c.type,
+          consent_version: c.version || 1,
+        });
+      } catch (e) { console.warn('[consentDeleteEntry] tombstone add KO:', e.message); }
+    }
+
     // Audit log — best-effort, non bloquant
     try {
       if (typeof auditLog === 'function') {
@@ -1262,7 +1484,10 @@ async function consentDeleteEntry(id) {
       }
     } catch (_) {}
 
-    // Synchronisation : on push l'état local actualisé (sans le consentement supprimé)
+    // Synchronisation cross-device :
+    //   1. push tombstone (informe le serveur des hash supprimés)
+    //   2. push état local actualisé (blob sans le consentement)
+    _consentTombstonePush().catch(() => {});
     consentSyncPush().catch(() => {});
 
     if (typeof showToast === 'function')
@@ -1336,14 +1561,30 @@ async function consentDeleteAllForPatient(patientId) {
     // ── Suppression effective ─────────────────────────────────────
     const deletedIds = [];
     const deletedDetails = [];
+    const tombstonesToAdd = [];
     for (const c of all) {
       try {
         await _consentDelete(c.id);
         deletedIds.push(c.id);
         deletedDetails.push({ id: c.id, type: c.type, version: c.version || 1, status: c.status });
+        // Préparer le tombstone (on le persiste après la boucle pour limiter les transactions)
+        if (c.payload_hash) {
+          tombstonesToAdd.push({
+            payload_hash:    c.payload_hash,
+            patient_id:      c.patient_id,
+            consent_type:    c.type,
+            consent_version: c.version || 1,
+          });
+        }
       } catch (e) {
         console.warn('[consent delete all]', c.id, e.message);
       }
+    }
+
+    // ── Tombstones : empêche la résurrection cross-device ─────────
+    for (const t of tombstonesToAdd) {
+      try { await _consentTombstoneAdd(t); }
+      catch (e) { console.warn('[consent delete all] tombstone KO:', e.message); }
     }
 
     // ── Audit log : trace exhaustive (best-effort, non bloquant) ──
@@ -1359,7 +1600,10 @@ async function consentDeleteAllForPatient(patientId) {
       }
     } catch (_) {}
 
-    // ── Synchronisation : push de l'état local actualisé ──────────
+    // ── Synchronisation cross-device ──────────────────────────────
+    //   1. push tombstones (informe le serveur des hash supprimés)
+    //   2. push état local actualisé (blob sans les consentements)
+    _consentTombstonePush().catch(() => {});
     consentSyncPush().catch(() => {});
 
     if (typeof showToast === 'function')

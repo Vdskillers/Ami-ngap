@@ -2,12 +2,12 @@
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
-   ✅ v4.6 — bump version + nettoyage résidus SANDBOX + fallback navigation durci
+   ✅ v4.9 — bump version + nettoyage résidus SANDBOX + fallback navigation durci
    ✅ Navigation preload activé pour cold start plus rapide
    ✅ Purge agressive des anciens caches (ami-* ET amitest-*)
 */
 
-const CACHE_VERSION = 'ami-v4.6';
+const CACHE_VERSION = 'ami-v4.9';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
