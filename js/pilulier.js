@@ -120,6 +120,7 @@ async function _pilulierDelete(id) {
 
 /* ── État ────────────────────────────────────── */
 let _pilCurrentPatient = null;
+let _pilCurrentEditId  = null; // id du pilulier en cours d'édition (null = nouveau)
 let _pilMeds = []; // [{ nom, matin, midi, soir, nuit, remarque }]
 
 const JOURS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
@@ -159,6 +160,14 @@ async function renderPilulier() {
 
       <!-- Section médicaments -->
       <div id="pil-meds-section" style="display:none">
+        <!-- Bandeau "Mode édition" — visible uniquement quand un pilulier est chargé -->
+        <div id="pil-edit-banner" style="display:none;background:rgba(0,212,170,0.08);border:1px solid #00d4aa;border-radius:10px;padding:10px 14px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--t)">
+            <span style="font-size:14px">✏️</span> <strong>Mode édition</strong> — vous modifiez un pilulier existant. La sauvegarde mettra à jour cette entrée.
+          </div>
+          <button class="btn bs bsm" onclick="pilNewPilulier()" title="Repartir d'une feuille blanche pour ce patient">🆕 Nouveau pilulier</button>
+        </div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <div class="lbl">💊 Médicaments du pilulier</div>
           <button class="btn bp bsm" onclick="pilAddMed()"><span>+</span> Ajouter un médicament</button>
@@ -209,6 +218,7 @@ function _getMondayISO() {
 
 async function pilSelectPatient(patientId) {
   _pilCurrentPatient = patientId || null;
+  _pilCurrentEditId  = null; // changement de patient → nouveau pilulier
   _pilMeds = [];
 
   const section = document.getElementById('pil-meds-section');
@@ -296,6 +306,32 @@ function pilAddMed() {
   pilRenderSemainier();
 }
 
+/* Affiche/masque le bandeau "Mode édition" en fonction de _pilCurrentEditId */
+function _pilUpdateEditBanner() {
+  const banner = document.getElementById('pil-edit-banner');
+  if (!banner) return;
+  if (_pilCurrentEditId) {
+    banner.style.display = 'flex';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+/* Réinitialise le formulaire pour créer un nouveau pilulier (sans changer de patient) */
+function pilNewPilulier() {
+  _pilCurrentEditId = null;
+  _pilMeds = [];
+  // Reset des champs du formulaire
+  const sd = document.getElementById('pil-semaine-debut');
+  if (sd) sd.value = _getMondayISO();
+  const prep = document.getElementById('pil-preparateur');
+  if (prep) prep.value = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim();
+  pilRenderMedsList();
+  pilRenderSemainier();
+  _pilUpdateEditBanner();
+  if (typeof showToast === 'function') showToast('info', 'Nouveau pilulier', 'Formulaire réinitialisé.');
+}
+
 function pilRenderSemainier() {
   const el = document.getElementById('pil-semainier');
   if (!el) return;
@@ -375,21 +411,47 @@ async function pilSave() {
     });
   });
 
+  // ── UPSERT : si on édite un pilulier existant, conserver son id et sa date_creation ──
+  // Sinon, c'est un nouveau pilulier → date_creation = maintenant.
+  // Doctrine : jamais de doublon. Un pilulier chargé puis sauvegardé doit être MAJ, pas dupliqué.
+  let originalCreation = new Date().toISOString();
+  if (_pilCurrentEditId) {
+    try {
+      const db = await _pilulierDb();
+      const existing = await new Promise((res, rej) => {
+        const tx  = db.transaction(PILULIER_STORE, 'readonly');
+        const req = tx.objectStore(PILULIER_STORE).get(_pilCurrentEditId);
+        req.onsuccess = e => res(e.target.result);
+        req.onerror   = e => rej(e.target.error);
+      });
+      if (existing?.date_creation) originalCreation = existing.date_creation;
+    } catch (_) { /* fallback : on garde la date du jour */ }
+  }
+
   const obj = {
+    // Inclure l'id uniquement en mode édition (sinon autoIncrement attribue un nouvel id)
+    ...(_pilCurrentEditId ? { id: _pilCurrentEditId } : {}),
     patient_id:     _pilCurrentPatient,
     user_id:        APP?.user?.id || '',
     meds:           JSON.parse(JSON.stringify(_pilMeds)), // inclut jours[]
     semaine_debut:  document.getElementById('pil-semaine-debut')?.value || _getMondayISO(),
     preparateur:    document.getElementById('pil-preparateur')?.value?.trim() || '',
-    date_creation:  new Date().toISOString(),
+    date_creation:  originalCreation,
+    date_maj:       new Date().toISOString(),
   };
   try {
-    await _pilulierSave(obj);
+    const wasEdit = !!obj.id; // true si on avait un id avant le save (mode édition)
+    const savedId = await _pilulierSave(obj);
+    // Mémoriser l'id pour les saves suivants — qu'on vienne de créer ou de modifier,
+    // les saves suivants doivent continuer à modifier ce même pilulier.
+    _pilCurrentEditId = savedId;
+    _pilUpdateEditBanner();
+
     // ── Écriture dans la fiche patient du carnet ──────────────────────
     if (typeof patientAddPilulier === 'function') {
-      await patientAddPilulier(_pilCurrentPatient, obj);
+      await patientAddPilulier(_pilCurrentPatient, { ...obj, id: savedId });
     }
-    showToast('success', 'Pilulier sauvegardé');
+    showToast('success', wasEdit ? 'Pilulier mis à jour' : 'Pilulier sauvegardé');
     await pilLoadHistory();
     // Sync cross-appareils en arrière-plan (silencieux)
     pilSyncPush().catch(() => {});
@@ -462,6 +524,10 @@ async function pilLoadFromHistory(id) {
   });
   if (!obj) return;
 
+  // ⚡ Mémoriser l'id du pilulier chargé pour que la prochaine sauvegarde
+  // mette à jour cet enregistrement au lieu d'en créer un nouveau.
+  _pilCurrentEditId = id;
+
   // Charger les méds avec leurs états jours sauvegardés
   _pilMeds = JSON.parse(JSON.stringify(obj.meds || []));
 
@@ -483,12 +549,21 @@ async function pilLoadFromHistory(id) {
 
   pilRenderMedsList();
   pilRenderSemainier();
-  showToast('info', 'Pilulier chargé', `Semaine du ${obj.semaine_debut || '—'}`);
+  _pilUpdateEditBanner();
+  showToast('info', 'Pilulier chargé', `Semaine du ${obj.semaine_debut || '—'} · Mode édition`);
 }
 
 async function pilDeleteHistory(id) {
   if (!confirm('Supprimer ce pilulier ?')) return;
   await _pilulierDelete(id);
+  // Si on supprime le pilulier en cours d'édition → repartir d'une feuille blanche
+  if (_pilCurrentEditId === id) {
+    _pilCurrentEditId = null;
+    _pilMeds = [];
+    pilRenderMedsList();
+    pilRenderSemainier();
+    _pilUpdateEditBanner();
+  }
   showToast('info', 'Pilulier supprimé');
   await pilLoadHistory();
 }

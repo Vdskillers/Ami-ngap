@@ -2200,6 +2200,7 @@
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="constantes" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('constantes', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📊</span> Constantes</button>
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="bsi" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('bsi', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🩺</span> BSI</button>
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="consentements" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('consentements', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">✍️</span> Consentements</button>
+        <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="cr" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('cr', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📋</span> CR Passage</button>
         <button type="button" class="hub-tab" data-hub="patients" data-hub-tab="alertes-med" role="tab" aria-selected="false" onclick="patientsHubSwitchTab('alertes-med', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">⚠️</span> Interactions</button>
       </div>
       <div class="hub-panel" id="hub-panel-patients-carnet" role="tabpanel">
@@ -2376,6 +2377,12 @@
       <div id="consentements-root"></div>
     
       </div>
+      <div class="hub-panel" id="hub-panel-patients-cr" role="tabpanel" style="display:none">
+
+      <div id="admin-cr-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Compte-rendu avec vos propres données.</div>
+      <div id="compte-rendu-root"></div>
+    
+      </div>
       <div class="hub-panel" id="hub-panel-patients-alertes-med" role="tabpanel" style="display:none">
 
       <div id="admin-alertes-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez la détection d'interactions médicamenteuses. Base ANSM 2026.</div>
@@ -2393,7 +2400,6 @@
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="tresor" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('tresor', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💸</span> Trésorerie</button>
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="rapport" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('rapport', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📄</span> Rapport</button>
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="copilote" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('copilote', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🤖</span> Copilote</button>
-        <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="cr" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('cr', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📋</span> CR Passage</button>
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="audit" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('audit', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">🔍</span> Audit CPAM</button>
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="charges" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('charges', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">💰</span> Charges</button>
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="modeles" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('modeles', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📝</span> Modèles</button>
@@ -2691,12 +2697,6 @@
       </div>
       <!-- Interface injectée dynamiquement par copilote.js → initCopiloteSection() -->
       <div id="copilote-chat-area"></div>
-    
-      </div>
-      <div class="hub-panel" id="hub-panel-outils-cr" role="tabpanel" style="display:none">
-
-      <div id="admin-cr-notice" class="admin-notice" style="display:none">🛡️ <strong>Mode admin — démo</strong> · Vous testez le module Compte-rendu avec vos propres données.</div>
-      <div id="compte-rendu-root"></div>
     
       </div>
       <div class="hub-panel" id="hub-panel-outils-audit" role="tabpanel" style="display:none">
@@ -4646,23 +4646,16 @@ document.addEventListener('keydown', function(e){
     }
   }
 
-  /* ── Mapping (hub, onglet) → vue attendue par les modules ─────────────
-     Lorsqu'un onglet est activé via _hubSwitch, on dispatch un événement
-     'ui:navigate' avec la vue mappée pour que ui.js (ou les modules
-     cliniques v2) puissent réagir et lancer leur loader. Sans ce mapping,
-     le DOM est mis à jour mais aucun chargement de données n'est déclenché
-     → spinner infini sur l'onglet Dashboard / Copilote. */
+  /* ── Mapping (hub, onglet) → vue clinique attendue par les modules v2 ─ */
   var _CLINICAL_VIEW_MAP = {
     // Hub Carnet patients
     'patients-pilulier'      : 'pilulier',
     'patients-constantes'    : 'constantes',
     'patients-bsi'           : 'bsi',
     'patients-consentements' : 'consentements',
+    'patients-cr'            : 'compte-rendu',
     'patients-alertes-med'   : 'alertes-med',
     // Hub Outils pratiques
-    'outils-dash'            : 'dash',          // → loadDash() + loadStatsAvancees()
-    'outils-copilote'        : 'copilote',      // → initCopiloteSection()
-    'outils-cr'              : 'compte-rendu',
     'outils-audit'           : 'audit-cpam'
   };
 
@@ -4676,25 +4669,15 @@ document.addEventListener('keydown', function(e){
     _hubSwitch('outils', tab, btn);
   };
 
-  /* ── Restauration de l'onglet actif quand on (re)navigue vers un hub ──
-     Si rien n'a été sauvegardé en sessionStorage (1ère visite), on retombe
-     sur l'onglet marqué `.on` par défaut dans le HTML. Sans ce fallback,
-     l'onglet par défaut est visuellement actif mais aucun loader n'est
-     déclenché → spinner Dashboard infini à la 1ère visite. */
+  /* ── Restauration de l'onglet actif quand on (re)navigue vers un hub ─ */
   function _restoreHubTab(hubName) {
     try {
       var saved = sessionStorage.getItem('ami:hub:' + hubName);
-      var t = null;
-      if (saved) {
-        t = document.querySelector(
-          '.hub-tab[data-hub="' + hubName + '"][data-hub-tab="' + saved + '"]');
-      }
-      // Fallback : pas de sessionStorage OU tab introuvable → tab .on par défaut
-      if (!t) {
-        t = document.querySelector('.hub-tab[data-hub="' + hubName + '"].on');
-        saved = t ? t.getAttribute('data-hub-tab') : null;
-      }
-      if (t && saved) _hubSwitch(hubName, saved, t);
+      if (!saved) return;
+      // Vérifier que cet onglet existe bien dans le DOM
+      var t = document.querySelector(
+        '.hub-tab[data-hub="' + hubName + '"][data-hub-tab="' + saved + '"]');
+      if (t) _hubSwitch(hubName, saved, t);
     } catch(_) {}
   }
 
@@ -4712,7 +4695,7 @@ document.addEventListener('keydown', function(e){
     'tresor'         : ['outils', 'tresor'],
     'rapport'        : ['outils', 'rapport'],
     'copilote'       : ['outils', 'copilote'],
-    'compte-rendu'   : ['outils', 'cr'],
+    'compte-rendu'   : ['patients', 'cr'],
     'audit-cpam'     : ['outils', 'audit'],
     'outils-charges' : ['outils', 'charges'],
     'outils-modeles' : ['outils', 'modeles']
