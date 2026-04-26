@@ -794,7 +794,10 @@ async function renderConsentements() {
     </div>
 
     <div id="consent-history-wrap" class="card" style="margin-top:16px;display:none">
-      <h3 style="font-size:14px;margin-bottom:10px">Historique consentements <em>(toutes IDE cabinet)</em></h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <h3 style="font-size:14px;margin:0">Historique consentements <em>(toutes IDE cabinet)</em></h3>
+        <button id="consent-delete-all-btn" class="btn bs bsm" onclick="consentDeleteAllForPatient()" title="Suppression définitive de TOUS les consentements de ce patient (toutes versions)" style="color:#ef4444;display:none">🗑️ Tout supprimer</button>
+      </div>
       <div id="consent-history-list"></div>
     </div>
   `;
@@ -948,9 +951,15 @@ async function consentLoadHistory() {
   if (!_consentCurrentPatient) return;
   const list = document.getElementById('consent-history-list');
   if (!list) return;
+  const delAllBtn = document.getElementById('consent-delete-all-btn');
   try {
     const all = await _consentGetAll(_consentCurrentPatient);
-    if (!all.length) { list.innerHTML = '<div class="empty"><p>Aucun consentement archivé.</p></div>'; return; }
+    if (!all.length) {
+      list.innerHTML = '<div class="empty"><p>Aucun consentement archivé.</p></div>';
+      if (delAllBtn) delAllBtn.style.display = 'none';
+      return;
+    }
+    if (delAllBtn) delAllBtn.style.display = '';
 
     // Résolution parallèle des signatures (consent local → ami_signatures via invoice_id)
     const sigs = await Promise.all(all.map(c => _consentResolveSignature(c).catch(() => null)));
@@ -1266,6 +1275,103 @@ async function consentDeleteEntry(id) {
   }
 }
 
+/**
+ * Suppression DÉFINITIVE de TOUS les consentements d'un patient.
+ *
+ * ⚠️ Acte médico-légal extrêmement sensible :
+ *   • Double confirmation utilisateur (window.confirm + saisie texte)
+ *   • Audit log obligatoire avec liste des id supprimés
+ *   • Sync push après suppression pour propager l'état local
+ *
+ * @param {string} [patientId] - id du patient (optionnel : utilise _consentCurrentPatient si absent)
+ */
+async function consentDeleteAllForPatient(patientId) {
+  try {
+    const pid = patientId || _consentCurrentPatient;
+    if (!pid) {
+      if (typeof showToast === 'function') showToast('warning', 'Aucun patient sélectionné');
+      return;
+    }
+    const all = await _consentGetAll(pid);
+    if (!all.length) {
+      if (typeof showToast === 'function') showToast('info', 'Aucun consentement à supprimer');
+      return;
+    }
+
+    // Résumé des entrées à supprimer (groupées par type)
+    const byType = new Map();
+    for (const c of all) {
+      const tplLbl = (CONSENT_TEMPLATES[c.type]?.label) || c.type_label || c.type;
+      byType.set(tplLbl, (byType.get(tplLbl) || 0) + 1);
+    }
+    const summary = Array.from(byType.entries())
+      .map(([k, v]) => `  • ${k} (${v})`)
+      .join('\n');
+
+    const patientNom = all[0]?.patient_nom || 'ce patient';
+
+    // ── 1ère confirmation ─────────────────────────────────────────
+    const ok1 = window.confirm(
+      `⚠️ SUPPRESSION DE TOUS LES CONSENTEMENTS\n\n` +
+      `Patient : ${patientNom}\n` +
+      `Total : ${all.length} consentement${all.length>1?'s':''} (toutes versions, actives + archivées)\n\n` +
+      `Détail :\n${summary}\n\n` +
+      `Cette action est IRRÉVERSIBLE.\n` +
+      `Elle sera tracée dans le journal d'audit (CONSENT_DELETED_ALL).\n\n` +
+      `Continuer ?`
+    );
+    if (!ok1) return;
+
+    // ── 2ème confirmation : saisie texte (anti-clic accidentel) ────
+    const confirmText = window.prompt(
+      `⚠️ DERNIÈRE CONFIRMATION\n\n` +
+      `Pour valider la suppression définitive de ${all.length} consentement${all.length>1?'s':''}, ` +
+      `tapez exactement :\n\nSUPPRIMER\n\n(en majuscules, sans espace)`
+    );
+    if (confirmText !== 'SUPPRIMER') {
+      if (typeof showToast === 'function') showToast('info', 'Suppression annulée');
+      return;
+    }
+
+    // ── Suppression effective ─────────────────────────────────────
+    const deletedIds = [];
+    const deletedDetails = [];
+    for (const c of all) {
+      try {
+        await _consentDelete(c.id);
+        deletedIds.push(c.id);
+        deletedDetails.push({ id: c.id, type: c.type, version: c.version || 1, status: c.status });
+      } catch (e) {
+        console.warn('[consent delete all]', c.id, e.message);
+      }
+    }
+
+    // ── Audit log : trace exhaustive (best-effort, non bloquant) ──
+    try {
+      if (typeof auditLog === 'function') {
+        auditLog('CONSENT_DELETED_ALL', {
+          patient_id:     pid,
+          patient_nom:    patientNom,
+          deleted_count:  deletedIds.length,
+          deleted_ids:    deletedIds,
+          deleted_detail: deletedDetails,
+        });
+      }
+    } catch (_) {}
+
+    // ── Synchronisation : push de l'état local actualisé ──────────
+    consentSyncPush().catch(() => {});
+
+    if (typeof showToast === 'function')
+      showToast('success', 'Consentements supprimés', `${deletedIds.length} entrée${deletedIds.length>1?'s':''} effacée${deletedIds.length>1?'s':''}`);
+
+    await consentLoadHistory();
+    await renderConsentements();
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
+
 /* ════════════════════════════════════════════════
    EXPOSITION GLOBALE — API publique
 ════════════════════════════════════════════════ */
@@ -1285,6 +1391,7 @@ window.consentSelectPatient   = consentSelectPatient;
 window.consentEditEntry       = consentEditEntry;
 window.consentPrintEntry      = consentPrintEntry;
 window.consentDeleteEntry     = consentDeleteEntry;
+window.consentDeleteAllForPatient = consentDeleteAllForPatient;
 
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'consentements') renderConsentements();

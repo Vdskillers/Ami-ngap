@@ -1225,7 +1225,10 @@ function _patTabRender(tab, id, p, notes) {
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <div class="ct" style="margin-bottom:0">🛡️ Consentements éclairés</div>
-          <button class="btn bp bsm" onclick="_consentNewFromCarnet('${id}')" title="Ouvrir le module Consentements pour ce patient">+ Nouveau consentement</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn bp bsm" onclick="_consentNewFromCarnet('${id}')" title="Ouvrir le module Consentements pour ce patient">+ Nouveau consentement</button>
+            <button id="pat-consent-delete-all-${id}" class="btn bs bsm" onclick="_consentDeleteAllFromCarnet('${id}')" title="Suppression définitive de TOUS les consentements de ce patient" style="color:#ef4444;display:none">🗑️ Tout supprimer</button>
+          </div>
         </div>
         <div class="priv" style="margin-bottom:12px"><span style="font-size:14px;flex-shrink:0">🛡️</span><p style="font-size:11px">
           Le consentement éclairé est une obligation légale (Art. L1111-4 CSP). Cette liste regroupe tous les consentements (actifs, expirés, archivés) du patient.
@@ -1334,10 +1337,15 @@ async function _renderConsentementsForPatient(patientId) {
     .filter(c => c.patient_id === patientId)
     .sort((a, b) => new Date(b.horodatage || b.date || 0) - new Date(a.horodatage || a.date || 0));
 
+  // Toggle du bouton "Tout supprimer" selon présence d'entrées
+  const delAllBtn = document.getElementById('pat-consent-delete-all-' + patientId);
+
   if (!mine.length) {
     list.innerHTML = `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun consentement enregistré pour ce patient.<br><span style="font-size:11px">Pour en ajouter, utilisez le module <strong>Consentements éclairés</strong> ou le bouton « + Nouveau consentement » ci-dessus.</span></div>`;
+    if (delAllBtn) delAllBtn.style.display = 'none';
     return;
   }
+  if (delAllBtn) delAllBtn.style.display = '';
 
   const TPL = (typeof CONSENT_TEMPLATES !== 'undefined') ? CONSENT_TEMPLATES
             : (typeof window.CONSENT_TEMPLATES !== 'undefined' ? window.CONSENT_TEMPLATES : {});
@@ -1474,6 +1482,24 @@ function _consentNewFromCarnet(patientId) {
       if (typeof consentSelectPatient === 'function') consentSelectPatient(patientId);
     }
   }, 350);
+}
+
+/**
+ * Wrapper : supprime TOUS les consentements d'un patient depuis le carnet,
+ * sans navigation vers le module — délègue à consentDeleteAllForPatient
+ * (qui gère la double confirmation + audit log + sync push).
+ */
+async function _consentDeleteAllFromCarnet(patientId) {
+  const fn = (typeof consentDeleteAllForPatient === 'function')
+    ? consentDeleteAllForPatient
+    : (typeof window.consentDeleteAllForPatient === 'function' ? window.consentDeleteAllForPatient : null);
+  if (!fn) {
+    if (typeof showToast === 'function') showToast('error', 'Module Consentements non chargé');
+    return;
+  }
+  await fn(patientId);
+  // Rafraîchir l'onglet du carnet (la fonction interne rafraîchit déjà le module Consentements)
+  _patTab('consentements', patientId);
 }
 
 /* Wrapper : navigue vers le module Consentements et ouvre le consentement en édition */
