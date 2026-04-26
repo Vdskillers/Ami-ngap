@@ -952,11 +952,20 @@ async function consentLoadHistory() {
     const all = await _consentGetAll(_consentCurrentPatient);
     if (!all.length) { list.innerHTML = '<div class="empty"><p>Aucun consentement archivé.</p></div>'; return; }
 
-    const slice = all.slice(0, 20);
     // Résolution parallèle des signatures (consent local → ami_signatures via invoice_id)
-    const sigs = await Promise.all(slice.map(c => _consentResolveSignature(c).catch(() => null)));
+    const sigs = await Promise.all(all.map(c => _consentResolveSignature(c).catch(() => null)));
+    const sigById = new Map();
+    all.forEach((c, i) => sigById.set(c.id, sigs[i]));
 
-    list.innerHTML = slice.map((c, idx) => {
+    // Grouper par type — l'ordre intra-groupe (date desc) est déjà garanti par _consentGetAll
+    const byType = new Map();
+    for (const c of all) {
+      if (!byType.has(c.type)) byType.set(c.type, []);
+      byType.get(c.type).push(c);
+    }
+
+    // Rendu d'une entrée individuelle
+    const renderEntry = (c) => {
       const d = new Date(c.horodatage || c.date).toLocaleString('fr-FR');
       const tpl = CONSENT_TEMPLATES[c.type] || {};
       const expired = _consentIsExpired(c);
@@ -969,14 +978,14 @@ async function consentLoadHistory() {
                         : expired                 ? '#ef4444'
                         : '#00d4aa';
       const byWho = c.created_by_nom ? ` · par ${c.created_by_nom}` : '';
-      const sigPng = sigs[idx];
+      const sigPng = sigById.get(c.id);
       const sigThumb = sigPng ? `
               <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
                 <img src="${sigPng}" alt="Signature patient" style="height:40px;max-width:140px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain" title="Signature manuscrite du patient">
                 <span style="font-size:10px;color:var(--m)">${c.invoice_id ? '🔗 Liée à la facture ' + c.invoice_id : 'Signature locale'}</span>
               </div>` : '';
       return `
-        <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px;border-left:4px solid ${statusColor}">
+        <div style="background:var(--dd);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px;border-left:4px solid ${statusColor}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
             <div>
               <div style="font-size:13px;font-weight:600">${tpl.icon||'📋'} ${c.type_label} <span style="font-size:11px;color:var(--m)">v${c.version||1}</span></div>
@@ -992,7 +1001,68 @@ async function consentLoadHistory() {
             <button class="btn bs bsm" onclick="consentDeleteEntry(${c.id})" title="Suppression définitive (avec confirmation et trace audit)" style="color:#ef4444">🧹 Effacer</button>
           </div>
         </div>`;
+    };
+
+    // Ordre canonique des types selon CONSENT_TEMPLATES, on ne montre que ceux ayant des entrées
+    const typeOrder = Object.keys(CONSENT_TEMPLATES).filter(t => byType.has(t));
+    // Types legacy/inconnus (pas dans CONSENT_TEMPLATES) → ajoutés en fin de liste
+    for (const t of byType.keys()) {
+      if (!typeOrder.includes(t)) typeOrder.push(t);
+    }
+
+    // Une <details> par type, repliée par défaut (pas d'attribut "open")
+    list.innerHTML = typeOrder.map(type => {
+      const group = byType.get(type);
+      const tpl = CONSENT_TEMPLATES[type] || {};
+      const label = tpl.label || group[0]?.type_label || type;
+      const icon  = tpl.icon || '📋';
+
+      // Synthèse pour le summary : version active + nb archivés
+      const active = group.find(c => c.status !== 'archived');
+      const expired = active ? _consentIsExpired(active) : false;
+      const archivedCount = group.filter(c => c.status === 'archived').length;
+      const statusIcon = !active ? '📜'
+                       : active.status === 'pending' ? '⏳'
+                       : expired ? '❌'
+                       : '✅';
+      const statusColor = !active ? 'var(--m)'
+                        : active.status === 'pending' ? '#f59e0b'
+                        : expired ? '#ef4444'
+                        : '#00d4aa';
+      const summaryRight = active
+        ? `${statusIcon} v${active.version||1}${expired && active.status==='signed' ? ' (expiré)' : ''}${archivedCount ? ` · +${archivedCount} archive${archivedCount>1?'s':''}` : ''}`
+        : `${statusIcon} ${archivedCount} archive${archivedCount>1?'s':''}`;
+
+      return `
+        <details style="background:var(--s);border:1px solid var(--b);border-left:4px solid ${statusColor};border-radius:10px;margin-bottom:8px;overflow:hidden">
+          <summary style="cursor:pointer;padding:12px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;user-select:none">
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:160px">
+              <span class="cdetails-arrow" style="font-size:10px;color:var(--m);transition:transform .15s;display:inline-block">▶</span>
+              <span style="font-size:18px">${icon}</span>
+              <div>
+                <div style="font-size:13px;font-weight:600">${label}</div>
+                <div style="font-size:11px;color:var(--m);margin-top:2px">${group.length} entrée${group.length>1?'s':''}</div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:${statusColor};font-weight:600">${summaryRight}</div>
+          </summary>
+          <div style="padding:0 12px 12px 12px">
+            ${group.map(renderEntry).join('')}
+          </div>
+        </details>`;
     }).join('');
+
+    // CSS pour la flèche pivotante + masquer le marqueur natif (injecté une seule fois)
+    if (!document.getElementById('cdetails-style')) {
+      const style = document.createElement('style');
+      style.id = 'cdetails-style';
+      style.textContent = `
+        details[open] > summary .cdetails-arrow { transform: rotate(90deg); }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::marker { content: ''; }
+      `;
+      document.head.appendChild(style);
+    }
   } catch (err) {
     list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
   }

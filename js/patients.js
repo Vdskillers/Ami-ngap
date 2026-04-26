@@ -744,6 +744,18 @@ async function openPatientDetail(id) {
   }
   const crCount = crList.length;
 
+  // BSI : lecture async depuis l'IDB ami_bsi (module bsi.js)
+  let bsiCount = 0;
+  try {
+    const fn = (typeof _bsiGetAll === 'function')
+      ? _bsiGetAll
+      : (typeof window._bsiGetAll === 'function' ? window._bsiGetAll : null);
+    if (fn) {
+      const list = await fn(id);
+      bsiCount = (list || []).length;
+    }
+  } catch (_) {}
+
   // ── Render onglets ──────────────────────────────────────────────────────
   const tabStyle = (active) => active
     ? 'padding:8px 16px;font-size:12px;font-family:var(--fm);background:var(--a);color:#000;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;font-weight:600'
@@ -775,6 +787,7 @@ async function openPatientDetail(id) {
         <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
         <button id="tab-pilulier"   style="${tabStyle(false)}" onclick="_patTab('pilulier','${id}')">💊 Semainier <span style='background:rgba(79,168,255,.12);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.piluliers||[]).length||''}</span></button>
         <button id="tab-constantes" style="${tabStyle(false)}" onclick="_patTab('constantes','${id}')">📊 Constantes <span style='background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.constantes||[]).length||''}</span></button>
+        <button id="tab-bsi" style="${tabStyle(false)}" onclick="_patTab('bsi','${id}')">🩺 BSI ${bsiCount ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+bsiCount+'</span>' : ''}</button>
         <button id="tab-consentements" style="${tabStyle(false)}" onclick="_patTab('consentements','${id}')">🛡️ Consentements ${consentCount ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+consentCount+'</span>' : ''}</button>
         <button id="tab-cr" style="${tabStyle(false)}" onclick="_patTab('cr','${id}')">📋 CR de passage ${crCount ? '<span style=\'background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+crCount+'</span>' : ''}</button>
         <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
@@ -793,7 +806,7 @@ async function openPatientDetail(id) {
 
 /* ── Sélecteur d'onglet ── */
 function _patTab(tab, id) {
-  ['infos','ordos','cotations','notes','constantes','pilulier','consentements','cr'].forEach(t => {
+  ['infos','ordos','cotations','notes','constantes','pilulier','consentements','cr','bsi'].forEach(t => {
     const btn = $('tab-'+t);
     if (!btn) return;
     if (t === tab) {
@@ -1227,6 +1240,27 @@ function _patTabRender(tab, id, p, notes) {
     return;
   }
 
+  /* ── Onglet BSI — Bilan de Soins Infirmiers ── */
+  if (tab === 'bsi') {
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="ct" style="margin-bottom:0">🩺 BSI — Bilan de Soins Infirmiers</div>
+          <button class="btn bp bsm" onclick="_bsiNewFromCarnet('${id}')" title="Ouvrir le module BSI pour ce patient">+ Nouvelle évaluation</button>
+        </div>
+        <div class="priv" style="margin-bottom:12px"><span style="font-size:14px;flex-shrink:0">🩺</span><p style="font-size:11px">
+          Bilan de Soins Infirmiers (NGAP 2026). Validité 90 jours. Un seul BSI actif à la fois par patient.
+          Niveaux : <strong style="color:#22c55e">BSI 1</strong> (autonome) · <strong style="color:#f59e0b">BSI 2</strong> (intermédiaire) · <strong style="color:#ef4444">BSI 3</strong> (lourd).
+        </p></div>
+        <div id="pat-bsi-list-${id}" style="font-size:13px;color:var(--m)">Chargement…</div>
+      </div>`;
+    _renderBSIForPatient(id).catch(err => {
+      const list = document.getElementById('pat-bsi-list-'+id);
+      if (list) list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
+    });
+    return;
+  }
+
   /* ── Onglet Compte-rendu de passage ── */
   if (tab === 'cr') {
     el.innerHTML = `
@@ -1320,8 +1354,19 @@ async function _renderConsentementsForPatient(patientId) {
     }
     return null;
   }));
+  // Index id → signature pour retrouver après groupement
+  const sigById = new Map();
+  mine.forEach((c, i) => sigById.set(c.id, sigs[i]));
 
-  list.innerHTML = mine.map((c, idx) => {
+  // Grouper par type — l'ordre intra-groupe (date desc) est déjà garanti
+  const byType = new Map();
+  for (const c of mine) {
+    if (!byType.has(c.type)) byType.set(c.type, []);
+    byType.get(c.type).push(c);
+  }
+
+  // Rendu d'une entrée individuelle
+  const renderEntry = (c) => {
     const tpl = TPL[c.type] || {};
     const expired = _isExpired(c);
     const statusIcon = c.status === 'archived' ? '📜'
@@ -1335,9 +1380,9 @@ async function _renderConsentementsForPatient(patientId) {
     const d = new Date(c.horodatage || c.date).toLocaleString('fr-FR');
     const byWho = c.created_by_nom ? ` · par ${c.created_by_nom}` : '';
     const dExp = c.expires_at ? new Date(c.expires_at).toLocaleDateString('fr-FR') : '';
-    const sigPng = sigs[idx];
+    const sigPng = sigById.get(c.id);
     return `
-      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px;border-left:4px solid ${statusColor}">
+      <div style="background:var(--dd);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px;border-left:4px solid ${statusColor}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
           <div>
             <div style="font-size:13px;font-weight:600">${tpl.icon||'📋'} ${c.type_label || tpl.label || c.type} <span style="font-size:11px;color:var(--m)">v${c.version||1}</span></div>
@@ -1357,7 +1402,66 @@ async function _renderConsentementsForPatient(patientId) {
           <button class="btn bs bsm" onclick="_consentDeleteFromCarnet(${c.id},'${patientId}')" title="Suppression définitive (avec confirmation)" style="color:#ef4444">🧹 Effacer</button>
         </div>
       </div>`;
+  };
+
+  // Ordre canonique des types selon CONSENT_TEMPLATES, on n'affiche que ceux ayant des entrées
+  const typeOrder = Object.keys(TPL).filter(t => byType.has(t));
+  for (const t of byType.keys()) {
+    if (!typeOrder.includes(t)) typeOrder.push(t);
+  }
+
+  // Une <details> par type, repliée par défaut
+  list.innerHTML = typeOrder.map(type => {
+    const group = byType.get(type);
+    const tpl = TPL[type] || {};
+    const label = tpl.label || group[0]?.type_label || type;
+    const icon  = tpl.icon || '📋';
+
+    const active = group.find(c => c.status !== 'archived');
+    const expired = active ? _isExpired(active) : false;
+    const archivedCount = group.filter(c => c.status === 'archived').length;
+    const statusIcon = !active ? '📜'
+                     : active.status === 'pending' ? '⏳'
+                     : expired ? '❌'
+                     : '✅';
+    const statusColor = !active ? 'var(--m)'
+                      : active.status === 'pending' ? '#f59e0b'
+                      : expired ? '#ef4444'
+                      : '#00d4aa';
+    const summaryRight = active
+      ? `${statusIcon} v${active.version||1}${expired && active.status==='signed' ? ' (expiré)' : ''}${archivedCount ? ` · +${archivedCount} archive${archivedCount>1?'s':''}` : ''}`
+      : `${statusIcon} ${archivedCount} archive${archivedCount>1?'s':''}`;
+
+    return `
+      <details style="background:var(--s);border:1px solid var(--b);border-left:4px solid ${statusColor};border-radius:10px;margin-bottom:8px;overflow:hidden">
+        <summary style="cursor:pointer;padding:12px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;user-select:none">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:160px">
+            <span class="cdetails-arrow" style="font-size:10px;color:var(--m);transition:transform .15s;display:inline-block">▶</span>
+            <span style="font-size:18px">${icon}</span>
+            <div>
+              <div style="font-size:13px;font-weight:600">${label}</div>
+              <div style="font-size:11px;color:var(--m);margin-top:2px">${group.length} entrée${group.length>1?'s':''}</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:${statusColor};font-weight:600">${summaryRight}</div>
+        </summary>
+        <div style="padding:0 12px 12px 12px">
+          ${group.map(renderEntry).join('')}
+        </div>
+      </details>`;
   }).join('');
+
+  // CSS pour la flèche pivotante (injection unique, partagée avec consentements.js)
+  if (!document.getElementById('cdetails-style')) {
+    const style = document.createElement('style');
+    style.id = 'cdetails-style';
+    style.textContent = `
+      details[open] > summary .cdetails-arrow { transform: rotate(90deg); }
+      details > summary::-webkit-details-marker { display: none; }
+      details > summary::marker { content: ''; }
+    `;
+    document.head.appendChild(style);
+  }
 }
 
 /* Wrapper : ouvre le module Consentements pour ce patient */
@@ -1921,6 +2025,214 @@ function _crEditFromCarnet(idx, patientId) {
         showToast('info', 'CR chargé', 'Modifiez les champs et cliquez sur Sauvegarder pour créer une nouvelle version.');
     }, 400);
   }, 350);
+}
+
+/* ════════════════════════════════════════════════
+   ONGLET BSI — Bilan de Soins Infirmiers (carnet patient)
+   ────────────────────────────────────────────────
+   Source canonique : IDB ami_bsi (module bsi.js)
+   Fonctions exposées par bsi.js :
+     • _bsiGetAll, _bsiGetById, _bsiSetActive, _bsiDelete, bsiPrintFromHistory
+═══════════════════════════════════════════════ */
+
+const BSI_VALIDITY_DAYS_LOCAL = 90;
+
+async function _renderBSIForPatient(patientId) {
+  const list = document.getElementById('pat-bsi-list-' + patientId);
+  if (!list) return;
+
+  const fnGetAll = (typeof _bsiGetAll === 'function')
+    ? _bsiGetAll
+    : (typeof window._bsiGetAll === 'function' ? window._bsiGetAll : null);
+  if (!fnGetAll) {
+    list.innerHTML = `<div class="msg w">Module BSI non chargé. Rafraîchissez la page.</div>`;
+    return;
+  }
+
+  const all = await fnGetAll(patientId);
+  if (!all || !all.length) {
+    list.innerHTML = `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun BSI enregistré pour ce patient.<br><span style="font-size:11px">Cliquez sur « + Nouvelle évaluation » pour ouvrir le module BSI.</span></div>`;
+    return;
+  }
+
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+  const lvlColors = ['','#22c55e','#f59e0b','#ef4444'];
+  const now = Date.now();
+
+  list.innerHTML = all.slice(0, 20).map(b => {
+    const d        = b.date ? new Date(b.date).toLocaleDateString('fr-FR') : '—';
+    const expDays  = Math.round(BSI_VALIDITY_DAYS_LOCAL - (now - new Date(b.date).getTime())/86400000);
+    const expired  = expDays <= 0;
+    const expLbl   = expired ? `⚠️ Expiré depuis ${-expDays}j` : `Expire dans ${expDays}j`;
+    const lvlColor = lvlColors[b.level] || '#94a3b8';
+
+    const isActive = b.active === true;
+    const activeBadge = isActive
+      ? '<span style="font-size:10px;background:rgba(34,197,94,.15);color:#22c55e;padding:2px 8px;border-radius:8px;font-family:var(--fm);margin-left:6px">● ACTIF</span>'
+      : b.active === false
+        ? '<span style="font-size:10px;background:rgba(107,114,128,.15);color:#6b7280;padding:2px 8px;border-radius:8px;font-family:var(--fm);margin-left:6px">📜 archivé</span>'
+        : '';
+    const sharedBadge = b._cabinet_shared
+      ? `<span style="font-size:10px;background:rgba(0,212,170,.15);color:var(--a);padding:2px 8px;border-radius:8px;font-family:var(--fm);margin-left:6px">🤝 ${esc(b._imported_from||'cabinet')}</span>`
+      : '';
+
+    const borderColor = isActive && !expired ? '#22c55e'
+                      : expired              ? '#ef4444'
+                      : 'var(--m)';
+
+    return `
+      <div style="background:var(--s);border:1px solid var(--b);border-left:4px solid ${borderColor};border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:160px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+              <span style="font-family:var(--fs);font-size:20px;color:${lvlColor};font-weight:700">BSI ${b.level || '—'}</span>
+              <span style="font-size:12px;font-family:var(--fm);color:var(--m)">Score ${b.total || 0} pts</span>
+              ${activeBadge}${sharedBadge}
+            </div>
+            <div style="font-size:11px;font-family:var(--fm);color:${expired?'#ef4444':'var(--m)'};margin-top:2px">
+              📅 ${d} · ${expLbl}${b.medecin ? ' · Dr ' + esc(b.medecin) : ''}${b.created_by ? ' · par ' + esc(b.created_by) : ''}
+            </div>
+            ${b.observations ? `<div style="font-size:12px;color:var(--t);margin-top:6px;line-height:1.5;white-space:pre-wrap"><strong style="font-size:11px;color:var(--m)">Observations :</strong><br>${esc(b.observations)}</div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          ${isActive ? `<button class="btn bs bsm" onclick="_bsiArchiveFromCarnet(${b.id},'${patientId}')" title="Marquer ce BSI comme archivé">📜 Archiver l'évaluation</button>` : ''}
+          <button class="btn bs bsm" onclick="_bsiGenerateCotationFromCarnet(${b.id})" title="Pré-remplir une cotation BSI niveau ${b.level||1}"><span>⚡</span> Générer la cotation</button>
+          <button class="btn bs bsm" onclick="_bsiPrintFromCarnet(${b.id})" title="Imprimer ou exporter en PDF">🖨️ Imprimer</button>
+          <button class="btn bs bsm" onclick="_bsiDeleteFromCarnet(${b.id},'${patientId}')" title="Suppression définitive (avec confirmation)" style="color:#ef4444">🗑️ Supprimer</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function _bsiNewFromCarnet(patientId) {
+  if (typeof navTo === 'function') navTo('bsi', null);
+  setTimeout(() => {
+    const sel = document.getElementById('bsi-patient-sel');
+    if (sel && patientId) {
+      sel.value = patientId;
+      if (typeof bsiSelectPatient === 'function') bsiSelectPatient(patientId);
+    }
+  }, 350);
+}
+
+async function _bsiArchiveFromCarnet(bsiId, patientId) {
+  try {
+    const fnSet = (typeof _bsiSetActive === 'function')
+      ? _bsiSetActive
+      : (typeof window._bsiSetActive === 'function' ? window._bsiSetActive : null);
+    const fnGet = (typeof _bsiGetById === 'function')
+      ? _bsiGetById
+      : (typeof window._bsiGetById === 'function' ? window._bsiGetById : null);
+    if (!fnSet || !fnGet) {
+      if (typeof showToast === 'function') showToast('error', 'Module BSI non chargé');
+      return;
+    }
+    const b = await fnGet(Number(bsiId));
+    if (!b) {
+      if (typeof showToast === 'function') showToast('warning', 'BSI introuvable');
+      return;
+    }
+    const ok = window.confirm(
+      `Archiver cette évaluation BSI ?\n\n` +
+      `BSI niveau ${b.level} · Score ${b.total} pts · ${new Date(b.date).toLocaleDateString('fr-FR')}\n\n` +
+      `Le BSI ne sera plus marqué comme actif. Il restera consultable dans l'historique.`
+    );
+    if (!ok) return;
+
+    await fnSet(Number(bsiId), false);
+    try { if (typeof auditLog === 'function') auditLog('BSI_ARCHIVED', { bsi_id: bsiId, patient_id: patientId, level: b.level }); } catch (_) {}
+
+    if (typeof showToast === 'function') showToast('success', 'BSI archivé', `Niveau ${b.level} · ${b.total} pts`);
+    _patTab('bsi', patientId);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
+
+async function _bsiGenerateCotationFromCarnet(bsiId) {
+  try {
+    const fn = (typeof _bsiGetById === 'function')
+      ? _bsiGetById
+      : (typeof window._bsiGetById === 'function' ? window._bsiGetById : null);
+    if (!fn) {
+      if (typeof showToast === 'function') showToast('error', 'Module BSI non chargé');
+      return;
+    }
+    const b = await fn(Number(bsiId));
+    if (!b) {
+      if (typeof showToast === 'function') showToast('warning', 'BSI introuvable');
+      return;
+    }
+    const codes = ['','BSI 1 - Bilan de soins infirmiers niveau 1','BSI 2 - Bilan de soins infirmiers niveau 2','BSI 3 - Bilan de soins infirmiers niveau 3'];
+    const code = codes[b.level || 1];
+
+    if (typeof navTo === 'function') navTo('cot', null);
+    setTimeout(() => {
+      const fTxt = document.getElementById('f-txt');
+      if (fTxt) {
+        fTxt.value = code;
+        if (typeof renderLiveReco === 'function') renderLiveReco(fTxt.value);
+      }
+      if (typeof showToast === 'function')
+        showToast('info', 'Cotation BSI pré-remplie', `BSI niveau ${b.level}`);
+    }, 300);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
+
+function _bsiPrintFromCarnet(bsiId) {
+  const fn = (typeof bsiPrintFromHistory === 'function')
+    ? bsiPrintFromHistory
+    : (typeof window.bsiPrintFromHistory === 'function' ? window.bsiPrintFromHistory : null);
+  if (!fn) {
+    if (typeof showToast === 'function') showToast('error', 'Module BSI non chargé');
+    return;
+  }
+  fn(bsiId);
+}
+
+async function _bsiDeleteFromCarnet(bsiId, patientId) {
+  try {
+    const fnGet = (typeof _bsiGetById === 'function')
+      ? _bsiGetById
+      : (typeof window._bsiGetById === 'function' ? window._bsiGetById : null);
+    const fnDel = (typeof _bsiDelete === 'function')
+      ? _bsiDelete
+      : (typeof window._bsiDelete === 'function' ? window._bsiDelete : null);
+    if (!fnGet || !fnDel) {
+      if (typeof showToast === 'function') showToast('error', 'Module BSI non chargé');
+      return;
+    }
+    const b = await fnGet(Number(bsiId));
+    if (!b) {
+      if (typeof showToast === 'function') showToast('warning', 'BSI introuvable');
+      return;
+    }
+    const d = b.date ? new Date(b.date).toLocaleDateString('fr-FR') : '—';
+    const lbl = `BSI niveau ${b.level} · ${b.patient_nom || ''} · ${d}`.trim();
+    const ok = window.confirm(
+      `⚠️ Suppression DÉFINITIVE du BSI\n\n${lbl}\n\nCette action est irréversible.\n` +
+      `Elle sera tracée dans le journal d'audit (BSI_DELETED).\n\nConfirmer la suppression ?`
+    );
+    if (!ok) return;
+
+    await fnDel(Number(bsiId));
+    try {
+      if (typeof auditLog === 'function') {
+        auditLog('BSI_DELETED', { bsi_id: bsiId, patient_id: patientId, level: b.level, total: b.total, active: b.active });
+      }
+    } catch (_) {}
+
+    if (typeof showToast === 'function') showToast('success', 'BSI supprimé', lbl);
+    _patTab('bsi', patientId);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
 }
 
 function _calcOrdoExp() {

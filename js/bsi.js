@@ -62,135 +62,43 @@ async function _bsiSave(obj) {
   });
 }
 
-/* ════════════════════════════════════════════════════════════════
-   🆕 SYNC INTER-APPAREILS BSI — v8.8 / Livraison 2
-   ────────────────────────────────────────────────────────────────
-   Synchronise tous les BSI de l'utilisateur entre ses appareils
-   via la table Supabase bsi_sync. Pattern identique à
-   piluliers/constantes/consentements : 1 blob chiffré par user.
-
-   Le chiffrement utilise une clé dérivée du user_id (stable entre
-   appareils, mais isolée par utilisateur). Le serveur ne peut PAS
-   déchiffrer le blob.
-
-   Endpoints worker :
-     POST /webhook/bsi-push   { encrypted_data, updated_at }
-     POST /webhook/bsi-pull   → { ok, data: { encrypted_data, updated_at } }
-
-   Intégration boot-sync :
-     Le module 'bsi' est inclus dans /webhook/boot-sync depuis v8.8.
-     bsiSyncPull() tente d'abord boot-sync, fallback sur bsi-pull.
-═══════════════════════════════════════════════════════════════ */
-
-function _bsiSyncKey() {
-  const uid = APP?.user?.id || APP?.user?.email || S?.user?.id || S?.user?.email || 'local';
-  let h = 0;
-  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
-  return 'sk_bsi_' + String(Math.abs(h));
-}
-function _bsiEnc(obj) {
-  try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _bsiSyncKey()))); } catch { return null; }
-}
-function _bsiDec(str) {
-  try {
-    const raw = decodeURIComponent(escape(atob(str)));
-    const sep = raw.lastIndexOf('|');
-    return JSON.parse(raw.slice(0, sep));
-  } catch { return null; }
-}
-
-/** Récupère TOUS les BSI de l'IDB (tous patients confondus) pour le push */
-async function _bsiGetAllForSync() {
+async function _bsiDelete(id) {
   const db = await _bsiDb();
-  const uid = APP?.user?.id || S?.user?.id || '';
   return new Promise((resolve, reject) => {
-    const tx  = db.transaction(BSI_STORE, 'readonly');
-    const req = tx.objectStore(BSI_STORE).getAll();
-    req.onsuccess = e => resolve(
-      (e.target.result || []).filter(b => b.user_id === uid)
-    );
-    req.onerror = e => reject(e.target.error);
+    const tx  = db.transaction(BSI_STORE, 'readwrite');
+    const req = tx.objectStore(BSI_STORE).delete(id);
+    req.onsuccess = () => resolve(true);
+    req.onerror   = e => reject(e.target.error);
   });
 }
 
-/** Push : chiffre tous les BSI locaux et les envoie au serveur */
-async function bsiSyncPush() {
-  if (typeof S === 'undefined' || !S?.token) return;
-  if (typeof wpost !== 'function') return;
-  try {
-    const all = await _bsiGetAllForSync();
-    if (!all.length) return;
-    const encrypted_data = _bsiEnc(all);
-    if (!encrypted_data) return;
-    await wpost('/webhook/bsi-push', {
-      encrypted_data,
-      updated_at: new Date().toISOString(),
-    });
-    // Invalider le cache boot-sync local pour que le prochain pull soit frais
-    if (typeof window.bootSyncInvalidate === 'function') window.bootSyncInvalidate();
-  } catch (e) {
-    console.warn('[bsiSyncPush]', e.message);
-  }
+async function _bsiGetById(id) {
+  const db = await _bsiDb();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(BSI_STORE, 'readonly');
+    const req = tx.objectStore(BSI_STORE).get(id);
+    req.onsuccess = e => resolve(e.target.result || null);
+    req.onerror   = e => reject(e.target.error);
+  });
 }
 
-/** Pull : récupère le blob serveur, fusionne avec l'IDB local */
-async function bsiSyncPull() {
-  if (typeof S === 'undefined' || !S?.token) return;
-  if (typeof wpost !== 'function') return;
-  try {
-    // ✅ v8.8 — Tente boot-sync d'abord (1 fetch pour tous les modules)
-    let resp = null;
-    if (typeof window.bootSyncGet === 'function') {
-      try { resp = await window.bootSyncGet('bsi'); } catch {}
-    }
-    if (!resp) {
-      resp = await wpost('/webhook/bsi-pull', {});
-    }
-    if (!resp?.ok || !resp.data?.encrypted_data) return;
-
-    const remote = _bsiDec(resp.data.encrypted_data);
-    if (!Array.isArray(remote) || !remote.length) return;
-
-    // Merge : on insère uniquement les BSI absents localement (par id)
-    const db = await _bsiDb();
-    const existing = await new Promise((res2, rej) => {
-      const tx  = db.transaction(BSI_STORE, 'readonly');
-      const req = tx.objectStore(BSI_STORE).getAll();
-      req.onsuccess = e => res2(e.target.result || []);
-      req.onerror   = e => rej(e.target.error);
-    });
-    const existingIds  = new Set(existing.map(b => b.id).filter(Boolean));
-    const existingKeys = new Set(existing.map(b => `${b.patient_id}|${b.date}`));
-
-    let merged = 0;
-    for (const remoteBsi of remote) {
-      // Ignorer si déjà présent (par id ou par signature patient+date)
-      if (remoteBsi.id && existingIds.has(remoteBsi.id)) continue;
-      const sig = `${remoteBsi.patient_id}|${remoteBsi.date}`;
-      if (existingKeys.has(sig)) continue;
-      // Insérer (laisser autoIncrement générer un nouvel id local)
-      const { id, ...rest } = remoteBsi;
-      try {
-        await new Promise((res2, rej) => {
-          const tx = db.transaction(BSI_STORE, 'readwrite');
-          const req = tx.objectStore(BSI_STORE).add(rest);
-          req.onsuccess = () => res2();
-          req.onerror   = e => rej(e.target.error);
-        });
-        merged++;
-      } catch {}
-    }
-    if (merged > 0) {
-      console.info(`[bsiSyncPull] ${merged} BSI fusionné(s) depuis le serveur`);
-    }
-  } catch (e) {
-    console.warn('[bsiSyncPull]', e.message);
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.bsiSyncPush = bsiSyncPush;
-  window.bsiSyncPull = bsiSyncPull;
+/** Bascule le flag active sur une entrée BSI (archive ou réactive). */
+async function _bsiSetActive(id, active) {
+  const db = await _bsiDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BSI_STORE, 'readwrite');
+    const st = tx.objectStore(BSI_STORE);
+    const req = st.get(id);
+    req.onsuccess = e => {
+      const rec = e.target.result;
+      if (!rec) return resolve(false);
+      rec.active = !!active;
+      if (!active) rec._archived_at = new Date().toISOString();
+      st.put(rec);
+      resolve(true);
+    };
+    req.onerror = e => reject(e.target.error);
+  });
 }
 
 async function _bsiGetAll(patientId) {
@@ -802,8 +710,6 @@ async function bsiSave() {
 
     // 🆕 Propagation cabinet (si membre d'un cabinet)
     try { await _bsiSyncToCabinet(obj); } catch (e) { console.warn('[bsi cabinet sync]', e.message); }
-    // 🆕 v8.8 — Sync inter-appareils via Supabase (silencieux)
-    try { await bsiSyncPush(); } catch (e) { console.warn('[bsi sync push]', e.message); }
   } catch (err) {
     showToast('error','Erreur',err.message);
   }
@@ -928,11 +834,141 @@ async function bsiLoadHistory() {
             </div>
             <div style="font-size:11px;font-family:var(--fm);color:${expDays>0?'var(--m)':'#ef4444'}">${expLabel} · ${b.medecin?'Dr. '+b.medecin:''}${b.created_by?' · par '+b.created_by:''}</div>
           </div>
-          <button class="btn bs bsm" onclick="bsiPrintFromHistory(${b.id})">🖨️ Imprimer</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn bs bsm" onclick="bsiPrintFromHistory(${b.id})" title="Imprimer ce BSI">🖨️ Imprimer</button>
+            <button class="btn bs bsm" onclick="bsiDeleteFromHistory(${b.id})" title="Suppression définitive (avec confirmation)" style="color:#ef4444">🗑️ Supprimer</button>
+          </div>
         </div>`;
     }).join('');
   } catch (err) {
     list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
+  }
+}
+
+/* ════════════════════════════════════════════════
+   IMPRESSION D'UN BSI ARCHIVÉ — depuis l'historique
+   ────────────────────────────────────────────────
+   bsiPrint() (existante) imprime depuis le formulaire en cours.
+   bsiPrintFromHistory(id) imprime depuis un enregistrement IDB.
+═══════════════════════════════════════════════ */
+async function bsiPrintFromHistory(id) {
+  try {
+    const b = await _bsiGetById(Number(id));
+    if (!b) {
+      if (typeof showToast === 'function') showToast('warning', 'BSI introuvable');
+      return;
+    }
+    const d = b.date ? new Date(b.date).toLocaleDateString('fr-FR') : '—';
+    const dSaved = b.saved_at ? new Date(b.saved_at).toLocaleString('fr-FR') : '—';
+    const expDays = Math.round(BSI_VALIDITY_DAYS - (new Date() - new Date(b.date))/86400000);
+    const expLbl  = expDays > 0 ? `Valable encore ${expDays} jours` : `⚠️ Expiré depuis ${-expDays} jours`;
+    const lvlColors = ['','#22c55e','#f59e0b','#ef4444'];
+    const statusLbl = b.active === true ? '● ACTIF'
+                    : b.active === false ? '📜 Archivé'
+                    : '—';
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up.');
+      return;
+    }
+    w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>BSI AMI</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:20px;color:#000;max-width:700px;margin:0 auto}
+        h1{font-size:18px;color:#0a4d3e;margin-bottom:6px}
+        h2{font-size:14px;color:${lvlColors[b.level]||'#000'};margin-top:14px}
+        .meta{background:#f6f8fa;border:1px solid #e5e7eb;border-radius:6px;padding:10px;font-size:11px;margin-bottom:12px}
+        .meta div{margin:3px 0}
+        table{border-collapse:collapse;width:100%;margin:12px 0}
+        th,td{border:1px solid #ccc;padding:8px;font-size:12px}
+        th{background:#f0f0f0}
+        .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:#e6f7f1;color:#00644a;margin-left:6px}
+        @media print{@page{margin:15mm}}
+      </style>
+      </head><body>
+      <h1>🩺 Bilan de Soins Infirmiers — AMI</h1>
+      <div class="meta">
+        <div><strong>Patient :</strong> ${b.patient_nom || '—'}</div>
+        <div><strong>Date d'évaluation :</strong> ${d} <span class="badge">${statusLbl}</span></div>
+        <div><strong>${expLbl}</strong></div>
+        ${b.medecin     ? `<div><strong>Médecin :</strong> Dr ${b.medecin}</div>` : ''}
+        ${b.created_by  ? `<div><strong>Évalué par :</strong> ${b.created_by}</div>` : ''}
+        <div><strong>Enregistré le :</strong> ${dSaved}</div>
+      </div>
+
+      <h2>Résultat : BSI Niveau ${b.level} (score ${b.total}/${(BSI_ITEMS||[]).length * 2})</h2>
+
+      <table>
+        <thead><tr><th>Critère</th><th>Niveau</th><th>Score</th></tr></thead>
+        <tbody>
+          ${(BSI_ITEMS||[]).map(i => {
+            const v = (b.scores||{})[i.id] || 0;
+            const lbl = (BSI_LEVELS||[])[v]?.label || '—';
+            return `<tr><td>${i.label}</td><td>${lbl}</td><td>${v}</td></tr>`;
+          }).join('')}
+          <tr style="font-weight:bold"><td colspan="2">TOTAL</td><td>${b.total||0}</td></tr>
+        </tbody>
+      </table>
+
+      ${b.observations ? `<p><strong>Observations :</strong> ${b.observations}</p>` : ''}
+      <p style="font-size:10px;color:#888;margin-top:24px;border-top:1px solid #eee;padding-top:8px">Généré par AMI · BSI NGAP 2026 · Document à conserver dans le dossier patient.</p>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   SUPPRESSION DÉFINITIVE D'UN BSI — depuis l'historique
+   ────────────────────────────────────────────────
+   ⚠️ Acte médico-légal sensible : double confirmation + audit log obligatoire.
+═══════════════════════════════════════════════ */
+async function bsiDeleteFromHistory(id) {
+  try {
+    const b = await _bsiGetById(Number(id));
+    if (!b) {
+      if (typeof showToast === 'function') showToast('warning', 'BSI introuvable');
+      return;
+    }
+    const d = b.date ? new Date(b.date).toLocaleDateString('fr-FR') : '—';
+    const lbl = `BSI niveau ${b.level} · ${b.patient_nom || ''} · ${d}`.trim();
+    const ok = window.confirm(
+      `⚠️ Suppression DÉFINITIVE du BSI\n\n${lbl}\n\nCette action est irréversible.\n` +
+      `Elle sera tracée dans le journal d'audit (BSI_DELETED).\n\nConfirmer la suppression ?`
+    );
+    if (!ok) return;
+
+    await _bsiDelete(b.id);
+
+    // Audit log — best-effort, non bloquant
+    try {
+      if (typeof auditLog === 'function') {
+        auditLog('BSI_DELETED', {
+          bsi_id:     b.id,
+          patient_id: b.patient_id,
+          level:      b.level,
+          total:      b.total,
+          date:       b.date,
+          active:     b.active,
+        });
+      }
+    } catch (_) {}
+
+    if (typeof showToast === 'function') showToast('success', 'BSI supprimé', lbl);
+    await bsiLoadHistory();
+
+    // Si le BSI supprimé était l'actif → rafraîchir le widget actif
+    if (b.active === true && typeof _bsiRenderActiveWidget === 'function') {
+      try {
+        const fn = (typeof _bsiGetActive === 'function') ? _bsiGetActive : window._bsiGetActive;
+        const next = fn ? await fn(_bsiCurrentPatient) : null;
+        _bsiRenderActiveWidget(next);
+      } catch (_) {}
+    }
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
   }
 }
 
@@ -967,13 +1003,15 @@ if (typeof window !== 'undefined') {
   window._bsiImportFromCabinet = _bsiImportFromCabinet;
   window._bsiGetActive = _bsiGetActive;
   window._bsiGetAllActive = _bsiGetAllActive;
+  // Nouveaux exports : nécessaires pour l'onglet BSI du carnet patient
+  window._bsiGetAll          = _bsiGetAll;
+  window._bsiGetById         = _bsiGetById;
+  window._bsiDelete          = _bsiDelete;
+  window._bsiSetActive       = _bsiSetActive;
+  window.bsiPrintFromHistory = bsiPrintFromHistory;
+  window.bsiDeleteFromHistory = bsiDeleteFromHistory;
 }
 
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'bsi') renderBSI();
-});
-
-// ✅ v8.8 — Sync inter-appareils au login : tire les BSI du serveur
-document.addEventListener('ami:login', () => {
-  try { bsiSyncPull().catch(() => {}); } catch {}
 });
