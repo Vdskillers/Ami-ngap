@@ -42,6 +42,130 @@ async function _crSave(obj) {
   });
 }
 
+/* ════════════════════════════════════════════════════════════════
+   🆕 SYNC INTER-APPAREILS CR-PASSAGE — v8.9 / Livraison 3
+   ────────────────────────────────────────────────────────────────
+   Synchronise tous les comptes-rendus de passage de l'utilisateur
+   entre ses appareils via la table Supabase cr_passage_sync.
+   Pattern identique à BSI : 1 blob chiffré par user, clé dérivée userId.
+
+   Endpoints worker :
+     POST /webhook/cr-passage-push   { encrypted_data, updated_at }
+     POST /webhook/cr-passage-pull   → { ok, data: { encrypted_data, updated_at } }
+
+   Intégration boot-sync :
+     Le module 'cr_passage' est inclus dans /webhook/boot-sync.
+     crSyncPull() tente d'abord boot-sync, fallback cr-passage-pull.
+═══════════════════════════════════════════════════════════════ */
+
+function _crSyncKey() {
+  const uid = APP?.user?.id || APP?.user?.email || S?.user?.id || S?.user?.email || 'local';
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
+  return 'sk_cr_' + String(Math.abs(h));
+}
+function _crEnc(obj) {
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _crSyncKey()))); } catch { return null; }
+}
+function _crDec(str) {
+  try {
+    const raw = decodeURIComponent(escape(atob(str)));
+    const sep = raw.lastIndexOf('|');
+    return JSON.parse(raw.slice(0, sep));
+  } catch { return null; }
+}
+
+/** Récupère TOUS les CR de l'IDB (tous patients confondus) pour le push */
+async function _crGetAllForSync() {
+  const db = await _crDb();
+  const uid = APP?.user?.id || S?.user?.id || '';
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(CR_STORE, 'readonly');
+    const req = tx.objectStore(CR_STORE).getAll();
+    req.onsuccess = e => resolve(
+      (e.target.result || []).filter(cr => cr.user_id === uid)
+    );
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+/** Push : chiffre tous les CR locaux et les envoie au serveur */
+async function crSyncPush() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  if (typeof wpost !== 'function') return;
+  try {
+    const all = await _crGetAllForSync();
+    if (!all.length) return;
+    const encrypted_data = _crEnc(all);
+    if (!encrypted_data) return;
+    await wpost('/webhook/cr-passage-push', {
+      encrypted_data,
+      updated_at: new Date().toISOString(),
+    });
+    if (typeof window.bootSyncInvalidate === 'function') window.bootSyncInvalidate();
+  } catch (e) {
+    console.warn('[crSyncPush]', e.message);
+  }
+}
+
+/** Pull : récupère le blob serveur, fusionne avec l'IDB local */
+async function crSyncPull() {
+  if (typeof S === 'undefined' || !S?.token) return;
+  if (typeof wpost !== 'function') return;
+  try {
+    // ✅ v8.9 — Tente boot-sync d'abord (1 fetch pour tous les modules)
+    let resp = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { resp = await window.bootSyncGet('cr_passage'); } catch {}
+    }
+    if (!resp) {
+      resp = await wpost('/webhook/cr-passage-pull', {});
+    }
+    if (!resp?.ok || !resp.data?.encrypted_data) return;
+
+    const remote = _crDec(resp.data.encrypted_data);
+    if (!Array.isArray(remote) || !remote.length) return;
+
+    // Merge : on insère uniquement les CR absents localement (par id ou signature)
+    const db = await _crDb();
+    const existing = await new Promise((res2, rej) => {
+      const tx  = db.transaction(CR_STORE, 'readonly');
+      const req = tx.objectStore(CR_STORE).getAll();
+      req.onsuccess = e => res2(e.target.result || []);
+      req.onerror   = e => rej(e.target.error);
+    });
+    const existingIds  = new Set(existing.map(cr => cr.id).filter(Boolean));
+    const existingKeys = new Set(existing.map(cr => `${cr.patient_id}|${cr.date}|${cr.heure || ''}`));
+
+    let merged = 0;
+    for (const remoteCr of remote) {
+      if (remoteCr.id && existingIds.has(remoteCr.id)) continue;
+      const sig = `${remoteCr.patient_id}|${remoteCr.date}|${remoteCr.heure || ''}`;
+      if (existingKeys.has(sig)) continue;
+      const { id, ...rest } = remoteCr;
+      try {
+        await new Promise((res2, rej) => {
+          const tx = db.transaction(CR_STORE, 'readwrite');
+          const req = tx.objectStore(CR_STORE).add(rest);
+          req.onsuccess = () => res2();
+          req.onerror   = e => rej(e.target.error);
+        });
+        merged++;
+      } catch {}
+    }
+    if (merged > 0) {
+      console.info(`[crSyncPull] ${merged} CR-Passage fusionné(s) depuis le serveur`);
+    }
+  } catch (e) {
+    console.warn('[crSyncPull]', e.message);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.crSyncPush = crSyncPush;
+  window.crSyncPull = crSyncPull;
+}
+
 async function _crGetAll(patientId) {
   // ⚠️ v2 — inclut les CR du user courant ET les CR reçus du cabinet
   // (marqués par _from_cabinet). Les CR d'autres IDE sans lien cabinet
@@ -599,6 +723,9 @@ async function crSave() {
     await crLoadHistory();
     await crRenderIntelligence();
 
+    // 🆕 v8.9 — Sync inter-appareils via Supabase (silencieux, non bloquant)
+    try { await crSyncPush(); } catch (e) { console.warn('[cr sync push]', e.message); }
+
     // 🆕 Push cabinet immédiat si CR partagé ET cabinet actif
     // Non bloquant : l'IDE n'attend pas le push pour continuer
     if (isShared && typeof APP !== 'undefined' && APP.get) {
@@ -985,4 +1112,9 @@ window.renderCompteRendu      = renderCompteRendu;
 
 document.addEventListener('ui:navigate', e => {
   if (e.detail?.view === 'compte-rendu') renderCompteRendu();
+});
+
+// ✅ v8.9 — Sync inter-appareils au login : tire les CR du serveur
+document.addEventListener('ami:login', () => {
+  try { crSyncPull().catch(() => {}); } catch {}
 });
