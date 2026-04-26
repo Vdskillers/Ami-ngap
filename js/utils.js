@@ -159,7 +159,7 @@ async function _safeParseResponse(res) {
   try { return JSON.parse(text); } catch { throw new Error('Réponse invalide du serveur'); }
 }
 
-async function _apiFetch(path, body, retry = true) {
+async function _apiFetch(path, body, retry = true, _attempt = 0) {
   const isIA    = path.includes('ami-calcul') || path.includes('ami-historique') || path.includes('ami-copilot');
   const TIMEOUT = isIA ? 55000 : 8000;
   const controller = new AbortController();
@@ -175,6 +175,20 @@ async function _apiFetch(path, body, retry = true) {
     clearTimeout(timeout);
 
     if (res.status === 401) { ss.clear(); if (typeof showAuthOv === 'function') showAuthOv(); throw new Error('Session expirée — reconnectez-vous'); }
+
+    // ✅ v3.9 — Gestion spécifique des 503 DNS cache overflow Cloudflare (transitoire)
+    //   Backoff exponentiel : 500ms → 1500ms → 3500ms (3 retries max).
+    //   Au-delà, fail-soft : on laisse le caller gérer l'erreur.
+    if (res.status === 503 && _attempt < 3) {
+      const text = await res.clone().text().catch(() => '');
+      const isDnsOverflow = /DNS cache overflow/i.test(text);
+      const isAnyTransient = isDnsOverflow || /Service Unavailable|temporarily/i.test(text);
+      if (isAnyTransient) {
+        const delay = [500, 1500, 3500][_attempt];
+        await new Promise(r => setTimeout(r, delay));
+        return _apiFetch(path, body, retry, _attempt + 1);
+      }
+    }
 
     const data = await _safeParseResponse(res);
     if (!res.ok) throw new Error(data?.error || ('Erreur serveur ' + res.status));
