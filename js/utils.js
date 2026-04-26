@@ -159,51 +159,245 @@ async function _safeParseResponse(res) {
   try { return JSON.parse(text); } catch { throw new Error('Réponse invalide du serveur'); }
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   🔥 AMI NETWORK ENGINE v3 — MODE HARDCORE
+   ────────────────────────────────────────────────────────────────────────
+   Scheduler global anti-DNS-overflow + dédup + cache + retry intelligent.
+
+   Pourquoi ?
+     Cloudflare Workers Free plan = 6 connexions sortantes simultanées max.
+     L'app AMI faisait jusqu'à 15-20 fetches parallèles au boot
+     (boot-sync + ngap-active + admin-logs + admin-stats + sync modules + ...)
+     → saturation cache DNS interne du Worker → 503 en cascade.
+
+   Comment ?
+     Tous les wpost/apiCall passent automatiquement par NET.request() qui :
+      1. Met en queue avec priorité (login > boot > sync > admin)
+      2. Limite à 1 fetch sortant simultané (max=1)
+      3. Dédupe les appels identiques en cours (1 seul fetch pour N appelants)
+      4. Cache mémoire avec TTL (évite de refetch les données stables)
+      5. Retry avec backoff exponentiel + jitter sur 503/DNS
+      6. Failsafe : ne clear PAS la session sur 401 préemptif
+
+   Compatible : wpost(), apiCall(), bootSyncStart() utilisent NET en interne.
+                Aucun changement requis dans les modules métier.
+   ═══════════════════════════════════════════════════════════════════════ */
+const NET = {
+  queue:       [],
+  active:      0,
+  max:         1,                 // ⚠️ JAMAIS >1 — c'est la clé anti-DNS-overflow
+  baseDelay:   100,               // délai entre 2 requêtes successives
+  jitter:      80,                // ms aléatoires ajoutés (évite synchronisation)
+  cache:       new Map(),         // key → { data, ts }
+  inflight:    new Map(),         // key → Promise (déduplication)
+  dnsErrors:   0,                 // compteur d'erreurs DNS récentes
+  lastDnsErr:  0,                 // timestamp dernière erreur DNS
+
+  /**
+   * Lance une requête à travers le scheduler.
+   * @param {string} key      Clé unique (path + body) pour dédup/cache
+   * @param {Function} fn     Fonction async qui fait le vrai fetch
+   * @param {Object} opts     { ttl, priority, retry, dedupe, cacheable }
+   */
+  async request(key, fn, opts = {}) {
+    const {
+      ttl       = 0,      // 0 = pas de cache
+      priority  = 5,      // 1=critique, 5=normal, 7=admin/logs
+      retry     = 2,      // nb retries sur 503/DNS
+      dedupe    = true,   // si true, n'exécute qu'1 fois pour N appels concurrents
+      cacheable = true,
+    } = opts;
+
+    // 🔁 CACHE HIT
+    if (cacheable && ttl > 0) {
+      const c = this.cache.get(key);
+      if (c && Date.now() - c.ts < ttl) return c.data;
+    }
+
+    // 🔁 DÉDUP : si déjà en vol, retourner la même promesse
+    if (dedupe && this.inflight.has(key)) {
+      return this.inflight.get(key);
+    }
+
+    const promise = this._enqueue(() => this._exec(fn, retry), priority);
+    if (dedupe) this.inflight.set(key, promise);
+
+    try {
+      const res = await promise;
+      if (cacheable && ttl > 0) {
+        this.cache.set(key, { data: res, ts: Date.now() });
+      }
+      return res;
+    } finally {
+      if (dedupe) this.inflight.delete(key);
+    }
+  },
+
+  _enqueue(fn, priority) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject, priority });
+      this.queue.sort((a, b) => a.priority - b.priority);
+      this._run();
+    });
+  },
+
+  async _run() {
+    if (this.active >= this.max) return;
+    if (!this.queue.length) return;
+
+    const job = this.queue.shift();
+    this.active++;
+
+    try {
+      const res = await job.fn();
+      job.resolve(res);
+    } catch (e) {
+      job.reject(e);
+    } finally {
+      this.active--;
+      // Attendre baseDelay + jitter avant le prochain → évite rafale
+      const delay = this.baseDelay + Math.random() * this.jitter;
+      setTimeout(() => this._run(), delay);
+    }
+  },
+
+  async _exec(fn, retry) {
+    let attempt = 0;
+    while (attempt <= retry) {
+      try {
+        const result = await fn();
+        // Reset compteur erreurs DNS sur succès
+        this.dnsErrors = 0;
+        return result;
+      } catch (e) {
+        const msg = String(e?.message || '').toLowerCase();
+        const isDns      = msg.includes('dns cache overflow') || msg.includes('dns');
+        const is503      = msg.includes('503');
+        const isFetchErr = msg.includes('fetch') || msg.includes('network');
+        if ((isDns || is503 || isFetchErr) && attempt < retry) {
+          this.dnsErrors++;
+          this.lastDnsErr = Date.now();
+          // Backoff exponentiel + jitter : 500ms, 1500ms, 3500ms
+          const delay = (500 * Math.pow(2, attempt)) + Math.random() * 300;
+          await new Promise(r => setTimeout(r, delay));
+          attempt++;
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('Max retry reached');
+  },
+
+  /** Invalide une entrée du cache (à appeler après PUSH pour forcer refresh) */
+  invalidate(key) {
+    if (key) {
+      // Invalidation par préfixe (ex: 'POST:/webhook/patients-' invalide tout patients)
+      for (const k of this.cache.keys()) {
+        if (k.startsWith(key)) this.cache.delete(k);
+      }
+    } else {
+      this.cache.clear();
+    }
+  },
+
+  /** Stats pour debug */
+  stats() {
+    return {
+      queueSize: this.queue.length,
+      active: this.active,
+      cacheSize: this.cache.size,
+      inflight: this.inflight.size,
+      dnsErrors: this.dnsErrors,
+    };
+  },
+};
+
+if (typeof window !== 'undefined') {
+  window.NET = NET;
+}
+
+/**
+ * Détermine la priorité automatique d'un endpoint en fonction de son path.
+ * Plus le nombre est petit, plus c'est prioritaire (1=critique, 9=trivial).
+ */
+function _netPriorityForPath(path) {
+  const p = String(path || '');
+  if (p.includes('login') || p.includes('register') || p.includes('logout')) return 1;
+  if (p.includes('boot-sync') || p.includes('ngap-active'))                   return 2;
+  if (p.includes('-pull'))                                                    return 3;
+  if (p.includes('-push') || p.includes('-delete'))                           return 4;
+  if (p.includes('admin-syshealth') || p.includes('admin-stats'))             return 6;
+  if (p.includes('admin-logs') || p.includes('admin-security'))               return 7;
+  if (p.includes('ami-copilot') || p.includes('ami-calcul'))                  return 5;
+  return 5;
+}
+
+/**
+ * Détermine le TTL cache automatique selon le path.
+ * 0 = pas de cache (POST modifiants, calculs IA, etc.)
+ */
+function _netTtlForPath(path, body) {
+  const p = String(path || '');
+  // Pas de cache sur les actions modifiantes
+  if (p.includes('-push') || p.includes('-delete') || p.includes('-update')) return 0;
+  if (p.includes('-save') || p.includes('-create'))                          return 0;
+  if (p.includes('login') || p.includes('register'))                         return 0;
+  if (p.includes('ami-copilot') || p.includes('ami-calcul'))                 return 0;
+  // Cache court pour les endpoints lecture admin (charge fréquemment ouverte)
+  if (p.includes('admin-syshealth')) return 10000;  // 10s
+  if (p.includes('admin-stats'))     return 30000;  // 30s
+  if (p.includes('admin-logs'))      return 10000;  // 10s
+  if (p.includes('admin-liste'))     return 30000;  // 30s
+  if (p.includes('boot-sync'))       return 5000;   // 5s
+  // Pas de cache par défaut sur les pulls (sinon les modules ne voient jamais les nouveautés)
+  return 0;
+}
+
 async function _apiFetch(path, body, retry = true, _attempt = 0) {
   const isIA    = path.includes('ami-calcul') || path.includes('ami-historique') || path.includes('ami-copilot');
   const TIMEOUT = isIA ? 55000 : 8000;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT);
 
-  try {
-    const res = await fetch(W + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': ss.tok() ? 'Bearer ' + ss.tok() : '' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+  // Clé de cache/dédup : path + hash du body
+  const bodyStr = body ? JSON.stringify(body) : '';
+  const key = 'POST:' + path + ':' + bodyStr;
 
-    if (res.status === 401) { ss.clear(); if (typeof showAuthOv === 'function') showAuthOv(); throw new Error('Session expirée — reconnectez-vous'); }
+  return NET.request(key, async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT);
+    try {
+      const res = await fetch(W + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': ss.tok() ? 'Bearer ' + ss.tok() : '' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
 
-    // ✅ v3.9 — Gestion spécifique des 503 DNS cache overflow Cloudflare (transitoire)
-    //   Backoff exponentiel : 500ms → 1500ms → 3500ms (3 retries max).
-    //   Au-delà, fail-soft : on laisse le caller gérer l'erreur.
-    if (res.status === 503 && _attempt < 3) {
-      const text = await res.clone().text().catch(() => '');
-      const isDnsOverflow = /DNS cache overflow/i.test(text);
-      const isAnyTransient = isDnsOverflow || /Service Unavailable|temporarily/i.test(text);
-      if (isAnyTransient) {
-        const delay = [500, 1500, 3500][_attempt];
-        await new Promise(r => setTimeout(r, delay));
-        return _apiFetch(path, body, retry, _attempt + 1);
+      if (res.status === 401) { ss.clear(); if (typeof showAuthOv === 'function') showAuthOv(); throw new Error('Session expirée — reconnectez-vous'); }
+
+      // 503 → throw pour que NET._exec retente avec backoff
+      if (res.status === 503) {
+        const text = await res.clone().text().catch(() => '');
+        throw new Error('503 ' + text.slice(0, 50));
       }
-    }
 
-    const data = await _safeParseResponse(res);
-    if (!res.ok) throw new Error(data?.error || ('Erreur serveur ' + res.status));
-    return data;
-
-  } catch (e) {
-    clearTimeout(timeout);
-    if (retry && e.name !== 'AbortError' && !e.message.includes('Session expirée')) {
-      await new Promise(r => setTimeout(r, 500));
-      return _apiFetch(path, body, false);
+      const data = await _safeParseResponse(res);
+      if (!res.ok) throw new Error(data?.error || ('Erreur serveur ' + res.status));
+      return data;
+    } catch (e) {
+      clearTimeout(timeout);
+      if (!navigator.onLine) throw new Error('Pas de connexion internet.');
+      if (e.name === 'AbortError') throw new Error(isIA ? "L'IA prend plus de temps que prévu 🤖" : 'Serveur trop lent (>8s)');
+      throw e;
     }
-    if (!navigator.onLine) throw new Error('Pas de connexion internet.');
-    if (e.name === 'AbortError') throw new Error(isIA ? "L'IA prend plus de temps que prévu 🤖" : 'Serveur trop lent (>8s)');
-    throw e;
-  }
+  }, {
+    priority:  _netPriorityForPath(path),
+    ttl:       _netTtlForPath(path, body),
+    retry:     2,
+    dedupe:    true,
+    cacheable: true,
+  });
 }
 
 async function wpost(path,body)   { return _apiFetch(path,body); }
@@ -240,33 +434,49 @@ async function bootSyncStart(force = false) {
   }
   // ✅ Garde-fou : ne tenter le fetch QUE si un token est présent.
   //   Sans cette garde, un appel pré-login ferait un POST sans Authorization,
-  //   le worker répondrait 401, et _apiFetch détruirait la session existante.
+  //   le worker répondrait 401, et la session existante serait potentiellement clear.
   if (typeof ss === 'undefined' || !ss.tok || !ss.tok()) {
     return null;
   }
   _BOOT_SYNC_PROMISE = (async () => {
     try {
-      // ✅ Appel direct sans passer par _apiFetch pour éviter ss.clear() sur 401.
-      //   boot-sync est un appel préemptif au boot — un 401 ici ne doit PAS
-      //   forcer la déconnexion. On laisse simplement les modules retomber
-      //   sur leurs endpoints individuels (eux-mêmes via _apiFetch standard).
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(W + '/webhook/boot-sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + ss.tok(),
-        },
-        body: '{}',
-        signal: ctrl.signal,
+      // ✅ v3.10 — Passe par NET.request pour bénéficier du scheduler global :
+      //   priorité 2 (très haute, juste après login), dédup, cache 5s.
+      //   En cas de 401/404/503, retourne null (fallback silencieux),
+      //   les modules retomberont sur leurs endpoints individuels.
+      const data = await NET.request('boot-sync:' + ss.tok().slice(-8), async () => {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 8000);
+        try {
+          const res = await fetch(W + '/webhook/boot-sync', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + ss.tok(),
+            },
+            body: '{}',
+            signal: ctrl.signal,
+          });
+          clearTimeout(tid);
+          if (!res.ok) {
+            // 503 → throw pour que NET retente avec backoff
+            if (res.status === 503) throw new Error('503 Service Unavailable');
+            // 401 / 404 → fallback silencieux (pas de clear session)
+            return null;
+          }
+          return await res.json().catch(() => null);
+        } catch (e) {
+          clearTimeout(tid);
+          throw e;
+        }
+      }, {
+        priority:  2,
+        ttl:       5000,
+        retry:     2,
+        dedupe:    true,
+        cacheable: true,
       });
-      clearTimeout(tid);
-      if (!res.ok) {
-        // 401 / 404 / 503 / etc. → fallback silencieux, pas de clear de session
-        return null;
-      }
-      const data = await res.json().catch(() => null);
+
       if (data && data.ok) {
         _BOOT_SYNC_DATA = data;
         _BOOT_SYNC_TS = Date.now();
@@ -291,7 +501,7 @@ async function bootSyncStart(force = false) {
  * → le module appelant doit alors utiliser son endpoint individuel.
  *
  * Modules disponibles : patients, km, signatures, piluliers, constantes,
- *                       consentements, ngap_active
+ *                       consentements, bsi, cr_passage, ngap_active
  */
 async function bootSyncGet(module) {
   const data = await bootSyncStart();
@@ -307,6 +517,10 @@ function bootSyncInvalidate() {
   _BOOT_SYNC_DATA = null;
   _BOOT_SYNC_TS = 0;
   _BOOT_SYNC_PROMISE = null;
+  // Invalider aussi le cache NET pour les requêtes liées au boot
+  if (typeof NET !== 'undefined') {
+    NET.invalidate('boot-sync:');
+  }
 }
 
 if (typeof window !== 'undefined') {
