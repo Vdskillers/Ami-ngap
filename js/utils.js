@@ -209,6 +209,86 @@ async function _apiFetch(path, body, retry = true, _attempt = 0) {
 async function wpost(path,body)   { return _apiFetch(path,body); }
 async function apiCall(path,body) { return _apiFetch(path,body); }
 
+/* ════════════════════════════════════════════════════════════════════════
+   BOOT-SYNC v8.7 — Orchestrateur global pour réduire le DNS overflow
+   ────────────────────────────────────────────────────────────────────────
+   Au lieu que chaque module fasse son propre fetch au boot (6 appels
+   parallèles = 18 fetches Supabase = saturation cache DNS Cloudflare),
+   on appelle UN SEUL endpoint /boot-sync qui retourne tout en 1 fois.
+
+   Les modules existants peuvent appeler bootSyncGet('patients') au
+   lieu de wpost('/webhook/patients-pull'). Si le cache est vide ou
+   l'endpoint indisponible, fallback automatique sur l'ancien comportement.
+
+   Usage :
+     - bootSyncStart()          → lance le pull (à appeler 1x au login)
+     - bootSyncGet('patients')  → renvoie les données patients (await la promesse en cours si pas encore fini)
+     - bootSyncGet('km')        → idem pour km
+     - etc.
+   ═══════════════════════════════════════════════════════════════════════ */
+let _BOOT_SYNC_PROMISE = null;
+let _BOOT_SYNC_DATA = null;
+let _BOOT_SYNC_TS = 0;
+const _BOOT_SYNC_TTL = 30000; // 30s — suffisant pour couvrir le boot complet
+
+async function bootSyncStart(force = false) {
+  // Si déjà en cours → renvoie la promesse existante (déduplication)
+  if (_BOOT_SYNC_PROMISE && !force) return _BOOT_SYNC_PROMISE;
+  // Si données en cache et pas expirées → retour immédiat
+  if (!force && _BOOT_SYNC_DATA && (Date.now() - _BOOT_SYNC_TS) < _BOOT_SYNC_TTL) {
+    return _BOOT_SYNC_DATA;
+  }
+  _BOOT_SYNC_PROMISE = (async () => {
+    try {
+      const res = await wpost('/webhook/boot-sync', {});
+      if (res && res.ok) {
+        _BOOT_SYNC_DATA = res;
+        _BOOT_SYNC_TS = Date.now();
+        return res;
+      }
+      return null;
+    } catch (e) {
+      // Fallback silencieux : les modules retomberont sur leurs endpoints individuels
+      console.debug('[boot-sync] indisponible, fallback sur endpoints individuels:', e.message);
+      return null;
+    } finally {
+      _BOOT_SYNC_PROMISE = null;
+    }
+  })();
+  return _BOOT_SYNC_PROMISE;
+}
+
+/**
+ * Récupère les données d'un module depuis le boot-sync.
+ * Si le boot-sync n'est pas encore fait, le déclenche.
+ * Si l'endpoint /boot-sync n'est pas disponible (ancien worker), retourne null
+ * → le module appelant doit alors utiliser son endpoint individuel.
+ *
+ * Modules disponibles : patients, km, signatures, piluliers, constantes,
+ *                       consentements, ngap_active
+ */
+async function bootSyncGet(module) {
+  const data = await bootSyncStart();
+  if (!data) return null;
+  return data[module] || null;
+}
+
+/**
+ * Invalide le cache boot-sync, forcera un nouveau pull au prochain bootSyncGet.
+ * À appeler après une action utilisateur qui change l'état serveur (ex: push).
+ */
+function bootSyncInvalidate() {
+  _BOOT_SYNC_DATA = null;
+  _BOOT_SYNC_TS = 0;
+  _BOOT_SYNC_PROMISE = null;
+}
+
+if (typeof window !== 'undefined') {
+  window.bootSyncStart = bootSyncStart;
+  window.bootSyncGet = bootSyncGet;
+  window.bootSyncInvalidate = bootSyncInvalidate;
+}
+
 /* Copilote IA — question NGAP */
 async function copilotAsk(question) {
   return _apiFetch('/webhook/ami-copilot', { question });

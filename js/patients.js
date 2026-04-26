@@ -3451,7 +3451,15 @@ async function syncPatientsToServer() {
 async function syncPatientsFromServer() {
   if (!S?.token) return;
   try {
-    const res = await wpost('/webhook/patients-pull', {});
+    // ✅ v8.7 — Tente d'abord boot-sync (1 seul fetch pour 6 modules)
+    let res = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { res = await window.bootSyncGet('patients'); } catch {}
+    }
+    // Fallback sur l'endpoint individuel si boot-sync indisponible
+    if (!res) {
+      res = await wpost('/webhook/patients-pull', {});
+    }
     if (!res?.ok || !Array.isArray(res.patients)) {
       console.warn('[AMI] Sync pull KO : réponse invalide', JSON.stringify(res));
       return;

@@ -496,7 +496,14 @@ async function consentSyncPull() {
   if (!uid) return { pulled: 0 };
 
   try {
-    const resp = await _consentWpost('/webhook/consentements-pull', {});
+    // ✅ v8.7 — Tente boot-sync d'abord
+    let resp = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { resp = await window.bootSyncGet('consentements'); } catch {}
+    }
+    if (!resp) {
+      resp = await _consentWpost('/webhook/consentements-pull', {});
+    }
     if (!resp?.data?.encrypted_data) return { pulled: 0 };
 
     // Format AES-GCM de l'ancien code (incompatible) → forcer un push d'écrasement

@@ -611,8 +611,15 @@ async function pilSyncPull() {
   if (!uid) return;
 
   try {
-    const resp = await wpost('/webhook/piluliers-pull', {});
-    const { data } = resp;
+    // ✅ v8.7 — Tente boot-sync d'abord
+    let resp = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { resp = await window.bootSyncGet('piluliers'); } catch {}
+    }
+    if (!resp) {
+      resp = await wpost('/webhook/piluliers-pull', {});
+    }
+    const { data } = resp || {};
     if (!data?.encrypted_data) return;
 
     // Déchiffrement stable (clé dérivée userId)

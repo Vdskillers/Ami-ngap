@@ -204,7 +204,14 @@ async function _syncKmToServer(entries) {
 async function syncKmFromServer() {
   if (typeof S === 'undefined' || !S?.token) return;
   try {
-    const res = await wpost('/webhook/km-pull', {});
+    // ✅ v8.7 — Tente boot-sync d'abord
+    let res = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { res = await window.bootSyncGet('km'); } catch {}
+    }
+    if (!res) {
+      res = await wpost('/webhook/km-pull', {});
+    }
     if (!res?.ok || !res.data?.encrypted_data) return;
 
     // Déchiffrer le blob

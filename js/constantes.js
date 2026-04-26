@@ -640,7 +640,14 @@ async function constSyncPull() {
   if (!uid) return;
 
   try {
-    const resp = await wpost('/webhook/constantes-pull', {});
+    // ✅ v8.7 — Tente boot-sync d'abord
+    let resp = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { resp = await window.bootSyncGet('constantes'); } catch {}
+    }
+    if (!resp) {
+      resp = await wpost('/webhook/constantes-pull', {});
+    }
     if (!resp?.data?.encrypted_data) return;
 
     const rawEnc = resp.data.encrypted_data;

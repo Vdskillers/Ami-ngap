@@ -395,6 +395,18 @@ async function _resolveWorkerUrl() {
 
 async function _pullActiveFromServer() {
   try {
+    // ✅ v8.7 — Tente d'abord boot-sync (1 seul fetch pour 6+1 modules)
+    if (typeof window.bootSyncGet === 'function') {
+      try {
+        const ngapResult = await window.bootSyncGet('ngap_active');
+        if (ngapResult && ngapResult.ok && ngapResult.active && ngapResult.active.referentiel) {
+          const { version, ruleset_hash, referentiel } = ngapResult.active;
+          return { version, ruleset_hash, referentiel };
+        }
+      } catch (_) { /* fallback ci-dessous */ }
+    }
+
+    // Fallback : endpoint individuel /webhook/ngap-active (compat ancien worker)
     const baseUrl = await _resolveWorkerUrl();
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), PULL_TIMEOUT_MS);

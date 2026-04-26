@@ -594,7 +594,14 @@ async function syncSignaturesFromServer() {
   try {
     const wpost = typeof window.wpost === 'function' ? window.wpost
       : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
-    const res = await wpost('/webhook/signatures-pull', {});
+    // ✅ v8.7 — Tente boot-sync d'abord
+    let res = null;
+    if (typeof window.bootSyncGet === 'function') {
+      try { res = await window.bootSyncGet('signatures'); } catch {}
+    }
+    if (!res) {
+      res = await wpost('/webhook/signatures-pull', {});
+    }
     if (!res?.ok || !Array.isArray(res.signatures) || !res.signatures.length) return;
 
     // Charger les locales pour comparaison par date
