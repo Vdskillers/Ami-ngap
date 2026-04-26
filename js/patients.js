@@ -736,8 +736,12 @@ async function openPatientDetail(id) {
     }
   } catch (_) {}
 
-  // Compte-rendus de passage : lecture multi-source (champ standard ou cotations signées)
-  const crList = _getComptesRendusPatient(p);
+  // Compte-rendus de passage : source prioritaire = IDB ami_cr (module cr-passage.js)
+  // Fallback = lecture multi-source depuis la fiche patient (compte_rendus, transmissions...)
+  let crList = await _getCRsFromIDB(id);
+  if (!crList.length) {
+    crList = _getComptesRendusPatient(p);
+  }
   const crCount = crList.length;
 
   // ── Render onglets ──────────────────────────────────────────────────────
@@ -1225,31 +1229,46 @@ function _patTabRender(tab, id, p, notes) {
 
   /* ── Onglet Compte-rendu de passage ── */
   if (tab === 'cr') {
-    const crList = _getComptesRendusPatient(p);
-    const sourceLbl = crList.length
-      ? (crList[0]._source === 'cotation' ? ' · source : cotations signées'
-        : crList[0]._source === 'compte_rendus' ? ' · source : compte_rendus'
-        : crList[0]._source === 'transmissions' ? ' · source : transmissions'
-        : '')
-      : '';
     el.innerHTML = `
       <div class="card">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <div class="ct" style="margin-bottom:0">📋 Comptes-rendus de passage${sourceLbl ? `<span style="font-size:10px;color:var(--m);font-weight:400;margin-left:8px">${sourceLbl}</span>` : ''}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="ct" style="margin-bottom:0">📋 Comptes-rendus de passage <span id="cr-source-lbl-${id}" style="font-size:10px;color:var(--m);font-weight:400;margin-left:6px"></span></div>
+          <button class="btn bp bsm" onclick="_crNewFromCarnet('${id}')" title="Ouvrir le module CR pour ce patient">+ Nouveau CR</button>
         </div>
         <div class="priv" style="margin-bottom:12px"><span style="font-size:14px;flex-shrink:0">📋</span><p style="font-size:11px">
-          Historique des passages chez ce patient — actes réalisés, signatures patient et preuves médico-légales (hash, horodatage, géozone).
+          Historique des passages chez ce patient — actes réalisés, constantes, observations cliniques, transmissions et niveau d'urgence.
         </p></div>
-        ${crList.length === 0
-          ? `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun compte-rendu enregistré pour ce patient.<br><span style="font-size:11px">Les comptes-rendus apparaîtront ici dès qu'un passage est signé via une cotation, ou dès qu'un module CR dédié est branché.</span></div>`
-          : `<div id="pat-cr-list-${id}">Chargement…</div>`}
+        <div id="pat-cr-list-${id}" style="font-size:13px;color:var(--m)">Chargement…</div>
       </div>`;
-    if (crList.length > 0) {
+
+    // Lecture async : IDB ami_cr en priorité, sinon fallback multi-source
+    (async () => {
+      let crList = await _getCRsFromIDB(id);
+      let primarySource = 'cr_idb';
+      if (!crList.length) {
+        crList = _getComptesRendusPatient(p);
+        primarySource = crList[0]?._source || null;
+      }
+
+      const lblEl = document.getElementById(`cr-source-lbl-${id}`);
+      if (lblEl) {
+        lblEl.textContent = primarySource === 'cr_idb'   ? '· module CR de passage'
+                          : primarySource === 'cotation' ? '· fallback cotations signées'
+                          : primarySource === 'compte_rendus' ? '· fiche patient'
+                          : primarySource === 'transmissions' ? '· transmissions'
+                          : '';
+      }
+
+      const list = document.getElementById('pat-cr-list-'+id);
+      if (!list) return;
+      if (!crList.length) {
+        list.innerHTML = `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun compte-rendu enregistré pour ce patient.<br><span style="font-size:11px">Cliquez sur « + Nouveau CR » pour ouvrir le module Compte-rendu de passage.</span></div>`;
+        return;
+      }
       _renderComptesRendusForPatient(id, p, crList).catch(err => {
-        const list = document.getElementById('pat-cr-list-'+id);
-        if (list) list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
+        list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
       });
-    }
+    })();
     return;
   }
 }
@@ -1398,6 +1417,81 @@ async function _consentDeleteFromCarnet(consentId, patientId) {
  * Chaque entrée retournée contient : { _source, _key, date, titre, contenu, actes, invoice_id, ... }
  * pour permettre un rendu uniforme + des actions ciblées (PDF, suppression).
  */
+
+/**
+ * Lecture asynchrone des CR depuis l'IDB du module Compte-rendu de passage.
+ * Source canonique de vérité : IDB `ami_cr` / store `comptes_rendus` (cf cr-passage.js).
+ *
+ * Retourne les CR du user courant + ceux reçus du cabinet (type='shared', _from_cabinet).
+ * Format unifié pour rendu cohérent dans l'onglet du carnet patient.
+ */
+async function _getCRsFromIDB(patientId) {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('ami_cr', 1);
+      req.onsuccess = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('comptes_rendus')) {
+          try { db.close(); } catch (_) {}
+          resolve([]); return;
+        }
+        const uid = APP?.user?.id || '';
+        try {
+          const tx  = db.transaction('comptes_rendus', 'readonly');
+          const idx = tx.objectStore('comptes_rendus').index('patient_id');
+          const r2  = idx.getAll(patientId);
+          r2.onsuccess = ev => {
+            const all = ev.target.result || [];
+            // Même filtre que _crGetAll dans cr-passage.js (RGPD : isolation user/cabinet)
+            const visible = all.filter(c =>
+              c.user_id === uid ||                       // mes CR
+              (c.type === 'shared' && c._from_cabinet)   // CR partagés reçus du cabinet
+            );
+            // Format unifié pour _renderComptesRendusForPatient
+            const mapped = visible.map(c => ({
+              _source: 'cr_idb',
+              _key:    String(c.id),
+              _idbId:  c.id,                     // pour suppression directe IDB
+              _raw:    c,                        // toutes les données brutes (constantes, EVA, etc.)
+              date:    c.date || c.saved_at || '',
+              titre:   c.medecin ? `Pour Dr ${c.medecin}` : 'Compte-rendu de passage',
+              contenu: c.observations || '',
+              actes_text: c.actes || '',
+              urgence: c.urgence || 'normal',
+              shared:  c.type === 'shared',
+              from_cabinet: !!c._from_cabinet,
+              inf_nom: c.inf_nom || '',
+              constantes: {
+                ta:          c.ta || '',
+                glycemie:    c.glycemie || '',
+                spo2:        c.spo2 || '',
+                temperature: c.temperature || '',
+                fc:          c.fc || '',
+                eva:         c.eva || '',
+              },
+              transmissions: c.transmissions || '',
+            })).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+            try { db.close(); } catch (_) {}
+            resolve(mapped);
+          };
+          r2.onerror = () => { try { db.close(); } catch (_) {} resolve([]); };
+        } catch (err) {
+          try { db.close(); } catch (_) {}
+          resolve([]);
+        }
+      };
+      req.onerror = () => resolve([]);
+      // Si l'IDB n'existe pas encore (jamais ouverte) → onupgradeneeded déclenché → on annule pour ne pas créer une DB vide
+      req.onupgradeneeded = e => {
+        try { e.target.transaction.abort(); } catch (_) {}
+        resolve([]);
+      };
+    } catch (_) {
+      resolve([]);
+    }
+  });
+}
+
 function _getComptesRendusPatient(p) {
   if (!p) return [];
 
@@ -1487,7 +1581,7 @@ async function _renderComptesRendusForPatient(patientId, p, crList) {
   const sigGet = (typeof getSignature === 'function') ? getSignature
               : (typeof window.getSignature === 'function' ? window.getSignature : null);
 
-  // Récupération parallèle des signatures pour les CR ayant un invoice_id
+  // Récupération parallèle des signatures pour les CR ayant un invoice_id (fallback cotations)
   const sigs = await Promise.all(crList.map(async cr => {
     if (!cr.invoice_id || !sigGet) return null;
     try { return await sigGet(cr.invoice_id); } catch { return null; }
@@ -1498,23 +1592,66 @@ async function _renderComptesRendusForPatient(patientId, p, crList) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
+  // Couleur de bordure selon urgence (CR du module cr-passage)
+  const urgColor = u => u === 'urgent'    ? '#ef4444'
+                     : u === 'attention' ? '#f59e0b'
+                     : '#00d4aa';
+  const urgIcon  = u => u === 'urgent'    ? '🔴'
+                     : u === 'attention' ? '🟠'
+                     : '🟢';
+  const urgLbl   = u => u === 'urgent'    ? 'Urgent'
+                     : u === 'attention' ? 'Attention'
+                     : 'RAS — Stable';
+
   list.innerHTML = crList.slice(0, 30).map((cr, idx) => {
-    const dateStr = cr.date ? new Date(cr.date).toLocaleString('fr-FR') : '—';
-    const sigPng  = sigs[idx];
-    const sourceTag = cr._source === 'cotation' ? '<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);padding:2px 6px;border-radius:4px;margin-left:6px">cotation signée</span>'
+    const dateStr  = cr.date ? new Date(cr.date).toLocaleString('fr-FR') : '—';
+    const sigPng   = sigs[idx];
+    const isCRIdb  = cr._source === 'cr_idb';
+    const c        = cr.constantes || {};
+    const hasConst = isCRIdb && (c.ta || c.glycemie || c.spo2 || c.temperature || c.fc || c.eva);
+
+    const sourceTag = cr._source === 'cr_idb' ? `<span style="font-size:10px;background:${urgColor(cr.urgence)+'22'};color:${urgColor(cr.urgence)};padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:600">${urgIcon(cr.urgence)} ${urgLbl(cr.urgence)}</span>`
+                   : cr._source === 'cotation' ? '<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);padding:2px 6px;border-radius:4px;margin-left:6px">cotation signée</span>'
                    : cr._source === 'compte_rendus' ? ''
                    : `<span style="font-size:10px;background:rgba(79,168,255,.12);color:var(--a2);padding:2px 6px;border-radius:4px;margin-left:6px">${esc(cr._source)}</span>`;
+
+    const sharedTag = cr.shared && cr.from_cabinet
+      ? '<span style="font-size:10px;background:rgba(79,168,255,.12);color:var(--a2);padding:2px 6px;border-radius:4px;margin-left:6px">📥 reçu cabinet</span>'
+      : (cr.shared ? '<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);padding:2px 6px;border-radius:4px;margin-left:6px">📤 partagé</span>' : '');
+
     const acteResume = cr.actes_text || (cr.actes?.length
       ? cr.actes.map(a => a.code || a.libelle || a).filter(Boolean).join(', ')
       : '');
+
+    // Bloc constantes formaté pour les CR du module cr-passage
+    const constantesHTML = hasConst ? `
+      <div style="margin-top:8px;padding:8px 10px;background:var(--dd);border-radius:6px;font-size:11px;color:var(--t);font-family:var(--fm);display:flex;flex-wrap:wrap;gap:10px;line-height:1.6">
+        ${c.ta          ? `<span><strong>TA</strong> ${esc(c.ta)}</span>` : ''}
+        ${c.glycemie    ? `<span><strong>Gly</strong> ${esc(c.glycemie)} g/L</span>` : ''}
+        ${c.spo2        ? `<span><strong>SpO₂</strong> ${esc(c.spo2)}%</span>` : ''}
+        ${c.temperature ? `<span><strong>T°</strong> ${esc(c.temperature)}°C</span>` : ''}
+        ${c.fc          ? `<span><strong>FC</strong> ${esc(c.fc)} bpm</span>` : ''}
+        ${c.eva         ? `<span style="color:${parseInt(c.eva)>=4?'#ef4444':'var(--t)'}"><strong>EVA</strong> ${esc(c.eva)}</span>` : ''}
+      </div>` : '';
+
+    const transmissionsHTML = cr.transmissions ? `
+      <div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,.08);border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:var(--t);line-height:1.5;white-space:pre-wrap">
+        <strong style="color:#f59e0b;font-size:11px">⚠️ À signaler :</strong> ${esc(cr.transmissions)}
+      </div>` : '';
+
+    const borderColor = isCRIdb ? urgColor(cr.urgence) : 'var(--b)';
+    const borderLeft  = isCRIdb ? `border-left:4px solid ${borderColor}` : '';
+
     return `
-      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="background:var(--s);border:1px solid var(--b);${borderLeft};border-radius:10px;padding:12px;margin-bottom:8px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
           <div style="flex:1;min-width:160px">
-            <div style="font-size:13px;font-weight:600">${esc(cr.titre)}${sourceTag}</div>
-            <div style="font-size:11px;color:var(--m);margin-top:2px">${dateStr}${cr.invoice_id ? ' · 🔗 ' + esc(cr.invoice_id) : ''}${cr.montant ? ' · ' + Number(cr.montant).toFixed(2) + ' €' : ''}</div>
-            ${acteResume ? `<div style="font-size:11px;color:var(--t);margin-top:4px">🩺 ${esc(acteResume)}</div>` : ''}
-            ${cr.contenu ? `<div style="font-size:12px;color:var(--t);margin-top:6px;line-height:1.5;white-space:pre-wrap">${esc(cr.contenu)}</div>` : ''}
+            <div style="font-size:13px;font-weight:600;display:flex;align-items:center;flex-wrap:wrap;gap:4px">${esc(cr.titre)}${sourceTag}${sharedTag}</div>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">${dateStr}${cr.inf_nom ? ' · ' + esc(cr.inf_nom) : ''}${cr.invoice_id ? ' · 🔗 ' + esc(cr.invoice_id) : ''}${cr.montant ? ' · ' + Number(cr.montant).toFixed(2) + ' €' : ''}</div>
+            ${acteResume ? `<div style="font-size:11px;color:var(--t);margin-top:6px"><strong>🩺 Actes :</strong> ${esc(acteResume)}</div>` : ''}
+            ${constantesHTML}
+            ${cr.contenu ? `<div style="font-size:12px;color:var(--t);margin-top:8px;line-height:1.5;white-space:pre-wrap"><strong style="font-size:11px;color:var(--m)">Observations :</strong><br>${esc(cr.contenu)}</div>` : ''}
+            ${transmissionsHTML}
           </div>
           ${sigPng ? `
           <div style="text-align:center">
@@ -1523,6 +1660,7 @@ async function _renderComptesRendusForPatient(patientId, p, crList) {
           </div>` : ''}
         </div>
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          ${isCRIdb ? `<button class="btn bs bsm" onclick="_crEditFromCarnet(${idx},'${patientId}')" title="Modifier ce CR dans le module Compte-rendu">✏️ Modifier</button>` : ''}
           <button class="btn bs bsm" onclick="_crPrintFromCarnet(${idx},'${patientId}')" title="Imprimer ou exporter en PDF">🖨️ PDF</button>
           ${cr._source === 'cotation' ? '' : `<button class="btn bs bsm" onclick="_crDeleteFromCarnet('${patientId}','${esc(cr._source)}','${esc(String(cr._key))}')" title="Suppression de ce compte-rendu" style="color:#ef4444">🧹 Effacer</button>`}
         </div>
@@ -1564,6 +1702,16 @@ async function _crPrintFromCarnet(idx, patientId) {
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
+    const isCRIdb  = cr._source === 'cr_idb';
+    const c        = cr.constantes || {};
+    const hasConst = isCRIdb && (c.ta || c.glycemie || c.spo2 || c.temperature || c.fc || c.eva);
+    const urgLbl   = cr.urgence === 'urgent'    ? '🔴 Urgent'
+                   : cr.urgence === 'attention' ? '🟠 Attention'
+                   : '🟢 RAS — Stable';
+    const urgColor = cr.urgence === 'urgent'    ? '#ef4444'
+                   : cr.urgence === 'attention' ? '#f59e0b'
+                   : '#22c55e';
+
     const w = window.open('', '_blank');
     if (!w) {
       if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
@@ -1572,27 +1720,56 @@ async function _crPrintFromCarnet(idx, patientId) {
     w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Compte-rendu de passage</title>
       <style>
         body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:680px;margin:0 auto}
-        h1{font-size:16px;margin-bottom:10px}
-        h2{font-size:13px;margin-top:18px;margin-bottom:6px;border-bottom:1px solid #ccc;padding-bottom:3px}
+        h1{font-size:18px;margin-bottom:6px;color:#0a4d3e}
+        h2{font-size:13px;margin-top:18px;margin-bottom:6px;border-bottom:1px solid #ccc;padding-bottom:3px;color:#0a4d3e}
         p{font-size:13px;line-height:1.7;margin:6px 0;white-space:pre-wrap}
+        .sub{color:#555;font-size:11px;margin-bottom:16px}
         .meta{background:#f6f8fa;border:1px solid #e5e7eb;border-radius:6px;padding:10px;font-size:11px;margin-bottom:12px}
         .meta div{margin:3px 0}
+        .urg-banner{padding:10px 14px;border-radius:6px;color:#fff;font-weight:600;font-size:13px;margin-bottom:14px;background:${urgColor}}
+        .const-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+        .const-cell{background:#f6f8fa;border:1px solid #e5e7eb;border-radius:5px;padding:6px 10px;font-size:12px}
+        .const-cell strong{display:block;color:#666;font-size:10px;margin-bottom:2px}
+        .const-cell .v{font-size:14px;font-weight:600}
+        .alert-box{background:#fff7ed;border-left:3px solid #f59e0b;border-radius:4px;padding:10px;font-size:12px;margin-top:8px}
         .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:8px;background:#fff;text-align:center;margin-top:6px}
         .sigbox img{max-width:280px;max-height:120px}
         @media print{@page{margin:15mm}}
       </style>
       </head><body>
-      <h1>📋 Compte-rendu de passage — ${esc(p.nom||'')} ${esc(p.prenom||'')}</h1>
+      <h1>📋 Compte-rendu de passage</h1>
+      <div class="sub">Patient : <strong>${esc(p.nom||'')} ${esc(p.prenom||'')}</strong> · ${dateStr}</div>
+
+      ${isCRIdb ? `<div class="urg-banner">${urgLbl}</div>` : ''}
+
       <div class="meta">
-        <div><strong>Date :</strong> ${dateStr}</div>
+        <div><strong>Date / heure du passage :</strong> ${dateStr}</div>
+        ${cr.inf_nom ? `<div><strong>Infirmier(ère) :</strong> ${esc(cr.inf_nom)}</div>` : ''}
+        ${cr._raw?.medecin ? `<div><strong>Médecin destinataire :</strong> Dr ${esc(cr._raw.medecin)}</div>` : ''}
         ${cr.invoice_id ? `<div><strong>N° de facture liée :</strong> ${esc(cr.invoice_id)}</div>` : ''}
         ${cr.montant ? `<div><strong>Montant :</strong> ${Number(cr.montant).toFixed(2)} €</div>` : ''}
-        <div><strong>Source :</strong> ${esc(cr._source)}</div>
       </div>
+
       ${acteResume ? `<h2>Actes réalisés</h2><p>${esc(acteResume)}</p>` : ''}
-      ${cr.contenu ? `<h2>Observations / Notes</h2><p>${esc(cr.contenu)}</p>` : ''}
+
+      ${hasConst ? `
+      <h2>Constantes relevées</h2>
+      <div class="const-grid">
+        ${c.ta          ? `<div class="const-cell"><strong>TA (mmHg)</strong><span class="v">${esc(c.ta)}</span></div>` : ''}
+        ${c.glycemie    ? `<div class="const-cell"><strong>Glycémie (g/L)</strong><span class="v">${esc(c.glycemie)}</span></div>` : ''}
+        ${c.spo2        ? `<div class="const-cell"><strong>SpO₂ (%)</strong><span class="v">${esc(c.spo2)}</span></div>` : ''}
+        ${c.temperature ? `<div class="const-cell"><strong>Température (°C)</strong><span class="v">${esc(c.temperature)}</span></div>` : ''}
+        ${c.fc          ? `<div class="const-cell"><strong>FC (bpm)</strong><span class="v">${esc(c.fc)}</span></div>` : ''}
+        ${c.eva         ? `<div class="const-cell"><strong>Douleur EVA</strong><span class="v">${esc(c.eva)}</span></div>` : ''}
+      </div>` : ''}
+
+      ${cr.contenu ? `<h2>Observations cliniques</h2><p>${esc(cr.contenu)}</p>` : ''}
+
+      ${cr.transmissions ? `<h2>Transmissions / À signaler</h2><div class="alert-box">${esc(cr.transmissions)}</div>` : ''}
+
       ${sigPng ? `<h2>Signature manuscrite du patient</h2><div class="sigbox"><img src="${sigPng}" alt="Signature"></div>` : ''}
-      <p style="font-size:10px;color:#888;margin-top:24px">Document généré par AMI · ${new Date().toLocaleString('fr-FR')} · À conserver dans le dossier patient.</p>
+
+      <p style="font-size:10px;color:#888;margin-top:24px;text-align:center;border-top:1px solid #eee;padding-top:10px">Document généré par AMI · ${new Date().toLocaleString('fr-FR')} · À conserver dans le dossier patient.</p>
       </body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 400);
@@ -1602,9 +1779,10 @@ async function _crPrintFromCarnet(idx, patientId) {
 }
 
 /**
- * Suppression d'un compte-rendu — uniquement pour les sources éditables (compte_rendus,
- * transmissions, crs, passages). Les CR provenant des cotations ne sont PAS supprimables
- * ici (ce sont des cotations, pas des CR à proprement parler).
+ * Suppression d'un compte-rendu — gère 2 scénarios :
+ *   - source 'cr_idb' : suppression dans l'IDB ami_cr (module cr-passage.js)
+ *   - sources 'compte_rendus' / 'transmissions' / 'crs' / 'passages' : suppression dans la fiche patient
+ *   - source 'cotation' : interdite ici (passer par l'onglet Cotations)
  */
 async function _crDeleteFromCarnet(patientId, source, key) {
   if (source === 'cotation') {
@@ -1613,6 +1791,38 @@ async function _crDeleteFromCarnet(patientId, source, key) {
   }
   if (!confirm(`Supprimer définitivement ce compte-rendu ?\n\nCette action est irréversible.`)) return;
 
+  // ── Cas 1 : CR du module cr-passage.js (IDB ami_cr / store comptes_rendus) ──
+  if (source === 'cr_idb') {
+    try {
+      const id = parseInt(key, 10);
+      if (isNaN(id)) throw new Error('ID invalide');
+
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.open('ami_cr', 1);
+        req.onsuccess = e => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('comptes_rendus')) {
+            try { db.close(); } catch (_) {}
+            return resolve();
+          }
+          const tx = db.transaction('comptes_rendus', 'readwrite');
+          const r2 = tx.objectStore('comptes_rendus').delete(id);
+          r2.onsuccess = () => { try { db.close(); } catch (_) {} resolve(); };
+          r2.onerror   = ev => { try { db.close(); } catch (_) {} reject(ev.target.error); };
+        };
+        req.onerror = ev => reject(ev.target.error);
+      });
+
+      if (typeof showToast === 'function') showToast('success', 'Compte-rendu supprimé');
+      try { if (typeof auditLog === 'function') auditLog('CR_DELETED', { patient_id: patientId, source, id }); } catch (_) {}
+      _patTab('cr', patientId);
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+    }
+    return;
+  }
+
+  // ── Cas 2 : CR stocké dans la fiche patient (champ array) ──
   try {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
@@ -1639,6 +1849,80 @@ async function _crDeleteFromCarnet(patientId, source, key) {
     if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
   }
 }
+
+/* Wrapper : ouvre le module Compte-rendu de passage avec patient présélectionné */
+function _crNewFromCarnet(patientId) {
+  if (typeof navTo === 'function') navTo('compte-rendu', null);
+  setTimeout(() => {
+    const sel = document.getElementById('cr-patient-sel');
+    if (sel && patientId) {
+      sel.value = patientId;
+      if (typeof crSelectPatient === 'function') crSelectPatient(patientId);
+    }
+  }, 350);
+}
+
+/**
+ * Wrapper : navigue vers le module CR et pré-remplit le formulaire avec un CR existant.
+ * Note médico-légale : un CR sauvegardé est une trace de soin — la "modification" via le
+ * module crSave() crée techniquement une nouvelle entrée. Le module CR original ne supporte
+ * pas l'édition in-place, on charge donc juste les valeurs dans le formulaire pour ré-utilisation.
+ */
+function _crEditFromCarnet(idx, patientId) {
+  const list = window._currentPatientCRs || [];
+  if (window._currentPatientCRsId !== patientId) {
+    if (typeof showToast === 'function') showToast('warning', 'Veuillez rafraîchir l\'onglet');
+    return;
+  }
+  const cr = list[idx];
+  if (!cr || cr._source !== 'cr_idb') {
+    if (typeof showToast === 'function') showToast('info', 'Action non disponible', 'Modification possible uniquement pour les CR créés via le module dédié.');
+    return;
+  }
+  const raw = cr._raw || {};
+
+  if (typeof navTo === 'function') navTo('compte-rendu', null);
+  setTimeout(() => {
+    const sel = document.getElementById('cr-patient-sel');
+    if (sel && patientId) {
+      sel.value = patientId;
+      if (typeof crSelectPatient === 'function') crSelectPatient(patientId);
+    }
+    // Pré-remplir les champs après affichage du formulaire
+    setTimeout(() => {
+      const setVal = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+      // Date au format ISO datetime-local (yyyy-MM-ddTHH:mm)
+      let dateLocal = '';
+      if (raw.date) {
+        try {
+          const d = new Date(raw.date);
+          if (!isNaN(d)) {
+            const pad = n => String(n).padStart(2, '0');
+            dateLocal = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          }
+        } catch (_) {}
+      }
+      setVal('cr-date',         dateLocal);
+      setVal('cr-medecin',      raw.medecin);
+      setVal('cr-actes',        raw.actes);
+      setVal('cr-ta',           raw.ta);
+      setVal('cr-gly',          raw.glycemie);
+      setVal('cr-spo2',         raw.spo2);
+      setVal('cr-temp',         raw.temperature);
+      setVal('cr-fc',           raw.fc);
+      setVal('cr-eva',          raw.eva);
+      setVal('cr-observations', raw.observations);
+      setVal('cr-transmissions',raw.transmissions);
+      setVal('cr-urgence',      raw.urgence || 'normal');
+      // Scroll vers le formulaire
+      const formSec = document.getElementById('cr-form-section');
+      if (formSec) formSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (typeof showToast === 'function')
+        showToast('info', 'CR chargé', 'Modifiez les champs et cliquez sur Sauvegarder pour créer une nouvelle version.');
+    }, 400);
+  }, 350);
+}
+
 function _calcOrdoExp() {
   const dateEl = $('oi-date-pres');
   const durEl  = $('oi-duree');
