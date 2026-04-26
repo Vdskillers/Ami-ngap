@@ -278,10 +278,31 @@ async function patientAddPilulier(patientId, pilulier) {
     if (!row) return;
     const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
     if (!Array.isArray(p.piluliers)) p.piluliers = [];
-    const existIdx = p.piluliers.findIndex(x => x.semaine_debut === pilulier.semaine_debut);
+
+    // ── Doctrine : Upsert, jamais de push aveugle ──────────────────────
+    // Clé d'identité : id IDB en priorité (stable), semaine_debut en fallback
+    const pilId   = pilulier.id != null ? String(pilulier.id) : null;
+    const pilSem  = pilulier.semaine_debut || null;
+
+    // Purge des doublons éventuels déjà présents (héritage du bug push)
+    const seen = new Set();
+    p.piluliers = p.piluliers.filter(x => {
+      const k = (x.id != null ? 'i:' + x.id : '') + '|' + (x.semaine_debut || '');
+      if (k === '|') return true; // pas de clé identifiable → on garde
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
+    // Recherche d'une entrée existante : id IDB d'abord, semaine_debut ensuite
+    let existIdx = -1;
+    if (pilId)        existIdx = p.piluliers.findIndex(x => x.id != null && String(x.id) === pilId);
+    if (existIdx < 0 && pilSem) existIdx = p.piluliers.findIndex(x => x.semaine_debut === pilSem);
+
     const entry = { ...pilulier, _saved_at: new Date().toISOString() };
-    if (existIdx >= 0) p.piluliers[existIdx] = entry;
+    if (existIdx >= 0) p.piluliers[existIdx] = { ...p.piluliers[existIdx], ...entry };
     else p.piluliers.push(entry);
+
     const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
     await _idbPut(PATIENTS_STORE, toStore);
     if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
@@ -409,8 +430,12 @@ function _pilChargerDepuisCarnet(pilEncoded) {
 /**
  * Injecte les données d'un pilulier dans le module Semainier/Pilulier.
  * Utilisé par _pilChargerDepuisCarnet.
+ *
+ * ⚡ FIX upsert : mémorise aussi l'id IDB du pilulier chargé dans _pilCurrentEditId
+ *    afin que la prochaine sauvegarde MAJ cette entrée au lieu d'en créer une nouvelle.
+ *    Doctrine : Patient existe → Upsert, jamais de push aveugle.
  */
-function _pilInjectData(pil) {
+async function _pilInjectData(pil) {
   // Injecter les médicaments dans _pilMeds (variable globale de pilulier.js)
   if (typeof _pilMeds !== 'undefined') {
     _pilMeds = JSON.parse(JSON.stringify(pil.meds || []));
@@ -428,11 +453,30 @@ function _pilInjectData(pil) {
   // Préparateur
   const prep = document.getElementById('pil-preparateur');
   if (prep && pil.preparateur) prep.value = pil.preparateur;
+
+  // ⚡ Résolution de l'id IDB pour activer le mode édition (upsert au save) ─────
+  // Source 1 : id stocké dans l'entrée du carnet (versions récentes)
+  // Source 2 : lookup dans l'IDB ami_piluliers par patient_id + semaine_debut
+  //            (rétrocompat anciens piluliers sans id dans le carnet)
+  let editId = pil.id || null;
+  if (!editId && pil.patient_id && pil.semaine_debut && typeof _pilulierGetAll === 'function') {
+    try {
+      const all = await _pilulierGetAll(pil.patient_id);
+      const match = all.find(p => p.semaine_debut === pil.semaine_debut);
+      if (match?.id) editId = match.id;
+    } catch (_) {}
+  }
+  if (typeof _pilCurrentEditId !== 'undefined') {
+    _pilCurrentEditId = editId;
+  }
+
   // Re-rendre
   if (typeof pilRenderMedsList === 'function') pilRenderMedsList();
   if (typeof pilRenderSemainier === 'function') pilRenderSemainier();
+  // Mettre à jour la bannière "Mode édition" si la fonction existe (pilulier.js)
+  if (typeof _pilUpdateEditBanner === 'function') _pilUpdateEditBanner();
   if (typeof showToast === 'function')
-    showToast('info', 'Pilulier chargé', `Semaine du ${pil.semaine_debut||'—'}`);
+    showToast('info', 'Pilulier chargé', `Semaine du ${pil.semaine_debut||'—'}${editId ? ' · Mode édition' : ''}`);
 }
 
 let _editingPatientId = null;
@@ -679,6 +723,23 @@ async function openPatientDetail(id) {
     return !isNaN(exp) && exp <= new Date(Date.now() + 30*24*3600000);
   });
 
+  // ── Pré-chargement consentements + CR pour les compteurs d'onglets ──
+  // Consentements : depuis l'IDB de consentements.js (exposée via window._consentGetAllRaw)
+  let consentCount = 0;
+  try {
+    const fn = (typeof _consentGetAllRaw === 'function')
+      ? _consentGetAllRaw
+      : (typeof window._consentGetAllRaw === 'function' ? window._consentGetAllRaw : null);
+    if (fn) {
+      const all = await fn();
+      consentCount = (all || []).filter(c => c.patient_id === id && c.status !== 'archived').length;
+    }
+  } catch (_) {}
+
+  // Compte-rendus de passage : lecture multi-source (champ standard ou cotations signées)
+  const crList = _getComptesRendusPatient(p);
+  const crCount = crList.length;
+
   // ── Render onglets ──────────────────────────────────────────────────────
   const tabStyle = (active) => active
     ? 'padding:8px 16px;font-size:12px;font-family:var(--fm);background:var(--a);color:#000;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;font-weight:600'
@@ -710,6 +771,8 @@ async function openPatientDetail(id) {
         <button id="tab-ordos"   style="${tabStyle(false)}" onclick="_patTab('ordos','${id}')">💊 Ordonnances ${p.ordonnances.length ? '<span style=\'background:rgba(255,181,71,.25);color:var(--w);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+p.ordonnances.length+'</span>' : ''}</button>
         <button id="tab-pilulier"   style="${tabStyle(false)}" onclick="_patTab('pilulier','${id}')">💊 Semainier <span style='background:rgba(79,168,255,.12);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.piluliers||[]).length||''}</span></button>
         <button id="tab-constantes" style="${tabStyle(false)}" onclick="_patTab('constantes','${id}')">📊 Constantes <span style='background:rgba(0,212,170,.12);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${(p.constantes||[]).length||''}</span></button>
+        <button id="tab-consentements" style="${tabStyle(false)}" onclick="_patTab('consentements','${id}')">🛡️ Consentements ${consentCount ? '<span style=\'background:rgba(0,212,170,.15);color:var(--a);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+consentCount+'</span>' : ''}</button>
+        <button id="tab-cr" style="${tabStyle(false)}" onclick="_patTab('cr','${id}')">📋 CR de passage ${crCount ? '<span style=\'background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px\'>'+crCount+'</span>' : ''}</button>
         <button id="tab-notes"  style="${tabStyle(false)}" onclick="_patTab('notes','${id}')">📝 Notes <span style='background:rgba(79,168,255,.15);color:var(--a2);border-radius:20px;font-size:9px;padding:1px 6px;margin-left:3px'>${notes.length}</span></button>
       </div>
     </div>
@@ -726,7 +789,7 @@ async function openPatientDetail(id) {
 
 /* ── Sélecteur d'onglet ── */
 function _patTab(tab, id) {
-  ['infos','ordos','cotations','notes','constantes','pilulier'].forEach(t => {
+  ['infos','ordos','cotations','notes','constantes','pilulier','consentements','cr'].forEach(t => {
     const btn = $('tab-'+t);
     if (!btn) return;
     if (t === tab) {
@@ -1138,9 +1201,444 @@ function _patTabRender(tab, id, p, notes) {
       </div>`;
     return;
   }
+
+  /* ── Onglet Consentements éclairés ── */
+  if (tab === 'consentements') {
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="ct" style="margin-bottom:0">🛡️ Consentements éclairés</div>
+          <button class="btn bp bsm" onclick="_consentNewFromCarnet('${id}')" title="Ouvrir le module Consentements pour ce patient">+ Nouveau consentement</button>
+        </div>
+        <div class="priv" style="margin-bottom:12px"><span style="font-size:14px;flex-shrink:0">🛡️</span><p style="font-size:11px">
+          Le consentement éclairé est une obligation légale (Art. L1111-4 CSP). Cette liste regroupe tous les consentements (actifs, expirés, archivés) du patient.
+        </p></div>
+        <div id="pat-consentements-list-${id}" style="font-size:13px;color:var(--m)">Chargement…</div>
+      </div>`;
+    // Render async — lecture depuis l'IDB de consentements.js
+    _renderConsentementsForPatient(id).catch(err => {
+      const list = document.getElementById('pat-consentements-list-'+id);
+      if (list) list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
+    });
+    return;
+  }
+
+  /* ── Onglet Compte-rendu de passage ── */
+  if (tab === 'cr') {
+    const crList = _getComptesRendusPatient(p);
+    const sourceLbl = crList.length
+      ? (crList[0]._source === 'cotation' ? ' · source : cotations signées'
+        : crList[0]._source === 'compte_rendus' ? ' · source : compte_rendus'
+        : crList[0]._source === 'transmissions' ? ' · source : transmissions'
+        : '')
+      : '';
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">📋 Comptes-rendus de passage${sourceLbl ? `<span style="font-size:10px;color:var(--m);font-weight:400;margin-left:8px">${sourceLbl}</span>` : ''}</div>
+        </div>
+        <div class="priv" style="margin-bottom:12px"><span style="font-size:14px;flex-shrink:0">📋</span><p style="font-size:11px">
+          Historique des passages chez ce patient — actes réalisés, signatures patient et preuves médico-légales (hash, horodatage, géozone).
+        </p></div>
+        ${crList.length === 0
+          ? `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun compte-rendu enregistré pour ce patient.<br><span style="font-size:11px">Les comptes-rendus apparaîtront ici dès qu'un passage est signé via une cotation, ou dès qu'un module CR dédié est branché.</span></div>`
+          : `<div id="pat-cr-list-${id}">Chargement…</div>`}
+      </div>`;
+    if (crList.length > 0) {
+      _renderComptesRendusForPatient(id, p, crList).catch(err => {
+        const list = document.getElementById('pat-cr-list-'+id);
+        if (list) list.innerHTML = `<div class="msg e">Erreur : ${err.message}</div>`;
+      });
+    }
+    return;
+  }
 }
 
-/* ── Calcul auto date expiration depuis durée ── */
+/* ════════════════════════════════════════════════
+   ONGLET CONSENTEMENTS ÉCLAIRÉS — lecture depuis consentements.js
+════════════════════════════════════════════════ */
+
+/**
+ * Rendu de la liste des consentements pour un patient dans son carnet.
+ * Lit l'IDB de consentements.js via window._consentGetAllRaw (exposée).
+ * Affiche pour chaque entrée : type, version, statut, hash, signature visuelle (si dispo)
+ * + boutons Modifier / PDF / Effacer (qui délèguent aux fonctions de consentements.js).
+ */
+async function _renderConsentementsForPatient(patientId) {
+  const list = document.getElementById('pat-consentements-list-' + patientId);
+  if (!list) return;
+
+  const fnAll = (typeof _consentGetAllRaw === 'function')
+    ? _consentGetAllRaw
+    : (typeof window._consentGetAllRaw === 'function' ? window._consentGetAllRaw : null);
+  if (!fnAll) {
+    list.innerHTML = `<div class="msg w">Module Consentements non chargé. Rafraîchissez la page.</div>`;
+    return;
+  }
+
+  const all = await fnAll();
+  const mine = (all || [])
+    .filter(c => c.patient_id === patientId)
+    .sort((a, b) => new Date(b.horodatage || b.date || 0) - new Date(a.horodatage || a.date || 0));
+
+  if (!mine.length) {
+    list.innerHTML = `<div style="color:var(--m);font-size:13px;padding:12px 0">Aucun consentement enregistré pour ce patient.<br><span style="font-size:11px">Pour en ajouter, utilisez le module <strong>Consentements éclairés</strong> ou le bouton « + Nouveau consentement » ci-dessus.</span></div>`;
+    return;
+  }
+
+  const TPL = (typeof CONSENT_TEMPLATES !== 'undefined') ? CONSENT_TEMPLATES
+            : (typeof window.CONSENT_TEMPLATES !== 'undefined' ? window.CONSENT_TEMPLATES : {});
+
+  const _isExpired = c => c?.expires_at && (new Date(c.expires_at) < new Date());
+
+  // Résolution parallèle des signatures : signatureDataUrl local → ami_signatures via invoice_id
+  const sigGet = (typeof getSignature === 'function') ? getSignature
+              : (typeof window.getSignature === 'function' ? window.getSignature : null);
+  const sigs = await Promise.all(mine.map(async c => {
+    if (c.signatureDataUrl) return c.signatureDataUrl;
+    if (c.invoice_id && sigGet) {
+      try { const png = await sigGet(c.invoice_id); if (png) return png; } catch (_) {}
+    }
+    return null;
+  }));
+
+  list.innerHTML = mine.map((c, idx) => {
+    const tpl = TPL[c.type] || {};
+    const expired = _isExpired(c);
+    const statusIcon = c.status === 'archived' ? '📜'
+                     : c.status === 'pending'  ? '⏳'
+                     : expired                 ? '❌'
+                     : '✅';
+    const statusColor = c.status === 'archived' ? 'var(--m)'
+                      : c.status === 'pending'  ? '#f59e0b'
+                      : expired                 ? '#ef4444'
+                      : '#00d4aa';
+    const d = new Date(c.horodatage || c.date).toLocaleString('fr-FR');
+    const byWho = c.created_by_nom ? ` · par ${c.created_by_nom}` : '';
+    const dExp = c.expires_at ? new Date(c.expires_at).toLocaleDateString('fr-FR') : '';
+    const sigPng = sigs[idx];
+    return `
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px;border-left:4px solid ${statusColor}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:13px;font-weight:600">${tpl.icon||'📋'} ${c.type_label || tpl.label || c.type} <span style="font-size:11px;color:var(--m)">v${c.version||1}</span></div>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">${d}${byWho}${dExp ? ' · expire le ' + dExp : ''}</div>
+            ${c.signature_hash ? `<div style="font-size:10px;color:var(--m);margin-top:3px;font-family:monospace" title="Hash d'intégrité">🔒 ${c.signature_hash.slice(0,16)}…</div>` : ''}
+          </div>
+          <div style="font-size:11px;color:${statusColor};font-weight:600">${statusIcon} ${c.status}${expired && c.status==='signed'?' (expiré)':''}</div>
+        </div>
+        ${sigPng ? `
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <img src="${sigPng}" alt="Signature patient" style="height:40px;max-width:140px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain" title="Signature manuscrite du patient">
+          <span style="font-size:10px;color:var(--m)">${c.invoice_id ? '🔗 Liée à la facture ' + c.invoice_id : 'Signature locale'}</span>
+        </div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn bs bsm" onclick="_consentEditFromCarnet(${c.id})" title="Re-signer une nouvelle version (l'actuelle sera archivée)">✏️ Modifier</button>
+          <button class="btn bs bsm" onclick="_consentPrintFromCarnet(${c.id})" title="Imprimer ou exporter en PDF">🖨️ PDF</button>
+          <button class="btn bs bsm" onclick="_consentDeleteFromCarnet(${c.id},'${patientId}')" title="Suppression définitive (avec confirmation)" style="color:#ef4444">🧹 Effacer</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* Wrapper : ouvre le module Consentements pour ce patient */
+function _consentNewFromCarnet(patientId) {
+  if (typeof navTo === 'function') navTo('consentements', null);
+  setTimeout(() => {
+    const sel = document.getElementById('consent-patient-sel');
+    if (sel && patientId) {
+      sel.value = patientId;
+      if (typeof consentSelectPatient === 'function') consentSelectPatient(patientId);
+    }
+  }, 350);
+}
+
+/* Wrapper : navigue vers le module Consentements et ouvre le consentement en édition */
+function _consentEditFromCarnet(consentId) {
+  if (typeof navTo === 'function') navTo('consentements', null);
+  setTimeout(() => {
+    const fn = (typeof consentEditEntry === 'function')
+      ? consentEditEntry
+      : (typeof window.consentEditEntry === 'function' ? window.consentEditEntry : null);
+    if (fn) fn(consentId);
+  }, 400);
+}
+
+/* Wrapper : imprime sans changer d'onglet */
+function _consentPrintFromCarnet(consentId) {
+  const fn = (typeof consentPrintEntry === 'function')
+    ? consentPrintEntry
+    : (typeof window.consentPrintEntry === 'function' ? window.consentPrintEntry : null);
+  if (fn) fn(consentId);
+}
+
+/* Wrapper : supprime puis rafraîchit l'onglet */
+async function _consentDeleteFromCarnet(consentId, patientId) {
+  const fn = (typeof consentDeleteEntry === 'function')
+    ? consentDeleteEntry
+    : (typeof window.consentDeleteEntry === 'function' ? window.consentDeleteEntry : null);
+  if (!fn) return;
+  await fn(consentId);
+  // Rafraîchir l'onglet après suppression
+  _patTab('consentements', patientId);
+}
+
+/* ════════════════════════════════════════════════
+   ONGLET COMPTE-RENDU DE PASSAGE — lecture multi-source
+════════════════════════════════════════════════ */
+
+/**
+ * Extrait les comptes-rendus de passage d'un patient depuis plusieurs sources possibles.
+ * Ordre de priorité :
+ *   1. p.compte_rendus (champ standard si module CR dédié)
+ *   2. p.transmissions (autre nom commun)
+ *   3. p.crs / p.passages (variantes)
+ *   4. Fallback : p.cotations signées (synthèse à partir des cotations + signatures)
+ *
+ * Chaque entrée retournée contient : { _source, _key, date, titre, contenu, actes, invoice_id, ... }
+ * pour permettre un rendu uniforme + des actions ciblées (PDF, suppression).
+ */
+function _getComptesRendusPatient(p) {
+  if (!p) return [];
+
+  // 1. Champ direct compte_rendus
+  if (Array.isArray(p.compte_rendus) && p.compte_rendus.length) {
+    return p.compte_rendus.map((cr, i) => ({
+      _source: 'compte_rendus',
+      _key:    cr.id || ('cr_' + i),
+      date:    cr.date || cr.created_at || cr.horodatage || '',
+      titre:   cr.titre || cr.title || cr.label || 'Compte-rendu',
+      contenu: cr.contenu || cr.texte || cr.note || cr.body || '',
+      actes:   cr.actes || cr.acts || [],
+      invoice_id: cr.invoice_id || cr.invoice_number || null,
+      _raw: cr,
+    })).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  }
+
+  // 2. Transmissions (autre nom)
+  if (Array.isArray(p.transmissions) && p.transmissions.length) {
+    return p.transmissions.map((t, i) => ({
+      _source: 'transmissions',
+      _key:    t.id || ('trans_' + i),
+      date:    t.date || t.created_at || t.horodatage || '',
+      titre:   t.titre || t.title || 'Transmission',
+      contenu: t.contenu || t.texte || t.note || '',
+      actes:   t.actes || [],
+      invoice_id: t.invoice_id || t.invoice_number || null,
+      _raw: t,
+    })).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  }
+
+  // 3. Variantes
+  for (const key of ['crs', 'passages']) {
+    if (Array.isArray(p[key]) && p[key].length) {
+      return p[key].map((it, i) => ({
+        _source: key,
+        _key:    it.id || (key + '_' + i),
+        date:    it.date || it.created_at || '',
+        titre:   it.titre || 'Passage',
+        contenu: it.contenu || it.texte || '',
+        actes:   it.actes || [],
+        invoice_id: it.invoice_id || null,
+        _raw: it,
+      })).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    }
+  }
+
+  // 4. Fallback : cotations comme passages signés (très utile médico-légalement)
+  if (Array.isArray(p.cotations) && p.cotations.length) {
+    return p.cotations.map((cot, i) => {
+      const actes = Array.isArray(cot.actes) ? cot.actes
+                  : (Array.isArray(cot.acts) ? cot.acts : []);
+      const acteResume = actes.length
+        ? actes.map(a => `${a.code || ''}${a.coef ? ' ×'+a.coef : ''}`).filter(Boolean).join(', ')
+        : (cot.actes_text || cot.libelle || '');
+      return {
+        _source: 'cotation',
+        _key:    cot.invoice_number || cot.id || ('cot_' + i),
+        date:    cot.date_soin || cot.date || cot.created_at || '',
+        titre:   `Passage du ${cot.date_soin || cot.date || '?'}`,
+        contenu: cot.notes || cot.observations || '',
+        actes:   actes,
+        actes_text: acteResume,
+        invoice_id: cot.invoice_number || cot.invoice_id || null,
+        montant:    cot.total_amount || cot.montant || null,
+        _raw: cot,
+      };
+    }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  }
+
+  return [];
+}
+
+/**
+ * Rendu de la liste des comptes-rendus avec récupération asynchrone des signatures
+ * canoniques depuis ami_signatures (via getSignature) si invoice_id présent.
+ */
+async function _renderComptesRendusForPatient(patientId, p, crList) {
+  const list = document.getElementById('pat-cr-list-' + patientId);
+  if (!list) return;
+
+  // Stockage des CR pour permettre l'accès par index depuis les boutons (évite
+  // la sérialisation JSON dans onclick qui casserait avec des caractères spéciaux)
+  window._currentPatientCRs = crList;
+  window._currentPatientCRsId = patientId;
+
+  const sigGet = (typeof getSignature === 'function') ? getSignature
+              : (typeof window.getSignature === 'function' ? window.getSignature : null);
+
+  // Récupération parallèle des signatures pour les CR ayant un invoice_id
+  const sigs = await Promise.all(crList.map(async cr => {
+    if (!cr.invoice_id || !sigGet) return null;
+    try { return await sigGet(cr.invoice_id); } catch { return null; }
+  }));
+
+  // Helper d'échappement HTML pour le rendu sécurisé
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+  list.innerHTML = crList.slice(0, 30).map((cr, idx) => {
+    const dateStr = cr.date ? new Date(cr.date).toLocaleString('fr-FR') : '—';
+    const sigPng  = sigs[idx];
+    const sourceTag = cr._source === 'cotation' ? '<span style="font-size:10px;background:rgba(0,212,170,.12);color:var(--a);padding:2px 6px;border-radius:4px;margin-left:6px">cotation signée</span>'
+                   : cr._source === 'compte_rendus' ? ''
+                   : `<span style="font-size:10px;background:rgba(79,168,255,.12);color:var(--a2);padding:2px 6px;border-radius:4px;margin-left:6px">${esc(cr._source)}</span>`;
+    const acteResume = cr.actes_text || (cr.actes?.length
+      ? cr.actes.map(a => a.code || a.libelle || a).filter(Boolean).join(', ')
+      : '');
+    return `
+      <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:160px">
+            <div style="font-size:13px;font-weight:600">${esc(cr.titre)}${sourceTag}</div>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">${dateStr}${cr.invoice_id ? ' · 🔗 ' + esc(cr.invoice_id) : ''}${cr.montant ? ' · ' + Number(cr.montant).toFixed(2) + ' €' : ''}</div>
+            ${acteResume ? `<div style="font-size:11px;color:var(--t);margin-top:4px">🩺 ${esc(acteResume)}</div>` : ''}
+            ${cr.contenu ? `<div style="font-size:12px;color:var(--t);margin-top:6px;line-height:1.5;white-space:pre-wrap">${esc(cr.contenu)}</div>` : ''}
+          </div>
+          ${sigPng ? `
+          <div style="text-align:center">
+            <img src="${sigPng}" alt="Signature" style="height:46px;max-width:130px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain">
+            <div style="font-size:9px;color:var(--m);margin-top:3px">Signature patient</div>
+          </div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn bs bsm" onclick="_crPrintFromCarnet(${idx},'${patientId}')" title="Imprimer ou exporter en PDF">🖨️ PDF</button>
+          ${cr._source === 'cotation' ? '' : `<button class="btn bs bsm" onclick="_crDeleteFromCarnet('${patientId}','${esc(cr._source)}','${esc(String(cr._key))}')" title="Suppression de ce compte-rendu" style="color:#ef4444">🧹 Effacer</button>`}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/**
+ * Génère un PDF d'un compte-rendu (avec signature visuelle si dispo).
+ * Récupère le CR via son index dans window._currentPatientCRs (rempli par le rendu).
+ */
+async function _crPrintFromCarnet(idx, patientId) {
+  try {
+    const list = window._currentPatientCRs || [];
+    if (window._currentPatientCRsId !== patientId) {
+      if (typeof showToast === 'function') showToast('warning', 'Veuillez rafraîchir l\'onglet');
+      return;
+    }
+    const cr = list[idx];
+    if (!cr) return;
+
+    const p = await getPatientById(patientId);
+    if (!p) return;
+
+    const sigGet = (typeof getSignature === 'function') ? getSignature
+                : (typeof window.getSignature === 'function' ? window.getSignature : null);
+    let sigPng = null;
+    if (cr.invoice_id && sigGet) {
+      try { sigPng = await sigGet(cr.invoice_id); } catch (_) {}
+    }
+
+    const dateStr = cr.date ? new Date(cr.date).toLocaleString('fr-FR') : '—';
+    const acteResume = cr.actes_text || (Array.isArray(cr.actes)
+      ? cr.actes.map(a => a.code || a.libelle || a).filter(Boolean).join(', ')
+      : '');
+
+    // Échappement HTML (le PDF ouvert peut contenir des notes patient avec caractères spéciaux)
+    const esc = s => String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
+      return;
+    }
+    w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Compte-rendu de passage</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:680px;margin:0 auto}
+        h1{font-size:16px;margin-bottom:10px}
+        h2{font-size:13px;margin-top:18px;margin-bottom:6px;border-bottom:1px solid #ccc;padding-bottom:3px}
+        p{font-size:13px;line-height:1.7;margin:6px 0;white-space:pre-wrap}
+        .meta{background:#f6f8fa;border:1px solid #e5e7eb;border-radius:6px;padding:10px;font-size:11px;margin-bottom:12px}
+        .meta div{margin:3px 0}
+        .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:8px;background:#fff;text-align:center;margin-top:6px}
+        .sigbox img{max-width:280px;max-height:120px}
+        @media print{@page{margin:15mm}}
+      </style>
+      </head><body>
+      <h1>📋 Compte-rendu de passage — ${esc(p.nom||'')} ${esc(p.prenom||'')}</h1>
+      <div class="meta">
+        <div><strong>Date :</strong> ${dateStr}</div>
+        ${cr.invoice_id ? `<div><strong>N° de facture liée :</strong> ${esc(cr.invoice_id)}</div>` : ''}
+        ${cr.montant ? `<div><strong>Montant :</strong> ${Number(cr.montant).toFixed(2)} €</div>` : ''}
+        <div><strong>Source :</strong> ${esc(cr._source)}</div>
+      </div>
+      ${acteResume ? `<h2>Actes réalisés</h2><p>${esc(acteResume)}</p>` : ''}
+      ${cr.contenu ? `<h2>Observations / Notes</h2><p>${esc(cr.contenu)}</p>` : ''}
+      ${sigPng ? `<h2>Signature manuscrite du patient</h2><div class="sigbox"><img src="${sigPng}" alt="Signature"></div>` : ''}
+      <p style="font-size:10px;color:#888;margin-top:24px">Document généré par AMI · ${new Date().toLocaleString('fr-FR')} · À conserver dans le dossier patient.</p>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
+
+/**
+ * Suppression d'un compte-rendu — uniquement pour les sources éditables (compte_rendus,
+ * transmissions, crs, passages). Les CR provenant des cotations ne sont PAS supprimables
+ * ici (ce sont des cotations, pas des CR à proprement parler).
+ */
+async function _crDeleteFromCarnet(patientId, source, key) {
+  if (source === 'cotation') {
+    if (typeof showToast === 'function') showToast('info', 'Action non disponible', 'Pour supprimer une cotation, utilisez l\'onglet Cotations.');
+    return;
+  }
+  if (!confirm(`Supprimer définitivement ce compte-rendu ?\n\nCette action est irréversible.`)) return;
+
+  try {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    const row  = rows.find(r => r.id === patientId);
+    if (!row) return;
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+
+    const arr = p[source];
+    if (!Array.isArray(arr)) return;
+
+    p[source] = arr.filter((it, i) => {
+      const k = it.id || (source + '_' + i);
+      return String(k) !== String(key);
+    });
+
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    await _idbPut(PATIENTS_STORE, toStore);
+    if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+
+    if (typeof showToast === 'function') showToast('success', 'Compte-rendu supprimé');
+    // Audit log si disponible
+    try { if (typeof auditLog === 'function') auditLog('CR_DELETED', { patient_id: patientId, source, key }); } catch (_) {}
+    _patTab('cr', patientId);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
 function _calcOrdoExp() {
   const dateEl = $('oi-date-pres');
   const durEl  = $('oi-duree');

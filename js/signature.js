@@ -1164,6 +1164,10 @@ async function saveSignature() {
             patient_nom:      _pendingForUse.patient_nom || '',
             qualite:          'Patient',
             date:             _dateSoin,
+            invoice_id:       _currentInvoiceId,  // ⚡ lien canonique vers ami_signatures
+                                                  //    permet au PDF du consentement de retrouver
+                                                  //    la signature même si elle est purgée du
+                                                  //    consentement local (sync push)
           });
           const _tplMap = (typeof CONSENT_TEMPLATES !== 'undefined') ? CONSENT_TEMPLATES
                         : (typeof window.CONSENT_TEMPLATES !== 'undefined' ? window.CONSENT_TEMPLATES : {});

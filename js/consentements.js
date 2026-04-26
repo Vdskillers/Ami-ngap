@@ -232,8 +232,16 @@ let _consentLastPos = null;
  * Crée ou met à jour un consentement (versionné).
  * Règle : un consentement signé avec succès devient la version active.
  *         Les anciennes versions sont archivées (status='archived').
+ *
+ * Stockage de la signature brute :
+ *   - Le PNG (signatureDataUrl) est conservé EN LOCAL uniquement, pour permettre
+ *     l'affichage visuel sur le PDF du consentement et dans l'historique.
+ *   - Il est PURGÉ au sync push (cf. consentSyncPush) — seul le hash part vers
+ *     le backend, ce qui reste RGPD/HDS-compatible.
+ *   - Le invoice_id permet, en fallback, de récupérer la signature canonique
+ *     depuis ami_signatures (source de vérité médico-légale via signature.js).
  */
-async function _consentCreateOrUpdate({ patient_id, type, signatureDataUrl, patient_nom, qualite, date }) {
+async function _consentCreateOrUpdate({ patient_id, type, signatureDataUrl, patient_nom, qualite, date, invoice_id }) {
   const tpl = CONSENT_TEMPLATES[type];
   if (!tpl) throw new Error('Type de consentement inconnu : ' + type);
 
@@ -245,7 +253,7 @@ async function _consentCreateOrUpdate({ patient_id, type, signatureDataUrl, pati
     await _consentPut(prev);
   }
 
-  // Hash de la signature (jamais stocker l'image brute — RGPD)
+  // Hash de la signature (intégrité — toujours envoyé au backend)
   const signature_hash = signatureDataUrl ? await _consentHash(signatureDataUrl) : '';
 
   // Hash du payload (intégrité médico-légale)
@@ -269,6 +277,12 @@ async function _consentCreateOrUpdate({ patient_id, type, signatureDataUrl, pati
     date:             date || new Date().toISOString().slice(0,10),
     signed_at:        signature_hash ? new Date().toISOString() : null,
     signature_hash,
+    // ⚡ Signature brute — stockée en local uniquement, purgée au sync push (RGPD/HDS)
+    // Permet l'affichage visuel dans l'historique et le PDF de consentement.
+    signatureDataUrl: signatureDataUrl || null,
+    // ⚡ Lien vers la signature canonique dans ami_signatures (source de vérité
+    // médico-légale via signature.js). Sert de fallback si signatureDataUrl absente.
+    invoice_id:       invoice_id || null,
     payload_hash,
     texte:            tpl.texte,
     validity_days:    tpl.validity_days || 365,
@@ -302,6 +316,34 @@ function _consentIsExpiringSoon(c, daysAhead = 14) {
   const limit = new Date(now.getTime() + daysAhead*86400000);
   const exp = new Date(c.expires_at);
   return exp > now && exp < limit;
+}
+
+/**
+ * Résout la signature visuelle d'un consentement avec une chaîne de fallback :
+ *   1. c.signatureDataUrl     → signature stockée localement dans le consentement
+ *   2. getSignature(invoice_id) → signature canonique de l'acte (ami_signatures)
+ *   3. null                   → aucune signature disponible (afficher hash uniquement)
+ *
+ * Cette fonction permet d'afficher la même signature que celle de la cotation
+ * dans le PDF/historique du consentement éclairé associé au même acte.
+ */
+async function _consentResolveSignature(c) {
+  if (!c) return null;
+  // 1. Stockée directement dans le consentement (créé après le patch sig→consent)
+  if (c.signatureDataUrl) return c.signatureDataUrl;
+  // 2. Fallback : récupérer depuis ami_signatures via invoice_id (source canonique)
+  if (c.invoice_id) {
+    try {
+      const fn = (typeof getSignature === 'function')
+        ? getSignature
+        : (typeof window.getSignature === 'function' ? window.getSignature : null);
+      if (fn) {
+        const png = await fn(c.invoice_id);
+        if (png) return png;
+      }
+    } catch (_) { /* fallback silencieux — on retombe sur null */ }
+  }
+  return null;
 }
 
 /* ════════════════════════════════════════════════
@@ -902,7 +944,12 @@ async function consentLoadHistory() {
   try {
     const all = await _consentGetAll(_consentCurrentPatient);
     if (!all.length) { list.innerHTML = '<div class="empty"><p>Aucun consentement archivé.</p></div>'; return; }
-    list.innerHTML = all.slice(0,20).map(c => {
+
+    const slice = all.slice(0, 20);
+    // Résolution parallèle des signatures (consent local → ami_signatures via invoice_id)
+    const sigs = await Promise.all(slice.map(c => _consentResolveSignature(c).catch(() => null)));
+
+    list.innerHTML = slice.map((c, idx) => {
       const d = new Date(c.horodatage || c.date).toLocaleString('fr-FR');
       const tpl = CONSENT_TEMPLATES[c.type] || {};
       const expired = _consentIsExpired(c);
@@ -915,6 +962,12 @@ async function consentLoadHistory() {
                         : expired                 ? '#ef4444'
                         : '#00d4aa';
       const byWho = c.created_by_nom ? ` · par ${c.created_by_nom}` : '';
+      const sigPng = sigs[idx];
+      const sigThumb = sigPng ? `
+              <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                <img src="${sigPng}" alt="Signature patient" style="height:40px;max-width:140px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain" title="Signature manuscrite du patient">
+                <span style="font-size:10px;color:var(--m)">${c.invoice_id ? '🔗 Liée à la facture ' + c.invoice_id : 'Signature locale'}</span>
+              </div>` : '';
       return `
         <div style="background:var(--s);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:8px;border-left:4px solid ${statusColor}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -925,6 +978,7 @@ async function consentLoadHistory() {
             </div>
             <div style="font-size:11px;color:${statusColor};font-weight:600">${statusIcon} ${c.status}${expired && c.status==='signed'?' (expiré)':''}</div>
           </div>
+          ${sigThumb}
           <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
             <button class="btn bs bsm" onclick="consentEditEntry(${c.id})" title="Re-signer une nouvelle version (l'actuelle sera archivée automatiquement)">✏️ Modifier</button>
             <button class="btn bs bsm" onclick="consentPrintEntry(${c.id})" title="Imprimer ou exporter en PDF">🖨️ PDF</button>
@@ -991,8 +1045,12 @@ async function consentEditEntry(id) {
 /**
  * Génère un PDF d'un consentement déjà archivé (depuis ses données IDB).
  *
- * RGPD : la signature manuscrite n'est jamais persistée en clair — seul le hash
- * SHA-256 est imprimé comme preuve d'intégrité médico-légale.
+ * Affiche la signature manuscrite si disponible :
+ *   1. en priorité depuis le consentement (signatureDataUrl, en local seulement)
+ *   2. en fallback depuis ami_signatures via invoice_id (signature canonique de l'acte)
+ *
+ * Le hash SHA-256 reste imprimé comme preuve d'intégrité médico-légale,
+ * que la signature visuelle soit présente ou non.
  */
 async function consentPrintEntry(id) {
   try {
@@ -1010,6 +1068,10 @@ async function consentPrintEntry(id) {
                     : expired                 ? '❌ Signé mais expiré'
                     : '✅ Signé et valide';
 
+    // ⚡ Récupération de la signature visuelle (PNG)
+    //    Chaîne de fallback : consentement local → ami_signatures via invoice_id
+    const signaturePng = await _consentResolveSignature(c);
+
     const w = window.open('', '_blank');
     if (!w) {
       if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
@@ -1026,6 +1088,9 @@ async function consentPrintEntry(id) {
         .meta div{margin:3px 0}
         .hash{font-family:monospace;font-size:10px;word-break:break-all;color:#444;background:#f0f0f0;padding:6px;border-radius:4px;margin-top:4px}
         .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#e6f7f1;color:#00644a}
+        .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:8px;background:#fff;text-align:center;margin-top:6px}
+        .sigbox img{max-width:280px;max-height:120px;display:block;margin:0 auto}
+        .sigbox .cap{font-size:10px;color:#777;margin-top:6px;text-align:center}
         @media print{@page{margin:15mm}}
       </style>
       </head><body>
@@ -1036,13 +1101,24 @@ async function consentPrintEntry(id) {
         <div><strong>Date acte :</strong> ${c.date || '—'} · <strong>Signé le :</strong> ${dSign}</div>
         <div><strong>Expire le :</strong> ${dExp} · <strong>Validité :</strong> ${c.validity_days || 365} j</div>
         <div><strong>Infirmier(ère) créateur :</strong> ${c.created_by_nom || '—'}</div>
+        ${c.invoice_id ? `<div><strong>N° de facture liée :</strong> ${c.invoice_id}</div>` : ''}
       </div>
       ${tpl.risques ? `<h2>Risques expliqués au patient</h2><ul>${tpl.risques.map(r => `<li>${r}</li>`).join('')}</ul>` : ''}
       ${tpl.alternatives ? `<h2>Alternatives proposées</h2><p>${tpl.alternatives}</p>` : ''}
       <h2>Texte du consentement</h2>
       <p>${c.texte || tpl.texte || '—'}</p>
+
+      ${signaturePng ? `
+      <h2>Signature manuscrite du patient</h2>
+      <div class="sigbox">
+        <img src="${signaturePng}" alt="Signature du patient">
+        <div class="cap">Signée le ${dSign}${c.invoice_id ? ' · Facture ' + c.invoice_id : ''}</div>
+      </div>` : ''}
+
       <h2>Preuve d'intégrité — Hash de signature</h2>
-      <p style="font-size:11px;color:#555">La signature manuscrite n'est jamais stockée en clair (RGPD/HDS). Seul le hash SHA-256 ci-dessous prouve l'intégrité du consentement signé :</p>
+      <p style="font-size:11px;color:#555">${signaturePng
+        ? `La signature manuscrite ci-dessus est conservée chiffrée sur l'appareil de l'infirmier(ère). Le hash SHA-256 ci-dessous garantit son intégrité et sa non-modification :`
+        : `La signature manuscrite n'est pas disponible visuellement sur cet appareil. Le hash SHA-256 ci-dessous reste la preuve d'intégrité opposable :`}</p>
       <div class="hash">🔒 ${c.signature_hash || '—'}</div>
       ${c.payload_hash ? `<h2>Hash global du payload</h2><div class="hash">🔐 ${c.payload_hash}</div>` : ''}
       <p style="font-size:10px;color:#888;margin-top:24px">Document généré par AMI · ${new Date().toLocaleString('fr-FR')} · À conserver dans le dossier patient.</p>
