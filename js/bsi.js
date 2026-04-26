@@ -798,9 +798,14 @@ function bsiPrint() {
     </tbody></table>
     <p><strong>Observations :</strong> ${document.getElementById('bsi-observations')?.value||'—'}</p>
     <p style="font-size:10px;color:#888">Généré par AMI · BSI NGAP 2026</p>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
 }
 
 async function bsiLoadHistory() {
@@ -912,9 +917,14 @@ async function bsiPrintFromHistory(id) {
 
       ${b.observations ? `<p><strong>Observations :</strong> ${b.observations}</p>` : ''}
       <p style="font-size:10px;color:#888;margin-top:24px;border-top:1px solid #eee;padding-top:8px">Généré par AMI · BSI NGAP 2026 · Document à conserver dans le dossier patient.</p>
+      <script>
+        // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+        window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+        window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+      </script>
       </body></html>`);
     w.document.close();
-    setTimeout(() => w.print(), 400);
+    // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
   } catch (err) {
     if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
   }

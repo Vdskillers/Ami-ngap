@@ -781,9 +781,14 @@ function crGeneratePDF() {
     <h2>Observations</h2><p>${get('cr-observations')}</p>
     <h2>Transmissions</h2><p>${get('cr-transmissions')}</p>
     <p style="font-size:10px;color:#888;margin-top:24px;border-top:1px solid #ddd;padding-top:8px">Généré par AMI · ${new Date().toLocaleString('fr-FR')}</p>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
 }
 
 async function crLoadHistory() {
@@ -921,9 +926,14 @@ async function crGenerateDoctorPDF() {
       ⚖️ <strong>Outil d'aide à la surveillance infirmière.</strong>
       Les indicateurs présentés (statut, risque, score, tendance) résultent d'une analyse textuelle locale des comptes-rendus de passage. Ils ne constituent ni un diagnostic, ni une évaluation médicale, et ne remplacent pas l'examen clinique du médecin traitant. Synthèse générée par AMI.
     </div>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
 }
 
 /* ═════════════════════════════════════════════════════════════

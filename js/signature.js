@@ -164,15 +164,23 @@ async function captureProofPhoto() {
    d'attente persistante (localStorage) drainée plus tard.
 ════════════════════════════════════════════════ */
 async function _certifyProofOnServer(payload) {
-  if (typeof S === 'undefined' || !S?.token) return null;
+  // ⚡ Diagnostic explicite : si pas de session, log clair (anciennement silencieux)
+  if (typeof S === 'undefined' || !S?.token) {
+    console.warn('[Signature] _certifyProofOnServer : pas de session active — HMAC ignoré (mode local).');
+    return null;
+  }
   const wpost = typeof window.wpost === 'function' ? window.wpost
     : (url, body) => (typeof apiCall === 'function' ? apiCall(url, body) : Promise.reject('no wpost'));
 
-  const _MAX_RETRIES = 3;
+  // ⚡ v3 — Retries réduits de 3 → 2 + backoff court (300ms)
+  // Délai max ≈ 2 × 8s timeout + 300ms = ~16s au pire (vs ~25s avant).
+  // En cas d'échec, la file d'attente HMAC prendra le relais en arrière-plan.
+  const _MAX_RETRIES = 2;
   for (let attempt = 1; attempt <= _MAX_RETRIES; attempt++) {
     try {
       const res = await wpost('/webhook/proof-certify', { payload });
       if (res?.ok && res?.server_signature) {
+        console.info('[Signature] HMAC certifié ✔ — cert_id :', res.cert_id, '| algorithm :', res.algorithm || 'HMAC-SHA256');
         return {
           server_signature: res.server_signature,
           algorithm:        res.algorithm || 'HMAC-SHA256',
@@ -192,11 +200,12 @@ async function _certifyProofOnServer(payload) {
       const msg = e?.message || String(e);
       console.warn(`[Signature] _certifyProofOnServer tentative ${attempt}/${_MAX_RETRIES} KO :`, msg);
       if (attempt < _MAX_RETRIES) {
-        // Backoff exponentiel : 400ms, 1.2s, 3.6s
-        await new Promise(r => setTimeout(r, 400 * Math.pow(3, attempt - 1)));
+        // Backoff fixe court (300ms) — pas exponentiel pour rester réactif côté UX
+        await new Promise(r => setTimeout(r, 300));
       }
     }
   }
+  console.warn('[Signature] HMAC indisponible après', _MAX_RETRIES, 'tentatives — basculement en file d\'attente offline.');
   return null;
 }
 
@@ -780,20 +789,46 @@ function openSignatureModal(invoiceId, context) {
   }).catch(() => {});
 }
 
-/* Helper UI — bascule un indicateur du modal entre pending/ok/fail */
+/* Helper UI — bascule un indicateur du modal entre pending/progress/ok/fail
+   ─────────────────────────────────────────────────────────────────────
+   pending  = ⏳ jaune  : en attente initiale (avant clic Valider)
+   progress = 🔄 bleu   : calcul/envoi en cours (après clic Valider)
+   ok       = ✔ vert    : preuve garantie
+   fail     = ⚠ rouge   : preuve manquante (HMAC = ⏳ reportée file d'attente) */
 function _setProofIndicator(kind, state) {
   const el = document.getElementById('sig-ind-' + kind);
   if (!el) return;
   const labels = {
-    hash: { pending: '⏳ Hash SHA-256 (tracé+date+acte+patient)', ok: '✔ Hash SHA-256 (tracé+date+acte+patient)', fail: '⚠ Hash non calculé' },
-    zone: { pending: '⏳ Géozone floue (~1km)',  ok: '✔ Géozone floue (~1km)',     fail: '⚠ Géozone indispo (fallback IP)' },
-    hmac: { pending: '⏳ HMAC-SHA256 serveur',   ok: '✔ HMAC-SHA256 serveur',      fail: '⚠ HMAC en file d\'attente' },
-    iso:  { pending: '⏳ Horodatage ISO 8601',   ok: '✔ Horodatage ISO 8601',      fail: '⚠ Horodatage ISO 8601' },
+    hash: {
+      pending:  '⏳ Hash SHA-256 (tracé+date+acte+patient)',
+      progress: '🔄 Calcul du hash SHA-256…',
+      ok:       '✔ Hash SHA-256 (tracé+date+acte+patient)',
+      fail:     '⚠ Hash non calculé',
+    },
+    zone: {
+      pending:  '⏳ Géozone floue (~1km)',
+      progress: '🔄 Géolocalisation en cours…',
+      ok:       '✔ Géozone floue (~1km)',
+      fail:     '⚠ Géozone indispo (fallback IP)',
+    },
+    hmac: {
+      pending:  '⏳ HMAC-SHA256 serveur',
+      progress: '🔄 Certification serveur en cours…',
+      ok:       '✔ HMAC-SHA256 serveur',
+      fail:     '⏳ HMAC reportée — sera certifiée auto.',
+    },
+    iso: {
+      pending:  '⏳ Horodatage ISO 8601',
+      progress: '🔄 Horodatage…',
+      ok:       '✔ Horodatage ISO 8601',
+      fail:     '⚠ Horodatage ISO 8601',
+    },
   };
   const colors = {
-    pending: { bg: 'rgba(255,180,0,.12)',  fg: '#f5a623' },
-    ok:      { bg: 'rgba(0,212,170,.12)',  fg: 'var(--a)' },
-    fail:    { bg: 'rgba(255,90,90,.12)',  fg: '#ff5a5a' },
+    pending:  { bg: 'rgba(255,180,0,.12)',  fg: '#f5a623' },
+    progress: { bg: 'rgba(80,140,255,.15)', fg: '#5a8eff' },
+    ok:       { bg: 'rgba(0,212,170,.12)',  fg: 'var(--a)' },
+    fail:     { bg: 'rgba(255,90,90,.12)',  fg: '#ff5a5a' },
   };
   const lbl = labels[kind]?.[state] || '';
   const c = colors[state] || colors.pending;
@@ -810,6 +845,67 @@ function closeSignatureModal() {
 /* ════════════════════════════════════════════════
    CANVAS — DESSIN
 ════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════
+   EXPORT PNG — Conversion noir-sur-blanc pour PDF
+   ────────────────────────────────────────────────
+   La modal affiche le tracé en clair (#e8f0f8) sur fond dark pour
+   l'UX premium. Mais ce PNG sera ensuite incrusté dans des PDF à
+   fond blanc (factures, consentements, BSI…) → trait clair invisible.
+
+   Cette fonction redessine le canvas dans un buffer temporaire :
+     - fond BLANC (opaque, prend dans le PNG)
+     - pixels du tracé → NOIR foncé (#1a1a1a)
+   Le PNG résultant est lisible partout, y compris une fois imprimé.
+
+   Le hash SHA-256 est calculé sur ce PNG transformé → reste cohérent
+   et opposable juridiquement (toute modification l'invalide).
+════════════════════════════════════════════════ */
+function _exportSignaturePNG() {
+  if (!_sigCanvas) return '';
+  try {
+    const w = _sigCanvas.width, h = _sigCanvas.height;
+    // 1) Récupérer les pixels du canvas source (tracé clair sur transparent)
+    const srcCtx = _sigCanvas.getContext('2d');
+    const src    = srcCtx.getImageData(0, 0, w, h);
+    const sd     = src.data;
+    // 2) Préparer un buffer noir-sur-blanc
+    const out = new ImageData(w, h);
+    const od  = out.data;
+    for (let i = 0; i < sd.length; i += 4) {
+      const a = sd[i + 3];
+      if (a > 0) {
+        // Pixel dessiné → noir foncé, alpha proportionnel à l'original
+        od[i]     = 26;   // #1a — R
+        od[i + 1] = 26;   // #1a — G
+        od[i + 2] = 32;   // #20 — B (légère teinte bleu nuit, plus élégant que pur noir)
+        od[i + 3] = a;
+      } else {
+        // Pixel vide → blanc opaque (fond papier)
+        od[i]     = 255;
+        od[i + 1] = 255;
+        od[i + 2] = 255;
+        od[i + 3] = 255;
+      }
+    }
+    // 3) Composer le canvas final : fond blanc d'abord, tracé noir par-dessus
+    const tmp = document.createElement('canvas');
+    tmp.width  = w;
+    tmp.height = h;
+    const tctx = tmp.getContext('2d');
+    // Fond blanc plein
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, w, h);
+    // Poser le buffer noir-sur-blanc (qui contient déjà le fond blanc + tracé noir)
+    tctx.putImageData(out, 0, 0);
+    return tmp.toDataURL('image/png');
+  } catch (e) {
+    // Fallback : si la transformation échoue (ex: tainted canvas), on retombe
+    // sur l'export brut — la signature sera pâle sur PDF mais au moins enregistrée.
+    console.warn('[Signature] _exportSignaturePNG fallback :', e.message);
+    return _sigCanvas.toDataURL('image/png');
+  }
+}
+
 function _initCanvas() {
   _sigCanvas = document.getElementById('sig-canvas');
   if (!_sigCanvas) return;
@@ -904,7 +1000,7 @@ async function saveSignature() {
   //   → pas de preuve médico-légale (c'est un template, pas un acte de soin)
   //   → stockage sous clé réservée, synchronisé entre appareils via chiffrement AES
   if (_sigModalMode === 'ide_self') {
-    const png       = _sigCanvas.toDataURL('image/png');
+    const png       = _exportSignaturePNG();   // ⚡ noir-sur-blanc pour visibilité PDF
     const signedAt  = new Date().toISOString();
     await _sigPut({
       invoice_id:  IDE_SELF_SIG_ID,
@@ -947,13 +1043,14 @@ async function saveSignature() {
   //   ✔ Signature HMAC-SHA256 serveur — retry 3x + file d'attente offline
   //
   // (Photo de présence reste optionnelle — si fournie, elle est aussi hashée.)
-  const png       = _sigCanvas.toDataURL('image/png');
+  const png       = _exportSignaturePNG();      // ⚡ noir-sur-blanc — lisible sur PDF blanc
   const signedAt  = new Date().toISOString();   // ✔ ISO 8601 garanti
   const ctx       = _currentProofContext || {};
 
   // ── 1) Hash local de la preuve (empreinte opposable) ──
   // Hash = SHA-256(PNG + timestamp + invoice + patient_id + actes)
   // Toute modification ultérieure (PNG, date, acte, patient) invalide le hash.
+  _setProofIndicator('hash', 'progress');           // 🔄 calcul en cours
   let signatureHash = '';
   try {
     signatureHash = await _computeProofHash({
@@ -972,11 +1069,12 @@ async function saveSignature() {
   // Si même cette tentative échoue, le worker fera un fallback IP via request.cf
   // (précision ~10km au lieu de ~1km, mais reste une preuve de zone valide).
   if (!_currentGeozone) {
+    _setProofIndicator('zone', 'progress');         // 🔄 géoloc en cours
     try { _currentGeozone = await _getGeozone(); } catch (_) {}
   }
   _setProofIndicator('zone', _currentGeozone ? 'ok' : 'fail');
 
-  // ── 3) Certification serveur HMAC-SHA256 (bloquante avec retry interne 3x) ──
+  // ── 3) Certification serveur HMAC-SHA256 (bloquante avec retry interne 2x) ──
   const proofPayload = {
     invoice:        _currentInvoiceId,
     patient_id:     ctx.patient_id || '',
@@ -987,9 +1085,19 @@ async function saveSignature() {
     photo_hash:     _currentPhotoHash || null,
     zone:           _currentGeozone?.zone || null,   // null → fallback IP côté worker
   };
+  // ⚡ Indicateur explicite "envoi en cours" (bleu) pour distinguer
+  //    visuellement le pending initial (jaune) de l'attente serveur réelle
+  _setProofIndicator('hmac', 'progress');
   let serverCert = null;
   try { serverCert = await _certifyProofOnServer(proofPayload); } catch (_) {}
   _setProofIndicator('hmac', serverCert ? 'ok' : 'fail');
+
+  // ⚡ Si HMAC réussi, laisser le user voir le ✔ pendant ~500ms avant de
+  //    fermer la modal. Sans cette pause, la modal disparaît trop vite et
+  //    l'utilisateur a l'impression que le HMAC n'a jamais été certifié.
+  if (serverCert) {
+    await new Promise(r => setTimeout(r, 500));
+  }
 
   // Si la zone côté client était null mais le worker a fait fallback IP,
   // on récupère la zone effective signée pour l'affichage.

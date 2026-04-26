@@ -1073,6 +1073,65 @@ function consentSelectType(type) {
   }, 100);
 }
 
+/* ════════════════════════════════════════════════
+   EXPORT PNG — Conversion noir-sur-blanc pour PDF
+   ────────────────────────────────────────────────
+   Le canvas du formulaire de consentement dessine en vert AMI
+   (#00d4aa) sur fond transparent. Ce trait clair est presque
+   invisible une fois incrusté dans un PDF blanc (consentement
+   imprimé, archive papier, dossier patient).
+
+   Cette fonction redessine le canvas dans un buffer temporaire :
+     - fond BLANC opaque (apparaîtra dans le PNG)
+     - pixels du tracé → NOIR foncé (#1a1a20, légère teinte bleu nuit)
+   Le PNG résultant reste lisible une fois imprimé ou affiché sur
+   n'importe quel fond clair.
+
+   Le hash SHA-256 (calculé après cette transformation) reste
+   cohérent — toute modification ultérieure invalide le hash, donc
+   la valeur de preuve médico-légale est conservée.
+════════════════════════════════════════════════ */
+function _exportConsentSignaturePNG(canvas) {
+  if (!canvas) return '';
+  try {
+    const w = canvas.width, h = canvas.height;
+    const srcCtx = canvas.getContext('2d');
+    const src    = srcCtx.getImageData(0, 0, w, h);
+    const sd     = src.data;
+    const out = new ImageData(w, h);
+    const od  = out.data;
+    for (let i = 0; i < sd.length; i += 4) {
+      const a = sd[i + 3];
+      if (a > 0) {
+        // Pixel dessiné → noir bleu nuit, alpha conservé pour le rendu lisse
+        od[i]     = 26;   // #1a — R
+        od[i + 1] = 26;   // #1a — G
+        od[i + 2] = 32;   // #20 — B (légère teinte bleu nuit, plus élégant que pur noir)
+        od[i + 3] = a;
+      } else {
+        // Pixel vide → blanc opaque (fond papier)
+        od[i]     = 255;
+        od[i + 1] = 255;
+        od[i + 2] = 255;
+        od[i + 3] = 255;
+      }
+    }
+    const tmp = document.createElement('canvas');
+    tmp.width  = w;
+    tmp.height = h;
+    const tctx = tmp.getContext('2d');
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, w, h);
+    tctx.putImageData(out, 0, 0);
+    return tmp.toDataURL('image/png');
+  } catch (e) {
+    // Fallback : si la transformation échoue (ex: tainted canvas), on retombe
+    // sur l'export brut — la signature sera pâle sur PDF mais au moins enregistrée.
+    console.warn('[Consent] _exportConsentSignaturePNG fallback :', e.message);
+    return canvas.toDataURL();
+  }
+}
+
 function _initConsentCanvas(canvas) {
   const ctx = canvas.getContext('2d');
   ctx.strokeStyle = '#00d4aa';
@@ -1089,10 +1148,10 @@ function _initConsentCanvas(canvas) {
 
   canvas.addEventListener('mousedown',  e => { _consentDrawing = true; _consentLastPos = getPos(e); });
   canvas.addEventListener('mousemove',  e => { if (!_consentDrawing) return; const p=getPos(e); ctx.beginPath(); ctx.moveTo(_consentLastPos.x, _consentLastPos.y); ctx.lineTo(p.x,p.y); ctx.stroke(); _consentLastPos=p; });
-  canvas.addEventListener('mouseup',    () => { _consentDrawing = false; _consentSignature = canvas.toDataURL(); });
+  canvas.addEventListener('mouseup',    () => { _consentDrawing = false; _consentSignature = _exportConsentSignaturePNG(canvas); });
   canvas.addEventListener('touchstart', e => { e.preventDefault(); _consentDrawing=true; _consentLastPos=getPos(e); }, { passive:false });
   canvas.addEventListener('touchmove',  e => { e.preventDefault(); if(!_consentDrawing)return; const p=getPos(e); ctx.beginPath(); ctx.moveTo(_consentLastPos.x,_consentLastPos.y); ctx.lineTo(p.x,p.y); ctx.stroke(); _consentLastPos=p; }, { passive:false });
-  canvas.addEventListener('touchend',   () => { _consentDrawing=false; _consentSignature=canvas.toDataURL(); });
+  canvas.addEventListener('touchend',   () => { _consentDrawing=false; _consentSignature=_exportConsentSignaturePNG(canvas); });
 }
 
 function consentClearSig() {
@@ -1152,9 +1211,14 @@ function consentPrint() {
     <h2>Consentement</h2><p>${tpl.texte}</p>
     ${sig ? `<h2>Signature du patient</h2><img src="${sig}" style="border:1px solid #ccc;border-radius:4px;max-width:300px;height:auto">` : ''}
     <p style="font-size:10px;color:#888;margin-top:20px">Généré par AMI · ${new Date().toLocaleString('fr-FR')}</p>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
 }
 
 async function consentLoadHistory() {
@@ -1418,9 +1482,14 @@ async function consentPrintEntry(id) {
       <div class="hash">🔒 ${c.signature_hash || '—'}</div>
       ${c.payload_hash ? `<h2>Hash global du payload</h2><div class="hash">🔐 ${c.payload_hash}</div>` : ''}
       <p style="font-size:10px;color:#888;margin-top:24px">Document généré par AMI · ${new Date().toLocaleString('fr-FR')} · À conserver dans le dossier patient.</p>
+      <script>
+        // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+        window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+        window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+      </script>
       </body></html>`);
     w.document.close();
-    setTimeout(() => w.print(), 400);
+    // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
   } catch (err) {
     if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
   }

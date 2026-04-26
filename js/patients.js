@@ -1900,9 +1900,16 @@ async function _crPrintFromCarnet(idx, patientId) {
       ${sigPng ? `<h2>Signature manuscrite du patient</h2><div class="sigbox"><img src="${sigPng}" alt="Signature"></div>` : ''}
 
       <p style="font-size:10px;color:#888;margin-top:24px;text-align:center;border-top:1px solid #eee;padding-top:10px">Document généré par AMI · ${new Date().toLocaleString('fr-FR')} · À conserver dans le dossier patient.</p>
+      <script>
+        // ⚡ Auto-print exécuté DANS la fenêtre fille — l'app principale n'invoque
+        //    plus print() directement, donc plus aucun blocage du main thread.
+        window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+        // Fermer la fenêtre fille après impression (OK ou Annuler)
+        window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+      </script>
       </body></html>`);
     w.document.close();
-    setTimeout(() => w.print(), 400);
+    // ⚡ PAS de setTimeout(() => w.print(), 400) ici — l'app principale reste réactive
   } catch (err) {
     if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
   }
