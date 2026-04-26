@@ -238,13 +238,39 @@ async function bootSyncStart(force = false) {
   if (!force && _BOOT_SYNC_DATA && (Date.now() - _BOOT_SYNC_TS) < _BOOT_SYNC_TTL) {
     return _BOOT_SYNC_DATA;
   }
+  // ✅ Garde-fou : ne tenter le fetch QUE si un token est présent.
+  //   Sans cette garde, un appel pré-login ferait un POST sans Authorization,
+  //   le worker répondrait 401, et _apiFetch détruirait la session existante.
+  if (typeof ss === 'undefined' || !ss.tok || !ss.tok()) {
+    return null;
+  }
   _BOOT_SYNC_PROMISE = (async () => {
     try {
-      const res = await wpost('/webhook/boot-sync', {});
-      if (res && res.ok) {
-        _BOOT_SYNC_DATA = res;
+      // ✅ Appel direct sans passer par _apiFetch pour éviter ss.clear() sur 401.
+      //   boot-sync est un appel préemptif au boot — un 401 ici ne doit PAS
+      //   forcer la déconnexion. On laisse simplement les modules retomber
+      //   sur leurs endpoints individuels (eux-mêmes via _apiFetch standard).
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(W + '/webhook/boot-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + ss.tok(),
+        },
+        body: '{}',
+        signal: ctrl.signal,
+      });
+      clearTimeout(tid);
+      if (!res.ok) {
+        // 401 / 404 / 503 / etc. → fallback silencieux, pas de clear de session
+        return null;
+      }
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        _BOOT_SYNC_DATA = data;
         _BOOT_SYNC_TS = Date.now();
-        return res;
+        return data;
       }
       return null;
     } catch (e) {
