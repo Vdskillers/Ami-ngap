@@ -312,6 +312,245 @@
 
   .lp-sim-disclaimer{font-family:var(--fm);font-size:10px;color:#6a7f91;text-align:center;letter-spacing:.5px;margin-top:12px;line-height:1.5}
 </style>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     DASHBOARD VARIANTE B — Chrome "Nexora hybride premium"
+     ────────────────────────────────────────────────────────────────────
+     Tous les sélecteurs sont scopés sous .b-dash pour ne pas affecter
+     les autres vues. Les IDs ciblés par dashboard.js (dash-kpis,
+     dash-chart, dash-prevision, dash-heatmap, dash-loss, dash-anomalies,
+     dash-ai, dash-top-actes, dash-trust-widget, stats-avancees-body)
+     sont conservés intacts — seul leur habillage visuel change via CSS.
+═══════════════════════════════════════════════════════════════════════ -->
+<style>
+.b-dash{
+  --bd-bg:#0d1410;
+  --bd-card:#101a13;
+  --bd-card2:#162119;
+  --bd-line:#1f2d24;
+  --bd-line2:#1a261d;
+  --bd-text:#e8efe8;
+  --bd-mute:#7c8a7c;
+  --bd-acc:#1d9e75;
+  --bd-acc-soft:#1d6e7530;
+  --bd-acc-glow:rgba(29,158,117,.18);
+  --bd-red:#e24b4a;
+  --bd-red-soft:#a32d2d40;
+  --bd-amber:#ef9f27;
+  --bd-amber-soft:#854f0b40;
+  --bd-blue:#85b7eb;
+  --bd-blue-soft:#185fa540;
+  background:var(--bd-bg);
+  color:var(--bd-text);
+  border:1px solid var(--bd-line);
+  border-radius:14px;
+  padding:22px;
+  font-size:13px;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.b-dash .bd-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:14px;flex-wrap:wrap}
+.b-dash .bd-title{font-size:22px;font-weight:500;margin:0 0 4px;color:var(--bd-text);font-family:var(--fs)}
+.b-dash .bd-title em{font-style:italic;color:var(--bd-acc);font-weight:500}
+.b-dash .bd-sub{font-size:12px;color:var(--bd-mute);margin:0;font-family:var(--ff)}
+.b-dash .bd-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.b-dash .bd-pill{display:inline-flex;background:var(--bd-card2);border:1px solid var(--bd-line);border-radius:8px;padding:2px;gap:2px}
+.b-dash .bd-pbtn{background:transparent;border:0;color:var(--bd-mute);padding:5px 11px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--ff);transition:all .15s}
+.b-dash .bd-pbtn:hover{color:var(--bd-text)}
+.b-dash .bd-pbtn.on,.b-dash .bd-pbtn.active{background:#1d6e56;color:var(--bd-text)}
+.b-dash .bd-bt{background:var(--bd-card2);border:1px solid var(--bd-line);border-radius:8px;padding:6px 12px;color:var(--bd-text);font-size:12px;cursor:pointer;font-family:var(--ff);transition:all .15s}
+.b-dash .bd-bt:hover{border-color:var(--bd-acc);color:var(--bd-acc)}
+.b-dash .bd-bt-d{margin-left:auto;color:#f09595;border-color:var(--bd-red-soft)}
+.b-dash .bd-bt-d:hover{background:var(--bd-red-soft);border-color:var(--bd-red);color:#f09595}
+.b-dash .bd-select{padding:6px 12px;background:var(--bd-card2);border:1px solid var(--bd-line);border-radius:8px;color:var(--bd-text);font-size:12px;font-family:var(--ff);cursor:pointer}
+
+/* ── Notices ────────────────────────────────────────────────── */
+.b-dash .bd-notice{padding:10px 14px;border-radius:10px;background:rgba(29,158,117,.06);border:1px solid rgba(29,158,117,.2);font-size:12px;color:var(--bd-text)}
+.b-dash .bd-cache-info{font-size:11px;margin-bottom:10px;padding:6px 14px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--bd-mute);font-family:var(--fm)}
+.b-dash .bd-loading{text-align:center;padding:60px 20px}
+.b-dash .bd-empty{text-align:center;padding:60px 20px;color:var(--bd-mute)}
+
+/* ── Alert strip pertes (sticky en haut) ────────────────────── */
+.b-dash .bd-alert{display:flex !important;align-items:center;gap:10px;background:rgba(58,21,21,.5);border:1px solid rgba(226,75,74,.4);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:12px;color:#f09595}
+.b-dash .bd-alert-dot{width:8px;height:8px;border-radius:50%;background:var(--bd-red);flex-shrink:0;animation:bdPulse 2s infinite}
+@keyframes bdPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}
+.b-dash .bd-alert .dash-alert-text,.b-dash .bd-alert #dash-alert-strip-text{flex:1;color:#f09595}
+.b-dash .bd-alert-action{cursor:pointer;color:#f09595;font-weight:500;white-space:nowrap}
+.b-dash .bd-alert-action:hover{text-decoration:underline}
+
+/* ── Score de confiance NGAP (trust widget) ─────────────────── */
+.b-dash #dash-trust-widget{margin:0 0 14px}
+.b-dash #dash-trust-widget>*{background:var(--bd-card) !important;border:1px solid rgba(29,158,117,.25) !important;border-radius:10px !important}
+
+/* ── KPIs : cards Nexora avec glow vert sur hover ───────────── */
+.b-dash .bd-kpis{display:grid !important;grid-template-columns:repeat(auto-fill,minmax(190px,1fr)) !important;gap:12px !important;margin:0 0 14px !important}
+.b-dash .bd-kpis .sc{background:var(--bd-card) !important;border:1px solid var(--bd-line) !important;border-radius:12px !important;padding:14px 16px !important;position:relative;transition:border-color .18s,box-shadow .18s;min-height:auto !important}
+.b-dash .bd-kpis .sc:hover{border-color:var(--bd-acc);box-shadow:0 0 0 1px var(--bd-acc-glow)}
+.b-dash .bd-kpis .sc::before{content:none !important}
+.b-dash .bd-kpis .sc .si{position:absolute !important;top:14px !important;right:14px !important;font-size:13px !important;width:26px !important;height:26px !important;border-radius:6px !important;background:var(--bd-acc-soft) !important;display:flex !important;align-items:center !important;justify-content:center !important;color:var(--bd-acc) !important;border:none !important;padding:0 !important;line-height:1 !important}
+.b-dash .bd-kpis .sc.r .si{background:var(--bd-red-soft) !important;color:#f09595 !important}
+.b-dash .bd-kpis .sc.b .si{background:var(--bd-blue-soft) !important;color:var(--bd-blue) !important}
+.b-dash .bd-kpis .sc.o .si{background:var(--bd-amber-soft) !important;color:var(--bd-amber) !important}
+.b-dash .bd-kpis .sc .sn{font-size:12px !important;color:var(--bd-mute) !important;margin:0 0 6px !important;font-weight:400 !important;text-transform:none !important;letter-spacing:0 !important;padding-right:32px !important;font-family:var(--ff) !important}
+.b-dash .bd-kpis .sc .sv{font-size:23px !important;font-weight:500 !important;color:var(--bd-text) !important;font-family:var(--fs) !important;line-height:1.15 !important;margin:0 !important;font-variant-numeric:tabular-nums !important}
+.b-dash .bd-kpis .sc-delta{font-size:11px;margin-top:6px;display:inline-block;font-family:var(--ff)}
+.b-dash .bd-kpis .sc-delta.up{color:var(--bd-acc)}
+.b-dash .bd-kpis .sc-delta.dn{color:var(--bd-red)}
+.b-dash .bd-kpis .sc-delta.nt{color:var(--bd-mute)}
+
+/* ── Bandeau km ─────────────────────────────────────────────── */
+.b-dash .bd-km-bandeau{background:rgba(133,183,235,.06) !important;border:1px solid rgba(133,183,235,.2) !important;border-radius:10px !important;padding:10px 16px !important;margin-bottom:8px !important;font-size:13px;color:var(--bd-text);align-items:center;gap:8px;flex-wrap:wrap}
+.b-dash .bd-km-prefs{margin-bottom:14px !important}
+
+/* ── Layout 2 colonnes (chart + prévision) ──────────────────── */
+.b-dash .bd-row2{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;margin-bottom:12px}
+@media (max-width:900px){.b-dash .bd-row2{grid-template-columns:1fr}}
+
+/* ── Layout 3 colonnes (top actes / pertes / heatmap) ───────── */
+.b-dash .bd-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+@media (max-width:900px){.b-dash .bd-row3{grid-template-columns:1fr}}
+@media (max-width:1100px) and (min-width:901px){.b-dash .bd-row3{grid-template-columns:1fr 1fr}}
+
+/* ── Cards génériques ───────────────────────────────────────── */
+.b-dash .bd-card{background:var(--bd-card);border:1px solid var(--bd-line);border-radius:12px;padding:16px;margin-bottom:12px;transition:border-color .18s}
+.b-dash .bd-card:hover{border-color:var(--bd-line)}
+.b-dash .bd-row3 .bd-card,.b-dash .bd-row2 .bd-card{margin-bottom:0}
+.b-dash .bd-cthd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
+.b-dash .bd-ctitle{font-size:14px;font-weight:500;color:var(--bd-text);font-family:var(--fs)}
+.b-dash .bd-bdg{font-size:10px;background:var(--bd-acc-soft);color:var(--bd-acc);padding:3px 9px;border-radius:10px;font-weight:500;white-space:nowrap}
+.b-dash .bd-bdg.r{background:var(--bd-red-soft);color:#f09595}
+.b-dash .bd-bdg.b{background:var(--bd-blue-soft);color:var(--bd-blue)}
+.b-dash .bd-bdg.w{background:var(--bd-amber-soft);color:var(--bd-amber)}
+
+/* ── Graphique 30j : restyle des barres ─────────────────────── */
+.b-dash .bd-chart-area{height:160px;display:flex;align-items:flex-end;gap:3px;padding:6px 0}
+.b-dash .bd-chart-area .dash-bar{flex:1;border-radius:3px 3px 0 0;min-height:4px;transition:opacity .15s}
+.b-dash .bd-chart-area .dash-bar:hover{opacity:.75}
+.b-dash .bd-chart-area .dash-bar.low{background:var(--bd-line2)}
+.b-dash .bd-chart-area .dash-bar.normal{background:var(--bd-acc-soft)}
+.b-dash .bd-chart-area .dash-bar.high{background:var(--bd-acc);box-shadow:0 0 6px var(--bd-acc-glow)}
+.b-dash .bd-chart-area .dash-bar.today{background:var(--bd-acc);outline:1px solid #5fbf99}
+.b-dash .bd-chart-labels{display:flex;gap:3px;margin-top:6px;overflow:hidden}
+.b-dash .bd-chart-stats{display:flex;gap:14px;margin-top:10px;font-size:11px;border-top:1px solid var(--bd-line2);padding-top:10px;flex-wrap:wrap;color:var(--bd-mute)}
+.b-dash .bd-chart-stats .dash-chart-stat{font-family:var(--ff)}
+.b-dash .bd-chart-stats strong{color:var(--bd-text);font-variant-numeric:tabular-nums;font-weight:500;margin-left:3px}
+
+/* ── Prévision (anneau) ─────────────────────────────────────── */
+.b-dash .bd-prevision-area{padding:6px 0}
+.b-dash .bd-prevision-area .dash-ring-wrap{position:relative;width:100px;height:100px;flex-shrink:0}
+.b-dash .bd-prevision-area .dash-ring-wrap svg{width:100%;height:100%;display:block}
+.b-dash .bd-prevision-area .dash-ring-wrap svg circle:first-child{stroke:var(--bd-line2) !important}
+.b-dash .bd-prevision-area .dash-ring-wrap svg circle:last-child{stroke:var(--bd-acc) !important}
+.b-dash .bd-prevision-area .dash-ring-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.b-dash .bd-prevision-area .dash-ring-pct{font-size:18px;font-weight:500;color:var(--bd-acc);font-family:var(--fs);font-variant-numeric:tabular-nums}
+.b-dash .bd-prevision-area .dash-ring-sub{font-size:9px;color:var(--bd-mute);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.b-dash .bd-prevision-area .dash-prev-row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;color:var(--bd-mute);border-bottom:1px solid var(--bd-line2)}
+.b-dash .bd-prevision-area .dash-prev-row:last-child{border-bottom:0}
+.b-dash .bd-prevision-area .dash-prev-row strong{color:var(--bd-text);font-variant-numeric:tabular-nums;font-weight:500}
+
+/* ── Top actes (barres horizontales) ────────────────────────── */
+.b-dash .bd-actes .acte-row-prem{display:grid;grid-template-columns:22px 60px 1fr 38px;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--bd-line2);font-size:12px}
+.b-dash .bd-actes .acte-row-prem:last-child{border-bottom:0}
+.b-dash .bd-actes .acte-rank{font-size:10px;color:var(--bd-mute);font-variant-numeric:tabular-nums;text-align:center}
+.b-dash .bd-actes .acte-code-pill{background:var(--bd-acc-soft);color:var(--bd-acc);padding:3px 0;border-radius:5px;font-size:11px;font-weight:500;text-align:center;font-family:var(--fm)}
+.b-dash .bd-actes .acte-bar-track{height:6px;background:var(--bd-line2);border-radius:3px;overflow:hidden}
+.b-dash .bd-actes .acte-bar-fill-prem{height:100%;background:var(--bd-acc);border-radius:3px;transition:width .35s ease}
+.b-dash .bd-actes .acte-count-lbl{color:var(--bd-acc);font-variant-numeric:tabular-nums;font-weight:500;text-align:right;font-family:var(--fm)}
+
+/* ── Heatmap horaire ────────────────────────────────────────── */
+.b-dash .bd-heatmap{display:grid !important;grid-template-columns:repeat(13,1fr) !important;gap:3px !important;margin:8px 0 !important}
+.b-dash .bd-heatmap .hm-cell{aspect-ratio:1;border-radius:3px;min-height:14px;transition:transform .15s}
+.b-dash .bd-heatmap .hm-cell:hover{transform:scale(1.15)}
+.b-dash .bd-heatmap .hm-cell.h0{background:rgba(29,158,117,.06)}
+.b-dash .bd-heatmap .hm-cell.h1{background:rgba(29,158,117,.25)}
+.b-dash .bd-heatmap .hm-cell.h2{background:rgba(29,158,117,.55)}
+.b-dash .bd-heatmap .hm-cell.h3{background:rgba(29,158,117,.78)}
+.b-dash .bd-heatmap .hm-cell.h4{background:var(--bd-acc);box-shadow:0 0 4px var(--bd-acc-glow)}
+.b-dash .bd-heatmap-labels{display:flex !important;justify-content:space-between !important;font-size:9px !important;color:var(--bd-mute) !important;margin-top:0 !important}
+.b-dash .bd-heatmap-foot{font-size:10px;color:var(--bd-mute);margin-top:8px;padding-top:8px;border-top:1px solid var(--bd-line2);font-family:var(--fm)}
+
+/* ── Pertes manquées (#dash-loss) ──────────────────────────── */
+.b-dash .bd-loss>*{font-size:12px}
+.b-dash #dash-loss>div,.b-dash #dash-anomalies>div,.b-dash #dash-ai>div{background:transparent !important;border:none !important;border-bottom:1px solid var(--bd-line2) !important;border-radius:0 !important;padding:8px 0 !important;margin:0 !important;color:var(--bd-text) !important;font-size:12px !important}
+.b-dash #dash-loss>div:last-child,.b-dash #dash-anomalies>div:last-child,.b-dash #dash-ai>div:last-child{border-bottom:0 !important}
+.b-dash #dash-loss strong,.b-dash #dash-anomalies strong,.b-dash #dash-ai strong{color:var(--bd-text);font-weight:500}
+.b-dash #dash-loss .ai,.b-dash #dash-anomalies .ai,.b-dash #dash-ai .ai{padding:9px 12px !important;border-radius:8px !important;margin:6px 0 !important;font-size:12px !important;border:1px solid var(--bd-line) !important}
+.b-dash #dash-loss .ai.wa,.b-dash #dash-anomalies .ai.wa,.b-dash #dash-ai .ai.wa{background:var(--bd-amber-soft) !important;border-color:rgba(239,159,39,.3) !important;color:var(--bd-amber) !important}
+.b-dash #dash-loss .ai.in,.b-dash #dash-anomalies .ai.in,.b-dash #dash-ai .ai.in{background:rgba(133,183,235,.08) !important;border-color:rgba(133,183,235,.25) !important;color:var(--bd-blue) !important}
+.b-dash #dash-loss .ai.su,.b-dash #dash-anomalies .ai.su,.b-dash #dash-ai .ai.su{background:rgba(29,158,117,.08) !important;border-color:rgba(29,158,117,.25) !important;color:var(--bd-acc) !important}
+.b-dash #dash-loss .ai.e,.b-dash #dash-anomalies .ai.e,.b-dash #dash-ai .ai.e{background:var(--bd-red-soft) !important;border-color:rgba(226,75,74,.3) !important;color:#f09595 !important}
+
+/* ── Statistiques avancées : même chrome ────────────────────── */
+.b-dash .bd-section-divider{border-top:1px solid var(--bd-line);margin:24px 0 18px}
+.b-dash .bd-section-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.b-dash .bd-section-title{font-size:18px;font-weight:500;margin:0 0 4px;color:var(--bd-text);font-family:var(--fs)}
+.b-dash .bd-section-sub{font-size:12px;color:var(--bd-mute);margin:0;font-family:var(--ff)}
+.b-dash .bd-stats-avancees{margin-bottom:0}
+
+/* Override des styles utilisés par offline-queue.js (renderStatsAvancees) */
+.b-dash .bd-stats-avancees>*{color:var(--bd-text)}
+.b-dash .bd-stats-avancees [style*="border-top"]{border-color:var(--bd-line) !important}
+.b-dash .bd-stats-avancees .dash-section-title{color:var(--bd-text) !important;font-family:var(--fs);font-size:14px;font-weight:500;display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.b-dash .bd-stats-avancees .dash-section-badge{font-size:10px;background:var(--bd-acc-soft);color:var(--bd-acc);padding:3px 9px;border-radius:10px;font-weight:500}
+.b-dash .bd-stats-avancees .dash-section-badge.b{background:var(--bd-blue-soft);color:var(--bd-blue)}
+.b-dash .bd-stats-avancees .dash-section-badge.r{background:var(--bd-red-soft);color:#f09595}
+
+/* KPIs comparatifs : appliquer le même look que .bd-kpis .sc */
+.b-dash .bd-stats-avancees .sg{display:grid !important;gap:12px !important;grid-template-columns:repeat(auto-fill,minmax(180px,1fr)) !important}
+.b-dash .bd-stats-avancees .sg .sc{background:var(--bd-card) !important;border:1px solid var(--bd-line) !important;border-radius:12px !important;padding:14px 16px !important;position:relative;transition:border-color .18s,box-shadow .18s;min-height:auto !important}
+.b-dash .bd-stats-avancees .sg .sc:hover{border-color:var(--bd-acc);box-shadow:0 0 0 1px var(--bd-acc-glow)}
+.b-dash .bd-stats-avancees .sg .sc::before{content:none !important}
+.b-dash .bd-stats-avancees .sg .sc .si{position:absolute !important;top:14px !important;right:14px !important;font-size:13px !important;width:26px !important;height:26px !important;border-radius:6px !important;background:var(--bd-acc-soft) !important;display:flex !important;align-items:center !important;justify-content:center !important;color:var(--bd-acc) !important;border:none !important;padding:0 !important;line-height:1 !important}
+.b-dash .bd-stats-avancees .sg .sc.r .si{background:var(--bd-red-soft) !important;color:#f09595 !important}
+.b-dash .bd-stats-avancees .sg .sc.b .si{background:var(--bd-blue-soft) !important;color:var(--bd-blue) !important}
+.b-dash .bd-stats-avancees .sg .sc.o .si{background:var(--bd-amber-soft) !important;color:var(--bd-amber) !important}
+.b-dash .bd-stats-avancees .sg .sc .sn{font-size:12px !important;color:var(--bd-mute) !important;margin:0 0 6px !important;font-weight:400 !important;text-transform:none !important;letter-spacing:0 !important;padding-right:32px !important;font-family:var(--ff) !important}
+.b-dash .bd-stats-avancees .sg .sc .sv{font-size:23px !important;font-weight:500 !important;color:var(--bd-text) !important;font-family:var(--fs) !important;line-height:1.15 !important;margin:0 !important;font-variant-numeric:tabular-nums !important}
+.b-dash .bd-stats-avancees .sc-delta{font-size:11px;margin-top:6px;display:inline-block;font-family:var(--ff)}
+.b-dash .bd-stats-avancees .sc-delta.up{color:var(--bd-acc)}
+.b-dash .bd-stats-avancees .sc-delta.dn{color:var(--bd-red)}
+.b-dash .bd-stats-avancees .sc-delta.nt{color:var(--bd-mute)}
+
+/* Alert strips d'évolution (succès / baisse) */
+.b-dash .bd-stats-avancees .dash-alert-strip{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:10px !important;margin-bottom:20px;font-size:12px}
+.b-dash .bd-stats-avancees .dash-alert-strip.r{background:rgba(58,21,21,.5) !important;border:1px solid rgba(226,75,74,.4) !important;color:#f09595}
+.b-dash .bd-stats-avancees .dash-alert-strip.r .dash-alert-dot{background:var(--bd-red);width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:bdPulse 2s infinite}
+.b-dash .bd-stats-avancees .dash-alert-strip.g{background:rgba(29,158,117,.08) !important;border:1px solid rgba(29,158,117,.3) !important;color:var(--bd-acc)}
+.b-dash .bd-stats-avancees .dash-alert-strip.g .dash-alert-dot{background:var(--bd-acc);width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.b-dash .bd-stats-avancees .dash-alert-strip strong{color:inherit;font-weight:500}
+
+/* Évolution des actes : barres harmonisées */
+.b-dash .bd-stats-avancees .acte-row-prem{display:grid;grid-template-columns:22px 60px 1fr 38px 60px;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--bd-line2);font-size:12px}
+.b-dash .bd-stats-avancees .acte-row-prem:last-child{border-bottom:0}
+.b-dash .bd-stats-avancees .acte-rank{font-size:13px;color:var(--bd-mute);text-align:center;font-weight:500}
+.b-dash .bd-stats-avancees .acte-code-pill{background:var(--bd-acc-soft);color:var(--bd-acc);padding:3px 0;border-radius:5px;font-size:11px;font-weight:500;text-align:center;font-family:var(--fm)}
+.b-dash .bd-stats-avancees .acte-bar-track{height:6px;background:var(--bd-line2);border-radius:3px;overflow:hidden}
+.b-dash .bd-stats-avancees .acte-bar-fill-prem{height:100%;background:var(--bd-acc);border-radius:3px;transition:width .35s ease}
+
+/* Notices et messages informatifs */
+.b-dash .bd-stats-avancees .ai{padding:10px 14px !important;border-radius:8px !important;margin:6px 0 !important;font-size:12px !important;border:1px solid var(--bd-line) !important;color:var(--bd-text) !important}
+.b-dash .bd-stats-avancees .ai.in{background:rgba(133,183,235,.08) !important;border-color:rgba(133,183,235,.25) !important;color:var(--bd-blue) !important}
+.b-dash .bd-stats-avancees .ai.wa{background:var(--bd-amber-soft) !important;border-color:rgba(239,159,39,.3) !important;color:var(--bd-amber) !important}
+.b-dash .bd-stats-avancees .ai.er,.b-dash .bd-stats-avancees .ai.e{background:var(--bd-red-soft) !important;border-color:rgba(226,75,74,.3) !important;color:#f09595 !important}
+.b-dash .bd-stats-avancees .ai.su{background:rgba(29,158,117,.08) !important;border-color:rgba(29,158,117,.25) !important;color:var(--bd-acc) !important}
+.b-dash .bd-stats-avancees .ai strong{color:inherit;font-weight:500}
+
+/* Histogramme analyse horaire (généré par _renderHeureStats) */
+.b-dash .bd-stats-avancees [style*="height:80px"][style*="display:flex"]{padding:8px 0;border-radius:8px}
+.b-dash .bd-stats-avancees [style*="rgba(255,95,109"]{background:rgba(226,75,74,.7) !important}
+.b-dash .bd-stats-avancees [style*="rgba(255,181,71"]{background:var(--bd-amber) !important;opacity:.8}
+
+/* Generic card support pour tout HTML interne avec .card / .ct */
+.b-dash .bd-stats-avancees .card{background:var(--bd-card) !important;border:1px solid var(--bd-line) !important;border-radius:12px !important;color:var(--bd-text)}
+.b-dash .bd-stats-avancees .ct{color:var(--bd-text) !important;font-family:var(--fs) !important}
+.b-dash .bd-stats-avancees .lbl{color:var(--bd-mute) !important;text-transform:uppercase;letter-spacing:.5px;font-size:11px}
+.b-dash .bd-stats-avancees table{background:transparent !important}
+.b-dash .bd-stats-avancees table th,.b-dash .bd-stats-avancees table td{border-color:var(--bd-line2) !important;color:var(--bd-text)}
+
+/* ── Footer actions ─────────────────────────────────────────── */
+.b-dash .bd-footer-actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+</style>
+
 </head>
 <body>
 
@@ -2398,61 +2637,66 @@
         <button type="button" class="hub-tab" data-hub="outils" data-hub-tab="modeles" role="tab" aria-selected="false" onclick="outilsHubSwitchTab('modeles', this)" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:600;color:var(--m);cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap"><span style="font-size:14px">📝</span> Modèles</button>
       </div>
       <div class="hub-panel" id="hub-panel-outils-dash" role="tabpanel">
+      <div class="b-dash">
 
-      <h1 class="pt">Dashboard <em>& Statistiques</em></h1>
-      <p class="ps">Revenus · KPIs · Actes fréquents · Tendances · Analyse horaire</p>
-
-      <!-- Barre de contrôle header -->
-      <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-        <!-- Période pill -->
-        <div class="dash-period-pill">
-          <button class="dpp-btn active" onclick="setDashPeriod(this,'month')">Mois</button>
-          <button class="dpp-btn" onclick="setDashPeriod(this,'lastmonth')">M-1</button>
-          <button class="dpp-btn" onclick="setDashPeriod(this,'3month')">3 mois</button>
-          <button class="dpp-btn" onclick="setDashPeriod(this,'year')">Année</button>
+      <!-- ══ HEADER ══ -->
+      <div class="bd-header">
+        <div>
+          <h1 class="bd-title">Dashboard <em>& Statistiques</em></h1>
+          <p class="bd-sub">Revenus · KPIs · Actes fréquents · Tendances · Analyse horaire</p>
         </div>
-        <!-- select hidden pour compatibilité JS -->
-        <select id="dash-period" style="display:none" onchange="loadDash()">
-          <option value="month">Ce mois</option>
-          <option value="lastmonth">Mois précédent</option>
-          <option value="3month">3 derniers mois</option>
-          <option value="year">Cette année</option>
-        </select>
-        <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser</button>
-        <button class="btn bs bsm" onclick="scheduleDailyCotationReminder()">⏰ Rappel</button>
-        <button class="btn bs bsm nurse-only" onclick="if(typeof navTo==='function')navTo('tur',null);setTimeout(()=>typeof toggleHeatmap==='function'&&toggleHeatmap(),500)">🔥 Zones</button>
+        <div class="bd-tools">
+          <div class="bd-pill">
+            <button class="bd-pbtn on" onclick="setDashPeriod(this,'month')">Mois</button>
+            <button class="bd-pbtn" onclick="setDashPeriod(this,'lastmonth')">M-1</button>
+            <button class="bd-pbtn" onclick="setDashPeriod(this,'3month')">3 mois</button>
+            <button class="bd-pbtn" onclick="setDashPeriod(this,'year')">Année</button>
+          </div>
+          <select id="dash-period" style="display:none" onchange="loadDash()">
+            <option value="month">Ce mois</option>
+            <option value="lastmonth">Mois précédent</option>
+            <option value="3month">3 derniers mois</option>
+            <option value="year">Cette année</option>
+          </select>
+          <button class="bd-bt" onclick="loadDash()" title="Actualiser">↻</button>
+          <button class="bd-bt" onclick="scheduleDailyCotationReminder()" title="Rappel quotidien">⏰</button>
+          <button class="bd-bt nurse-only" onclick="if(typeof navTo==='function')navTo('tur',null);setTimeout(()=>typeof toggleHeatmap==='function'&&toggleHeatmap(),500)" title="Voir zones chaudes">🔥</button>
+        </div>
       </div>
 
       <!-- Notice admin -->
-      <div id="dash-admin-notice" style="display:none;margin-bottom:12px" class="ai in">
+      <div id="dash-admin-notice" style="display:none;margin-bottom:12px" class="bd-notice">
         🛡️ <strong>Mode admin — données isolées</strong> · Statistiques issues de vos données de test uniquement. Les données infirmières sont physiquement inaccessibles.
       </div>
-      <!-- Badge cache / hors-ligne -->
-      <div id="dash-cache-info" style="display:none;font-size:11px;margin-bottom:10px;padding:5px 12px;border-radius:8px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:var(--m);font-family:var(--fm)"></div>
+      <!-- Cache info -->
+      <div id="dash-cache-info" style="display:none" class="bd-cache-info"></div>
 
       <!-- Loading -->
-      <div id="dash-loading" style="text-align:center;padding:60px 20px"><div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div><p style="color:var(--m);font-size:13px">Chargement des statistiques...</p></div>
+      <div id="dash-loading" class="bd-loading">
+        <div class="spin spinw" style="width:32px;height:32px;margin:0 auto 12px"></div>
+        <p style="color:var(--m);font-size:13px">Chargement des statistiques...</p>
+      </div>
 
       <div id="dash-body" style="display:none">
 
-        <!-- ── ALERT STRIP — pertes détectées ── -->
-        <div id="dash-alert-strip-loss" class="dash-alert-strip" style="display:none;margin-bottom:0">
-          <div class="dash-alert-dot"></div>
+        <!-- ══ ALERT STRIP — pertes détectées (sticky en haut) ══ -->
+        <div id="dash-alert-strip-loss" class="dash-alert-strip bd-alert" style="display:none">
+          <div class="dash-alert-dot bd-alert-dot"></div>
           <div class="dash-alert-text" id="dash-alert-strip-text">Revenus manqués détectés</div>
-          <div class="dash-alert-action" onclick="document.getElementById('dash-loss-card').scrollIntoView({behavior:'smooth'})">Voir détails →</div>
+          <div class="dash-alert-action bd-alert-action" onclick="document.getElementById('dash-loss-card').scrollIntoView({behavior:'smooth'})">Voir détails →</div>
         </div>
 
-        <!-- ── 🆕 Widget Score de confiance (trust score) ── -->
-        <div id="dash-trust-widget" style="display:none;margin:4px 0 16px"></div>
+        <!-- ══ Score de confiance NGAP ══ -->
+        <div id="dash-trust-widget" style="display:none"></div>
 
-        <!-- ── KPIs ── -->
-        <div id="dash-kpis" class="sg" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin:20px 0 24px"></div>
+        <!-- ══ KPIs ══ -->
+        <div id="dash-kpis" class="sg bd-kpis"></div>
 
-        <!-- ── Bandeau kilométrique ── -->
-        <div id="dash-km-bandeau" style="display:none;background:rgba(79,168,255,.06);border:1px solid rgba(79,168,255,.2);border-radius:10px;padding:10px 16px;margin-bottom:8px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap"></div>
+        <!-- ══ Bandeau kilométrique ══ -->
+        <div id="dash-km-bandeau" style="display:none" class="bd-km-bandeau"></div>
 
-        <!-- Sélecteur barème km (affiché uniquement si bandeau km visible) -->
-        <div class="km-prefs-bar" id="dash-km-prefs" style="display:none;margin-bottom:16px">
+        <!-- Sélecteur barème km -->
+        <div class="km-prefs-bar bd-km-prefs" id="dash-km-prefs" style="display:none">
           <span class="km-prefs-lbl">🚗 Barème km</span>
           <select class="km-cv-select" id="dash-km-cv" onchange="saveKmPrefsDash()" title="Puissance fiscale">
             <option value="3">3 CV — 0.529 €/km</option>
@@ -2467,110 +2711,116 @@
           <span class="km-prefs-info" id="dash-km-rate-info">Taux : 0.636 €/km · 5 CV</span>
         </div>
 
-        <!-- ── LAYOUT 2 COLONNES ── -->
-        <div class="dash-2col">
+        <!-- ══ LAYOUT 2 COLONNES — Variante B ══ -->
+        <div class="bd-row2">
 
-          <!-- COLONNE PRINCIPALE -->
-          <div class="dash-2col-main">
-
-            <!-- Graphique 30j -->
-            <div class="dash-2col-section">
-              <div class="dash-section-title">
-                Revenus — 30 derniers jours
-                <span class="dash-section-badge" id="dash-chart-trend-badge">↑ tendance</span>
+          <!-- Graphique principal : Revenus 30j -->
+          <div class="bd-card bd-card-chart">
+            <div class="bd-cthd">
+              <div>
+                <div class="bd-ctitle">Revenus — 30 derniers jours</div>
               </div>
-              <div id="dash-chart" style="height:130px;display:flex;align-items:flex-end;gap:3px;padding:4px 0"></div>
-              <div id="dash-chart-labels" style="display:flex;gap:3px;margin-top:6px;overflow:hidden"></div>
-              <div class="dash-chart-stats" id="dash-chart-stats">
-                <div class="dash-chart-stat">Moy. <strong id="cs-avg">—</strong></div>
-                <div class="dash-chart-stat">Pic <strong id="cs-peak">—</strong></div>
-                <div class="dash-chart-stat">Moy./passage <strong id="cs-mpp">—</strong></div>
-                <div class="dash-chart-stat">Passages <strong id="cs-count">—</strong></div>
-              </div>
+              <span class="bd-bdg" id="dash-chart-trend-badge">↑ tendance</span>
             </div>
-
-            <!-- Top actes -->
-            <div class="dash-2col-section">
-              <div class="dash-section-title">Actes les plus fréquents</div>
-              <div id="dash-top-actes"></div>
+            <div id="dash-chart" class="bd-chart-area"></div>
+            <div id="dash-chart-labels" class="bd-chart-labels"></div>
+            <div class="dash-chart-stats bd-chart-stats" id="dash-chart-stats">
+              <div class="dash-chart-stat">Moy. <strong id="cs-avg">—</strong></div>
+              <div class="dash-chart-stat">Pic <strong id="cs-peak">—</strong></div>
+              <div class="dash-chart-stat">Moy./passage <strong id="cs-mpp">—</strong></div>
+              <div class="dash-chart-stat">Passages <strong id="cs-count">—</strong></div>
             </div>
+          </div>
 
-            <!-- Alertes revenus manqués -->
-            <div class="dash-2col-section" id="dash-loss-card">
-              <div class="dash-section-title">
-                Alertes revenus manqués
-                <span class="dash-section-badge r" id="dash-loss-badge" style="display:none">● perte</span>
-              </div>
-              <div id="dash-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+          <!-- Prévision anneau (sidebar droite) -->
+          <div class="bd-card">
+            <div class="bd-cthd">
+              <div class="bd-ctitle">Prévision du mois</div>
+              <span class="bd-bdg b">IA</span>
             </div>
-
-            <!-- Anomalies -->
-            <div class="dash-2col-section">
-              <div class="dash-section-title">Détection d'anomalies</div>
-              <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+            <div id="dash-prevision" class="bd-prevision-area">
+              <div style="text-align:center;padding:20px 0;color:var(--m);font-size:13px">Calcul en cours...</div>
             </div>
+          </div>
 
-            <!-- Analyse IA 3 colonnes -->
-            <div class="dash-2col-section" style="border-bottom:none">
-              <div class="dash-section-title">
-                Analyse IA & Optimisations NGAP
-                <span class="dash-section-badge b">IA</span>
-              </div>
-              <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
-            </div>
-
-          </div><!-- /dash-2col-main -->
-
-          <!-- COLONNE SIDEBAR -->
-          <div class="dash-2col-side">
-
-            <!-- Prévision anneau -->
-            <div class="dash-side-section">
-              <div class="dash-section-title" style="margin-bottom:12px">Prévision du mois</div>
-              <div id="dash-prevision">
-                <div style="text-align:center;padding:20px 0;color:var(--m);font-size:13px">Calcul en cours...</div>
-              </div>
-            </div>
-
-            <!-- Heatmap horaire -->
-            <div class="dash-side-section">
-              <div class="dash-section-title" style="margin-bottom:8px">Activité horaire</div>
-              <div class="dash-heatmap" id="dash-heatmap"></div>
-              <div class="dash-heatmap-labels">
-                <span>6h</span><span>10h</span><span>14h</span><span>18h</span>
-              </div>
-              <div style="font-size:10px;color:var(--m);margin-top:6px;font-family:var(--fm)">Intensité par tranche d'1h</div>
-            </div>
-
-          </div><!-- /dash-2col-side -->
-
-        </div><!-- /dash-2col -->
-
-        <!-- ══ STATISTIQUES AVANCÉES ══ -->
-        <div style="border-top:1px solid var(--b);margin:28px 0 20px"></div>
-        <div class="lbl" style="margin-bottom:16px">📊 Statistiques avancées</div>
-        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-          <select id="stats-period" onchange="loadStatsAvancees()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:var(--r);color:var(--t);font-size:13px">
-            <option value="month">Ce mois</option>
-            <option value="lastmonth">Mois précédent</option>
-            <option value="3month">3 derniers mois</option>
-            <option value="year">Cette année</option>
-          </select>
-          <button class="btn bp bsm" onclick="loadStatsAvancees()">↻ Actualiser</button>
         </div>
-        <div id="stats-avancees-body"></div>
+
+        <!-- ══ LAYOUT 3 COLONNES — Top actes / Pertes / Heatmap ══ -->
+        <div class="bd-row3">
+
+          <!-- Top actes -->
+          <div class="bd-card">
+            <div class="bd-cthd"><div class="bd-ctitle">Actes les plus fréquents</div></div>
+            <div id="dash-top-actes" class="bd-actes"></div>
+          </div>
+
+          <!-- Pertes manquées (détail) -->
+          <div class="bd-card" id="dash-loss-card">
+            <div class="bd-cthd">
+              <div class="bd-ctitle">Alertes revenus manqués</div>
+              <span class="bd-bdg r" id="dash-loss-badge" style="display:none">● perte</span>
+            </div>
+            <div id="dash-loss" class="bd-loss"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+          </div>
+
+          <!-- Heatmap horaire -->
+          <div class="bd-card">
+            <div class="bd-cthd"><div class="bd-ctitle">Activité horaire</div></div>
+            <div class="dash-heatmap bd-heatmap" id="dash-heatmap"></div>
+            <div class="dash-heatmap-labels bd-heatmap-labels">
+              <span>6h</span><span>10h</span><span>14h</span><span>18h</span>
+            </div>
+            <div class="bd-heatmap-foot">Intensité par tranche d'1h</div>
+          </div>
+
+        </div>
+
+        <!-- ══ Anomalies + Analyse IA ══ -->
+        <div class="bd-card">
+          <div class="bd-cthd"><div class="bd-ctitle">Détection d'anomalies</div></div>
+          <div id="dash-anomalies"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+
+        <div class="bd-card">
+          <div class="bd-cthd">
+            <div class="bd-ctitle">Analyse IA & Optimisations NGAP</div>
+            <span class="bd-bdg b">IA</span>
+          </div>
+          <div id="dash-ai"><div style="color:var(--m);font-size:13px">Analyse en cours...</div></div>
+        </div>
+
+        <!-- ══ STATISTIQUES AVANCÉES — même chrome ══ -->
+        <div class="bd-section-divider"></div>
+        <div class="bd-section-header">
+          <div>
+            <h2 class="bd-section-title">📊 Statistiques avancées</h2>
+            <p class="bd-section-sub">Analyse approfondie · Périodes personnalisées · Tendances long terme</p>
+          </div>
+          <div class="bd-tools">
+            <select id="stats-period" onchange="loadStatsAvancees()" class="bd-select">
+              <option value="month">Ce mois</option>
+              <option value="lastmonth">Mois précédent</option>
+              <option value="3month">3 derniers mois</option>
+              <option value="year">Cette année</option>
+            </select>
+            <button class="bd-bt" onclick="loadStatsAvancees()" title="Actualiser">↻</button>
+          </div>
+        </div>
+        <div id="stats-avancees-body" class="bd-stats-avancees"></div>
 
       </div><!-- /dash-body -->
 
-      <div id="dash-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--m)">
+      <div id="dash-empty" class="bd-empty" style="display:none">
         <div style="font-size:40px;margin-bottom:12px">📊</div>
         <p>Aucune donnée. Générez des cotations pour voir vos statistiques.</p>
       </div>
-      <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser tout</button>
-        <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
+
+      <div class="bd-footer-actions">
+        <button class="bd-bt" onclick="loadDash()">↻ Actualiser tout</button>
+        <button class="bd-bt bd-bt-d" onclick="resetAllHist()">🗑️ Tout réinitialiser</button>
       </div>
-    
+
+      </div><!-- /.b-dash -->
       </div>
       <div class="hub-panel" id="hub-panel-outils-tresor" role="tabpanel" style="display:none">
 
