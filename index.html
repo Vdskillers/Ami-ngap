@@ -4646,7 +4646,12 @@ document.addEventListener('keydown', function(e){
     }
   }
 
-  /* ── Mapping (hub, onglet) → vue clinique attendue par les modules v2 ─ */
+  /* ── Mapping (hub, onglet) → vue attendue par les modules ─────────────
+     Lorsqu'un onglet est activé via _hubSwitch, on dispatch un événement
+     'ui:navigate' avec la vue mappée pour que ui.js (ou les modules
+     cliniques v2) puissent réagir et lancer leur loader. Sans ce mapping,
+     le DOM est mis à jour mais aucun chargement de données n'est déclenché
+     → spinner infini sur l'onglet Dashboard / Copilote. */
   var _CLINICAL_VIEW_MAP = {
     // Hub Carnet patients
     'patients-pilulier'      : 'pilulier',
@@ -4655,6 +4660,8 @@ document.addEventListener('keydown', function(e){
     'patients-consentements' : 'consentements',
     'patients-alertes-med'   : 'alertes-med',
     // Hub Outils pratiques
+    'outils-dash'            : 'dash',          // → loadDash() + loadStatsAvancees()
+    'outils-copilote'        : 'copilote',      // → initCopiloteSection()
     'outils-cr'              : 'compte-rendu',
     'outils-audit'           : 'audit-cpam'
   };
@@ -4669,15 +4676,25 @@ document.addEventListener('keydown', function(e){
     _hubSwitch('outils', tab, btn);
   };
 
-  /* ── Restauration de l'onglet actif quand on (re)navigue vers un hub ─ */
+  /* ── Restauration de l'onglet actif quand on (re)navigue vers un hub ──
+     Si rien n'a été sauvegardé en sessionStorage (1ère visite), on retombe
+     sur l'onglet marqué `.on` par défaut dans le HTML. Sans ce fallback,
+     l'onglet par défaut est visuellement actif mais aucun loader n'est
+     déclenché → spinner Dashboard infini à la 1ère visite. */
   function _restoreHubTab(hubName) {
     try {
       var saved = sessionStorage.getItem('ami:hub:' + hubName);
-      if (!saved) return;
-      // Vérifier que cet onglet existe bien dans le DOM
-      var t = document.querySelector(
-        '.hub-tab[data-hub="' + hubName + '"][data-hub-tab="' + saved + '"]');
-      if (t) _hubSwitch(hubName, saved, t);
+      var t = null;
+      if (saved) {
+        t = document.querySelector(
+          '.hub-tab[data-hub="' + hubName + '"][data-hub-tab="' + saved + '"]');
+      }
+      // Fallback : pas de sessionStorage OU tab introuvable → tab .on par défaut
+      if (!t) {
+        t = document.querySelector('.hub-tab[data-hub="' + hubName + '"].on');
+        saved = t ? t.getAttribute('data-hub-tab') : null;
+      }
+      if (t && saved) _hubSwitch(hubName, saved, t);
     } catch(_) {}
   }
 
