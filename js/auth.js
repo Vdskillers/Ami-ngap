@@ -267,6 +267,15 @@ function showApp(){
   // Correction Leaflet après changement de layout
   setTimeout(()=>{ if(typeof depMap!=='undefined'&&depMap) depMap.invalidateSize(); },250);
 
+  // ✅ v8.7+ — Pré-charger boot-sync AVANT que les modules individuels lancent
+  //   leurs propres pulls. Ça déclenche 1 SEUL fetch /webhook/boot-sync qui
+  //   pré-remplit le cache, puis quand patients.js / pilulier.js / etc. font
+  //   bootSyncGet('xxx'), ils trouvent le cache déjà rempli (déduplication).
+  //   Si /boot-sync n'existe pas (ancien worker), fallback silencieux.
+  if (typeof window.bootSyncStart === 'function') {
+    window.bootSyncStart().catch(() => {});
+  }
+
   // Dispatcher l'event de login pour les modules qui en dépendent (copilote, etc.)
   setTimeout(()=>{ document.dispatchEvent(new CustomEvent('ami:login', { detail: { role: S?.role } })); }, 150);
 }
