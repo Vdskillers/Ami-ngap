@@ -1,21 +1,19 @@
-/* sw.js — AMI NGAP Service Worker v5.9
+/* sw.js — AMI NGAP Service Worker v5.10.2
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
    ✅ v5.0-5.7 — Mode GPS plein écran, retard, signature non-bloquante, etc.
-   ✅ v5.8 — Préférence routage 🛣️ Autoroutes / 🌳 Routes nationales (1 toggle)
-   ✅ v5.9 — Préférence routage 2 toggles indépendants :
-              - 🛣️ Éviter autoroutes (motorway)
-              - 💸 Éviter péages (toll)
-              - Combinables : 4 modes possibles (Standard / RN+péage / RN sans péage /
-                Autoroute gratuite uniquement)
-              - Pill HUD GPS plein écran "+12 min vs autoroute" (cache 10 min)
-              - Ligne info Pilotage avant Optimiser : gain/perte cumulé sur tournée
-              - Localstorage v2 : 'ami_route_pref_v2' (JSON) — migration auto v5.8
-              - Helper _osrmExcludeParam() retourne motorway, toll, motorway,toll, ou ''
+   ✅ v5.10.0 — Couches IA terrain (no-show, difficulté, météo, autopilot opt-in,
+              vocal, simulation) — module ai-smart-tour.js
+   ✅ v5.10.1 — Suppression de la feature "Éviter autoroutes / Éviter péages"
+              (UI + logique OSRM exclude) — itinéraire OSRM standard partout
+   ✅ v5.10.2 — UI dédiée pour la couche IA terrain : panneau "Intelligence
+              terrain" dans Pilotage, status pills dans HUD Mode Uber Médical,
+              3 modals (config mode auto, simulation, suggestion ajustement)
+              → module ai-smart-ui.js
 */
 
-const CACHE_VERSION = 'ami-v5.9.2';
+const CACHE_VERSION = 'ami-v5.10.2';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
@@ -42,6 +40,8 @@ const STATIC_ASSETS = [
   './map.js',
   './uber.js',
   './ai-tournee.js',
+  './ai-smart-tour.js',
+  './ai-smart-ui.js',
   './tournee.js',
   './ai-assistant.js',
   './pwa.js',

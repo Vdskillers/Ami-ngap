@@ -24,288 +24,26 @@ let _watchId     = null;
 let _uberInterval= null;
 
 /* ════════════════════════════════════════════════════════════
-   v5.8/v5.9 — PRÉFÉRENCE ROUTAGE OSRM
+   v5.10.1 — OSRM FETCH SAFE (wrapper minimal)
    ────────────────────────────────────────────────────────────
-   v5.8 : APP._routeAutoroutes = 'auto' | 'avoid' (1 toggle)
-   v5.9 : APP._routePref = { avoidMotorway, avoidToll } (2 toggles)
+   La feature "Éviter autoroutes / Éviter péages" a été retirée
+   en v5.10.1. Tous les itinéraires OSRM utilisent désormais le
+   profil "driving" standard, sans paramètre exclude.
 
-   Rétrocompatibilité : si APP._routeAutoroutes === 'avoid' et que
-   APP._routePref n'est pas défini, on initialise les 2 flags à true
-   (comportement identique v5.8). Le code legacy qui lit
-   APP._routeAutoroutes continue de fonctionner via une projection
-   automatique : avoidMotorway → 'avoid', sinon → 'auto'.
-
-   localStorage :
-     - 'ami_route_pref'      (v5.8 : 'auto'|'avoid', conservé pour migration)
-     - 'ami_route_pref_v2'   (v5.9 : JSON {avoidMotorway, avoidToll})
-
-   Helpers exposés sur window :
-     • _osrmExcludeParam()   → '&exclude=motorway,toll' | '&exclude=motorway'
-                              | '&exclude=toll' | ''
-     • _osrmRouteSuffix()    → identique
-     • _osrmCacheKeySuffix() → '_nm_nt' | '_nm' | '_nt' | ''
-     • _setRouteAutoroutesGlobal(mode)  → API legacy v5.8 (string)
-     • _setRoutePrefGlobal(prefs)       → API v5.9 (objet partiel)
-     • _getRoutePref()                  → lecture {avoidMotorway, avoidToll}
+   On garde un wrapper résilient `_osrmFetchSafe(url)` :
+     • catch les erreurs réseau / 4xx / 5xx → renvoie null
+     • valide le code de réponse OSRM (`Ok`)
+     • interface unique pour tout le code qui appelle OSRM
    ============================================================ */
 
-// Initialisation des prefs v5.9 — peut avoir été pré-posée par extras.js boot
-if (typeof APP !== 'undefined') {
-  if (!APP._routePref) {
-    // Migration depuis v5.8 si présent
-    const legacy = APP._routeAutoroutes;
-    APP._routePref = {
-      avoidMotorway: legacy === 'avoid',
-      avoidToll:     legacy === 'avoid', // v5.8 excluait déjà motorway,toll groupés
-    };
-  }
-  // Maintenir la projection v5.8 pour le code legacy
-  APP._routeAutoroutes = APP._routePref.avoidMotorway ? 'avoid' : 'auto';
-}
-
-function _getRoutePref() {
-  if (typeof APP === 'undefined' || !APP._routePref) {
-    return { avoidMotorway: false, avoidToll: false };
-  }
-  return {
-    avoidMotorway: !!APP._routePref.avoidMotorway,
-    avoidToll:     !!APP._routePref.avoidToll,
-  };
-}
-
-function _osrmExcludeParam() {
-  // ⚡ v5.9.1 — FIX 400 Bad Request : le serveur public OSRM
-  // (router.project-osrm.org) n'accepte QUE 'motorway' comme classe
-  // d'exclusion routable dans le profil voiture standard. Les valeurs
-  // 'toll', 'ferry' déclenchent un 400 Bad Request.
-  //
-  // Approche C : si avoidToll OU avoidMotorway est actif, on exclut
-  // 'motorway' (les péages français étant ~exclusivement sur autoroute,
-  // exclure les autoroutes exclut DE FAIT les péages).
-  //
-  // ⚡ v5.9.2 — Si le boot test ou un fetch précédent a découvert que le
-  // serveur ne supporte PAS du tout exclude, on retourne '' pour éviter
-  // tous les 400 ultérieurs. _osrmFetchSafe gère le retry automatique
-  // si jamais on n'a pas encore fait le test.
-  if (typeof window !== 'undefined' && window._osrmExcludeSupported === false) {
-    return '';
-  }
-  const { avoidMotorway, avoidToll } = _getRoutePref();
-  if (avoidMotorway || avoidToll) return '&exclude=motorway';
-  return '';
-}
-
-function _osrmRouteSuffix() {
-  return _osrmExcludeParam();
-}
-
-function _osrmCacheKeySuffix() {
-  // v5.9.1 — Le cache key ne distingue plus motorway vs toll, puisque
-  // les deux génèrent la même URL OSRM. On garde un suffixe unique '_nm'
-  // pour ne pas mélanger avec le mode standard.
-  const { avoidMotorway, avoidToll } = _getRoutePref();
-  return (avoidMotorway || avoidToll) ? '_nm' : '';
-}
-
-/**
- * Setter v5.9 — accepte un objet partiel { avoidMotorway?, avoidToll? }.
- * Met à jour APP._routePref + APP._routeAutoroutes (legacy) + persiste +
- * synchronise tous les boutons UI + déclenche redraw GPS plein écran.
- */
-function _setRoutePrefGlobal(partialPrefs) {
-  if (typeof APP === 'undefined') return;
-  const prev = _getRoutePref();
-  const next = { ...prev, ...partialPrefs };
-
-  // Pas de changement → no-op
-  if (next.avoidMotorway === prev.avoidMotorway && next.avoidToll === prev.avoidToll) return;
-
-  APP._routePref = next;
-  APP._routeAutoroutes = next.avoidMotorway ? 'avoid' : 'auto'; // legacy projection
-
-  // Persistance localStorage v5.9
-  try { localStorage.setItem('ami_route_pref_v2', JSON.stringify(next)); } catch(_) {}
-  // Aussi maj la clé v5.8 pour cohérence si un autre code la lit
-  try { localStorage.setItem('ami_route_pref', next.avoidMotorway ? 'avoid' : 'auto'); } catch(_) {}
-
-  // ── Sync UI : 2 toggles dans chaque panneau ──
-  const updateToggle = (id, active, activeColor) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.dataset.active = active ? '1' : '0';
-    el.style.background  = active ? activeColor.bg : 'var(--s)';
-    el.style.borderColor = active ? activeColor.bd : 'var(--b)';
-    el.style.color       = active ? activeColor.fg : 'var(--m)';
-  };
-  // Pilotage
-  updateToggle('btn-avoid-motorway',      next.avoidMotorway, { bg:'rgba(255,181,71,.15)', bd:'rgba(255,181,71,.4)', fg:'var(--w)'   });
-  updateToggle('btn-avoid-toll',          next.avoidToll,     { bg:'rgba(0,212,170,.15)',  bd:'rgba(0,212,170,.4)',  fg:'var(--a)'   });
-  // Mode Uber Médical
-  updateToggle('btn-avoid-motorway-uber', next.avoidMotorway, { bg:'rgba(255,181,71,.15)', bd:'rgba(255,181,71,.4)', fg:'var(--w)'   });
-  updateToggle('btn-avoid-toll-uber',     next.avoidToll,     { bg:'rgba(0,212,170,.15)',  bd:'rgba(0,212,170,.4)',  fg:'var(--a)'   });
-
-  // Toggle HUD GPS plein écran (label dynamique selon les 2 flags)
-  const fsBtn = document.getElementById('uber-fs-route-toggle');
-  if (fsBtn) {
-    let icon = '🛣️', lbl = 'Standard';
-    if (next.avoidMotorway && next.avoidToll)      { icon='🌳'; lbl='RN/RD'; }
-    else if (next.avoidMotorway)                    { icon='🌳'; lbl='RN/RD'; }
-    else if (next.avoidToll)                        { icon='💸'; lbl='Sans péage'; } // = motorway en pratique sur OSRM public
-    fsBtn.innerHTML = `<span>${icon}</span><span class="uber-fs-btn-lbl">${lbl}</span>`;
-    fsBtn.title = `Routage : ${lbl} — appui long pour cycler entre les modes`;
-  }
-
-  // Labels descriptifs
-  const labelText = (() => {
-    if (next.avoidMotorway && next.avoidToll) return '🚫 Autoroutes + péages exclus — RN/RD uniquement';
-    if (next.avoidMotorway)                    return '🚫 Autoroutes exclues — RN/RD uniquement';
-    if (next.avoidToll)                        return '💸 Péages exclus — autoroutes exclues aussi (limitation OSRM)';
-    return '✅ Itinéraire standard';
-  })();
-  document.querySelectorAll('.route-autoroute-label, #route-autoroute-label').forEach(el => {
-    el.textContent = labelText;
-  });
-
-  // Event pour modules tiers (ai-tournee, etc.)
-  try {
-    document.dispatchEvent(new CustomEvent('ami:route_pref_changed', { detail: { prev, next } }));
-  } catch(_) {}
-
-  // Toast confirmation
-  if (typeof showToast === 'function') {
-    if (!next.avoidMotorway && !next.avoidToll) {
-      showToast('✅ Routage standard — relancez l\'optimisation');
-    } else {
-      const parts = [];
-      if (next.avoidMotorway) parts.push('autoroutes');
-      if (next.avoidToll)     parts.push('péages');
-      showToast(`🚫 Évite ${parts.join(' + ')} — relancez l'optimisation`);
-    }
-  }
-
-  // Invalider le cache du diff puis rafraîchir
-  _routeDiffCache.clear();
-
-  // Redessiner la route GPS plein écran et recalculer le diff
-  if (_uberFSMap && typeof _uberFSDrawRoute === 'function') {
-    setTimeout(() => {
-      try { _uberFSDrawRoute(); } catch(_) {}
-      try { _updateRouteDiffPill(); } catch(_) {}
-    }, 100);
-  }
-
-  // Recalcul du diff Pilotage (sans bloquer l'UI)
-  if (typeof _updatePilotageRouteDiff === 'function') {
-    setTimeout(() => { try { _updatePilotageRouteDiff(); } catch(_) {} }, 100);
-  }
-}
-
-/**
- * API legacy v5.8 — accepte string 'auto' | 'avoid'.
- * Convertit vers le nouveau format et délègue à _setRoutePrefGlobal.
- */
-function _setRouteAutoroutesGlobal(mode) {
-  if (mode === 'auto') {
-    _setRoutePrefGlobal({ avoidMotorway: false, avoidToll: false });
-  } else if (mode === 'avoid') {
-    _setRoutePrefGlobal({ avoidMotorway: true, avoidToll: true });
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window._osrmExcludeParam       = _osrmExcludeParam;
-  window._osrmRouteSuffix        = _osrmRouteSuffix;
-  window._osrmCacheKeySuffix     = _osrmCacheKeySuffix;
-  window._setRouteAutoroutesGlobal = _setRouteAutoroutesGlobal;
-  window._setRoutePrefGlobal     = _setRoutePrefGlobal;
-  window._getRoutePref           = _getRoutePref;
-}
-
-/* ════════════════════════════════════════════════════════════
-   v5.9.2 — OSRM FETCH SAFE + BOOT TEST EXCLUDE SUPPORT
-   ────────────────────────────────────────────────────────────
-   Problème terrain : router.project-osrm.org renvoie 400 Bad Request
-   sur TOUTE URL contenant '?exclude=...' (le profil voiture du serveur
-   public a été reconfiguré sans support des classes d'exclusion).
-   Symptôme : tournée bloquée, carte vide, aucune optimisation.
-
-   Solution :
-   1. Test au boot (1 seule fois) : on vérifie si exclude est supporté
-   2. Si non supporté, _osrmExcludeParam() retourne '' (pas d'exclude)
-   3. _osrmFetchSafe(url) : wrapper qui fait le retry sans exclude
-      en cas de 400, mémorise et désactive globalement après 1 fail.
-
-   Garantie : l'app ne plante JAMAIS sur OSRM, le fallback est silencieux
-   pour l'IDE. Si le serveur ne supporte pas l'exclusion, on l'informe
-   via 1 toast unique au boot et le label UI devient explicite.
-   ============================================================ */
-
-// null = inconnu (pas encore testé), true = supporté, false = non supporté
-window._osrmExcludeSupported = (window._osrmExcludeSupported !== undefined)
-  ? window._osrmExcludeSupported
-  : null;
-let _osrmExcludeUserNotified = false;
-
-/**
- * Fetch OSRM résilient avec fallback automatique :
- *   - Si l'URL contient &exclude=… et reçoit 400/erreur → retry sans exclude
- *   - Mémorise window._osrmExcludeSupported = false après 1er échec
- *   - Retourne le JSON parsé OU null (jamais throw)
- *   - Logue 1 toast UNIQUE pour informer l'IDE
- */
 window._osrmFetchSafe = async function(url, fetchOptions) {
   if (!url) return null;
-
-  // Si on sait déjà que exclude n'est pas supporté → on le retire d'office
-  if (window._osrmExcludeSupported === false && url.includes('exclude=')) {
-    url = url.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '');
-    // Nettoyage cosmétique des doubles '&' ou '?&' résiduels
-    url = url.replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
-  }
-
   try {
-    let res = await fetch(url, fetchOptions);
-
-    // Premier échec : si l'URL contenait exclude, on retry sans
-    if (!res.ok) {
-      if (url.includes('exclude=')) {
-        // Marquer le serveur comme "ne supporte pas exclude"
-        if (window._osrmExcludeSupported !== false) {
-          window._osrmExcludeSupported = false;
-          if (!_osrmExcludeUserNotified && typeof showToast === 'function') {
-            _osrmExcludeUserNotified = true;
-            showToast('ℹ️ Routage : exclusion d\'autoroutes non supportée par le serveur — itinéraire standard utilisé', 'wa');
-          }
-        }
-        const cleanUrl = url.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
-                            .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
-        try {
-          res = await fetch(cleanUrl, fetchOptions);
-          if (!res.ok) return null;
-        } catch (_) { return null; }
-      } else {
-        return null; // erreur sans exclude → vraie panne
-      }
-    }
-
+    const res = await fetch(url, fetchOptions);
+    if (!res.ok) return null;
     const json = await res.json();
     if (json && json.code && json.code !== 'Ok') {
-      // OSRM peut renvoyer 200 OK avec code "InvalidUrl" / "NoRoute"
       console.warn('[OSRM] code !== Ok:', json.code, json.message || '');
-      // Si erreur liée à exclude → désactiver et retry
-      if (url.includes('exclude=') && /invalid/i.test(json.code)) {
-        window._osrmExcludeSupported = false;
-        const cleanUrl = url.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
-                            .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
-        try {
-          const retry = await fetch(cleanUrl, fetchOptions);
-          if (retry.ok) {
-            const j2 = await retry.json();
-            return (j2 && j2.code === 'Ok') ? j2 : null;
-          }
-        } catch (_) {}
-        return null;
-      }
       return null;
     }
     return json;
@@ -314,257 +52,6 @@ window._osrmFetchSafe = async function(url, fetchOptions) {
     return null;
   }
 };
-
-/**
- * Test au boot : envoie 1 requête OSRM avec exclude=motorway pour
- * détecter si le serveur le supporte. Stocke le résultat dans
- * window._osrmExcludeSupported pour économiser les retry ensuite.
- * Appelée par extras.js au DOMContentLoaded.
- */
-window._testOSRMExcludeSupport = async function() {
-  if (window._osrmExcludeSupported !== null) return; // déjà testé
-
-  // Coords Paris arbitraire : 2 points proches (faible distance, faible coût)
-  const testUrl = 'https://router.project-osrm.org/route/v1/driving/' +
-                  '2.3522,48.8566;2.3622,48.8666?overview=false&exclude=motorway';
-  try {
-    const res = await fetch(testUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-    if (!res.ok) {
-      window._osrmExcludeSupported = false;
-      console.info('[OSRM] Boot test → exclude NON supporté (HTTP ' + res.status + ')');
-      return;
-    }
-    const json = await res.json();
-    window._osrmExcludeSupported = (json && json.code === 'Ok' && json.routes?.[0]);
-    console.info('[OSRM] Boot test → exclude ' + (window._osrmExcludeSupported ? 'SUPPORTÉ ✓' : 'NON supporté'));
-  } catch (e) {
-    window._osrmExcludeSupported = false;
-    console.warn('[OSRM] Boot test KO :', e?.message);
-  }
-};
-
-/* ════════════════════════════════════════════════════════════
-   v5.9 — CALCUL DIFF DE TEMPS (autoroute vs sans)
-   ────────────────────────────────────────────────────────────
-   Pour informer l'IDE du coût en temps de son choix de routage.
-   - Cache 10 min (clé = position+destination arrondies à 4 décimales)
-   - Calcul async : 2 appels OSRM en parallèle (avec/sans exclusions)
-   - Affichage : pill discrète dans HUD ("+12 min vs autoroute")
-                 + ligne d'info dans Pilotage avant optimisation
-   ============================================================ */
-
-const _routeDiffCache = new Map(); // clé → { autoMin, currentMin, ts }
-const _ROUTE_DIFF_TTL = 10 * 60 * 1000; // 10 minutes
-
-async function _computeRouteDiff(from, to) {
-  if (!from?.lat || !from?.lng || !to?.lat || !to?.lng) return null;
-  const { avoidMotorway, avoidToll } = _getRoutePref();
-
-  // Si on est en mode standard, pas de diff à montrer
-  if (!avoidMotorway && !avoidToll) return null;
-
-  const key = `${from.lat.toFixed(4)},${from.lng.toFixed(4)}-${to.lat.toFixed(4)},${to.lng.toFixed(4)}_${avoidMotorway?1:0}${avoidToll?1:0}`;
-  const cached = _routeDiffCache.get(key);
-  if (cached && Date.now() - cached.ts < _ROUTE_DIFF_TTL) {
-    return cached;
-  }
-
-  // ⚡ v5.9.2 — APPROXIMATION INTELLIGENTE (1 appel OSRM au lieu de 2)
-  // Au lieu de faire 2 requêtes OSRM (avec et sans exclude) qui doublent
-  // le coût et risquent l'erreur 400, on fait UNE SEULE requête de base
-  // et on extrapole le surcoût de l'évitement d'autoroute selon la zone :
-  //   - Urbain dense (vitesse < 25 km/h) : +10% (déjà peu d'autoroute)
-  //   - Péri-urbain (25-50 km/h)         : +20% (autoroute épargne moyen)
-  //   - Rural/long trajet (> 50 km/h)    : +30% (autoroute épargne fort)
-  //   - Bonus distance : +5% si > 20km, +10% si > 50km
-  //
-  // Avantages :
-  //   - 50% moins d'appels OSRM
-  //   - Fonctionne MÊME si le serveur ne supporte pas exclude
-  //   - Précision suffisante pour informer l'IDE (« +X min approx »)
-
-  const baseUrl = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
-
-  try {
-    const data = await window._osrmFetchSafe(baseUrl);
-    if (!data?.routes?.[0]) return null;
-
-    const route = data.routes[0];
-    const autoMin    = Math.round(route.duration / 60);
-    const distanceKm = route.distance / 1000;
-    const durationH  = route.duration / 3600;
-    const speed      = durationH > 0 ? distanceKm / durationH : 30;
-
-    // Détection zone via vitesse moyenne (pas besoin d'API externe)
-    let factor = 1.20; // péri-urbain par défaut
-    if (speed < 25)      factor = 1.10; // urbain dense
-    else if (speed > 50) factor = 1.30; // rural / long
-
-    // Bonus distance (autoroute épargne plus sur trajets longs)
-    if (distanceKm > 20) factor += 0.05;
-    if (distanceKm > 50) factor += 0.10;
-
-    const currentMin = Math.round(autoMin * factor);
-    const result = {
-      autoMin,
-      currentMin,
-      diffMin: currentMin - autoMin,
-      approx: true,           // marqueur pour l'UI
-      ts: Date.now(),
-    };
-    _routeDiffCache.set(key, result);
-    return result;
-  } catch (_) {
-    return null;
-  }
-}
-
-/**
- * Met à jour la pill "+X min vs autoroute" dans le HUD GPS plein écran.
- * Appelée après chaque _uberFSDrawRoute et après chaque changement de pref.
- */
-async function _updateRouteDiffPill() {
-  const pillEl = document.getElementById('uber-fs-diff-pill');
-  if (!pillEl) return;
-
-  const pos  = APP.get('userPos') || APP.get('startPoint');
-  const next = APP.get('nextPatient');
-  if (!pos || !next || !next.lat || !next.lng) {
-    pillEl.style.display = 'none';
-    return;
-  }
-
-  const { avoidMotorway, avoidToll } = _getRoutePref();
-  if (!avoidMotorway && !avoidToll) {
-    pillEl.style.display = 'none';
-    return;
-  }
-
-  // Affiche un placeholder neutre en attendant le calcul
-  pillEl.style.display = 'inline-flex';
-  pillEl.textContent = '⏳ …';
-
-  const diff = await _computeRouteDiff(pos, next);
-  if (!diff) {
-    pillEl.style.display = 'none';
-    return;
-  }
-
-  // v5.9.2 — préfixe '≈' si la valeur est une approximation (cas par défaut
-  // depuis qu'on a passé _computeRouteDiff en mode 1-call)
-  const approxPrefix = diff.approx ? '≈' : '';
-
-  if (diff.diffMin <= 0) {
-    // Aucune perte (le mode "sans autoroute" est aussi rapide ou plus rapide,
-    // cas rare en zone urbaine dense)
-    pillEl.textContent = `✅ Pareil qu'autoroute`;
-    pillEl.style.background    = 'rgba(0,212,170,.18)';
-    pillEl.style.borderColor   = 'rgba(0,212,170,.45)';
-    pillEl.style.color         = '#00d4aa';
-  } else if (diff.diffMin <= 5) {
-    pillEl.textContent = `${approxPrefix} +${diff.diffMin} min vs autoroute`.trim();
-    pillEl.style.background    = 'rgba(0,212,170,.12)';
-    pillEl.style.borderColor   = 'rgba(0,212,170,.35)';
-    pillEl.style.color         = '#00d4aa';
-  } else if (diff.diffMin <= 15) {
-    pillEl.textContent = `${approxPrefix} +${diff.diffMin} min vs autoroute`.trim();
-    pillEl.style.background    = 'rgba(255,181,71,.15)';
-    pillEl.style.borderColor   = 'rgba(255,181,71,.4)';
-    pillEl.style.color         = '#ffb547';
-  } else {
-    pillEl.textContent = `⚠️ ${approxPrefix} +${diff.diffMin} min vs autoroute`.trim();
-    pillEl.style.background    = 'rgba(255,95,109,.15)';
-    pillEl.style.borderColor   = 'rgba(255,95,109,.4)';
-    pillEl.style.color         = '#ff5f6d';
-  }
-}
-
-/**
- * Calcule la perte de temps cumulée pour l'itinéraire complet (depuis
- * startPoint en passant par tous les patients restants), affichée dans
- * Pilotage avant le clic "Optimiser la tournée".
- *
- * Stratégie économique : on additionne le diff de chaque trajet du segment
- * principal (start→p1→p2→...→pN). Limite : max 30 paires pour ne pas
- * inonder OSRM. Si plus, on extrapole linéairement.
- */
-async function _updatePilotageRouteDiff() {
-  const lineEl = document.getElementById('pilotage-route-diff');
-  if (!lineEl) return;
-
-  const { avoidMotorway, avoidToll } = _getRoutePref();
-  if (!avoidMotorway && !avoidToll) {
-    lineEl.style.display = 'none';
-    return;
-  }
-
-  // Récupérer la liste des waypoints depuis APP.importedData
-  const start = APP.get('startPoint');
-  const data = APP.importedData?.patients || APP.importedData?.entries || [];
-  const wp = [];
-  if (start?.lat) wp.push(start);
-  data.forEach(p => { if (p.lat && p.lng) wp.push({ lat: p.lat, lng: p.lng }); });
-
-  if (wp.length < 2) {
-    lineEl.style.display = 'none';
-    return;
-  }
-
-  lineEl.style.display = 'block';
-  lineEl.textContent = '⏳ Calcul de l\'écart vs autoroute…';
-
-  // Limiter à 15 paires pour économiser OSRM (15 trajets = 30 appels)
-  const MAX_PAIRS = 15;
-  const pairs = [];
-  for (let i = 0; i < wp.length - 1 && pairs.length < MAX_PAIRS; i++) {
-    pairs.push([wp[i], wp[i + 1]]);
-  }
-
-  let totalAuto = 0, totalCurrent = 0, ok = 0;
-  const results = await Promise.all(pairs.map(([a, b]) => _computeRouteDiff(a, b)));
-  results.forEach(r => {
-    if (r) {
-      totalAuto    += r.autoMin;
-      totalCurrent += r.currentMin;
-      ok++;
-    }
-  });
-
-  if (ok === 0) {
-    lineEl.style.display = 'none';
-    return;
-  }
-
-  // Extrapolation si on a tronqué
-  let factor = 1;
-  if (wp.length - 1 > MAX_PAIRS && ok > 0) {
-    factor = (wp.length - 1) / MAX_PAIRS;
-    totalAuto    *= factor;
-    totalCurrent *= factor;
-  }
-
-  const diff = Math.round(totalCurrent - totalAuto);
-  // v5.9.2 — Le diff est désormais toujours approximatif (1-call mode)
-  // donc l'estimation est mentionnée même sans extrapolation
-  const truncatedHint = factor > 1 ? ' (estimation tronquée)' : ' (≈ estimation)';
-
-  if (diff <= 0) {
-    lineEl.innerHTML = `<span style="color:var(--a)">✅ Aucune perte de temps vs autoroute${truncatedHint}</span>`;
-  } else {
-    const reasons = [];
-    if (avoidMotorway) reasons.push('autoroutes');
-    if (avoidToll)     reasons.push('péages');
-    const color = diff <= 10 ? 'var(--a)' : (diff <= 30 ? '#ffb547' : '#ff5f6d');
-    const icon  = diff <= 10 ? '✅' : (diff <= 30 ? '⚠️' : '🚨');
-    lineEl.innerHTML = `<span style="color:${color}">${icon} ≈ +${diff} min sur la tournée en évitant ${reasons.join(' + ')}${truncatedHint}</span>`;
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window._computeRouteDiff       = _computeRouteDiff;
-  window._updateRouteDiffPill    = _updateRouteDiffPill;
-  window._updatePilotageRouteDiff = _updatePilotageRouteDiff;
-}
 
 /* ── Distance euclidienne rapide ─────────────── */
 function _dist(a, b) {
@@ -575,7 +62,7 @@ function _dist(a, b) {
 async function getETA(from, to) {
   if (!to.lat || !to.lng) return 999;
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false${_osrmExcludeParam()}`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
     const d = await window._osrmFetchSafe(url);
     return d?.routes?.[0]?.duration / 60 || 999;
   } catch { return _dist(from, to) * 1000; }
@@ -1801,7 +1288,7 @@ async function recalcRouteUber() {
   if (!remaining.length) { alert('Aucun patient restant avec coordonnées GPS.'); return; }
   const coords = [[pos.lng, pos.lat], ...remaining.map(p => [p.lng, p.lat])];
   try {
-    const url = `https://router.project-osrm.org/trip/v1/driving/${coords.map(c=>c.join(',')).join(';')}?source=first&roundtrip=false${_osrmExcludeParam()}`;
+    const url = `https://router.project-osrm.org/trip/v1/driving/${coords.map(c=>c.join(',')).join(';')}?source=first&roundtrip=false`;
     const d = await window._osrmFetchSafe(url);
     if (d?.code === 'Ok' && d.trips?.[0]) {
       const totalMin = Math.round(d.trips[0].duration / 60);
@@ -1962,9 +1449,6 @@ function openUberFullscreenGPS() {
           <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSBestNext()" title="Meilleur suivant">
             <span>🧠</span><span class="uber-fs-btn-lbl">Meilleur</span>
           </button>
-          <button id="uber-fs-route-toggle" class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSToggleRouteMode()" title="Basculer autoroute / routes nationales">
-            <span>🛣️</span><span class="uber-fs-btn-lbl">Autoroute</span>
-          </button>
           <button class="uber-fs-btn uber-fs-btn-urgent" onclick="openUrgentPatientModal()" title="Ajouter un patient urgent">
             <span>🚨</span><span class="uber-fs-btn-lbl">+ Urgent</span>
           </button>
@@ -2034,26 +1518,6 @@ function openUberFullscreenGPS() {
 
   // ── Wake Lock (empêcher l'écran de s'éteindre) ─────────────────────
   _uberFSAcquireWakeLock();
-
-  // ⚡ v5.8 — Synchroniser le label du bouton route (Autoroute/RN-RD)
-  // avec l'état persisté dans APP._routeAutoroutes (peut avoir été chargé
-  // depuis localStorage par extras.js au boot).
-  setTimeout(() => {
-    if (typeof _setRouteAutoroutesGlobal === 'function') {
-      const current = (typeof APP !== 'undefined') ? APP._routeAutoroutes : 'auto';
-      // Force-update du DOM en re-appelant le setter avec la valeur actuelle
-      // (mais en passant par un refresh manuel pour ne pas re-toaster)
-      const fsBtn = document.getElementById('uber-fs-route-toggle');
-      if (fsBtn) {
-        fsBtn.innerHTML = current === 'avoid'
-          ? '<span>🌳</span><span class="uber-fs-btn-lbl">RN/RD</span>'
-          : '<span>🛣️</span><span class="uber-fs-btn-lbl">Autoroute</span>';
-        fsBtn.title = current === 'avoid'
-          ? 'Routes nationales (cliquer pour basculer en autoroute)'
-          : 'Autoroutes incluses (cliquer pour exclure)';
-      }
-    }
-  }, 80);
 
   if (typeof showToast === 'function') showToast('🗺️ Mode GPS plein écran activé');
 }
@@ -2240,7 +1704,7 @@ async function _uberFSDrawRoute() {
 
   // Route OSRM réelle (asynchrone, remplace le fallback)
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson${_osrmExcludeParam()}`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson`;
     const d = await window._osrmFetchSafe(url, {
       signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined,
     });
@@ -2268,11 +1732,8 @@ async function _uberFSDrawRoute() {
         <span class="uber-fs-meta-pill">📏 ${dist} km</span>
         <span class="uber-fs-meta-pill">⏱️ ~${dur} min</span>
         ${heure ? `<span class="uber-fs-meta-pill">🕐 ${heure}</span>` : ''}
-        <span class="uber-fs-meta-pill" id="uber-fs-diff-pill" style="display:none">⏳ …</span>
         ${adr ? `<div class="uber-fs-meta-addr">${adr}</div>` : ''}
       `;
-      // v5.9 — Calculer et afficher le diff de temps "vs autoroute" en arrière-plan
-      _updateRouteDiffPill();
     }
   } catch (e) {
     // OSRM KO → on garde le fallback dashé
@@ -2314,11 +1775,8 @@ function _uberFSUpdateHUD() {
       metaEl.innerHTML = `
         ${latePill}
         ${heure ? `<span class="uber-fs-meta-pill">🕐 ${heure}</span>` : ''}
-        <span class="uber-fs-meta-pill" id="uber-fs-diff-pill" style="display:none">⏳ …</span>
         ${adr ? `<div class="uber-fs-meta-addr">${adr}</div>` : '<div class="uber-fs-meta-addr">—</div>'}
       `;
-      // v5.9 — Calculer et afficher le diff (asynchrone, ne bloque pas)
-      _updateRouteDiffPill();
     }
   } else {
     if (nameEl) nameEl.textContent = '✅ Tournée terminée';
@@ -2446,25 +1904,6 @@ function _uberFSAutoCloseDay(reason) {
   }, 600);
 }
 
-/**
- * Toggle bouton du HUD GPS plein écran : cycle entre 4 modes possibles
- *   1. Standard (autoroutes + péages OK)
- *   2. Sans autoroutes (RN/RD avec péages possibles)
- *   3. Sans péages (autoroutes gratuites OK)
- *   4. Sans autoroutes + sans péages (RN/RD gratuites strictes)
- * Le setter centralisé _setRoutePrefGlobal redessine la route et recalcule
- * le diff de temps automatiquement.
- */
-function _uberFSToggleRouteMode() {
-  const cur = _getRoutePref();
-  let next;
-  if (!cur.avoidMotorway && !cur.avoidToll)       next = { avoidMotorway: true,  avoidToll: false };
-  else if (cur.avoidMotorway && !cur.avoidToll)   next = { avoidMotorway: false, avoidToll: true  };
-  else if (!cur.avoidMotorway && cur.avoidToll)   next = { avoidMotorway: true,  avoidToll: true  };
-  else                                             next = { avoidMotorway: false, avoidToll: false };
-  _setRoutePrefGlobal(next);
-}
-
 async function _uberFSEndPatient() {
   if (typeof markUberDone !== 'function') return;
 
@@ -2539,7 +1978,6 @@ if (typeof window !== 'undefined') {
   window._uberFSAbsentPatient   = _uberFSAbsentPatient;
   window._uberFSRecalcRoute     = _uberFSRecalcRoute;
   window._uberFSBestNext        = _uberFSBestNext;
-  window._uberFSToggleRouteMode = _uberFSToggleRouteMode;
   // v5.3 — détection retard + recalcul
   window.recalcOnDelay          = recalcOnDelay;
   window.dismissDelayAlert      = dismissDelayAlert;

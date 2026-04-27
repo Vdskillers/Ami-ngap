@@ -211,12 +211,7 @@ function getTrafficInfo(departureMin) {
 function _cacheKey(a, b) {
   /* Arrondi à 4 décimales (~11m précision) pour maximiser les hits */
   if (!a?.lat || !a?.lng || !b?.lat || !b?.lng) return null;
-  // v5.8 — Suffixe selon mode autoroute pour ne pas mélanger les caches.
-  // 'auto' (défaut) → suffixe vide ; 'avoid' → suffixe '_noauto'.
-  const suffix = (typeof window !== 'undefined' && typeof window._osrmCacheKeySuffix === 'function')
-    ? window._osrmCacheKeySuffix()
-    : '';
-  return `${a.lat.toFixed(4)},${a.lng.toFixed(4)}-${b.lat.toFixed(4)},${b.lng.toFixed(4)}${suffix}`;
+  return `${a.lat.toFixed(4)},${a.lng.toFixed(4)}-${b.lat.toFixed(4)},${b.lng.toFixed(4)}`;
 }
 
 async function cachedTravel(a, b) {
@@ -288,15 +283,6 @@ async function _osrmFetchOne(base, relPath, { timeoutMs = 5000 } = {}) {
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   state.lastCall = Date.now();
 
-  // ⚡ v5.9.2 — Si on sait globalement que exclude n'est pas supporté, on
-  // le retire AVANT d'appeler. Évite les 400 inutiles.
-  if (typeof window !== 'undefined'
-      && window._osrmExcludeSupported === false
-      && relPath.includes('exclude=')) {
-    relPath = relPath.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
-                     .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
-  }
-
   let r = await fetch(base + relPath, { signal: AbortSignal.timeout(timeoutMs) });
   if (r.status === 429) {
     state.backoffUntil = Date.now() + 30_000;
@@ -305,20 +291,6 @@ async function _osrmFetchOne(base, relPath, { timeoutMs = 5000 } = {}) {
   if (r.status >= 500) {
     state.backoffUntil = Date.now() + 5_000;
     throw new Error('server error ' + r.status);
-  }
-  // ⚡ v5.9.2 — Si 400 ET URL contenait exclude, on désactive globalement
-  // exclude et on retry sans, sur le même mirror (problème de paramètre,
-  // pas de mirror). Évite tournée bloquée.
-  if (r.status === 400 && relPath.includes('exclude=')) {
-    if (typeof window !== 'undefined' && window._osrmExcludeSupported !== false) {
-      window._osrmExcludeSupported = false;
-      console.info('[OSRM] exclude rejeté (400) — désactivation globale');
-    }
-    const cleanPath = relPath.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
-                              .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
-    r = await fetch(base + cleanPath, { signal: AbortSignal.timeout(timeoutMs) });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' (after exclude retry)');
-    return r;
   }
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r;
@@ -351,11 +323,7 @@ function _anyMirrorAvailable() {
 async function getTravelTimeOSRM(a, b) {
   if (!a?.lat || !b?.lat) return 999;
   try {
-    // v5.8 — Honore la préférence autoroutes si helper dispo
-    const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
-      ? window._osrmExcludeParam()
-      : '';
-    const rel = `/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false${exclude}`;
+    const rel = `/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
     const r = await _osrmFetch(rel);
     const d = await r.json();
     if (d.code !== 'Ok') return _euclideanMin(a, b);
@@ -401,11 +369,7 @@ async function precomputeTravelTable(patients, startPoint) {
 
   try {
     const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
-    // v5.8 — Honore la préférence autoroutes
-    const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
-      ? window._osrmExcludeParam()
-      : '';
-    const rel = `/table/v1/driving/${coords}?annotations=duration${exclude}`;
+    const rel = `/table/v1/driving/${coords}?annotations=duration`;
     const r = await _osrmFetch(rel, { timeoutMs: 15_000 });
     const d = await r.json();
     if (d.code !== 'Ok' || !Array.isArray(d.durations)) {
@@ -569,6 +533,16 @@ function dynamicScore({ currentTime, travelTime, patient, userPos }) {
 
   /* 🔥 Pénalité géographique (évite les zig-zags) */
   if (userPos) score += geoPenalty(patient, userPos);
+
+  /* 🧠 v5.10 — Couche d'intelligence terrain (ai-smart-tour.js)
+     Ajustement additif basé sur : urgence dynamique, difficulté patient,
+     risque no-show, mémoire conversationnelle. Pas de breaking change :
+     si le module n'est pas chargé, l'ajustement est nul. */
+  if (typeof window !== 'undefined' && window.AMI_SMART?.scoreAdjustment) {
+    try {
+      score += window.AMI_SMART.scoreAdjustment(patient, { currentTime, travelTime, userPos });
+    } catch(_) {}
+  }
 
   return score;
 }
@@ -887,15 +861,38 @@ function startLiveOptimization() {
   APP.on('userPos', throttle(async () => {
     await recomputeRoute();
     _updateRentabilite();
+    _updateTourState();        /* v5.10 : nourrit le score fatigue SMART */
   }, 5000));
 
   /* Fallback : recalcul toutes les 20s même si GPS immobile */
   if (_liveOptInterval) clearInterval(_liveOptInterval);
   _liveOptInterval = setInterval(async () => {
-    if (APP.get('userPos')) await recomputeRoute();
+    if (APP.get('userPos')) {
+      await recomputeRoute();
+      _updateTourState();
+    }
   }, 20000);
 
   log('Live optimization démarrée');
+}
+
+/* v5.10 — État de tournée live (utilisé par AMI_SMART pour fatigue/pauses) */
+function _updateTourState() {
+  try {
+    const route = APP.get('uberPatients') || [];
+    const done  = route.filter(p => p.done);
+    const totalKm = route.reduce((s, p) => {
+      const km = (p.travel_min > 0) ? (p.travel_min / 60) * 35 : 0; // approx 35km/h moyenne
+      return s + (p.done ? km : 0);
+    }, 0);
+    const startTs = APP.get('tourStartTs') || Date.now();
+    const totalMinutes = Math.round((Date.now() - startTs) / 60000);
+    APP._tourState = {
+      patientsDone: done.length,
+      totalKm,
+      totalMinutes,
+    };
+  } catch(_) {}
 }
 
 /* Exposer l'info trafic pour l'UI tournée */
@@ -969,12 +966,43 @@ async function cancelPatient(patientId) {
 }
 
 /* Marque un patient comme terminé + met à jour stats */
-async function completePatient(patientId, actualArrivalMin) {
+async function completePatient(patientId, actualArrivalMin, opts) {
   const pts = APP.get('uberPatients') || [];
   const p   = pts.find(x => String(x.id) === String(patientId) || x.patient_id === patientId);
   if (p) {
     if (p.arrival_min && actualArrivalMin) updateUserStats(p.arrival_min, actualArrivalMin);
     p.done = true;
+
+    /* 🧠 v5.10 — Alimentation des apprentissages SMART (best effort, jamais bloquant) */
+    if (typeof window !== 'undefined' && window.AMI_SMART) {
+      try {
+        const o = opts || {};
+        const plannedMin = +p.duration || 10;
+        const realMin    = +o.realMin || plannedMin;
+
+        /* Difficulté patient */
+        window.AMI_SMART.updateDifficulty(p.id, {
+          plannedMin, realMin,
+          hadIssue: !!o.hadIssue,
+        });
+
+        /* No-show / retard */
+        if (o.isNoShow) {
+          window.AMI_SMART.updateNoShow(p.id, { isNoShow: true });
+        } else if (Number.isFinite(o.lateMin)) {
+          window.AMI_SMART.updateNoShow(p.id, { lateMin: o.lateMin });
+        }
+
+        /* Type de patient */
+        const type = window.AMI_SMART.getPatientType(p);
+        window.AMI_SMART.learnType(type, plannedMin, realMin);
+
+        /* Zone (grille géographique) */
+        if (p.lat && p.lng) {
+          window.AMI_SMART.learnZone(p.lat, p.lng, plannedMin, realMin);
+        }
+      } catch(_) {}
+    }
   }
   APP.set('uberPatients', [...pts]);
   await recomputeRoute();

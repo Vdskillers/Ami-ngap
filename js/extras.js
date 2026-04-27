@@ -790,64 +790,6 @@ function normalizeMedicalFull(txt){
 
 /* initTurMap au clic sur l'onglet tournée (en complément de initDepMap) */
 document.addEventListener('DOMContentLoaded', ()=>{
-  /* v5.9 — Hydrater la préférence routage (autoroutes + péages) depuis
-     localStorage. Sans ça, l'IDE doit recliquer son choix à chaque session.
-     Format v5.9 : {avoidMotorway, avoidToll}. Fallback v5.8 si absent. */
-  try {
-    let savedPref = null;
-    // 1. Tenter v5.9
-    const rawV2 = localStorage.getItem('ami_route_pref_v2');
-    if (rawV2) {
-      try {
-        const obj = JSON.parse(rawV2);
-        if (obj && typeof obj === 'object') {
-          savedPref = {
-            avoidMotorway: !!obj.avoidMotorway,
-            avoidToll:     !!obj.avoidToll,
-          };
-        }
-      } catch(_) {}
-    }
-    // 2. Fallback v5.8 si v5.9 absent
-    if (!savedPref) {
-      const legacy = localStorage.getItem('ami_route_pref');
-      if (legacy === 'avoid' || legacy === 'auto') {
-        savedPref = {
-          avoidMotorway: legacy === 'avoid',
-          avoidToll:     legacy === 'avoid',
-        };
-      }
-    }
-
-    if (savedPref && typeof window.APP !== 'undefined') {
-      window.APP._routePref = savedPref;
-      window.APP._routeAutoroutes = savedPref.avoidMotorway ? 'avoid' : 'auto'; // legacy
-    }
-
-    // Synchroniser l'UI au prochain tick (les boutons HTML existent déjà
-    // mais leur état visuel dépend du setter)
-    setTimeout(() => {
-      if (savedPref && typeof window._setRoutePrefGlobal === 'function') {
-        // Force-refresh : on passe d'abord par un état neutre puis par le bon
-        window.APP._routePref = { avoidMotorway: !savedPref.avoidMotorway, avoidToll: !savedPref.avoidToll };
-        window._setRoutePrefGlobal(savedPref);
-      }
-    }, 200);
-  } catch(_) {}
-
-  /* v5.9.2 — Test au boot du support OSRM exclude=motorway.
-     Si le serveur public OSRM retourne 400 sur les URL avec ?exclude=…
-     (cas constaté en production sur router.project-osrm.org), on désactive
-     proprement la fonctionnalité côté client → plus aucun 400 ensuite,
-     l'app continue de fonctionner avec un routage standard.
-     Le test est lancé 600ms après le boot pour ne pas concurrencer les
-     autres requêtes de démarrage. */
-  setTimeout(() => {
-    if (typeof window._testOSRMExcludeSupport === 'function') {
-      window._testOSRMExcludeSupport();
-    }
-  }, 600);
-
   /* Écouter l'event réel émis par ui.js (ui:navigate) */
   document.addEventListener('ui:navigate', e=>{
     if(e.detail?.view === 'tur'){
@@ -856,10 +798,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
         updateCAEstimate();
         // Restaurer le marker startPoint sur la carte si déjà défini
         _restoreStartPointMarker();
-        // v5.9 — Calculer le diff de temps "vs autoroute" si exclusions actives
-        if (typeof window._updatePilotageRouteDiff === 'function') {
-          setTimeout(() => window._updatePilotageRouteDiff(), 400);
-        }
       }, 300);
     }
     if(e.detail?.view === 'live'){
