@@ -1026,7 +1026,11 @@ async function _normalizeSignaturePNGCached(pngDataUrl) {
 function _initCanvas() {
   _sigCanvas = document.getElementById('sig-canvas');
   if (!_sigCanvas) return;
-  _sigCtx = _sigCanvas.getContext('2d');
+  // ⚡ v5.7 — willReadFrequently:true accélère getImageData (utilisé par
+  // _exportSignaturePNG pour le seuillage alpha noir-sur-blanc et par la
+  // détection canvas vide). Sans ce hint, le navigateur logge un warning
+  // à chaque export. Voir https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently
+  _sigCtx = _sigCanvas.getContext('2d', { willReadFrequently: true });
   _sigCtx.clearRect(0, 0, _sigCanvas.width, _sigCanvas.height);
   _sigCtx.strokeStyle = '#e8f0f8';
   _sigCtx.lineWidth   = 3.2;       // ⚡ 2.5 → 3.2 : trait plus épais ⇒ meilleure
@@ -1217,16 +1221,33 @@ async function saveSignature() {
   // ⚡ Indicateur explicite "envoi en cours" (bleu) pour distinguer
   //    visuellement le pending initial (jaune) de l'attente serveur réelle
   _setProofIndicator('hmac', 'progress');
-  let serverCert = null;
-  try { serverCert = await _certifyProofOnServer(proofPayload); } catch (_) {}
-  _setProofIndicator('hmac', serverCert ? 'ok' : 'fail');
 
-  // ⚡ Si HMAC réussi, laisser le user voir le ✔ pendant ~500ms avant de
-  //    fermer la modal. Sans cette pause, la modal disparaît trop vite et
-  //    l'utilisateur a l'impression que le HMAC n'a jamais été certifié.
-  if (serverCert) {
-    await new Promise(r => setTimeout(r, 500));
-  }
+  // ⚡ v5.7 — La certification HMAC peut prendre 2-10s (3 retries × backoff)
+  // sur réseau mobile faible. ON NE DOIT PAS bloquer le flow tournée pour
+  // ça : la signature locale est déjà complète (PNG + hash SHA-256 +
+  // horodatage + géozone), le HMAC n'est qu'une preuve serveur additionnelle.
+  // On lance la certification en arrière-plan : si elle réussit avant la
+  // fermeture de la modale, on affiche le ✔ et on met à jour le ami_signatures.
+  // Si elle échoue, la file _hmacQueuePush prendra le relais comme avant.
+  const _hmacInvoiceId = _currentInvoiceId; // capture avant reset des globals
+  const _hmacPromise = _certifyProofOnServer(proofPayload).catch(() => null);
+
+  // On stocke d'abord avec serverCert=null (peut-être null pour de bon).
+  // Si le HMAC répond plus tard, on mettra à jour le row IDB en mode
+  // upsert (cf. fin de _hmacPromise.then ci-dessous).
+  let serverCert = null;
+
+  // Récupération NON-BLOQUANTE : si le HMAC répond TRÈS vite (<300ms,
+  // typique en wifi local), on en profite pour avoir le ✔ immédiat.
+  // Sinon on continue sans attendre.
+  try {
+    serverCert = await Promise.race([
+      _hmacPromise,
+      new Promise(r => setTimeout(() => r(null), 300)),
+    ]);
+  } catch (_) {}
+
+  _setProofIndicator('hmac', serverCert ? 'ok' : 'progress');
 
   // Si la zone côté client était null mais le worker a fait fallback IP,
   // on récupère la zone effective signée pour l'affichage.
@@ -1239,15 +1260,12 @@ async function saveSignature() {
     };
   }
 
-  // Si la certification HMAC a échoué → mettre dans la file pour retry plus tard
-  if (!serverCert) {
-    _hmacQueuePush(_currentInvoiceId);
-    console.info('[AMI:Sig] HMAC indisponible — invoice ajouté à la file de retry :', _currentInvoiceId);
-  }
-
   // ── 4) Stockage local : PNG + toutes les preuves (4 garanties médico-légales) ──
+  // Note : si HMAC pas encore arrivé (cas typique 4G lente), server_cert=null.
+  // La file _hmacQueuePush ci-dessous OU le _hmacPromise.then ci-dessous
+  // mettront à jour ce row plus tard.
   await _sigPut({
-    invoice_id:  _currentInvoiceId,
+    invoice_id:  _hmacInvoiceId,
     png,
     signed_at:   signedAt,                       // ✔ Horodatage ISO 8601
     user_agent:  navigator.userAgent.slice(0, 100),
@@ -1478,11 +1496,70 @@ async function saveSignature() {
   _currentGeozone      = null;
   _currentProofContext = null;
 
+  // ⚡ v5.7 — TOAST IMMÉDIAT sans attendre le HMAC.
+  // Le toast initial reflète l'état au moment de la fermeture modale.
+  // Si le HMAC arrive plus tard (cas typique 4G), un 2e toast discret
+  // sera affiché par _hmacPromise.then ci-dessous.
   if (typeof showToast === 'function') {
     const msg = serverCert
       ? '✍️ Signature enregistrée · Preuve certifiée ✔'
-      : '✍️ Signature enregistrée.';
+      : '✍️ Signature enregistrée · Certification serveur en cours…';
     showToast(msg, 'ok');
+  }
+
+  // ⚡ v5.7 — HANDLER HMAC EN ARRIÈRE-PLAN.
+  // Si le HMAC répond après la fermeture de la modale (cas le plus
+  // fréquent en 4G mobile), on met à jour la ligne IDB ami_signatures
+  // pour upgrader server_cert de null à l'objet certifié. Si le HMAC
+  // échoue après tous les retries, on met l'invoice en file d'attente
+  // pour un nouveau retry périodique (logique existante).
+  // CRITIQUE : ce handler ne bloque PAS le flow tournée, il tourne en
+  // arrière-plan pendant que l'IDE clôture le patient et passe au suivant.
+  if (!serverCert) {
+    _hmacPromise.then(async (cert) => {
+      if (!cert) {
+        // HMAC définitivement échoué → file d'attente pour retry plus tard
+        _hmacQueuePush(_hmacInvoiceId);
+        console.info('[AMI:Sig] HMAC indisponible — invoice ajouté à la file de retry :', _hmacInvoiceId);
+        return;
+      }
+      // HMAC arrivé tardivement : upgrader la ligne IDB
+      try {
+        if (typeof _sigGet === 'function' && typeof _sigPut === 'function') {
+          const existing = await _sigGet(_hmacInvoiceId);
+          if (existing) {
+            existing.server_cert = cert;
+            // Si géozone client était null, récupérer la zone serveur
+            if (!existing.geozone && cert?.server_zone) {
+              existing.geozone = {
+                zone:      cert.server_zone,
+                precision: '~10km',
+                source:    'ip_fallback',
+              };
+            }
+            await _sigPut(existing);
+            console.info('[AMI:Sig] HMAC upgrade IDB ✔ pour', _hmacInvoiceId);
+          }
+        }
+        // Toast discret pour l'IDE — confirme que la preuve est complète
+        if (typeof showToast === 'function') {
+          showToast('🔒 Preuve serveur certifiée pour ' + _hmacInvoiceId.slice(-8), 'ok');
+        }
+        // Notifier cotation.js pour mise à jour du badge preuve si la cotation
+        // est encore visible
+        try {
+          document.dispatchEvent(new CustomEvent('ami:hmac_completed', {
+            detail: { invoice_number: _hmacInvoiceId, server_cert: cert }
+          }));
+        } catch(_) {}
+      } catch (e) {
+        console.warn('[AMI:Sig] HMAC upgrade KO:', e?.message);
+        _hmacQueuePush(_hmacInvoiceId);
+      }
+    }).catch(() => {
+      // Sécurité : ne devrait jamais arriver car _hmacPromise a déjà un .catch()
+      _hmacQueuePush(_hmacInvoiceId);
+    });
   }
 
   // ⚡ v5.6 — Maintenant que toute saveSignature est terminée (globals

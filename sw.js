@@ -22,6 +22,12 @@
               tourne en parallèle (Promise non-awaited), l'API est awaited APRÈS la
               fermeture de la modale uniquement pour le CR/consentements.
               Avant ce fix : "rien ne se passait" 5-30s avant que la modale apparaisse.
+              + Fix CRITIQUE saveSignature : la certification HMAC-SHA256 (2-10s)
+              ne bloque plus la fermeture de la modale. La signature locale est
+              persistée immédiatement avec server_cert=null, le HMAC tourne en
+              arrière-plan et upgrade le row IDB quand il arrive (sinon file
+              d'attente comme avant). Toast "🔒 Preuve serveur certifiée" différé.
+              + Canvas willReadFrequently:true pour supprimer le warning navigateur.
 */
 
 const CACHE_VERSION = 'ami-v5.7';
