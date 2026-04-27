@@ -747,6 +747,347 @@ async function _autoCoterEtImporterPatient(p) {
   } catch (_e) {}
 }
 
+/* ════════════════════════════════════════════════════════════
+   _uberAfterDoneFlow(p)
+   ─────────────────────────────────────────────────────────────
+   v5.4 — Flow unifié déclenché AVANT toute progression au patient
+   suivant lors d'un clic "✅ Terminer" (Mode Uber Médical OU
+   Mode GPS plein écran) :
+
+     1. Cotation + import IDB + km (await pour avoir invoice_number)
+     2. Ouverture de la modale signature avec contexte complet
+     3. Création auto des consentements (faite par saveSignature
+        via _pendingConsentsByInvoice / _lastCotData → fallback)
+     4. Création auto du CR de passage initial (rempli avec acte
+        coté + horodatage + invoice_number + signature_invoice_id)
+     5. Tous ces enregistrements vont dans IDB → carnet patient
+        affiche automatiquement les onglets Cotation, Consentements
+        et CR Passage.
+
+   Promise résolue uniquement quand la signature est validée OU
+   fermée. Permet aux callers d'enchaîner sur le patient suivant
+   après que toute la trace médico-légale soit posée.
+   ============================================================ */
+async function _uberAfterDoneFlow(p) {
+  if (!p) return;
+
+  // ⚡ v5.4 — Récap des actions réalisées pendant le flow.
+  // Permet d'afficher un toast final synthétique :
+  // "✍️ Signature OK · 📋 CR créé · ✅ 2 consentements à jour"
+  const _outcome = {
+    cotationOk:   false,
+    cotationTotal: 0,
+    signatureOk:  false,    // true si saveSignature a posé une signature
+    crOk:         false,    // true si _crSave a réussi
+    consentsCreated:    0,  // nb de consentements nouvellement créés
+    consentsAlreadyOk:  0,  // nb de consentements déjà actifs (non recréés)
+    consentsRequired:   0,  // nb total d'actes nécessitant un consentement
+  };
+
+  // ── 1. Cotation + import IDB (await pour récupérer invoice_number) ──
+  // _autoCoterEtImporterPatient est idempotent grâce à la fenêtre 6h
+  // (cf. _DEDUP_WINDOW_MS). Si appelée 2 fois pour le même patient, elle
+  // upsert au lieu de doubler. Pas de risque de conflit avec la doctrine
+  // cotation upsert.
+  try {
+    await _autoCoterEtImporterPatient(p);
+    _outcome.cotationOk = !!p?._cotation?.validated;
+    _outcome.cotationTotal = parseFloat(p?._cotation?.total || 0);
+  } catch (e) {
+    console.warn('[AMI] _uberAfterDoneFlow cotation KO:', e?.message);
+  }
+
+  // ── 2. Préparer le contexte pour signature.js ──
+  const invoiceId = p?._cotation?.invoice_number
+                 || ('uber_' + (p.patient_id || p.id || Date.now()) + '_' + Date.now());
+  const actesArr = (p?._cotation?.actes || []).map(a => a.code || a.nom || '').filter(Boolean);
+  const patientId = p.patient_id || p.id || '';
+
+  // Mémoriser la cotation dans _lastCotData pour le fallback consentements
+  // (saveSignature.js lit cette variable pour détecter les actes nécessitant
+  // un consentement quand _pendingConsentsByInvoice n'est pas pré-rempli).
+  try {
+    window._lastCotData = {
+      patient_id:  patientId,
+      patient_nom: ((p.prenom||'') + ' ' + (p.nom||'')).trim(),
+      actes:       p?._cotation?.actes || [],
+      total:       p?._cotation?.total || 0,
+      date_soin:   new Date().toISOString().slice(0, 10),
+      heure_soin:  p._done_at || new Date().toTimeString().slice(0,5),
+      notes:       p.actes_recurrents || p.description || p.texte || '',
+      invoice_number: invoiceId,
+    };
+  } catch(_) {}
+
+  // ── 3. Ouvrir la modale signature (asynchrone) ──
+  // Attend la fermeture (validation ou ✕) avant de continuer.
+  // saveSignature() crée automatiquement les consentements requis
+  // (mécanique existante dans signature.js v2 — détection d'actes).
+  if (typeof openSignatureModal === 'function') {
+    await new Promise((resolve) => {
+      // Stocker un callback que closeSignatureModal pourra appeler.
+      // Si la modale est fermée par n'importe quel chemin (✕ ou Valider),
+      // on résout pour ne pas bloquer le flow tournée.
+      window._uberAfterSignClose = () => {
+        try { delete window._uberAfterSignClose; } catch(_) {}
+        resolve();
+      };
+      try {
+        openSignatureModal(invoiceId, {
+          patient_id: patientId,
+          actes:      actesArr,
+          ide_id:     (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : '',
+        });
+      } catch (e) {
+        console.warn('[AMI] openSignatureModal KO:', e?.message);
+        resolve(); // ne bloque pas la tournée si la modale plante
+      }
+      // Fail-safe : si la modale ne se ferme jamais (bug), on libère après 5 min
+      setTimeout(() => {
+        if (typeof window._uberAfterSignClose === 'function') {
+          try { delete window._uberAfterSignClose; } catch(_) {}
+          resolve();
+        }
+      }, 5 * 60 * 1000);
+    });
+  }
+
+  // Vérifier si la signature a effectivement été posée dans IDB
+  // (saveSignature persiste dans ami_signatures via _sigPut)
+  try {
+    if (typeof _sigGet === 'function') {
+      const sig = await _sigGet(invoiceId);
+      _outcome.signatureOk = !!(sig && sig.png && sig.signed_at);
+    }
+  } catch(_) {}
+
+  // ── 4. Créer le CR de passage automatique ──
+  // Doctrine : un CR initial pré-rempli est créé pour CHAQUE patient terminé
+  // afin de garantir la traçabilité médico-légale ; l'IDE peut ensuite
+  // l'éditer dans l'onglet "CR Passage" du carnet patient.
+  try {
+    const crRes = await _uberAutoCreateCRPassage(p, invoiceId);
+    _outcome.crOk = !!(crRes && crRes.ok);
+  } catch (e) {
+    console.warn('[AMI] CR auto KO:', e?.message);
+  }
+
+  // ── 5. Force-vérifier la création des consentements ──
+  // Si saveSignature n'a rien créé (modale fermée sans signer, ou actes
+  // sans match consentement), on tente quand même la détection ici pour
+  // la trace médico-légale. Best-effort, silencieux.
+  try {
+    const cRes = await _uberAutoEnsureConsentements(p, invoiceId);
+    if (cRes) {
+      _outcome.consentsRequired   = cRes.required   || 0;
+      _outcome.consentsCreated    = cRes.created    || 0;
+      _outcome.consentsAlreadyOk  = cRes.alreadyOk  || 0;
+    }
+  } catch (e) {
+    console.warn('[AMI] Consent auto KO:', e?.message);
+  }
+
+  // ── 6. Toast récap ──
+  // Construit dynamiquement selon ce qui s'est réellement passé.
+  // Type 'ok' (vert) si tout OK, 'wa' (jaune) si signature manquante.
+  if (typeof showToast === 'function') {
+    const parts = [];
+
+    // Cotation : toujours affichée si validée
+    if (_outcome.cotationOk && _outcome.cotationTotal > 0) {
+      parts.push(`💶 ${_outcome.cotationTotal.toFixed(2)} €`);
+    }
+
+    // Signature : OK ou non posée
+    if (_outcome.signatureOk) {
+      parts.push('✍️ Signature OK');
+    } else if (typeof openSignatureModal === 'function') {
+      // La modale a été ouverte mais aucune signature persistée
+      // (l'IDE a fermé sans signer, ou la signature a échoué)
+      parts.push('⚠️ Signature manquante');
+    }
+
+    // CR de passage : créé ou non
+    if (_outcome.crOk) {
+      parts.push('📋 CR créé');
+    }
+
+    // Consentements : récap selon ce qui était requis
+    if (_outcome.consentsRequired > 0) {
+      const totalOk = _outcome.consentsCreated + _outcome.consentsAlreadyOk;
+      if (totalOk === _outcome.consentsRequired) {
+        if (_outcome.consentsCreated > 0) {
+          parts.push(`✅ ${_outcome.consentsCreated} consentement${_outcome.consentsCreated > 1 ? 's' : ''} créé${_outcome.consentsCreated > 1 ? 's' : ''}`);
+        } else {
+          parts.push('✅ Consentements à jour');
+        }
+      } else {
+        parts.push(`⚠️ ${_outcome.consentsRequired - totalOk}/${_outcome.consentsRequired} consentement${_outcome.consentsRequired > 1 ? 's' : ''} manquant${_outcome.consentsRequired > 1 ? 's' : ''}`);
+      }
+    }
+
+    if (parts.length > 0) {
+      // Type : warning si signature manquante OU consentement manquant
+      const hasWarning = !_outcome.signatureOk
+                      || (_outcome.consentsRequired > 0
+                          && (_outcome.consentsCreated + _outcome.consentsAlreadyOk) < _outcome.consentsRequired);
+      const toastType = hasWarning ? 'wa' : 'ok';
+      showToast(parts.join(' · '), toastType);
+    }
+  }
+}
+
+/**
+ * Crée un CR de passage IDB initial pour ce patient terminé.
+ * Si _crSave existe (cr-passage.js chargé), enregistre directement.
+ * Sinon, fallback : on stocke dans une queue en localStorage qui sera
+ * drainée au prochain chargement de cr-passage.js.
+ *
+ * @returns {Promise<{ok:boolean, queued?:boolean}>}
+ *   ok=true si le CR est dans IDB ; queued=true si fallback localStorage.
+ */
+async function _uberAutoCreateCRPassage(p, invoiceId) {
+  const patientId = p.patient_id || p.id;
+  if (!patientId) return { ok: false };
+
+  const now = new Date();
+  const todayISO = now.toISOString();
+  const heure = p._done_at || now.toTimeString().slice(0, 5);
+
+  // Construire le texte des actes effectués (pour le champ "actes" du CR)
+  const actesText = (p._cotation?.actes || [])
+    .map(a => a.nom || a.code)
+    .filter(Boolean)
+    .join(', ')
+    || (p.actes_recurrents || p.description || p.texte || 'Soin infirmier à domicile');
+
+  const crObj = {
+    patient_id:    patientId,
+    patient_nom:   ((p.prenom||'') + ' ' + (p.nom||'')).trim(),
+    user_id:       (typeof APP !== 'undefined' && APP?.user?.id) ? APP.user.id : '',
+    date:          todayISO,
+    medecin:       '',
+    actes:         actesText,
+    ta:            '',
+    glycemie:      '',
+    spo2:          '',
+    temperature:   '',
+    fc:            '',
+    eva:           '',
+    observations:  '', // l'IDE complétera depuis le carnet patient si besoin
+    transmissions: '',
+    urgence:       'normal',
+    inf_nom:       (typeof APP !== 'undefined')
+                     ? `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim()
+                     : '',
+    type:          'private',
+    alert:         false,
+    saved_at:      todayISO,
+    updated_at:    todayISO,
+    _cr_version:   2,
+    // ⚡ Lien médico-légal : permet de retrouver la signature et la cotation
+    invoice_id:    invoiceId,
+    _source:       'uber_auto', // distingue les CR créés auto des CR manuels
+    _heure_soin:   heure,
+  };
+
+  // Tentative 1 : appeler _crSave si cr-passage.js est chargé
+  if (typeof _crSave === 'function') {
+    try {
+      await _crSave(crObj);
+      // Sync inter-appareils silencieux
+      if (typeof crSyncPush === 'function') {
+        crSyncPush().catch(() => {});
+      }
+      return { ok: true };
+    } catch (e) {
+      console.warn('[AMI] _crSave KO:', e?.message);
+    }
+  }
+
+  // Tentative 2 : queue localStorage (drainée au prochain crLoadHistory)
+  try {
+    const k = 'ami_cr_pending_queue';
+    const queue = JSON.parse(localStorage.getItem(k) || '[]');
+    queue.push(crObj);
+    localStorage.setItem(k, JSON.stringify(queue));
+    return { ok: true, queued: true };
+  } catch(_) {
+    return { ok: false };
+  }
+}
+
+/**
+ * Force-crée des consentements si la cotation matche des actes nécessitant
+ * un consentement, et qu'aucun n'existe encore actif. Best-effort silencieux —
+ * ne lève jamais. Utilise la signature stockée par saveSignature s'il y en
+ * a une (via le hash invoice → ami_signatures).
+ *
+ * @returns {Promise<{required:number, created:number, alreadyOk:number}>}
+ *   required  = nb d'actes ayant déclenché un type de consentement
+ *   created   = nb de consentements nouvellement créés cette fois
+ *   alreadyOk = nb de consentements déjà actifs valides (skip)
+ */
+async function _uberAutoEnsureConsentements(p, invoiceId) {
+  const result = { required: 0, created: 0, alreadyOk: 0 };
+
+  if (typeof _consentCreateOrUpdate !== 'function'
+      || typeof CONSENT_TEMPLATES === 'undefined'
+      || typeof _consentGetActive !== 'function') return result;
+
+  const patientId = p.patient_id || p.id;
+  if (!patientId) return result;
+
+  // Détecter les types de consentement requis depuis les actes coté
+  const allText = ((p._cotation?.actes || [])
+                    .map(a => (a.nom || '') + ' ' + (a.code || ''))
+                    .join(' ')
+                  + ' ' + (p.actes_recurrents || '')
+                  + ' ' + (p.description || '')
+                  + ' ' + (p.texte || '')).toLowerCase();
+
+  const requiredTypes = [];
+  for (const [key, tpl] of Object.entries(CONSENT_TEMPLATES)) {
+    if (tpl.actes_lies?.some(mot => allText.includes(mot))) {
+      requiredTypes.push(key);
+    }
+  }
+  result.required = requiredTypes.length;
+  if (!requiredTypes.length) return result; // aucun acte ne nécessite consentement
+
+  const patientNom = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+  const dateSoin = new Date().toISOString().slice(0, 10);
+
+  for (const type of requiredTypes) {
+    try {
+      // Si déjà un consentement actif valide, ne rien faire
+      const existing = await _consentGetActive(patientId, type);
+      if (existing && existing.status === 'signed') {
+        // Vérifier expiration
+        const expired = existing.expires_at && new Date(existing.expires_at) < new Date();
+        if (!expired) { result.alreadyOk++; continue; } // déjà OK
+      }
+      // Créer pré-rempli sans signatureDataUrl (status='pending')
+      // Le invoice_id permet de retrouver la signature canonique dans
+      // ami_signatures si l'IDE a signé pendant le flow.
+      await _consentCreateOrUpdate({
+        patient_id:       patientId,
+        type,
+        signatureDataUrl: null,        // signature résolue via invoice_id
+        patient_nom:      patientNom,
+        qualite:          'Patient',
+        date:             dateSoin,
+        invoice_id:       invoiceId,   // ⚡ lien canonique vers ami_signatures
+      });
+      result.created++;
+    } catch (e) {
+      console.warn('[AMI] _consentCreateOrUpdate KO pour', type, ':', e?.message);
+    }
+  }
+
+  return result;
+}
+
 async function markUberDone() {
   const p = APP.get('nextPatient'); if (!p) return;
   p.done = true;
@@ -758,8 +1099,17 @@ async function markUberDone() {
   p._done_at = new Date().toTimeString().slice(0, 5); // "HH:MM" locale
   p._done_at_iso = new Date().toISOString();
 
-  /* Déclencher cotation + import + km pour ce patient (non bloquant) */
-  _autoCoterEtImporterPatient(p).catch(e => console.warn('[AMI] markUberDone async KO:', e));
+  // ⚡ v5.4 — Flow unifié : cotation → signature → CR → consentements
+  // _uberAfterDoneFlow await la cotation puis ouvre la modale signature.
+  // L'enchaînement vers le patient suivant attend la fermeture de la modale.
+  // markUberDone est désormais async — les callers (markUberDone() depuis
+  // le bouton classique OU _uberFSEndPatient depuis le GPS plein écran)
+  // peuvent await pour synchroniser leur logique aval.
+  try {
+    await _uberAfterDoneFlow(p);
+  } catch (e) {
+    console.warn('[AMI] markUberDone flow KO:', e?.message);
+  }
 
   /* ⚡ Depuis le refactor liste unique : renderLivePatientList est la seule fonction
      qui écrit dans #uber-next-patient. selectBestPatient() publie le nouveau

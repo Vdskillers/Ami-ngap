@@ -840,6 +840,17 @@ function _setProofIndicator(kind, state) {
 function closeSignatureModal() {
   const modal = document.getElementById('sig-modal');
   if (modal) modal.style.display = 'none';
+
+  // ⚡ v5.4 — Hook pour _uberAfterDoneFlow (uber.js)
+  // Si le Mode Uber Médical attend la fermeture de la modale signature,
+  // on libère sa Promise. Pas d'attente bloquante côté tournée.
+  try {
+    if (typeof window._uberAfterSignClose === 'function') {
+      const cb = window._uberAfterSignClose;
+      delete window._uberAfterSignClose;
+      cb();
+    }
+  } catch (_) {}
 }
 
 /* ════════════════════════════════════════════════
