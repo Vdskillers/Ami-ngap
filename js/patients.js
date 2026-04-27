@@ -116,6 +116,31 @@ function _patientKey() {
 function _enc(obj)  { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _patientKey()))); } catch { return null; } }
 function _dec(str)  { try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; } }
 
+// ⚡ FIX Zones rentables — exposer _dec et helpers IDB en lecture pour map.js
+//    map.js doit pouvoir déchiffrer les fiches IDB pour récupérer lat/lng des
+//    patients (stockés dans _data chiffré). On n'expose PAS _enc pour limiter
+//    la surface d'attaque : seul le déchiffrement est nécessaire en lecture.
+//    _patientKey reste interne — il est implicitement utilisé via _dec.
+//
+//    Tout est namespaceé sous window._AMI_INTERNAL pour ne rien polluer au
+//    niveau racine de window. Convention : tout helper interne AMI partagé
+//    entre fichiers passe par cet objet, jamais par window.* direct.
+try {
+  if (typeof window !== 'undefined') {
+    window._AMI_INTERNAL = window._AMI_INTERNAL || {};
+    window._AMI_INTERNAL.patient = {
+      dec:   _dec,                  // déchiffre _data → objet patient en clair
+      store: PATIENTS_STORE,        // 'ami_patients'
+    };
+    // Wrapper qui force le store patients par défaut (sécurité : on n'ouvre
+    // pas d'autres bases que celle des patients du user courant).
+    window._AMI_INTERNAL.idbGetAll = async function(store) {
+      const _store = store || PATIENTS_STORE;
+      try { return await _idbGetAll(_store); } catch(_) { return []; }
+    };
+  }
+} catch(_) {}
+
 /* ── Migration : re-chiffre les patients sauvés avec l'ancienne clé (token-based) ──
    Appelée une seule fois après mise à jour. Marqueur : localStorage 'ami_pat_key_v2'
 ─────────────────────────────────────────────────────────────────────────────────── */
@@ -1926,12 +1951,19 @@ async function _crPrintFromCarnet(idx, patientId) {
         // ⚡ Auto-print exécuté DANS la fenêtre fille — l'app principale n'invoque
         //    plus print() directement, donc plus aucun blocage du main thread.
         window.addEventListener('load', () => setTimeout(() => window.print(), 400));
-        // Fermer la fenêtre fille après impression (OK ou Annuler)
-        window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+        // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+        //    sinon le focus système peut rester sur la fille en cours de fermeture
+        //    → l'app principale ne reçoit plus les clics (sélection patient gelée).
+        window.addEventListener('afterprint', () => {
+          try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+          setTimeout(() => window.close(), 300);
+        });
       </script>
       </body></html>`);
     w.document.close();
     // ⚡ PAS de setTimeout(() => w.print(), 400) ici — l'app principale reste réactive
+    // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+    setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
   } catch (err) {
     if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
   }

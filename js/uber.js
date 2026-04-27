@@ -928,10 +928,16 @@ async function _uberAfterDoneFlow(p) {
         resolve();
       };
       try {
+        // ⚡ FIX naming signatures — on transmet le nom patient pour qu'il
+        //    serve de titre dans la liste des signatures (sinon on ne voit
+        //    que des "uber_pat_xxx_yyy" totalement opaques).
+        const _patNom = ((p.prenom||'') + ' ' + (p.nom||'')).trim()
+          || (p._nomAff || p.label || p.description || '').toString().trim();
         openSignatureModal(provisoireInvoiceId, {
-          patient_id: patientId,
-          actes:      actesArr,
-          ide_id:     (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : '',
+          patient_id:  patientId,
+          patient_nom: _patNom,
+          actes:       actesArr,
+          ide_id:      (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : '',
         });
       } catch (e) {
         console.warn('[AMI] openSignatureModal KO:', e?.message);

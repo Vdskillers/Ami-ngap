@@ -1135,16 +1135,44 @@ async function openHeatmap() {
  * chercher dans IDB patients (clé patient_id). Évite "Aucune donnée GPS"
  * quand l'API renvoie des cotations sans coords mais que le fichier
  * patient en a.
+ *
+ * ⚡ FIX zones rentables — Avant ce fix :
+ *    1) `idbGetAll('patients')` était utilisé alors que le store réel s'appelle
+ *       'ami_patients' (cf. patients.js, PATIENTS_STORE) → 0 résultat.
+ *    2) Même avec le bon nom de store, les rows IDB ont la forme
+ *       { id, nom, prenom, _data } où _data est un blob CHIFFRÉ qui contient
+ *       lat/lng. Aucune tentative de déchiffrement n'était faite → lat/lng
+ *       restaient introuvables.
+ *    3) APP.get('myFiches') n'est défini nulle part dans le code → fallback
+ *       inutilisable.
+ *    Désormais : on consomme window._AMI_INTERNAL.patient (helpers déchiffrés
+ *    et namespaceés exposés par patients.js) pour récupérer ET déchiffrer
+ *    les fiches sans dupliquer la logique d'ouverture IDB.
  */
 async function _hydrateCotationsCoords(cotations) {
   const missing = cotations.filter(c => (!c.lat || !c.lng) && c.patient_id);
   if (!missing.length) return;
 
-  /* Source 1 : IDB patients via API publique d'AMI */
+  /* Source 1 : IDB patients déchiffré via helpers exposés par patients.js
+     sous window._AMI_INTERNAL (namespace dédié, pas de pollution globale). */
   let patients = [];
   try {
-    if (typeof window.idbGetAll === 'function') {
-      patients = await window.idbGetAll('patients') || [];
+    const _internal = (typeof window !== 'undefined' && window._AMI_INTERNAL) || null;
+    const _patHelpers = _internal?.patient || null;
+    const _idbGetAll  = (typeof _internal?.idbGetAll === 'function') ? _internal.idbGetAll : null;
+    const _dec        = (typeof _patHelpers?.dec === 'function')     ? _patHelpers.dec    : null;
+    const _store      = _patHelpers?.store || 'ami_patients';
+
+    if (_idbGetAll) {
+      const rows = await _idbGetAll(_store) || [];
+      // Déchiffrer chaque row pour récupérer lat/lng (stockés dans _data)
+      patients = rows.map(r => {
+        let body = {};
+        if (_dec && r?._data) {
+          try { body = _dec(r._data) || {}; } catch(_) {}
+        }
+        return { id: r.id, nom: r.nom, prenom: r.prenom, ...body };
+      });
     }
   } catch {}
 

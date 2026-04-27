@@ -924,11 +924,19 @@ function crGeneratePDF() {
     <script>
       // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
       window.addEventListener('load', () => setTimeout(() => window.print(), 400));
-      window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+      // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+      //    sinon le focus système peut rester sur la fille en cours de fermeture
+      //    → l'app principale ne reçoit plus les clics (sélection patient gelée).
+      window.addEventListener('afterprint', () => {
+        try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+        setTimeout(() => window.close(), 300);
+      });
     </script>
     </body></html>`);
   w.document.close();
   // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
+  // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+  setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
 }
 
 async function crLoadHistory() {
@@ -1079,11 +1087,19 @@ async function crGenerateDoctorPDF() {
     <script>
       // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
       window.addEventListener('load', () => setTimeout(() => window.print(), 400));
-      window.addEventListener('afterprint', () => setTimeout(() => window.close(), 300));
+      // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+      //    sinon le focus système peut rester sur la fille en cours de fermeture
+      //    → l'app principale ne reçoit plus les clics (sélection patient gelée).
+      window.addEventListener('afterprint', () => {
+        try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+        setTimeout(() => window.close(), 300);
+      });
     </script>
     </body></html>`);
   w.document.close();
   // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
+  // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+  setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
 }
 
 /* ═════════════════════════════════════════════════════════════

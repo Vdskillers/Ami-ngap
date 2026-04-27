@@ -1490,6 +1490,13 @@ async function _cotationPipeline() {
         ? window._pendingConsentsForPatient?.[_patIdResolved]
         : null;
 
+      // ⚡ FIX naming signatures — récupère le nom patient courant pour
+      //    qu'il devienne le titre de la signature dans la liste (au lieu
+      //    de l'identifiant facture brut). On échappe les ' pour ne pas
+      //    casser l'HTML inline du onclick.
+      const _patNomEscaped = String((typeof gv === 'function' ? (gv('f-pt') || '') : ''))
+        .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+
       if (_pendingForPatient) {
         window._pendingConsentsByInvoice = window._pendingConsentsByInvoice || {};
         window._pendingConsentsByInvoice[_invoiceId] = {
@@ -1538,7 +1545,7 @@ async function _cotationPipeline() {
 
         _wrap.innerHTML = `
           <button class="btn bv bsm" id="sig-btn-${_invoiceId}" data-sig="${_invoiceId}"
-            onclick="openSignatureModal('${_invoiceId}', { patient_id: '${_patIdResolved || ''}', invoice_number: '${_invoiceId}' })">
+            onclick="openSignatureModal('${_invoiceId}', { patient_id: '${_patIdResolved || ''}', patient_nom: '${_patNomEscaped}', invoice_number: '${_invoiceId}' })">
             ✍️ Faire signer le patient
           </button>
           <span style="font-size:11px;color:var(--m)">Signature stockée localement · non transmise</span>
@@ -1645,9 +1652,18 @@ function renderCot(d) {
     // ET qu'on a un invoice_number (cotation déjà sauvée côté worker)
     const _showSignBtn = !_hasPreuveForte && _cpamInvoiceId &&
       _filteredAnomalies.some(a => _isPreuveAnomaly(a));
+    // ⚡ FIX naming signatures — on tente de récupérer un nom patient pour
+    //    l'affichage dans la liste signatures. Sources possibles : champ
+    //    formulaire, patient en cours d'édition, ou cotation actuelle.
+    const _cpamPatNomRaw = (typeof gv === 'function' ? gv('f-pt') : '')
+      || window._editingCotation?.patient_nom
+      || d.patient_nom
+      || '';
+    const _cpamPatNom = String(_cpamPatNomRaw || '')
+      .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
     const _signBtnHtml = _showSignBtn ? `
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn bv bsm" onclick="openSignatureModal('${_cpamInvoiceId}', { patient_id: '${_cpamPatId}', invoice_number: '${_cpamInvoiceId}' })">
+        <button class="btn bv bsm" onclick="openSignatureModal('${_cpamInvoiceId}', { patient_id: '${_cpamPatId}', patient_nom: '${_cpamPatNom}', invoice_number: '${_cpamInvoiceId}' })">
           ✍️ Faire signer le patient maintenant
         </button>
         <span style="font-size:10px;color:var(--m)">→ supprimera cette anomalie</span>

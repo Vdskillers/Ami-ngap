@@ -678,9 +678,15 @@ function openSignatureModal(invoiceId, context) {
   _sigModalMode = 'patient';
   _currentInvoiceId = invoiceId || 'sig_' + Date.now();
   _currentProofContext = context && typeof context === 'object' ? {
-    patient_id: context.patient_id || '',
-    actes:      Array.isArray(context.actes) ? context.actes : (context.actes ? [context.actes] : []),
-    ide_id:     context.ide_id     || '',
+    patient_id:  context.patient_id  || '',
+    // ⚡ FIX naming signatures — on capture aussi patient_nom pour pouvoir
+    //    l'afficher comme titre dans la liste des signatures (au lieu du
+    //    cryptique 'uber_pat_xxx_yyy'). N'affecte ni la sécurité ni le hash :
+    //    signature_hash est calculé à partir de patient_id + actes + invoice
+    //    (cf. _computeProofHash). Le nom est purement cosmétique / UX.
+    patient_nom: context.patient_nom || '',
+    actes:       Array.isArray(context.actes) ? context.actes : (context.actes ? [context.actes] : []),
+    ide_id:      context.ide_id     || '',
   } : null;
   // Reset état preuve du tour précédent
   _currentPhotoHash = null;
@@ -1269,6 +1275,12 @@ async function saveSignature() {
     png,
     signed_at:   signedAt,                       // ✔ Horodatage ISO 8601
     user_agent:  navigator.userAgent.slice(0, 100),
+    // ⚡ FIX naming signatures — on stocke patient_id + patient_nom pour
+    //    pouvoir afficher un libellé humain dans la liste sans avoir à
+    //    re-requêter la fiche carnet. Optionnel et non-bloquant pour la
+    //    preuve : si absent, la liste retombe sur invoice_id (legacy).
+    patient_id:  ctx.patient_id  || '',
+    patient_nom: ctx.patient_nom || '',
     // Preuve médico-légale
     signature_hash: signatureHash,               // ✔ SHA-256 du tracé+date+acte+patient
     photo_hash:     _currentPhotoHash || null,
@@ -1938,6 +1950,13 @@ async function loadSignatureList() {
       const date = _dateRaw ? new Date(_dateRaw).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
       const isoDate = _dateRaw || '';
       const invoiceId = sig.invoice_id || '—';
+      // ⚡ FIX naming signatures — Préférer le nom patient lisible (ex:
+      //    "Mme Dupont · Pansement") au champ technique invoice_id quand on
+      //    l'a (signatures v5.11+). Pour les signatures legacy sans nom,
+      //    on retombe gracieusement sur l'ancien rendu (invoice_id).
+      const _patNomRaw = (sig.patient_nom || sig.proof_payload?.patient_nom || '').trim();
+      const _hasName   = _patNomRaw.length > 0;
+      const _displayTitle = _hasName ? _patNomRaw : invoiceId;
       const _previewSrc = sig.png || sig.data_url || null;
 
       // ── 5 critères de preuve médico-légale ──
@@ -1992,7 +2011,8 @@ async function loadSignatureList() {
           ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain;background:#fff">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;background:#f3f4f6">✍️</div>'}
         </div>
         <div style="flex:1 1 220px;min-width:200px">
-          <div style="font-size:13px;font-weight:500;font-family:var(--fm);word-break:break-all">${invoiceId}</div>
+          <div style="font-size:13px;font-weight:600;${_hasName ? '' : 'font-family:var(--fm);'}word-break:break-all">${_displayTitle}</div>
+          ${_hasName ? `<div style="font-size:10px;color:var(--m);font-family:var(--fm);opacity:.7;margin-top:1px;word-break:break-all" title="Identifiant facture (technique)">#${invoiceId}</div>` : ''}
           <div style="font-size:11px;color:var(--m)">${date}</div>
           ${badges ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap">${badges}</div>` : ''}
           ${detailsBlock ? `<div style="margin-top:4px">${detailsBlock}</div>` : ''}

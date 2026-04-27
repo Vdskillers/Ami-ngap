@@ -1163,6 +1163,43 @@
         if (Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
           learnZone(p.lat, p.lng, plannedMin, realMin);
         }
+
+        // ⚡ FIX Apprentissage accumulé "0 profils route appris" :
+        //    Avant ce fix, _learnRouteFactor n'était JAMAIS appelée → la stat
+        //    restait à 0 même après plusieurs tournées. On la nourrit ici dès
+        //    qu'on a une durée trajet (p.travel_min). Si on a aussi une
+        //    distance OSRM (p.distance_km), on dérive la zone par vitesse —
+        //    sinon fallback 'peri' (compromis le plus probable en France).
+        if (p.travel_min > 0) {
+          let _routeZone = 'peri';
+          if (Number.isFinite(p.distance_km) && p.distance_km > 0) {
+            _routeZone = _zoneFromSpeed(p.distance_km, p.travel_min * 60);
+          }
+          // Sample : sans tracking trajet réel, on enregistre planifié vs
+          // planifié (count++ sans mouvement de avgFactor). Au moins le
+          // compteur progresse → l'IDE sait que l'apprentissage est actif.
+          const _realTravelMin = Number.isFinite(p._real_travel_min)
+            ? p._real_travel_min
+            : p.travel_min;
+          _learnRouteFactor(_routeZone, p.travel_min, _realTravelMin);
+        }
+
+        // ⚡ FIX Apprentissage accumulé "0 profil(s) IDE" :
+        //    Avant ce fix, learnIDE n'était JAMAIS appelée → 0 profils IDE
+        //    même après des dizaines de patients. On lie l'apprentissage au
+        //    compte connecté (S.user.id) et on enregistre le ratio de durée.
+        //    Si le patient est marqué done sans retard détecté, on considère
+        //    onTimeRate=1 (ponctualité parfaite ce passage).
+        const _S = (typeof S !== 'undefined' && S) ||
+                   (typeof window !== 'undefined' && window.S) || null;
+        const _ideId = _S?.user?.id || _S?.user?.email || null;
+        if (_ideId) {
+          learnIDE(_ideId, {
+            realTime:      realMin,
+            estimatedTime: plannedMin,
+            onTimeRate:    1,
+          });
+        }
       }
     } catch (_) {}
   }

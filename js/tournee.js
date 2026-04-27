@@ -703,6 +703,35 @@ async function renderPlanning(d){
     // Ne jamais substituer todayISO ici : sinon le patient glisse chaque jour.
     const date = p.date || p.date_soin || p.date_prevue || null;
 
+    // ⚡ FIX Planning hebdo "0 cotation(s) validée(s)" :
+    //    Si le patient est lié à une fiche carnet et que celle-ci contient des
+    //    cotations historiques, on cherche une cotation dont la date matche
+    //    celle du planning. Si trouvée → on l'expose en _cotation pour que
+    //    nbCot/totalCot/caValTotal puissent la compter.
+    //
+    //    Ordre de priorité : p._cotation (live, ex: tournée IA en cours) >
+    //    uber._cotation (mémoire uberPatients) > fiche.cotations[] (carnet).
+    let _cotFromCarnet = null;
+    if (Array.isArray(fiche.cotations) && fiche.cotations.length && date) {
+      const _dateISO10 = String(date).slice(0, 10);
+      const _matched = fiche.cotations.find(c => {
+        const cDate = String(c.date || c.date_soin || '').slice(0, 10);
+        return cDate && cDate === _dateISO10;
+      });
+      if (_matched) {
+        _cotFromCarnet = {
+          actes:          Array.isArray(_matched.actes) ? _matched.actes : [],
+          total:          parseFloat(_matched.total || 0),
+          validated:      true,
+          invoice_number: _matched.invoice_number || null,
+          heure:          _matched.heure || _matched.heure_soin || '',
+          auto:           _matched.source === 'tournee_auto' || _matched.source === 'uber_auto',
+          // marqueur pour traçabilité
+          _from:          'fiche.cotations',
+        };
+      }
+    }
+
     return {
       ...p,
       nom:              (fiche.nom    || p.nom    || uber.nom    || '').trim(),
@@ -710,7 +739,7 @@ async function renderPlanning(d){
       _nomAff:          nom || 'Patient',
       date,
       actes_recurrents: fiche.actes_recurrents || p.actes_recurrents || '',
-      _cotation:        p._cotation || uber._cotation,
+      _cotation:        p._cotation || uber._cotation || _cotFromCarnet,
       done:             p.done   || p._done   || uber.done   || false,
       absent:           p.absent || p._absent || uber.absent || false,
       _planIdx:         idx,

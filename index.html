@@ -4060,6 +4060,15 @@ document.addEventListener('click', function(e) {
 window.showToast = function(type, title, msg, duration=4000) {
   const container = document.getElementById('toast-container');
   if (!container) return;
+  // ⚡ FIX — Normalisation des alias type courts (nouvelle API).
+  // Avant ce fix, `showToast('ok', '✅ Consentement…')` tombait dans la branche
+  // compat : 'ok' était traité comme un message, 'ok' affiché comme titre,
+  // type devenait 'info' (💡). Désormais 'ok' / 'warn' / 'err' sont reconnus
+  // comme des types valides côté nouvelle API.
+  const _aliasMap = { ok: 'success', warn: 'warning', err: 'error' };
+  if (typeof type === 'string' && _aliasMap[type]) {
+    type = _aliasMap[type];
+  }
   // ── Compatibilité ancienne signature showToast(msg, type) ──────────────
   // Détecte si appelé avec l'ancienne API : 1er arg = message texte long, 2ème = 'ok'/'warn'/'err'
   const _newTypes = ['success','warning','error','info'];

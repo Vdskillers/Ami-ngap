@@ -493,6 +493,10 @@ function pilPrint() {
   const sem    = document.getElementById('pil-semaine-debut')?.value || '';
 
   const w = window.open('', '_blank');
+  if (!w) {
+    if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
+    return;
+  }
   w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Pilulier AMI</title>
     <style>body{font-family:Arial,sans-serif;padding:20px;color:#000}h1{font-size:18px}h2{font-size:14px;color:#555}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 8px;font-size:12px}th{background:#f0f0f0}input[type=checkbox]{width:14px;height:14px}@media print{@page{margin:15mm}}</style>
     </head><body>
@@ -500,9 +504,23 @@ function pilPrint() {
     <h2>Semaine du ${sem} · Préparé par : ${prep} · ${new Date().toLocaleDateString('fr-FR')}</h2>
     ${semainierEl.innerHTML}
     <p style="font-size:10px;color:#888;margin-top:20px">Généré par AMI — Données locales · Ne pas transmettre sans accord du patient</p>
+    <script>
+      // ⚡ Auto-print exécuté DANS la fenêtre fille — l'app principale n'invoque
+      //    plus print() directement, donc plus aucun blocage du main thread.
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+      //    sinon le focus système peut rester sur la fille en cours de fermeture
+      //    → l'app principale ne reçoit plus les clics (sélection patient gelée).
+      window.addEventListener('afterprint', () => {
+        try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+        setTimeout(() => window.close(), 300);
+      });
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
+  // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+  setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
 }
 
 async function pilLoadHistory() {

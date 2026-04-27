@@ -423,6 +423,10 @@ async function auditLancer() {
 
 function auditExportPDF(score, niveau, nbCots, mois) {
   const w = window.open('','_blank');
+  if (!w) {
+    if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
+    return;
+  }
   const infNom = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim() || '—';
   w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Audit CPAM AMI</title>
     <style>body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:680px;margin:0 auto}h1{font-size:16px;color:#007a6a}h2{font-size:13px;color:#555;border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:18px}p,li{font-size:12px;line-height:1.7}@media print{@page{margin:15mm}}</style>
@@ -434,9 +438,22 @@ function auditExportPDF(score, niveau, nbCots, mois) {
     <h2>Détail par règle</h2>
     <ul>${AUDIT_RULES.map(r=>`<li><strong>${r.label}</strong> (${r.gravite}) — ${r.description}</li>`).join('')}</ul>
     <p style="font-size:10px;color:#888;margin-top:24px">Simulation AMI — Ne remplace pas un audit officiel CPAM ni un conseil juridique.</p>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+      //    sinon le focus système peut rester sur la fille en cours de fermeture
+      //    → l'app principale ne reçoit plus les clics (sélection gelée).
+      window.addEventListener('afterprint', () => {
+        try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+        setTimeout(() => window.close(), 300);
+      });
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
+  // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+  setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
 }
 
 /* ════════════════════════════════════════════════
@@ -788,6 +805,10 @@ function auditCheckMonthlyReminder() {
 ═══════════════════════════════════════════════ */
 function auditExportControle(trustScore, trustLabel, nbCots, bsiIssues, cpamLevel) {
   const w = window.open('','_blank');
+  if (!w) {
+    if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
+    return;
+  }
   const infNom = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim() || '—';
   w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Mode Contrôle CPAM — AMI</title>
     <style>body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:680px;margin:0 auto}h1{font-size:18px;color:#3b82f6}h2{font-size:14px;color:#007a6a;border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:20px}p,li{font-size:12px;line-height:1.7}.score{font-size:42px;color:#007a6a;text-align:center;margin:16px 0}@media print{@page{margin:15mm}}</style>
@@ -804,9 +825,22 @@ function auditExportControle(trustScore, trustLabel, nbCots, bsiIssues, cpamLeve
     <p>Le soussigné(e) atteste avoir effectué à cette date une simulation complète de contrôle CPAM sur son activité professionnelle, conformément à son obligation de vigilance NGAP.</p>
     <p style="margin-top:40px;font-size:11px">Signature :  _________________________</p>
     <p style="font-size:10px;color:#888;margin-top:40px">Rapport généré par AMI — Simulation à des fins de vigilance professionnelle. Ne remplace pas un conseil juridique ou comptable officiel.</p>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+      //    sinon le focus système peut rester sur la fille en cours de fermeture
+      //    → l'app principale ne reçoit plus les clics (sélection gelée).
+      window.addEventListener('afterprint', () => {
+        try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+        setTimeout(() => window.close(), 300);
+      });
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
+  // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+  setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
 }
 
 /* ════════════════════════════════════════════════
@@ -818,6 +852,10 @@ function auditExportHistoriqueConformite() {
   if (!history.length) { showToast?.('warning','Aucun historique'); return; }
 
   const w = window.open('','_blank');
+  if (!w) {
+    if (typeof showToast === 'function') showToast('warning', 'Pop-up bloqué', 'Autorisez les fenêtres pop-up pour imprimer.');
+    return;
+  }
   const infNom = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim() || '—';
   // ⚡ v4.1 — Adapté au nouveau format timestamp ISO (rétro-compat avec ancien mensuel)
   const rows = history.slice().reverse().map(h => {
@@ -856,9 +894,22 @@ function auditExportHistoriqueConformite() {
     </table>
     <p style="margin-top:40px;font-size:11px">Signature :  _________________________</p>
     <p style="font-size:10px;color:#888;margin-top:30px">Rapport généré par AMI — Preuve de vigilance professionnelle au titre de l'obligation de conformité NGAP.</p>
+    <script>
+      // ⚡ Auto-print dans la fenêtre fille — pas de blocage du main thread parent
+      window.addEventListener('load', () => setTimeout(() => window.print(), 400));
+      // ⚡ Restaurer le focus au parent AVANT de fermer la fenêtre fille
+      //    sinon le focus système peut rester sur la fille en cours de fermeture
+      //    → l'app principale ne reçoit plus les clics (sélection gelée).
+      window.addEventListener('afterprint', () => {
+        try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch(_) {}
+        setTimeout(() => window.close(), 300);
+      });
+    </script>
     </body></html>`);
   w.document.close();
-  setTimeout(() => w.print(), 400);
+  // ⚡ PAS de setTimeout(() => w.print(), 400) — laisse l'app principale réactive
+  // ⚡ Forcer le retour du focus au parent en plus du opener.focus() côté fille
+  setTimeout(() => { try { window.focus(); } catch (_) {} }, 1500);
 }
 
 /* ════════════════════════════════════════════════
