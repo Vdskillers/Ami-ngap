@@ -954,8 +954,9 @@ async function useLiveMyLocation() {
    hideHeatmapPanel()        — ferme le panneau
 ════════════════════════════════════════════════ */
 
-let _heatmapLayer   = null;
-let _heatmapVisible = false;
+let _heatmapLayer    = null;
+let _heatmapVisible  = false;
+let _heatmapPanelOpen = false;   // v5.10.4 : état "panneau ouvert" indépendant du layer
 
 /**
  * gridKey — clé de grille géographique (précision ~110m par défaut)
@@ -1057,19 +1058,48 @@ function _loadLeafletHeat() {
 }
 
 /**
- * toggleHeatmap — affiche/masque la heatmap et le panneau de zones
+ * toggleHeatmap — bascule le panneau "🔥 Zones rentables".
+ * v5.10.4 : la fermeture est garantie même si la heatmap n'a pas pu être
+ * affichée (Leaflet.heat indisponible) ou qu'il n'y a pas de données
+ * (cas typique : compte admin / nouvel utilisateur). Le panneau s'ouvre
+ * toujours et affiche un message contextuel si vide.
  */
 async function toggleHeatmap() {
-  if (_heatmapVisible && _heatmapLayer) {
-    try { APP.map.removeLayer(_heatmapLayer); } catch(_) {}
-    _heatmapLayer   = null;
-    _heatmapVisible = false;
-    _hideHeatmapPanel();
+  if (_heatmapPanelOpen) {
+    closeHeatmap();
     return;
   }
+  await openHeatmap();
+}
 
-  // Charger les cotations depuis le cache dashboard ou l'API
+/**
+ * closeHeatmap — ferme proprement le panneau ET retire la layer Leaflet.
+ * Appelable directement depuis le bouton "×" du panneau.
+ */
+function closeHeatmap() {
+  _heatmapPanelOpen = false;
+  _heatmapVisible   = false;
+  if (_heatmapLayer) {
+    try { APP.map.removeLayer(_heatmapLayer); } catch(_) {}
+    _heatmapLayer = null;
+  }
+  _hideHeatmapPanel();
+}
+
+/**
+ * openHeatmap — ouvre le panneau et tente d'afficher la heatmap.
+ * Le panneau est affiché même sans données (message contextuel).
+ */
+async function openHeatmap() {
+  _heatmapPanelOpen = true;
+
+  // 1. Charger les cotations depuis le cache dashboard ou l'API
   let cotations = [];
+  let isAdmin = false;
+  try {
+    isAdmin = !!(window.S?.user?.is_admin || window.S?.user?.role === 'admin');
+  } catch(_) {}
+
   try {
     const key = typeof _dashCacheKey === 'function' ? _dashCacheKey() : '';
     const raw = key ? localStorage.getItem(key) : null;
@@ -1083,11 +1113,13 @@ async function toggleHeatmap() {
     } catch {}
   }
 
+  // 2. Affiche le panneau systématiquement (avec ou sans données)
   if (!cotations.length) {
-    if (typeof showToast === 'function') showToast('Aucune cotation avec coordonnées GPS disponible.', 'wa');
+    _showHeatmapEmpty(isAdmin);
     return;
   }
 
+  // 3. Calcule + tente le rendu Leaflet
   const grid = computeHeatmap(cotations);
   await renderHeatmap(grid);
   _showHeatmapPanel(grid);
@@ -1123,12 +1155,48 @@ function _showHeatmapPanel(grid) {
   panel.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div style="font-weight:700;font-size:13px">🔥 Zones rentables</div>
-      <button onclick="_hideHeatmapPanel();toggleHeatmap()" style="background:none;border:none;cursor:pointer;color:var(--m);font-size:16px;padding:0">×</button>
+      <button onclick="closeHeatmap()" style="background:none;border:none;cursor:pointer;color:var(--m);font-size:18px;padding:0;line-height:1" title="Fermer">×</button>
     </div>
     ${rows || '<div style="font-size:12px;color:var(--m)">Aucune donnée GPS.</div>'}
     <div style="margin-top:8px;font-size:10px;color:var(--m)">Basé sur ${Object.keys(grid).length} zone(s)</div>`;
 
   panel.style.display = 'block';
+}
+
+/**
+ * _showHeatmapEmpty — affiche le panneau avec message contextuel
+ * quand il n'y a pas encore de cotations à exploiter.
+ * v5.10.4 — utile pour les comptes admin / les nouveaux utilisateurs.
+ */
+function _showHeatmapEmpty(isAdmin) {
+  let panel = document.getElementById('heatmap-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'heatmap-panel';
+    panel.style.cssText = 'position:absolute;top:80px;right:12px;z-index:1000;background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;width:240px;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    const mapEl = document.getElementById('dep-map');
+    if (mapEl) mapEl.appendChild(panel);
+    else document.body.appendChild(panel);
+  }
+
+  const msg = isAdmin
+    ? `Cette vue se remplit avec vos propres cotations test. Crée des patients de démo et leurs cotations pour voir la heatmap.`
+    : `Pas encore de cotations géolocalisées sur les 3 derniers mois. Le calque se remplira automatiquement à mesure que tu valides tes tournées.`;
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-weight:700;font-size:13px">🔥 Zones rentables</div>
+      <button onclick="closeHeatmap()" style="background:none;border:none;cursor:pointer;color:var(--m);font-size:18px;padding:0;line-height:1" title="Fermer">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--m);line-height:1.5">${msg}</div>
+  `;
+  panel.style.display = 'block';
+}
+
+if (typeof window !== 'undefined') {
+  window.toggleHeatmap = toggleHeatmap;
+  window.closeHeatmap  = closeHeatmap;
+  window.openHeatmap   = openHeatmap;
 }
 
 function _hideHeatmapPanel() {

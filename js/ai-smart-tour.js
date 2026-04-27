@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════════════
-   ai-smart-tour.js — AMI NGAP v5.10.3
+   ai-smart-tour.js — AMI NGAP v5.10.4
    ────────────────────────────────────────────────────────────────────
    Couches d'intelligence terrain pour la Tournée IA :
 
@@ -56,7 +56,7 @@
 
   const SMART = (window.AMI_SMART = window.AMI_SMART || {});
   SMART._loaded = true;
-  SMART.version = '5.10.3';
+  SMART.version = '5.10.4';
 
   /* Configuration globale (modifiable par l'IDE via UI) */
   const CFG = (SMART.config = {
@@ -960,18 +960,16 @@
     }
 
     /* 2. Détection retard proactive
-       v5.10.3 : annonce vocale UNIQUEMENT pour les patients pas encore annoncés
-       OU dont le retard s'est aggravé significativement (+5 min). */
+       v5.10.4 : annonce vocale UNE SEULE fois par patient. Pas de
+       ré-annonce si le retard s'aggrave — l'IDE a déjà été informé. */
     const late = checkProactiveDelay(route, idx);
     if (late.length && CFG.autoMode.voice) {
       const newAlerts = [];
       for (const l of late) {
+        if (_announcedDelays.has(l.patientId)) continue; // déjà annoncé
         const delayMin = Math.round(l.etaMin - l.planned);
-        const prev = _announcedDelays.get(l.patientId);
-        if (prev == null || (delayMin - prev) >= 5) {
-          newAlerts.push({ ...l, delayMin });
-          _announcedDelays.set(l.patientId, delayMin);
-        }
+        newAlerts.push({ ...l, delayMin });
+        _announcedDelays.set(l.patientId, delayMin);
       }
       if (newAlerts.length === 1) {
         const a = newAlerts[0];
@@ -981,16 +979,6 @@
       } else if (newAlerts.length > 1) {
         _speakSafe(`Retard détecté sur ${newAlerts.length} nouveaux patients`);
       }
-
-      /* Nettoyage : oublier les patients qui ne sont plus en retard
-         (par exemple parce que la tournée a été ajustée) */
-      const stillLateIds = new Set(late.map(l => l.patientId));
-      for (const id of _announcedDelays.keys()) {
-        if (!stillLateIds.has(id)) _announcedDelays.delete(id);
-      }
-    } else if (!late.length) {
-      /* Plus aucun retard prévu → on peut tout oublier */
-      if (_announcedDelays.size > 0) _announcedDelays.clear();
     }
 
     /* 3. Replanification automatique (avec garde-fous) */
@@ -1139,10 +1127,98 @@
   }
 
   /* ╔══════════════════════════════════════════════╗
+     ║ 26.bis OBSERVATEUR AUTO-APPRENTISSAGE          ║
+     ╚══════════════════════════════════════════════╝
+     v5.10.4 — Hook indirect via APP.on() pour ne pas dépendre
+     d'un appel explicite à completePatient() depuis uber.js / tournee.js.
+     Détecte les transitions done=false→true et absent=false→true sur
+     uberPatients, et alimente automatiquement les apprentissages.
+
+     • Pose `_started_at_ts` quand un patient devient nextPatient
+       → permet de mesurer la durée RÉELLE du soin
+     • Détecte les nouveaux done / absent dans uberPatients
+       → appelle updateDifficulty / updateNoShow / learnType / learnZone
+     • Set `_observedCompletions` empêche les doubles comptabilisations.
+  */
+  const _observedCompletions = new Set();
+
+  function _learnFromCompletion(p) {
+    if (!p?.id) return;
+    try {
+      const plannedMin = +p.duration || 10;
+      let realMin = plannedMin;
+      if (p._started_at_ts) {
+        realMin = Math.max(1, Math.round((Date.now() - p._started_at_ts) / 60000));
+      }
+
+      if (p.absent) {
+        updateNoShow(p.id, { isNoShow: true });
+        return;
+      }
+      if (p.done) {
+        updateDifficulty(p.id, { plannedMin, realMin });
+        updateNoShow(p.id, { lateMin: 0 });
+        const type = getPatientType(p);
+        learnType(type, plannedMin, realMin);
+        if (Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+          learnZone(p.lat, p.lng, plannedMin, realMin);
+        }
+      }
+    } catch (_) {}
+  }
+
+  function _onUberPatientsChanged(route) {
+    if (!Array.isArray(route)) return;
+    for (const p of route) {
+      if (!p?.id) continue;
+      if (p.done) {
+        const k = String(p.id) + '|done';
+        if (_observedCompletions.has(k)) continue;
+        _observedCompletions.add(k);
+        _learnFromCompletion(p);
+      } else if (p.absent) {
+        const k = String(p.id) + '|absent';
+        if (_observedCompletions.has(k)) continue;
+        _observedCompletions.add(k);
+        _learnFromCompletion(p);
+      }
+    }
+  }
+
+  function _onNextPatientChanged(p) {
+    if (!p || !p.id) return;
+    /* Pose l'ancre temporelle uniquement la 1ʳᵉ fois pour ce patient */
+    if (!p._started_at_ts) p._started_at_ts = Date.now();
+  }
+
+  function _attachAutoLearningHooks() {
+    if (SMART._autoLearnAttached) return;
+    if (typeof APP === 'undefined' || typeof APP.on !== 'function') {
+      /* APP pas encore prêt — retry avec backoff exponentiel court (max 5s) */
+      const tries = (SMART._autoLearnTries = (SMART._autoLearnTries || 0) + 1);
+      if (tries < 25) {
+        setTimeout(_attachAutoLearningHooks, Math.min(200 * tries, 1000));
+      }
+      return;
+    }
+    SMART._autoLearnAttached = true;
+    try {
+      APP.on('uberPatients', _onUberPatientsChanged);
+      APP.on('nextPatient',  _onNextPatientChanged);
+      /* Premier balayage si déjà des données présentes */
+      _onUberPatientsChanged(APP.get('uberPatients'));
+      _onNextPatientChanged(APP.get('nextPatient'));
+    } catch (_) {}
+  }
+
+  /* ╔══════════════════════════════════════════════╗
      ║ 27. INIT & EXPORTS                             ║
      ╚══════════════════════════════════════════════╝ */
 
   function init() {
+    /* Hook auto-apprentissage : doit être attaché tôt pour ne rien rater */
+    _attachAutoLearningHooks();
+
     /* Charge la météo en arrière-plan si la position est dispo */
     setTimeout(() => {
       try {
@@ -1204,12 +1280,9 @@
     distKm: _distKm,
   });
 
-  /* Init différée : laisse le temps à APP / map / uber de charger */
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  /* Init immédiate : _attachAutoLearningHooks retry tant qu'APP n'est pas prêt,
+     et la météo est différée à 2s. Pas besoin d'attendre DOMContentLoaded. */
+  init();
 
   console.info('[AMI_SMART] Module IA terrain v' + SMART.version + ' chargé');
 })();
