@@ -526,7 +526,18 @@
     if (open) refreshLearningStats();
   }
 
-  function refreshLearningStats() {
+  async function refreshLearningStats() {
+    /* v5.10.5 — relance le scan ET met à jour l'affichage */
+    const smart = SMART();
+    if (smart && typeof smart.rescanLearning === 'function') {
+      try {
+        await smart.rescanLearning();
+      } catch(_) {}
+    }
+    _renderLearningStats();
+  }
+
+  function _renderLearningStats() {
     const el = $('smart-learning-stats');
     if (!el) return;
     let html = '';

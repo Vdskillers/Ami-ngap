@@ -1730,9 +1730,17 @@
         const snapshot  = patients.map(p => ({ ...p }));
         const todayStr  = new Date().toISOString().split('T')[0];
 
-        /* ── Traiter les patients visités mais pas encore cotés
-           (cas où ✅ Terminé a été cliqué mais la cotation async était en cours) ── */
-        const encore = snapshot.filter(p => (p.done || p._done) && !p._cotation?.validated);
+        /* ── Traiter les patients visités mais pas encore cotés ──────────
+           Cas typique : l'IDE a cliqué ✅ Terminé hors mode plein écran, sans
+           que markUberDone n'ait été déclenché (donc pas de cotation auto).
+           v5.10.6 : on EXCLUT les patients dont _afterDoneFlowDone est true
+           — ceux-là ont déjà eu leur signature + cotation + CR via
+           _uberAfterDoneFlow et n'ont pas besoin d'être ré-attaqués. */
+        const encore = snapshot.filter(p =>
+          (p.done || p._done)
+          && !p._cotation?.validated
+          && !p._afterDoneFlowDone
+        );
         if (encore.length > 0) {
           if (typeof showToast === 'function') showToast(`⚙️ Finalisation de ${encore.length} cotation(s)…`);
           const BATCH = 4;
@@ -3361,13 +3369,13 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Modules dépendant de Leaflet -->
-<script src="js/map.js?v=5.10.4"></script>
-<script src="js/uber.js?v=5.10.2"></script>
+<script src="js/map.js?v=5.10.5"></script>
+<script src="js/uber.js?v=5.10.6"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
 <script src="js/ai-tournee.js?v=5.10.2"></script>
-<script src="js/ai-smart-tour.js?v=5.10.4"></script><!-- 🧠 v5.10 : Couches IA terrain (no-show, difficulté, météo, autopilot opt-in, vocal, simulation) -->
-<script src="js/ai-smart-ui.js?v=5.10.4"></script><!-- 🎨 v5.10.2 : UI pour la couche IA terrain (panneau Pilotage + pills HUD + 3 modals) -->
+<script src="js/ai-smart-tour.js?v=5.10.5"></script><!-- 🧠 v5.10 : Couches IA terrain (no-show, difficulté, météo, autopilot opt-in, vocal, simulation) -->
+<script src="js/ai-smart-ui.js?v=5.10.5"></script><!-- 🎨 v5.10.2 : UI pour la couche IA terrain (panneau Pilotage + pills HUD + 3 modals) -->
 <script src="js/ai-assistant.js?v=5.9.2"></script>
 <script src="js/pwa.js?v=3.8"></script>
 <script src="js/sw-version-check.js?v=1.0"></script><!-- Purge cache PWA déclenchée par admin -->

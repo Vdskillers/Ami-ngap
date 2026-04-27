@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════════════
-   ai-smart-tour.js — AMI NGAP v5.10.4
+   ai-smart-tour.js — AMI NGAP v5.10.5
    ────────────────────────────────────────────────────────────────────
    Couches d'intelligence terrain pour la Tournée IA :
 
@@ -56,7 +56,7 @@
 
   const SMART = (window.AMI_SMART = window.AMI_SMART || {});
   SMART._loaded = true;
-  SMART.version = '5.10.4';
+  SMART.version = '5.10.5';
 
   /* Configuration globale (modifiable par l'IDE via UI) */
   const CFG = (SMART.config = {
@@ -1194,7 +1194,6 @@
   function _attachAutoLearningHooks() {
     if (SMART._autoLearnAttached) return;
     if (typeof APP === 'undefined' || typeof APP.on !== 'function') {
-      /* APP pas encore prêt — retry avec backoff exponentiel court (max 5s) */
       const tries = (SMART._autoLearnTries = (SMART._autoLearnTries || 0) + 1);
       if (tries < 25) {
         setTimeout(_attachAutoLearningHooks, Math.min(200 * tries, 1000));
@@ -1205,10 +1204,95 @@
     try {
       APP.on('uberPatients', _onUberPatientsChanged);
       APP.on('nextPatient',  _onNextPatientChanged);
-      /* Premier balayage si déjà des données présentes */
       _onUberPatientsChanged(APP.get('uberPatients'));
       _onNextPatientChanged(APP.get('nextPatient'));
     } catch (_) {}
+
+    /* v5.10.5 — Polling défensif (toutes les 5s)
+       Certaines mutations done/absent se font EN PLACE sur les objets
+       (markUberDone : p.done = true sans APP.set('uberPatients', …)).
+       Le listener APP.on() ne se déclenche donc pas. Le polling scanne
+       le store et alimente les apprentissages quoi qu'il arrive. */
+    if (!SMART._autoLearnPollInterval) {
+      SMART._autoLearnPollInterval = setInterval(() => {
+        try {
+          _onUberPatientsChanged(APP.get('uberPatients'));
+          _scanHistoriqueOnce();
+        } catch(_) {}
+      }, 5000);
+    }
+  }
+
+  /* v5.10.5 — Scan de l'historique IDB une seule fois pour rattraper
+     les patients déjà facturés AVANT le déploiement de l'observateur
+     (tournées passées dont les stats ne sont pas dans localStorage).
+     Lit window._cotationsHistoryCache si dispo (rempli par dashboard.js)
+     ou IDB.cotations directement si idbGet est exposé. */
+  let _historiqueScanned = false;
+  async function _scanHistoriqueOnce() {
+    if (_historiqueScanned) return;
+    _historiqueScanned = true;
+
+    try {
+      let cotations = [];
+      const cache = window._cotationsHistoryCache;
+      if (Array.isArray(cache) && cache.length) {
+        cotations = cache;
+      } else if (typeof window.idbGetAll === 'function') {
+        try { cotations = await window.idbGetAll('cotations') || []; } catch {}
+      } else {
+        /* Tentative sur le cache localStorage du dashboard */
+        try {
+          const keys = Object.keys(localStorage).filter(k => k.startsWith('ami_dash_'));
+          for (const k of keys) {
+            const raw = JSON.parse(localStorage.getItem(k) || '{}');
+            if (Array.isArray(raw.data)) cotations.push(...raw.data);
+          }
+        } catch {}
+      }
+
+      if (!cotations.length) return;
+      let learned = 0;
+      for (const c of cotations) {
+        if (!c?.patient_id) continue;
+        const k = String(c.patient_id) + '|done';
+        if (_observedCompletions.has(k)) continue;
+        _observedCompletions.add(k);
+
+        const lat = +c.lat || +c.patient_lat;
+        const lng = +c.lng || +c.patient_lng;
+        const plannedMin = +c.duration_min || 10;
+        const realMin    = +c.real_min || +c.duration_real_min || plannedMin;
+
+        try {
+          updateDifficulty(c.patient_id, { plannedMin, realMin });
+          updateNoShow(c.patient_id, { lateMin: 0 });
+          const patientLike = {
+            id: c.patient_id,
+            description: c.description || c.actes || '',
+            actes_recurrents: c.actes_recurrents || '',
+          };
+          const type = getPatientType(patientLike);
+          learnType(type, plannedMin, realMin);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            learnZone(lat, lng, plannedMin, realMin);
+          }
+          learned++;
+        } catch (_) {}
+      }
+      if (learned > 0) {
+        console.info(`[AMI_SMART] Apprentissage rattrapé : ${learned} cotations historiques`);
+      }
+    } catch(_) {}
+  }
+
+  /* Force un re-scan de l'historique IDB (appelé par le bouton "Rafraîchir").
+     Ne re-comptabilise PAS le store uberPatients en cours (déjà fait par
+     le polling), seulement l'historique pour rattraper les anciennes
+     tournées non observées. */
+  function rescanLearning() {
+    _historiqueScanned = false;
+    return _scanHistoriqueOnce();
   }
 
   /* ╔══════════════════════════════════════════════╗
@@ -1278,6 +1362,8 @@
     parseHour: _parseHour,
     nowMinutes: _nowMinutes,
     distKm: _distKm,
+    /* v5.10.5 — relance manuelle de l'apprentissage */
+    rescanLearning,
   });
 
   /* Init immédiate : _attachAutoLearningHooks retry tant qu'APP n'est pas prêt,

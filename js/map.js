@@ -1089,6 +1089,8 @@ function closeHeatmap() {
 /**
  * openHeatmap — ouvre le panneau et tente d'afficher la heatmap.
  * Le panneau est affiché même sans données (message contextuel).
+ * v5.10.5 — Hydrate les coords manquantes depuis IDB patients quand
+ * possible. Affiche un résumé de rentabilité globale même sans GPS.
  */
 async function openHeatmap() {
   _heatmapPanelOpen = true;
@@ -1119,27 +1121,75 @@ async function openHeatmap() {
     return;
   }
 
-  // 3. Calcule + tente le rendu Leaflet
+  // 3. v5.10.5 — Hydrater les coords manquantes depuis IDB patients
+  await _hydrateCotationsCoords(cotations);
+
+  // 4. Calcule la grille et tente le rendu Leaflet
   const grid = computeHeatmap(cotations);
   await renderHeatmap(grid);
-  _showHeatmapPanel(grid);
+  _showHeatmapPanel(grid, cotations);
 }
 
 /**
- * _showHeatmapPanel — affiche le panneau de résumé des zones
+ * _hydrateCotationsCoords — complète les lat/lng manquants en allant
+ * chercher dans IDB patients (clé patient_id). Évite "Aucune donnée GPS"
+ * quand l'API renvoie des cotations sans coords mais que le fichier
+ * patient en a.
  */
-function _showHeatmapPanel(grid) {
+async function _hydrateCotationsCoords(cotations) {
+  const missing = cotations.filter(c => (!c.lat || !c.lng) && c.patient_id);
+  if (!missing.length) return;
+
+  /* Source 1 : IDB patients via API publique d'AMI */
+  let patients = [];
+  try {
+    if (typeof window.idbGetAll === 'function') {
+      patients = await window.idbGetAll('patients') || [];
+    }
+  } catch {}
+
+  /* Source 2 : APP.get('myFiches') si dispo (carnet patient en mémoire) */
+  if (!patients.length && typeof APP !== 'undefined' && typeof APP.get === 'function') {
+    try {
+      const f = APP.get('myFiches');
+      if (Array.isArray(f)) patients = f;
+    } catch {}
+  }
+
+  if (!patients.length) return;
+
+  const byId = {};
+  for (const p of patients) {
+    if (p?.id) byId[String(p.id)] = p;
+    if (p?.patient_id) byId[String(p.patient_id)] = p;
+  }
+
+  for (const c of missing) {
+    const p = byId[String(c.patient_id)];
+    if (p?.lat && p?.lng) {
+      c.lat = +p.lat;
+      c.lng = +p.lng;
+    }
+  }
+}
+
+/**
+ * _showHeatmapPanel — affiche le panneau de résumé des zones.
+ * v5.10.5 — Affiche TOUJOURS un résumé rentabilité (CA, €/h moyen, nb cotations)
+ * même si aucune zone GPS, pour ne plus avoir un panneau "Aucune donnée GPS".
+ */
+function _showHeatmapPanel(grid, cotations) {
   let panel = document.getElementById('heatmap-panel');
   if (!panel) {
     panel = document.createElement('div');
     panel.id = 'heatmap-panel';
-    panel.style.cssText = 'position:absolute;top:80px;right:12px;z-index:1000;background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;width:220px;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    panel.style.cssText = 'position:absolute;top:80px;right:12px;z-index:1000;background:var(--s);border:1px solid var(--b);border-radius:10px;padding:14px;width:240px;box-shadow:0 4px 20px rgba(0,0,0,.3)';
     const mapEl = document.getElementById('dep-map');
     if (mapEl) mapEl.appendChild(panel);
     else document.body.appendChild(panel);
   }
 
-  const entries = Object.values(grid)
+  const entries = Object.values(grid || {})
     .sort((a, b) => (b.revenue_per_hour || 0) - (a.revenue_per_hour || 0))
     .slice(0, 5);
 
@@ -1152,13 +1202,52 @@ function _showHeatmapPanel(grid) {
     </div>`;
   }).join('');
 
+  /* Résumé global (toujours affiché) — utile même sans GPS */
+  let summaryHtml = '';
+  if (Array.isArray(cotations) && cotations.length) {
+    const totalRevenue = cotations.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
+    const totalTime    = cotations.reduce((s, c) => s + (parseFloat(c.duration) || 0), 0); // sec
+    const avgPerVisit  = cotations.length ? totalRevenue / cotations.length : 0;
+    const avgPerHour   = totalTime > 0 ? totalRevenue / (totalTime / 3600) : 0;
+
+    summaryHtml = `
+      <div style="background:rgba(124,77,255,.08);border:1px solid rgba(124,77,255,.25);border-radius:8px;padding:8px 10px;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--m);margin-bottom:4px">📊 Résumé global (3 mois)</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+          <span style="color:var(--m)">CA</span><strong>${totalRevenue.toFixed(0)} €</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+          <span style="color:var(--m)">Moyenne / visite</span><strong>${avgPerVisit.toFixed(1)} €</strong>
+        </div>
+        ${avgPerHour > 0 ? `
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+          <span style="color:var(--m)">€ / heure</span><strong style="color:${avgPerHour > 35 ? '#22c55e' : avgPerHour > 20 ? '#f59e0b' : '#ef4444'}">${avgPerHour.toFixed(1)} €/h</strong>
+        </div>` : ''}
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--m);padding:2px 0">
+          <span>Cotations</span><span>${cotations.length}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  let zonesHtml;
+  if (entries.length) {
+    zonesHtml = `<div style="font-size:11px;color:var(--m);margin-bottom:4px">🗺️ Top zones GPS</div>${rows}`;
+  } else if (Array.isArray(cotations) && cotations.length) {
+    /* Données présentes mais sans coords GPS exploitables */
+    zonesHtml = `<div style="font-size:11px;color:var(--m);line-height:1.5">⚠️ Tes cotations n'ont pas encore de coordonnées GPS.<br>La carte des zones rentables se construit à partir des patients géolocalisés.</div>`;
+  } else {
+    zonesHtml = '<div style="font-size:12px;color:var(--m)">Aucune donnée GPS.</div>';
+  }
+
   panel.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div style="font-weight:700;font-size:13px">🔥 Zones rentables</div>
       <button onclick="closeHeatmap()" style="background:none;border:none;cursor:pointer;color:var(--m);font-size:18px;padding:0;line-height:1" title="Fermer">×</button>
     </div>
-    ${rows || '<div style="font-size:12px;color:var(--m)">Aucune donnée GPS.</div>'}
-    <div style="margin-top:8px;font-size:10px;color:var(--m)">Basé sur ${Object.keys(grid).length} zone(s)</div>`;
+    ${summaryHtml}
+    ${zonesHtml}
+    ${entries.length ? `<div style="margin-top:8px;font-size:10px;color:var(--m)">Basé sur ${Object.keys(grid).length} zone(s)</div>` : ''}`;
 
   panel.style.display = 'block';
 }

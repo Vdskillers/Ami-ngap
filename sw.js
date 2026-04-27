@@ -1,31 +1,26 @@
-/* sw.js — AMI NGAP Service Worker v5.10.4
+/* sw.js — AMI NGAP Service Worker v5.10.6
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
-   ✅ v5.0-5.7 — Mode GPS plein écran, retard, signature non-bloquante, etc.
    ✅ v5.10.0 — Couches IA terrain (no-show, difficulté, météo, autopilot opt-in,
               vocal, simulation) — module ai-smart-tour.js
-   ✅ v5.10.1 — Suppression de la feature "Éviter autoroutes / Éviter péages"
-              (UI + logique OSRM exclude) — itinéraire OSRM standard partout
-   ✅ v5.10.2 — UI dédiée pour la couche IA terrain : panneau "Intelligence
-              terrain" dans Pilotage, status pills dans HUD Mode Uber Médical,
-              3 modals (config mode auto, simulation, suggestion ajustement)
-              → module ai-smart-ui.js
+   ✅ v5.10.1 — Suppression "Éviter autoroutes / péages"
+   ✅ v5.10.2 — UI dédiée IA terrain
    ✅ v5.10.3 — Fix anti-spam vocal partiel
-   ✅ v5.10.4 — Trois fixes :
-              • Auto-apprentissage : observateur APP.on() qui alimente
-                automatiquement les stats (zones, no-show, difficulté, types)
-                à chaque transition done/absent — plus besoin d'appel
-                explicite à completePatient(). Retry interne tant qu'APP
-                n'est pas prêt.
-              • Vocal : annonce de retard UNE SEULE fois par patient
-                (plus de réannonce sur aggravation).
-              • Heatmap : bouton × ferme toujours proprement (closeHeatmap
-                exposé global), panneau s'affiche même sans données avec
-                message contextuel admin/IDE.
+   ✅ v5.10.4 — Auto-apprentissage + 1 annonce/patient + heatmap close
+   ✅ v5.10.5 — Polling défensif + rattrapage historique + heatmap résumé
+   ✅ v5.10.6 — Mode GPS plein écran : auto-clôture du dernier patient
+              • Désactivation du bouton "Terminer" pendant le flow
+                (anti double-clic → anti double signature)
+              • Garde anti-réentrance dans markUberDone et _uberAfterDoneFlow
+              • Suppression du délai 600ms inutile avant l'auto-clôture
+              • terminerTourneeAvecBilan exclut désormais les patients dont
+                _afterDoneFlowDone est vrai (pas de re-cotation parasite)
+              • Bilan de fin de tournée s'affiche immédiatement après le
+                dernier patient, sans intervention manuelle
 */
 
-const CACHE_VERSION = 'ami-v5.10.4';
+const CACHE_VERSION = 'ami-v5.10.6';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

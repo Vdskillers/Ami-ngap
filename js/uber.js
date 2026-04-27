@@ -800,6 +800,20 @@ async function _autoCoterEtImporterPatient(p) {
 async function _uberAfterDoneFlow(p) {
   if (!p) return;
 
+  /* ⚡ v5.10.6 — GARDE ANTI-RÉENTRANCE :
+     Si _uberAfterDoneFlow est appelée alors qu'elle est déjà active sur
+     ce même patient, on ignore — empêche les doublons signature.
+     Si _afterDoneFlowDone est déjà true, idem (cas batch terminerTourneeAvecBilan). */
+  if (p._afterDoneFlowInFlight) {
+    console.info('[AMI] _uberAfterDoneFlow : déjà actif pour', p.id, '→ skip');
+    return;
+  }
+  if (p._afterDoneFlowDone) {
+    console.info('[AMI] _uberAfterDoneFlow : déjà terminé pour', p.id, '→ skip');
+    return;
+  }
+  p._afterDoneFlowInFlight = true;
+
   // ⚡ v5.4 — Récap des actions réalisées pendant le flow.
   // Permet d'afficher un toast final synthétique :
   // "✍️ Signature OK · 📋 CR créé · ✅ 2 consentements à jour"
@@ -1033,6 +1047,12 @@ async function _uberAfterDoneFlow(p) {
       showToast(parts.join(' · '), toastType);
     }
   }
+
+  /* ⚡ v5.10.6 — Marquer le flow comme terminé pour ce patient.
+     Empêche toute ré-entrée future (ex : terminerTourneeAvecBilan
+     qui boucle sur les patients done sans cotation validée). */
+  p._afterDoneFlowDone = true;
+  p._afterDoneFlowInFlight = false;
 }
 
 /**
@@ -1188,6 +1208,22 @@ async function _uberAutoEnsureConsentements(p, invoiceId) {
 
 async function markUberDone() {
   const p = APP.get('nextPatient'); if (!p) return;
+
+  /* ⚡ v5.10.6 — GARDE ANTI-DOUBLE-FLOW :
+     Si l'IDE clique deux fois rapidement (ou si markUberDone est ré-appelée
+     pendant que _uberAfterDoneFlow est encore en cours), on ignore
+     silencieusement la deuxième invocation pour ce patient.
+     Empêche : doublons cotation, doublons signature, doublons CR. */
+  if (p._markDoneInFlight) {
+    console.info('[AMI] markUberDone : flow déjà en cours pour', p.id, '→ ignore');
+    return;
+  }
+  if (p._afterDoneFlowDone) {
+    console.info('[AMI] markUberDone : déjà terminé pour', p.id, '→ ignore');
+    return;
+  }
+  p._markDoneInFlight = true;
+
   p.done = true;
 
   // ⚡ Mémoriser l'heure RÉELLE du clic "Terminer" — point d'ancrage unique.
@@ -1205,8 +1241,11 @@ async function markUberDone() {
   // peuvent await pour synchroniser leur logique aval.
   try {
     await _uberAfterDoneFlow(p);
+    p._afterDoneFlowDone = true;
   } catch (e) {
     console.warn('[AMI] markUberDone flow KO:', e?.message);
+  } finally {
+    p._markDoneInFlight = false;
   }
 
   /* ⚡ Depuis le refactor liste unique : renderLivePatientList est la seule fonction
@@ -1872,8 +1911,11 @@ function _uberFSIsLastPatient() {
  * exactement le comportement du clic "🏁 Clôturer la journée" du Pilotage.
  * Utilisée par _uberFSEndPatient et _uberFSAbsentPatient lorsqu'il s'agit
  * du dernier patient de la journée.
+ *
+ * v5.10.6 : appelée APRÈS `await markUberDone()`, donc la cotation et la
+ * signature sont déjà finalisées — pas besoin de délai d'attente.
  */
-function _uberFSAutoCloseDay(reason) {
+async function _uberFSAutoCloseDay(reason) {
   if (typeof terminerTourneeAvecBilan !== 'function') return;
 
   if (typeof showToast === 'function') {
@@ -1883,45 +1925,60 @@ function _uberFSAutoCloseDay(reason) {
     showToast(msg);
   }
 
-  // Délai court : laisse markUberDone()/markUberAbsent() finaliser leur cotation
-  // async (selectBestPatient + _autoCoterEtImporterPatient en arrière-plan)
-  // avant que terminerTourneeAvecBilan ne fasse son inventaire.
-  setTimeout(async () => {
-    try {
-      // Fermer l'overlay AVANT d'ouvrir la modale Bilan, sinon le bilan
-      // s'affiche derrière la carte plein écran et reste invisible.
-      closeUberFullscreenGPS();
+  try {
+    // Fermer l'overlay AVANT d'ouvrir la modale Bilan, sinon le bilan
+    // s'affiche derrière la carte plein écran et reste invisible.
+    closeUberFullscreenGPS();
 
-      // skipConfirm: true → bypass du dialogue "Clôturer la journée ?"
-      // La logique métier (km journal + bilan) est strictement identique
-      // à celle déclenchée par le bouton 🏁 Clôturer du Pilotage.
-      await terminerTourneeAvecBilan({ skipConfirm: true });
-    } catch (e) {
-      logErr('[Uber FS] auto-clôture KO:', e);
-      if (typeof showToast === 'function')
-        showToast('⚠️ Erreur clôture auto — clique sur 🏁 Clôturer la journée', 'wa');
-    }
-  }, 600);
+    // skipConfirm: true → bypass du dialogue "Clôturer la journée ?"
+    // La logique métier (km journal + bilan) est strictement identique
+    // à celle déclenchée par le bouton 🏁 Clôturer du Pilotage.
+    // Petit délai 100ms pour laisser le DOM se mettre à jour après remove().
+    await new Promise(r => setTimeout(r, 100));
+    await terminerTourneeAvecBilan({ skipConfirm: true });
+  } catch (e) {
+    logErr('[Uber FS] auto-clôture KO:', e);
+    if (typeof showToast === 'function')
+      showToast('⚠️ Erreur clôture auto — clique sur 🏁 Clôturer la journée', 'wa');
+  }
 }
 
 async function _uberFSEndPatient() {
   if (typeof markUberDone !== 'function') return;
 
-  // Snapshot AVANT markUberDone : sert à détecter si le patient qu'on vient
-  // de terminer était le dernier (= aucun autre patient restant).
-  const _estDernier = _uberFSIsLastPatient();
+  // ⚡ v5.10.6 — Désactiver le bouton pendant le flow pour éviter les
+  // doubles clics qui généreraient une double signature.
+  const btn = document.querySelector('button[onclick="_uberFSEndPatient()"]');
+  if (btn) {
+    if (btn.disabled) return; // déjà en cours
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.style.pointerEvents = 'none';
+  }
 
-  // Cotation + import + km incrémental + sélection du patient suivant
-  await markUberDone();
+  try {
+    // Snapshot AVANT markUberDone : sert à détecter si le patient qu'on vient
+    // de terminer était le dernier (= aucun autre patient restant).
+    const _estDernier = _uberFSIsLastPatient();
 
-  // markUberDone déclenche selectBestPatient → APP.set('nextPatient', ...)
-  // → notre listener APP.on('nextPatient') re-render automatiquement.
-  // Recadrer sur le nouveau prochain patient
-  setTimeout(() => _uberFSFitView(), 200);
+    // Cotation + import + km incrémental + sélection du patient suivant
+    await markUberDone();
 
-  // ── Si c'était le dernier patient → auto-clôture journée ─────────────
-  // Réplique exactement le comportement du clic "🏁 Clôturer la journée".
-  if (_estDernier) _uberFSAutoCloseDay('done');
+    // markUberDone déclenche selectBestPatient → APP.set('nextPatient', ...)
+    // → notre listener APP.on('nextPatient') re-render automatiquement.
+    // Recadrer sur le nouveau prochain patient
+    setTimeout(() => _uberFSFitView(), 200);
+
+    // ── Si c'était le dernier patient → auto-clôture journée ─────────────
+    // Réplique exactement le comportement du clic "🏁 Clôturer la journée".
+    if (_estDernier) await _uberFSAutoCloseDay('done');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      btn.style.pointerEvents = '';
+    }
+  }
 }
 
 /**
@@ -1950,7 +2007,7 @@ async function _uberFSAbsentPatient() {
   setTimeout(() => _uberFSFitView(), 200);
 
   // Si c'était le dernier patient → auto-clôture journée
-  if (_estDernier) _uberFSAutoCloseDay('absent');
+  if (_estDernier) await _uberFSAutoCloseDay('absent');
 }
 
 async function _uberFSRecalcRoute() {
