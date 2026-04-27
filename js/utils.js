@@ -356,6 +356,9 @@ function _netTtlForPath(path, body) {
 
 async function _apiFetch(path, body, retry = true, _attempt = 0) {
   const isIA    = path.includes('ami-calcul') || path.includes('ami-historique') || path.includes('ami-copilot');
+  // ✅ v8.8 — Endpoints admin : pas de retry sur 503 (worker degraded → user clique manuellement Rafraîchir)
+  //   Évite le triplement d'erreurs console quand le worker hit son CPU budget en cold-start.
+  const isAdminRead = /\/webhook\/admin-(syshealth|logs|stats|liste|security-stats)/.test(path);
   const TIMEOUT = isIA ? 55000 : 8000;
 
   // Clé de cache/dédup : path + hash du body
@@ -376,10 +379,14 @@ async function _apiFetch(path, body, retry = true, _attempt = 0) {
 
       if (res.status === 401) { ss.clear(); if (typeof showAuthOv === 'function') showAuthOv(); throw new Error('Session expirée — reconnectez-vous'); }
 
-      // 503 → throw pour que NET._exec retente avec backoff
+      // 503 → throw pour que NET._exec retente avec backoff (sauf admin : pas de retry)
       if (res.status === 503) {
         const text = await res.clone().text().catch(() => '');
-        throw new Error('503 ' + text.slice(0, 50));
+        // ✅ v8.8 — Erreur taggée pour que les caller distinguent un 503 d'une vraie erreur
+        const e503 = new Error('503 ' + text.slice(0, 50));
+        e503.code = 'WORKER_503';
+        e503.transient = true;
+        throw e503;
       }
 
       const data = await _safeParseResponse(res);
@@ -394,7 +401,9 @@ async function _apiFetch(path, body, retry = true, _attempt = 0) {
   }, {
     priority:  _netPriorityForPath(path),
     ttl:       _netTtlForPath(path, body),
-    retry:     2,
+    // ✅ v8.8 — Admin reads : 0 retry. Évite le pic 9× quand le worker est degraded.
+    //   Les autres endpoints gardent retry: 2 pour résister aux blips DNS transitoires.
+    retry:     isAdminRead ? 0 : 2,
     dedupe:    true,
     cacheable: true,
   });

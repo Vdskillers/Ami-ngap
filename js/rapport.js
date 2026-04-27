@@ -259,6 +259,10 @@ async function loadSystemHealth() {
   try {
     // ✅ v8.5 — Tente d'abord l'endpoint unifié /admin-syshealth (1 seul fetch),
     //   fallback sur admin-logs + admin-stats si le worker ne supporte pas encore.
+    // ✅ v8.8 — Sur 503 (worker degraded/cold-start CPU), on ne cascade PAS vers
+    //   le fallback admin-logs + admin-stats (qui hit la même cause racine et
+    //   triplerait les erreurs console). On bubble l'erreur taggée vers le catch
+    //   externe qui affiche un message propre.
     let logs, stats;
     try {
       const sh = await wpost('/webhook/admin-syshealth', {});
@@ -271,7 +275,15 @@ async function loadSystemHealth() {
         throw new Error('admin-syshealth non disponible');
       }
     } catch (e) {
-      // Fallback ancien comportement (parallèle)
+      // ✅ v8.8 — Si c'est un 503 (worker degraded), pas de cascade : remonte direct
+      //   au catch externe avec tag pour affichage UI propre.
+      if (e && (e.code === 'WORKER_503' || e.transient || /\b503\b/.test(String(e.message||'')))) {
+        const e503 = new Error('Service de monitoring temporairement indisponible (worker degraded).');
+        e503.code = 'WORKER_503';
+        e503.transient = true;
+        throw e503;
+      }
+      // Fallback ancien comportement (parallèle) — uniquement pour autres erreurs
       const [logsResp, statsResp] = await Promise.all([
         wpost('/webhook/admin-logs', {}),
         wpost('/webhook/admin-stats', {}),
@@ -439,7 +451,22 @@ async function loadSystemHealth() {
     if (elView) elView.innerHTML = html;
 
   } catch(e) {
-    const errHtml = `<div class="ai er">⚠️ Impossible de charger le monitoring : ${e.message}</div>`;
+    // ✅ v8.8 — UI explicite et actionnable sur 503 vs autres erreurs.
+    //   503 = worker temporairement degraded (CPU cold-start, DNS overflow…) →
+    //   user clique Réessayer dans 15-30s, le cache edge servira la requête.
+    const is503 = e && (e.code === 'WORKER_503' || e.transient || /\b503\b/.test(String(e.message||'')));
+    const errHtml = is503
+      ? `<div style="background:rgba(255,181,71,.08);border:1px solid rgba(255,181,71,.3);
+           border-radius:var(--r);padding:18px;text-align:center">
+           <div style="font-size:32px;margin-bottom:8px">⏸️</div>
+           <div style="font-weight:600;margin-bottom:6px">Monitoring temporairement indisponible</div>
+           <div style="font-size:12px;color:var(--m);margin-bottom:14px;line-height:1.5">
+             Le worker est en pic de charge (cold-start ou cache DNS Cloudflare saturé).<br>
+             Le cache edge se rétablit en 15-30 secondes — réessayez dans un instant.
+           </div>
+           <button class="btn bs bsm" onclick="loadSystemHealth()">↻ Réessayer</button>
+         </div>`
+      : `<div class="ai er">⚠️ Impossible de charger le monitoring : ${e.message}</div>`;
     if (elAdm)  elAdm.innerHTML  = errHtml;
     if (elView) elView.innerHTML = errHtml;
   }
