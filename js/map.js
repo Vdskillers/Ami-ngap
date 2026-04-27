@@ -879,8 +879,12 @@ async function useLiveMyLocation() {
           (async function() {
             try {
               const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
+              // v5.8 — Honore la préférence autoroutes
+              const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
+                ? window._osrmExcludeParam()
+                : '';
               const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
-                + '?overview=full&geometries=geojson&steps=false';
+                + '?overview=full&geometries=geojson&steps=false' + exclude;
               const res  = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
               const data = await res.json();
 

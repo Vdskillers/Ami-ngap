@@ -211,7 +211,12 @@ function getTrafficInfo(departureMin) {
 function _cacheKey(a, b) {
   /* Arrondi à 4 décimales (~11m précision) pour maximiser les hits */
   if (!a?.lat || !a?.lng || !b?.lat || !b?.lng) return null;
-  return `${a.lat.toFixed(4)},${a.lng.toFixed(4)}-${b.lat.toFixed(4)},${b.lng.toFixed(4)}`;
+  // v5.8 — Suffixe selon mode autoroute pour ne pas mélanger les caches.
+  // 'auto' (défaut) → suffixe vide ; 'avoid' → suffixe '_noauto'.
+  const suffix = (typeof window !== 'undefined' && typeof window._osrmCacheKeySuffix === 'function')
+    ? window._osrmCacheKeySuffix()
+    : '';
+  return `${a.lat.toFixed(4)},${a.lng.toFixed(4)}-${b.lat.toFixed(4)},${b.lng.toFixed(4)}${suffix}`;
 }
 
 async function cachedTravel(a, b) {
@@ -323,7 +328,11 @@ function _anyMirrorAvailable() {
 async function getTravelTimeOSRM(a, b) {
   if (!a?.lat || !b?.lat) return 999;
   try {
-    const rel = `/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
+    // v5.8 — Honore la préférence autoroutes si helper dispo
+    const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
+      ? window._osrmExcludeParam()
+      : '';
+    const rel = `/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false${exclude}`;
     const r = await _osrmFetch(rel);
     const d = await r.json();
     if (d.code !== 'Ok') return _euclideanMin(a, b);
@@ -369,7 +378,11 @@ async function precomputeTravelTable(patients, startPoint) {
 
   try {
     const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
-    const rel = `/table/v1/driving/${coords}?annotations=duration`;
+    // v5.8 — Honore la préférence autoroutes
+    const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
+      ? window._osrmExcludeParam()
+      : '';
+    const rel = `/table/v1/driving/${coords}?annotations=duration${exclude}`;
     const r = await _osrmFetch(rel, { timeoutMs: 15_000 });
     const d = await r.json();
     if (d.code !== 'Ok' || !Array.isArray(d.durations)) {

@@ -455,7 +455,11 @@ async function startVoiceNavigation(patient) {
   if (!pos) { speak('Position GPS non disponible.'); return; }
 
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${patient.lng},${patient.lat}?steps=true&overview=simplified&language=fr`;
+    // v5.8 — Honore la préférence autoroutes
+    const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
+      ? window._osrmExcludeParam()
+      : '';
+    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${patient.lng},${patient.lat}?steps=true&overview=simplified&language=fr${exclude}`;
     const r = await fetch(url);
     const d = await r.json();
     if (d.code === 'Ok') {

@@ -205,19 +205,14 @@ function _savePlanning(patients) {
       String(_now.getMonth() + 1).padStart(2, '0'),
       String(_now.getDate()).padStart(2, '0'),
     ].join('-');
-    // ⚡ v4.1 — Stamper la date d'assignation sur chaque patient sans date — JAMAIS écraser une date existante
-    //          Si _dateFixed=true mais date absente → on RÉ-applique la date stockée (jamais de re-stamp aujourd'hui).
-    //          Ce flag médico-légal garantit qu'un patient ajouté un dimanche ne glisse pas au lundi.
+    // ⚡ Stamper la date d'assignation sur chaque patient sans date — JAMAIS écraser une date existante
+    // Sans ça, la date serait recalculée à chaque renderPlanning → glissement quotidien
     const patientsWithDate = (patients || []).map(p => {
       if (!p) return p;
-      // Date déjà présente → on la conserve et on (re)marque verrouillée
+      // Date déjà présente → on la normalise au format YYYY-MM-DD si possible mais on la conserve
       if (p.date || p.date_soin || p.date_prevue) {
+        // Marquer comme verrouillée pour empêcher tout futur écrasement
         return { ...p, _dateFixed: true };
-      }
-      // _dateFixed=true mais date manquante : ne PAS re-stamper aujourd'hui
-      // (cas pathologique d'une mutation qui a effacé p.date) — on saute simplement
-      if (p._dateFixed === true) {
-        return p;
       }
       return { ...p, date: todayFixed, _dateFixed: true, _dateStampedAt: Date.now() };
     });
@@ -1614,27 +1609,15 @@ function _planningResetAll() {
 /* Préférence autoroutes — 'auto' (inclure, défaut) | 'avoid' (éviter) */
 if (typeof APP !== 'undefined') APP._routeAutoroutes = APP._routeAutoroutes || 'auto';
 
+// v5.8 — Délégation au setter centralisé exposé par uber.js
+// (qui gère persistance localStorage + sync UI multi-panneaux + event)
 function _setRouteAutoroutes(mode) {
+  if (typeof window._setRouteAutoroutesGlobal === 'function') {
+    window._setRouteAutoroutesGlobal(mode);
+    return;
+  }
+  // Fallback si uber.js pas encore chargé : comportement minimal d'origine
   if (typeof APP !== 'undefined') APP._routeAutoroutes = mode;
-  // Mettre à jour le style des boutons
-  const btnAuto   = document.getElementById('btn-route-auto');
-  const btnNoAuto = document.getElementById('btn-route-noauto');
-  const lbl       = document.getElementById('route-autoroute-label');
-  if (btnAuto) {
-    btnAuto.style.background   = mode === 'auto' ? 'rgba(0,212,170,.15)' : 'var(--s)';
-    btnAuto.style.borderColor  = mode === 'auto' ? 'rgba(0,212,170,.4)'  : 'var(--b)';
-    btnAuto.style.color        = mode === 'auto' ? 'var(--a)' : 'var(--m)';
-  }
-  if (btnNoAuto) {
-    btnNoAuto.style.background  = mode === 'avoid' ? 'rgba(255,181,71,.15)' : 'var(--s)';
-    btnNoAuto.style.borderColor = mode === 'avoid' ? 'rgba(255,181,71,.4)'  : 'var(--b)';
-    btnNoAuto.style.color       = mode === 'avoid' ? 'var(--w)' : 'var(--m)';
-  }
-  if (lbl) lbl.textContent = mode === 'avoid'
-    ? '🚫 Autoroutes exclues — routes nationales / dép.'
-    : '✅ Itinéraire standard';
-  if (typeof showToast === 'function')
-    showToast(mode === 'avoid' ? '🚫 Autoroutes exclues — relancez l\'optimisation' : '✅ Autoroutes incluses — relancez l\'optimisation');
 }
 window._setRouteAutoroutes = _setRouteAutoroutes;
 
@@ -5145,14 +5128,6 @@ function _validateCotationLive() {
                       || (typeof _localDateStr === 'function' ? _localDateStr() : new Date().toISOString().slice(0, 10)),
     _heure_reelle:  existingHeureMem || heureReelleLive, // ⚡ propagé à _syncCotationsToSupabase
   };
-
-  // ⚡ v4.1 — Persister IMMÉDIATEMENT le flag validated:true dans localStorage planning.
-  //          Sans ça, au prochain reload, le compteur "X cotation(s) validée(s)" repasse à 0
-  //          alors que la cotation EST bien sauvegardée en IDB + Supabase.
-  //          Doctrine : la validation d'une cotation = une preuve de soin, jamais perdue.
-  try {
-    if (typeof _syncPlanningStorage === 'function') _syncPlanningStorage();
-  } catch (_) {}
 
   // Sync Supabase + sauvegarde IDB en séquence pour garantir la cohérence
   // skipIDB=true : évite que _syncCotationsToSupabase relise l'IDB et double-envoie

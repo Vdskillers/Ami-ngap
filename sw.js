@@ -1,36 +1,21 @@
-/* sw.js — AMI NGAP Service Worker v5.7
+/* sw.js — AMI NGAP Service Worker v5.9
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
-   ✅ v4.9 — bump version + nettoyage résidus SANDBOX + fallback navigation durci
-   ✅ Navigation preload activé pour cold start plus rapide
-   ✅ Purge agressive des anciens caches (ami-* ET amitest-*)
-   ✅ v5.0 — Mode GPS plein écran Uber Médical (uber.js + mobile-premium.css)
-   ✅ v5.1 — Auto-clôture journée + journal km au dernier patient en GPS plein écran
-   ✅ v5.2 — Bouton ❌ Absent dans HUD GPS plein écran + auto-clôture si dernier
-   ✅ v5.3 — Détection retard fonctionnelle : toast + alerte + bouton recalculer
-              + badge ⏰ dans liste patients + marker rouge ⏰ sur carte plein écran
-              + promotion clinique automatique (insuline/glycémie/chimio)
-   ✅ v5.4 — Flow unifié bouton Terminer (Mode classique ET GPS plein écran) :
-              cotation → modale signature → CR de passage auto → consentements auto
-              tous écrits dans IDB → carnet patient onglets Cotation/Consent/CR
-   ✅ v5.5 — Toast récap dynamique après chaque clic Terminer
-   ✅ v5.6 — Fix overlay GPS qui masquait la modale signature (z-index 9999 vs 1500)
-              + flag _sigSaveInProgress pour synchroniser saveSignature
-   ✅ v5.7 — Fix CRITIQUE : la modale signature s'ouvre IMMÉDIATEMENT au clic
-              Terminer, sans attendre l'API CPAM (peut prendre 5-30s). La cotation
-              tourne en parallèle (Promise non-awaited), l'API est awaited APRÈS la
-              fermeture de la modale uniquement pour le CR/consentements.
-              Avant ce fix : "rien ne se passait" 5-30s avant que la modale apparaisse.
-              + Fix CRITIQUE saveSignature : la certification HMAC-SHA256 (2-10s)
-              ne bloque plus la fermeture de la modale. La signature locale est
-              persistée immédiatement avec server_cert=null, le HMAC tourne en
-              arrière-plan et upgrade le row IDB quand il arrive (sinon file
-              d'attente comme avant). Toast "🔒 Preuve serveur certifiée" différé.
-              + Canvas willReadFrequently:true pour supprimer le warning navigateur.
+   ✅ v5.0-5.7 — Mode GPS plein écran, retard, signature non-bloquante, etc.
+   ✅ v5.8 — Préférence routage 🛣️ Autoroutes / 🌳 Routes nationales (1 toggle)
+   ✅ v5.9 — Préférence routage 2 toggles indépendants :
+              - 🛣️ Éviter autoroutes (motorway)
+              - 💸 Éviter péages (toll)
+              - Combinables : 4 modes possibles (Standard / RN+péage / RN sans péage /
+                Autoroute gratuite uniquement)
+              - Pill HUD GPS plein écran "+12 min vs autoroute" (cache 10 min)
+              - Ligne info Pilotage avant Optimiser : gain/perte cumulé sur tournée
+              - Localstorage v2 : 'ami_route_pref_v2' (JSON) — migration auto v5.8
+              - Helper _osrmExcludeParam() retourne motorway, toll, motorway,toll, ou ''
 */
 
-const CACHE_VERSION = 'ami-v5.7';
+const CACHE_VERSION = 'ami-v5.9';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

@@ -1497,6 +1497,18 @@
           <button class="btn bs bsm" style="color:var(--d);border-color:rgba(255,95,109,.3);background:rgba(255,95,109,.05)" onclick="resetTourneeJour()">🗑️ Réinitialiser la tournée</button>
         </div>
 
+        <!-- ── v5.9 — Préférence routage : 2 toggles indépendants ── -->
+        <div style="margin-top:12px;padding:10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r)">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1px;flex-shrink:0">ROUTAGE :</span>
+            <button id="btn-avoid-motorway" class="btn bsm" data-active="0" onclick="_setRoutePrefGlobal({avoidMotorway: !_getRoutePref().avoidMotorway})" style="font-size:11px;padding:5px 10px"><span>🛣️</span> Éviter autoroutes</button>
+            <button id="btn-avoid-toll" class="btn bsm" data-active="0" onclick="_setRoutePrefGlobal({avoidToll: !_getRoutePref().avoidToll})" style="font-size:11px;padding:5px 10px"><span>💸</span> Éviter péages</button>
+            <span id="route-autoroute-label" class="route-autoroute-label" style="font-size:10px;color:var(--m);font-family:var(--fm);flex:1;min-width:140px;text-align:right">✅ Itinéraire standard</span>
+          </div>
+          <!-- Ligne d'info diff de temps (affichée seulement si exclusions actives) -->
+          <div id="pilotage-route-diff" style="display:none;margin-top:8px;font-size:11px;font-family:var(--fm);text-align:center"></div>
+        </div>
+
 
         <!-- ══ PANEL CABINET MULTI-IDE ══ -->
         <div id="tur-cabinet-panel" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(0,212,170,.25);border-radius:10px;background:rgba(0,212,170,.04)">
@@ -1619,6 +1631,14 @@
           <button class="btn bv bsm" onclick="recalcRouteUber()"><span>🔄</span> Recalculer route</button>
           <button class="btn bs bsm" onclick="selectBestPatient()"><span>🧠</span> Meilleur suivant</button>
           <button class="btn bd bsm" id="btn-urgent-add" onclick="openUrgentPatientModal()" style="background:rgba(255,95,109,.1);border-color:rgba(255,95,109,.4);color:#ff5f6d;font-weight:600"><span>🚨</span> + Urgent</button>
+        </div>
+
+        <!-- ── v5.9 — Préférence routage : 2 toggles indépendants ── -->
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--s);border:1px solid var(--b);border-radius:var(--r)">
+          <span style="font-family:var(--fm);font-size:10px;color:var(--m);letter-spacing:1px;flex-shrink:0">ROUTAGE :</span>
+          <button id="btn-avoid-motorway-uber" class="btn bsm" data-active="0" onclick="_setRoutePrefGlobal({avoidMotorway: !_getRoutePref().avoidMotorway})" style="font-size:11px;padding:5px 10px"><span>🛣️</span> Éviter autoroutes</button>
+          <button id="btn-avoid-toll-uber" class="btn bsm" data-active="0" onclick="_setRoutePrefGlobal({avoidToll: !_getRoutePref().avoidToll})" style="font-size:11px;padding:5px 10px"><span>💸</span> Éviter péages</button>
+          <span class="route-autoroute-label" style="font-size:10px;color:var(--m);font-family:var(--fm);flex:1;min-width:140px;text-align:right">✅ Itinéraire standard</span>
         </div>
         <div id="uber-tracking-status" style="font-family:var(--fm);font-size:11px;color:var(--m);margin-bottom:6px">⏸️ GPS non démarré — cliquez sur "Démarrer la journée"</div>
         <div id="uber-progress" style="display:none"></div>
@@ -3360,20 +3380,20 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Modules dépendant de Leaflet -->
-<script src="js/map.js?v=3.8"></script>
-<script src="js/uber.js?v=5.7"></script>
+<script src="js/map.js?v=5.9"></script>
+<script src="js/uber.js?v=5.9"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
-<script src="js/ai-tournee.js?v=3.8"></script>
-<script src="js/ai-assistant.js?v=3.8"></script>
+<script src="js/ai-tournee.js?v=5.9"></script>
+<script src="js/ai-assistant.js?v=5.9"></script>
 <script src="js/pwa.js?v=3.8"></script>
 <script src="js/sw-version-check.js?v=1.0"></script><!-- Purge cache PWA déclenchée par admin -->
 
 <!-- Tournée — dépend de tout ce qui précède -->
-<script src="js/tournee.js?v=5.3"></script>
+<script src="js/tournee.js?v=5.9"></script>
 
 <!-- Extras — fonctions complémentaires de ami-ngap.html -->
-<script src="js/extras.js?v=5.3"></script>
+<script src="js/extras.js?v=5.9"></script>
 
 <!-- Onboarding — intros contextuelles par section (première visite) -->
 <script src="js/onboarding.js?v=3.8"></script>
