@@ -1224,12 +1224,51 @@ async function _uberFSAcquireWakeLock() {
 /* ── Wrappers boutons HUD : délèguent à la logique métier existante ── */
 
 async function _uberFSEndPatient() {
-  if (typeof markUberDone === 'function') {
-    await markUberDone();
-    // markUberDone déclenche selectBestPatient → APP.set('nextPatient', ...)
-    // → notre listener APP.on('nextPatient') re-render automatiquement.
-    // Recadrer sur le nouveau prochain patient
-    setTimeout(() => _uberFSFitView(), 200);
+  if (typeof markUberDone !== 'function') return;
+
+  // Snapshot AVANT markUberDone : sert à détecter si le patient qu'on vient
+  // de terminer était le dernier (= aucun autre patient restant).
+  // On compte les "restants AVANT ce clic" — s'il n'y en a qu'un (= celui en
+  // cours), alors c'est le dernier de la journée.
+  const _before = (APP.get('uberPatients') || []);
+  const _restantsAvant = _before.filter(p => !p.done && !p.absent).length;
+  const _estDernier = (_restantsAvant <= 1);
+
+  // Cotation + import + km incrémental + sélection du patient suivant
+  await markUberDone();
+
+  // markUberDone déclenche selectBestPatient → APP.set('nextPatient', ...)
+  // → notre listener APP.on('nextPatient') re-render automatiquement.
+  // Recadrer sur le nouveau prochain patient
+  setTimeout(() => _uberFSFitView(), 200);
+
+  // ── Si c'était le dernier patient → auto-clôture journée ─────────────
+  // Réplique exactement le comportement du clic "🏁 Clôturer la journée"
+  // du Mode Uber Médical, y compris l'écriture du journal kilométrique
+  // (km de retour cabinet, journal_km IDB, sync serveur via _syncKmToServer).
+  if (_estDernier && typeof terminerTourneeAvecBilan === 'function') {
+    if (typeof showToast === 'function')
+      showToast('✅ Dernier patient terminé — clôture de la journée…');
+
+    // Délai court : laisse markUberDone() finaliser sa cotation async
+    // (selectBestPatient + _autoCoterEtImporterPatient en arrière-plan)
+    // avant que terminerTourneeAvecBilan ne fasse son inventaire.
+    setTimeout(async () => {
+      try {
+        // Fermer l'overlay AVANT d'ouvrir la modale Bilan, sinon le bilan
+        // s'affiche derrière la carte plein écran et reste invisible.
+        closeUberFullscreenGPS();
+
+        // skipConfirm: true → bypass du dialogue "Clôturer la journée ?"
+        // La logique métier (km journal + bilan) est strictement identique
+        // à celle déclenchée par le bouton 🏁 Clôturer du Pilotage.
+        await terminerTourneeAvecBilan({ skipConfirm: true });
+      } catch (e) {
+        logErr('[Uber FS] auto-clôture KO:', e);
+        if (typeof showToast === 'function')
+          showToast('⚠️ Erreur clôture auto — clique sur 🏁 Clôturer la journée', 'wa');
+      }
+    }, 600);
   }
 }
 

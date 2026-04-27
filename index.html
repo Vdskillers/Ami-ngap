@@ -1716,8 +1716,9 @@
          2. Arrêter le timer et clôturer la journée
          3. Afficher le bilan final
          ════════════════════════════════════════════════════════════════ */
-      async function terminerTourneeAvecBilan() {
-        if (!confirm(
+      async function terminerTourneeAvecBilan(opts) {
+        const _skipConfirm = !!(opts && opts.skipConfirm);
+        if (!_skipConfirm && !confirm(
           'Clôturer la journée ?\n\n' +
           '• Le chronomètre sera arrêté\n' +
           '• Le bilan de la tournée sera affiché\n' +
@@ -3360,7 +3361,7 @@
 
 <!-- Modules dépendant de Leaflet -->
 <script src="js/map.js?v=3.8"></script>
-<script src="js/uber.js?v=5.0"></script>
+<script src="js/uber.js?v=5.1"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
 <script src="js/ai-tournee.js?v=3.8"></script>
