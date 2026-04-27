@@ -411,16 +411,34 @@ async function pilSave() {
     });
   });
 
-  // ── UPSERT : si on édite un pilulier existant, conserver son id et sa date_creation ──
-  // Sinon, c'est un nouveau pilulier → date_creation = maintenant.
-  // Doctrine : jamais de doublon. Un pilulier chargé puis sauvegardé doit être MAJ, pas dupliqué.
+  const semaineDebutForm = document.getElementById('pil-semaine-debut')?.value || _getMondayISO();
+
+  // ── UPSERT DÉFENSIF v4.1 — Doctrine : Patient existe → Upsert, jamais de push aveugle.
+  //    1) Si _pilCurrentEditId set → on l'utilise (mode édition explicite)
+  //    2) Sinon, on cherche un pilulier existant par (patient_id + semaine_debut)
+  //       avant de créer une nouvelle entrée. Empêche les doublons même si le
+  //       Charger depuis carnet n'a pas pu résoudre l'id.
+  //    3) Sinon seulement → création (autoIncrement attribuera un nouvel id)
+  let resolvedEditId = _pilCurrentEditId || null;
+  if (!resolvedEditId) {
+    try {
+      const existingForPatient = await _pilulierGetAll(_pilCurrentPatient);
+      const matchByWeek = existingForPatient.find(p => p.semaine_debut === semaineDebutForm);
+      if (matchByWeek?.id != null) {
+        resolvedEditId = matchByWeek.id;
+        console.info('[Pilulier] Upsert défensif : pilulier existant trouvé pour', _pilCurrentPatient, 'semaine', semaineDebutForm, '→ id', resolvedEditId);
+      }
+    } catch (_) { /* sans correspondance, on créera une nouvelle entrée */ }
+  }
+
+  // Conserver la date_creation d'origine si on édite/upsert
   let originalCreation = new Date().toISOString();
-  if (_pilCurrentEditId) {
+  if (resolvedEditId) {
     try {
       const db = await _pilulierDb();
       const existing = await new Promise((res, rej) => {
         const tx  = db.transaction(PILULIER_STORE, 'readonly');
-        const req = tx.objectStore(PILULIER_STORE).get(_pilCurrentEditId);
+        const req = tx.objectStore(PILULIER_STORE).get(resolvedEditId);
         req.onsuccess = e => res(e.target.result);
         req.onerror   = e => rej(e.target.error);
       });
@@ -429,18 +447,18 @@ async function pilSave() {
   }
 
   const obj = {
-    // Inclure l'id uniquement en mode édition (sinon autoIncrement attribue un nouvel id)
-    ...(_pilCurrentEditId ? { id: _pilCurrentEditId } : {}),
+    // Inclure l'id uniquement en mode édition/upsert (sinon autoIncrement attribue un nouvel id)
+    ...(resolvedEditId ? { id: resolvedEditId } : {}),
     patient_id:     _pilCurrentPatient,
     user_id:        APP?.user?.id || '',
     meds:           JSON.parse(JSON.stringify(_pilMeds)), // inclut jours[]
-    semaine_debut:  document.getElementById('pil-semaine-debut')?.value || _getMondayISO(),
+    semaine_debut:  semaineDebutForm,
     preparateur:    document.getElementById('pil-preparateur')?.value?.trim() || '',
     date_creation:  originalCreation,
     date_maj:       new Date().toISOString(),
   };
   try {
-    const wasEdit = !!obj.id; // true si on avait un id avant le save (mode édition)
+    const wasEdit = !!resolvedEditId; // true si on était en mode édition/upsert avant le save
     const savedId = await _pilulierSave(obj);
     // Mémoriser l'id pour les saves suivants — qu'on vienne de créer ou de modifier,
     // les saves suivants doivent continuer à modifier ce même pilulier.
@@ -494,7 +512,27 @@ async function pilLoadHistory() {
   try {
     const all = await _pilulierGetAll(_pilCurrentPatient);
     if (!all.length) { list.innerHTML = '<div class="empty"><p>Aucun pilulier enregistré.</p></div>'; return; }
-    list.innerHTML = all.slice(0, 10).map(p => {
+
+    // ⚡ v4.1 — Déduplication d'affichage par semaine_debut : la version la plus
+    //          récente (par date_maj puis date_creation) gagne. Permet de masquer
+    //          les doublons hérités d'anciens bugs sans suppression destructive.
+    //          all est déjà trié date_creation desc par _pilulierGetAll.
+    const seenByWeek = new Map();
+    const dedup = [];
+    for (const p of all) {
+      const wk = p.semaine_debut || '';
+      if (!wk) { dedup.push(p); continue; }
+      if (seenByWeek.has(wk)) continue; // on garde la 1ère vue (la plus récente)
+      seenByWeek.set(wk, true);
+      dedup.push(p);
+    }
+    const totalRaw = all.length;
+    const totalShown = dedup.length;
+    const dupNotice = totalRaw > totalShown
+      ? `<div style="font-size:11px;color:var(--m);margin-bottom:8px;font-style:italic">ℹ️ ${totalRaw - totalShown} doublon(s) masqué(s) à l'affichage.</div>`
+      : '';
+
+    list.innerHTML = dupNotice + dedup.slice(0, 10).map(p => {
       const d = new Date(p.date_creation).toLocaleDateString('fr-FR');
       const nbMeds = (p.meds||[]).filter(m=>m.nom).length;
       return `

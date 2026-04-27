@@ -205,14 +205,19 @@ function _savePlanning(patients) {
       String(_now.getMonth() + 1).padStart(2, '0'),
       String(_now.getDate()).padStart(2, '0'),
     ].join('-');
-    // ⚡ Stamper la date d'assignation sur chaque patient sans date — JAMAIS écraser une date existante
-    // Sans ça, la date serait recalculée à chaque renderPlanning → glissement quotidien
+    // ⚡ v4.1 — Stamper la date d'assignation sur chaque patient sans date — JAMAIS écraser une date existante
+    //          Si _dateFixed=true mais date absente → on RÉ-applique la date stockée (jamais de re-stamp aujourd'hui).
+    //          Ce flag médico-légal garantit qu'un patient ajouté un dimanche ne glisse pas au lundi.
     const patientsWithDate = (patients || []).map(p => {
       if (!p) return p;
-      // Date déjà présente → on la normalise au format YYYY-MM-DD si possible mais on la conserve
+      // Date déjà présente → on la conserve et on (re)marque verrouillée
       if (p.date || p.date_soin || p.date_prevue) {
-        // Marquer comme verrouillée pour empêcher tout futur écrasement
         return { ...p, _dateFixed: true };
+      }
+      // _dateFixed=true mais date manquante : ne PAS re-stamper aujourd'hui
+      // (cas pathologique d'une mutation qui a effacé p.date) — on saute simplement
+      if (p._dateFixed === true) {
+        return p;
       }
       return { ...p, date: todayFixed, _dateFixed: true, _dateStampedAt: Date.now() };
     });
@@ -5140,6 +5145,14 @@ function _validateCotationLive() {
                       || (typeof _localDateStr === 'function' ? _localDateStr() : new Date().toISOString().slice(0, 10)),
     _heure_reelle:  existingHeureMem || heureReelleLive, // ⚡ propagé à _syncCotationsToSupabase
   };
+
+  // ⚡ v4.1 — Persister IMMÉDIATEMENT le flag validated:true dans localStorage planning.
+  //          Sans ça, au prochain reload, le compteur "X cotation(s) validée(s)" repasse à 0
+  //          alors que la cotation EST bien sauvegardée en IDB + Supabase.
+  //          Doctrine : la validation d'une cotation = une preuve de soin, jamais perdue.
+  try {
+    if (typeof _syncPlanningStorage === 'function') _syncPlanningStorage();
+  } catch (_) {}
 
   // Sync Supabase + sauvegarde IDB en séquence pour garantir la cohérence
   // skipIDB=true : évite que _syncCotationsToSupabase relise l'IDB et double-envoie

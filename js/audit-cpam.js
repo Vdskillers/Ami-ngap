@@ -342,6 +342,28 @@ async function auditLancer() {
   const actives = results.filter(r => r.score > 0).sort((a,b) => b.score - a.score);
   const ok      = results.filter(r => r.score === 0);
 
+  // ⚡ v4.1 — Enregistrer un snapshot horodaté pour l'historique de conformité.
+  //          Avant : seul le mode contrôle CPAM sauvait → audits simples perdus.
+  //          Maintenant : chaque "Lancer l'audit" laisse une trace cumulative
+  //                       (preuve juridique de la vigilance régulière de l'IDE).
+  try {
+    if (window.BSI_ENGINE?.saveTrustSnapshot) {
+      // Score de confiance dérivé du global risk (inverse) — cohérent avec le mode contrôle
+      const trustEquivalent = Math.max(0, 100 - global.score);
+      window.BSI_ENGINE.saveTrustSnapshot({
+        trustScore:   trustEquivalent,
+        trustLabel:   global.label,
+        riskLevel:    global.niveau || global.label,
+        riskScore:    global.score,
+        bsiIssues:    0, // l'audit simple ne fait pas de check BSI
+        ngapRisk:     global.score,
+        cotations:    cotations.length,
+        mois_periode: mois,
+        source:       'audit_simple',
+      });
+    }
+  } catch (e) { console.warn('[auditLancer] snapshot KO:', e.message); }
+
   resultEl.innerHTML = `
     <!-- Score global -->
     <div style="background:${global.bg};border:1px solid ${global.border};border-radius:14px;padding:24px;margin-bottom:20px;text-align:center">
@@ -392,7 +414,8 @@ async function auditLancer() {
     </div>
 
     <!-- Export -->
-    <div style="margin-top:16px;text-align:right">
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn bs bsm" onclick="auditShowHistoriqueConformite()">📅 Historique de conformité</button>
       <button class="btn bs bsm" onclick="auditExportPDF(${global.score}, '${global.niveau}', ${cotations.length}, ${mois})">🖨️ Imprimer le rapport</button>
     </div>
   `;
@@ -531,7 +554,8 @@ async function auditModeControleCPAM() {
       ngapCompliance, bsiCoherence,
       riskScore: cpamRisk.score, riskMax: cpamRisk.max,
     });
-    // 🆕 Enregistrer snapshot mensuel pour historique de conformité
+    // 🆕 Enregistrer snapshot horodaté pour historique de conformité
+    //     v4.1 — source taggée pour différencier audit simple vs mode contrôle
     window.BSI_ENGINE.saveTrustSnapshot({
       trustScore:   trust.score,
       trustLabel:   trust.label,
@@ -540,6 +564,7 @@ async function auditModeControleCPAM() {
       bsiIssues:    bsiIssues.length,
       ngapRisk:     globalRisk.score,
       cotations:    cotations.length,
+      source:       'audit_controle',
     });
   }
 
@@ -648,25 +673,28 @@ function auditShowHistoriqueConformite() {
 
   const history = window.BSI_ENGINE.getTrustHistory();
   if (!history.length) {
-    resultEl.innerHTML = `<div class="ai in">📅 Aucun historique de conformité — lancez le mode contrôle CPAM chaque mois pour constituer une preuve juridique de votre vigilance.</div>
-    <div style="margin-top:12px"><button class="btn bp" onclick="auditModeControleCPAM()">🛡️ Lancer le mode contrôle</button></div>`;
+    resultEl.innerHTML = `<div class="ai in">📅 Aucun historique de conformité — lancez un audit pour constituer une preuve juridique de votre vigilance.</div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp" onclick="auditLancer()">🔍 Lancer un audit</button><button class="btn bs" onclick="auditModeControleCPAM()">🛡️ Mode contrôle CPAM</button></div>`;
     return;
   }
 
-  const months = {
-    '01':'Jan','02':'Fév','03':'Mar','04':'Avr','05':'Mai','06':'Juin',
-    '07':'Juil','08':'Août','09':'Sep','10':'Oct','11':'Nov','12':'Déc',
-  };
-  const rows = history.map(h => {
-    const [y, m] = h.month.split('-');
-    const label = `${months[m] || m} ${y}`;
+  // ⚡ v4.1 — Affichage par snapshot avec date précise (pas juste le mois).
+  //          Permet de visualiser plusieurs audits par mois et d'en supprimer un.
+  const rows = history.slice().reverse().map(h => {
+    const dateLabel = h.iso_date
+      ? new Date(h.iso_date).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+      : (h.date || h.month);
     const col = h.trustScore >= 85 ? '#22c55e' : h.trustScore >= 70 ? '#84cc16' : h.trustScore >= 50 ? '#f59e0b' : '#ef4444';
+    const sourceTag = h.source === 'audit_simple' ? '<span style="font-size:10px;color:var(--m);font-family:var(--fm);margin-left:6px">audit simple</span>'
+                    : h.source === 'audit_controle' ? '<span style="font-size:10px;color:#3b82f6;font-family:var(--fm);margin-left:6px">contrôle CPAM</span>'
+                    : '';
     return `
-      <div style="display:grid;grid-template-columns:110px 1fr 80px 100px;gap:10px;align-items:center;padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;margin-bottom:6px">
-        <div style="font-size:12px;font-weight:600;color:var(--t);font-family:var(--fm)">${label}</div>
+      <div style="display:grid;grid-template-columns:auto 1fr 80px 120px 32px;gap:10px;align-items:center;padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;margin-bottom:6px">
+        <div style="font-size:11px;font-weight:600;color:var(--t);font-family:var(--fm);min-width:130px">${dateLabel}${sourceTag}</div>
         <div style="height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden"><div style="height:100%;width:${h.trustScore}%;background:${col};border-radius:4px"></div></div>
         <div style="font-family:var(--fs);font-size:18px;color:${col};text-align:right">${h.trustScore}</div>
         <div style="font-size:11px;color:var(--m);font-family:var(--fm);text-align:right">${h.trustLabel||''}</div>
+        <button onclick="auditDeleteHistorySnapshot('${(h.key||'').replace(/'/g,'')}')" title="Supprimer cet audit de l'historique" style="background:none;border:none;color:var(--d);cursor:pointer;font-size:14px;padding:2px">🗑</button>
       </div>`;
   }).join('');
 
@@ -681,7 +709,7 @@ function auditShowHistoriqueConformite() {
         <span style="font-size:24px">📅</span>
         <div>
           <div style="font-size:16px;font-weight:700;color:var(--a)">Historique de conformité</div>
-          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Preuve juridique de votre vigilance mensuelle</div>
+          <div style="font-size:11px;color:var(--m);font-family:var(--fm)">Preuve juridique de votre vigilance — ${history.length} audit(s) enregistré(s)</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px">
@@ -690,22 +718,38 @@ function auditShowHistoriqueConformite() {
           <div style="font-family:var(--fs);font-size:22px;color:var(--t);margin-top:2px">${latest.trustScore}</div>
         </div>
         <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Moyenne ${history.length} mois</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Moyenne (${history.length} audit${history.length>1?'s':''})</div>
           <div style="font-family:var(--fs);font-size:22px;color:var(--t);margin-top:2px">${avg}</div>
         </div>
         <div style="background:var(--s);border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Tendance</div>
+          <div style="font-size:10px;color:var(--m);font-family:var(--fm)">Tendance vs précédent</div>
           <div style="font-family:var(--fs);font-size:22px;color:${trend>=0?'#22c55e':'#ef4444'};margin-top:2px">${trend>=0?'+':''}${trend}</div>
         </div>
       </div>
     </div>
-    <div class="lbl" style="margin-bottom:10px">📊 Évolution mensuelle</div>
+    <div class="lbl" style="margin-bottom:10px">📊 Évolution chronologique (du plus récent au plus ancien)</div>
     ${rows}
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn bp" onclick="auditModeControleCPAM()"><span>🛡️</span> Relancer le contrôle</button>
+      <button class="btn bp" onclick="auditLancer()"><span>🔍</span> Nouvel audit</button>
+      <button class="btn bs" onclick="auditModeControleCPAM()"><span>🛡️</span> Mode contrôle CPAM</button>
       <button class="btn bs" onclick="auditExportHistoriqueConformite()"><span>🖨️</span> Imprimer l'historique</button>
     </div>
   `;
+}
+
+/* ⚡ v4.1 — Supprime un snapshot d'audit de l'historique (avec confirmation) */
+function auditDeleteHistorySnapshot(key) {
+  if (!key) return;
+  if (!confirm('Supprimer cet audit de l\'historique ?\n\nCette action est irréversible.')) return;
+  try {
+    if (window.BSI_ENGINE?.deleteTrustSnapshot) {
+      window.BSI_ENGINE.deleteTrustSnapshot(key);
+      if (typeof showToast === 'function') showToast('success', 'Audit supprimé de l\'historique');
+      auditShowHistoriqueConformite(); // re-rendre la liste
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', e.message);
+  }
 }
 
 /* ════════════════════════════════════════════════
@@ -775,14 +819,24 @@ function auditExportHistoriqueConformite() {
 
   const w = window.open('','_blank');
   const infNom = `${APP?.user?.prenom||''} ${APP?.user?.nom||''}`.trim() || '—';
-  const months = {
-    '01':'Janvier','02':'Février','03':'Mars','04':'Avril','05':'Mai','06':'Juin',
-    '07':'Juillet','08':'Août','09':'Septembre','10':'Octobre','11':'Novembre','12':'Décembre',
-  };
-  const rows = history.map(h => {
-    const [y, m] = h.month.split('-');
+  // ⚡ v4.1 — Adapté au nouveau format timestamp ISO (rétro-compat avec ancien mensuel)
+  const rows = history.slice().reverse().map(h => {
+    let dateLabel;
+    if (h.iso_date && /^\d{4}-\d{2}-\d{2}T/.test(h.iso_date)) {
+      dateLabel = new Date(h.iso_date).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    } else if (h.month) {
+      const months = {'01':'Janvier','02':'Février','03':'Mars','04':'Avril','05':'Mai','06':'Juin','07':'Juillet','08':'Août','09':'Septembre','10':'Octobre','11':'Novembre','12':'Décembre'};
+      const [y, m] = h.month.split('-');
+      dateLabel = `${months[m]||m} ${y}`;
+    } else {
+      dateLabel = h.date || '—';
+    }
+    const sourceTag = h.source === 'audit_simple' ? 'Audit simple'
+                    : h.source === 'audit_controle' ? 'Contrôle CPAM'
+                    : '—';
     return `<tr>
-      <td style="border:1px solid #ddd;padding:6px 10px">${months[m]} ${y}</td>
+      <td style="border:1px solid #ddd;padding:6px 10px">${dateLabel}</td>
+      <td style="border:1px solid #ddd;padding:6px 10px">${sourceTag}</td>
       <td style="border:1px solid #ddd;padding:6px 10px">${h.trustScore}/100</td>
       <td style="border:1px solid #ddd;padding:6px 10px">${h.trustLabel||'—'}</td>
       <td style="border:1px solid #ddd;padding:6px 10px">${h.riskLevel||'—'}</td>
@@ -791,13 +845,13 @@ function auditExportHistoriqueConformite() {
   }).join('');
 
   w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Historique de conformité — AMI</title>
-    <style>body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:720px;margin:0 auto}h1{font-size:18px;color:#007a6a}table{border-collapse:collapse;width:100%;margin:14px 0}th,td{font-size:12px}th{background:#f0f0f0;padding:8px;border:1px solid #ddd;text-align:left}@media print{@page{margin:15mm}}</style>
+    <style>body{font-family:Arial,sans-serif;padding:30px;color:#000;max-width:780px;margin:0 auto}h1{font-size:18px;color:#007a6a}table{border-collapse:collapse;width:100%;margin:14px 0}th,td{font-size:11px}th{background:#f0f0f0;padding:8px;border:1px solid #ddd;text-align:left}@media print{@page{margin:15mm}}</style>
     </head><body>
     <h1>📅 Historique de conformité — AMI</h1>
     <p><strong>Infirmier(ère) :</strong> ${infNom} · <strong>Date d'édition :</strong> ${new Date().toLocaleString('fr-FR')}</p>
-    <p>Ce document atteste de la vigilance mensuelle continue exercée par le professionnel sur la conformité NGAP de son activité.</p>
+    <p>Ce document atteste de la vigilance continue exercée par le professionnel sur la conformité NGAP de son activité. ${history.length} audit(s) consigné(s).</p>
     <table>
-      <thead><tr><th>Mois</th><th>Score confiance</th><th>Évaluation</th><th>Risque CPAM</th><th>Cotations</th></tr></thead>
+      <thead><tr><th>Date / heure</th><th>Type d'audit</th><th>Score confiance</th><th>Évaluation</th><th>Risque CPAM</th><th>Cotations</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <p style="margin-top:40px;font-size:11px">Signature :  _________________________</p>

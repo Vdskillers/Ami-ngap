@@ -303,20 +303,43 @@ function computeTrustScore({
 ═══════════════════════════════════════════════ */
 const TRUST_HISTORY_KEY = () => `ami_trust_history_${APP?.user?.id || 'anon'}`;
 
-function saveTrustSnapshot(snapshot) {
+/**
+ * Sauvegarde un snapshot d'audit de conformité.
+ *
+ * ⚡ v4.1 — Indexation par TIMESTAMP ISO (et non plus par mois) pour permettre
+ *           plusieurs audits par mois sans écrasement. Cumulatif par défaut.
+ *           Rétro-compat : les anciens snapshots stockés avec clé "YYYY-MM"
+ *           restent lisibles via getTrustHistory().
+ *
+ * @param {Object} snapshot - Données à enregistrer
+ * @param {Object} opts - { force_unique: true } pour timestamp précis (défaut)
+ *                        { monthly_overwrite: true } pour ancien comportement
+ */
+function saveTrustSnapshot(snapshot, opts) {
   try {
     const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const raw = localStorage.getItem(TRUST_HISTORY_KEY());
     const history = raw ? JSON.parse(raw) : {};
-    history[monthKey] = {
+
+    // ⚡ Clé : par défaut timestamp ISO (YYYY-MM-DDTHH:mm:ss). Permet plusieurs
+    //         audits par mois sans écrasement. Si opts.monthly_overwrite=true,
+    //         on garde l'ancien comportement (1 par mois, écrase) — utile pour
+    //         le bouton "Mode contrôle CPAM" appelé périodiquement.
+    let key;
+    if (opts && opts.monthly_overwrite) {
+      key = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    } else {
+      key = now.toISOString().replace(/\.\d{3}Z$/, 'Z'); // ex: 2026-04-27T14:23:00Z
+    }
+
+    history[key] = {
       ...snapshot,
       saved_at: now.toISOString(),
     };
-    // Garder 24 mois max
+    // Garder 100 entrées max (au lieu de 24 mois) pour permettre l'historique cumulé
     const keys = Object.keys(history).sort();
-    if (keys.length > 24) {
-      const toRemove = keys.slice(0, keys.length - 24);
+    if (keys.length > 100) {
+      const toRemove = keys.slice(0, keys.length - 100);
       toRemove.forEach(k => delete history[k]);
     }
     localStorage.setItem(TRUST_HISTORY_KEY(), JSON.stringify(history));
@@ -334,8 +357,47 @@ function getTrustHistory() {
     const history = JSON.parse(raw);
     return Object.entries(history)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, data]) => ({ month, ...data }));
+      .map(([key, data]) => {
+        // ⚡ Rétro-compat : ancien format "YYYY-MM" → on dérive month + date
+        //                  Nouveau format "YYYY-MM-DDTHH:mm:ssZ" → on extrait month
+        let month, dateLabel, isoDate;
+        if (/^\d{4}-\d{2}$/.test(key)) {
+          // Ancien format mensuel
+          month = key;
+          dateLabel = key;
+          isoDate = data.saved_at || `${key}-01T00:00:00Z`;
+        } else if (/^\d{4}-\d{2}-\d{2}T/.test(key)) {
+          // Nouveau format ISO timestamp
+          month = key.slice(0, 7);
+          dateLabel = key.slice(0, 10);
+          isoDate = key;
+        } else {
+          // Format inconnu → fallback
+          month = key.slice(0, 7);
+          dateLabel = key;
+          isoDate = data.saved_at || new Date().toISOString();
+        }
+        return { key, month, date: dateLabel, iso_date: isoDate, ...data };
+      });
   } catch { return []; }
+}
+
+/* ⚡ v4.1 — Suppression d'un snapshot d'audit par sa clé (utilisé par admin) */
+function deleteTrustSnapshot(key) {
+  try {
+    const raw = localStorage.getItem(TRUST_HISTORY_KEY());
+    if (!raw) return false;
+    const history = JSON.parse(raw);
+    if (history[key]) {
+      delete history[key];
+      localStorage.setItem(TRUST_HISTORY_KEY(), JSON.stringify(history));
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn('[deleteTrustSnapshot]', e.message);
+    return false;
+  }
 }
 
 /* ════════════════════════════════════════════════
@@ -351,6 +413,7 @@ if (typeof window !== 'undefined') {
     computeTrustScore,
     saveTrustSnapshot,
     getTrustHistory,
+    deleteTrustSnapshot,  // ⚡ v4.1
     TARIFS: BSI_TARIFS_2026,
   };
 }

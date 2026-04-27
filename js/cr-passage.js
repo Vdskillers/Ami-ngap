@@ -209,6 +209,10 @@ async function _crGetAllShared() {
 }
 
 let _crCurrentPatient = null;
+// ⚡ v4.1 — Mode édition d'un CR existant. Si non-null, crSave() upserte
+//          (put avec le même id) au lieu d'ajouter un nouveau (add).
+//          Doctrine : Patient existe + CR chargé → MAJ, jamais de doublon.
+let _crEditingId = null;
 
 /* ══════════════════════════════════════════════════════════════════
    🧠 MOTEURS IA CLINIQUES — Résumé, aggravation, timeline, score
@@ -446,6 +450,14 @@ async function renderCompteRendu() {
       </select>
 
       <div id="cr-form-section" style="display:none">
+        <!-- ⚡ Bandeau "Mode édition" — visible uniquement quand un CR est chargé pour modification -->
+        <div id="cr-edit-banner" style="display:none;background:rgba(0,212,170,0.08);border:1px solid #00d4aa;border-radius:10px;padding:10px 14px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--t)">
+            <span style="font-size:14px">✏️</span> <strong>Mode édition</strong> — vous modifiez un compte-rendu existant. La sauvegarde mettra à jour cette entrée.
+          </div>
+          <button class="btn bs bsm" onclick="crNewFromEdit()" title="Repartir d'un CR vierge pour ce patient">🆕 Nouveau CR</button>
+        </div>
+
         <div class="fg" style="margin-bottom:16px">
           <div class="f"><label>Date / Heure de passage</label><input type="datetime-local" id="cr-date" value="${new Date().toISOString().slice(0,16)}"></div>
           <div class="f"><label>Médecin traitant (destinataire)</label><input type="text" id="cr-medecin" placeholder="Dr. ..."></div>
@@ -532,6 +544,8 @@ async function renderCompteRendu() {
 
 async function crSelectPatient(pid) {
   _crCurrentPatient = pid || null;
+  // ⚡ v4.1 — changement de patient → on quitte tout mode édition
+  _crEditingId = null;
   const section  = document.getElementById('cr-form-section');
   const histWrap = document.getElementById('cr-history-wrap');
   const iaWrap   = document.getElementById('cr-ia-wrap');
@@ -544,6 +558,7 @@ async function crSelectPatient(pid) {
   if (section) section.style.display = 'block';
   if (histWrap) histWrap.style.display = 'block';
   if (iaWrap)   iaWrap.style.display = 'block';
+  _crUpdateEditBanner();
   await crLoadHistory();
   await crRenderIntelligence();
 }
@@ -694,7 +709,26 @@ async function crSave() {
     }
   } catch (_) {}
 
+  // ── UPSERT v4.1 : si on édite un CR existant, conserver son id et sa date_creation
+  //                 d'origine. Sinon, c'est un nouveau CR (autoIncrement attribuera un id).
+  //                 Doctrine : Patient existe + _crEditingId trouvé → MAJ, jamais de doublon.
+  let originalSavedAt = null;
+  if (_crEditingId) {
+    try {
+      const db = await _crDb();
+      const existing = await new Promise((res, rej) => {
+        const tx  = db.transaction(CR_STORE, 'readonly');
+        const req = tx.objectStore(CR_STORE).get(_crEditingId);
+        req.onsuccess = e => res(e.target.result);
+        req.onerror   = e => rej(e.target.error);
+      });
+      if (existing?.saved_at) originalSavedAt = existing.saved_at;
+    } catch (_) { /* si lecture KO on garde la nouvelle date */ }
+  }
+
   const obj = {
+    // Inclure l'id uniquement en mode édition (sinon autoIncrement attribue un nouvel id)
+    ...(_crEditingId ? { id: _crEditingId } : {}),
     patient_id:    _crCurrentPatient,
     patient_nom:   patientNom,
     user_id:       APP?.user?.id || '',
@@ -714,12 +748,18 @@ async function crSave() {
     // 🆕 Métadonnées CR en 2 niveaux (règle partagée/privé)
     type:          isShared ? 'shared' : 'private',
     alert:         urgence === 'urgent' || urgence === 'attention',
-    saved_at:      new Date().toISOString(),
+    saved_at:      originalSavedAt || new Date().toISOString(),
+    updated_at:    new Date().toISOString(),
     _cr_version:   2,
   };
   try {
+    const wasEdit = !!_crEditingId; // true si on était en mode édition avant le save
     const newId = await _crSave(obj);
-    showToast('success', isShared ? 'CR sauvegardé et partagé' : 'Compte-rendu sauvegardé');
+    // ⚡ Mémoriser l'id pour les saves suivants — qu'on vienne de créer ou modifier,
+    //    les saves suivants doivent continuer à modifier ce même CR jusqu'à reset/nouveau.
+    _crEditingId = newId;
+    _crUpdateEditBanner();
+    showToast('success', wasEdit ? 'Compte-rendu mis à jour' : (isShared ? 'CR sauvegardé et partagé' : 'Compte-rendu sauvegardé'));
     await crLoadHistory();
     await crRenderIntelligence();
 
@@ -757,6 +797,106 @@ function crReset() {
   });
   const dt = document.getElementById('cr-date');
   if (dt) dt.value = new Date().toISOString().slice(0,16);
+  // ⚡ v4.1 — Reset = on quitte le mode édition (futur save = nouveau CR)
+  _crEditingId = null;
+  _crUpdateEditBanner();
+  const urg = document.getElementById('cr-urgence'); if (urg) urg.value = 'normal';
+  const shr = document.getElementById('cr-shared');  if (shr) shr.checked = false;
+}
+
+/* ⚡ v4.1 — Affiche/masque le bandeau "Mode édition" en fonction de _crEditingId */
+function _crUpdateEditBanner() {
+  const banner = document.getElementById('cr-edit-banner');
+  if (!banner) return;
+  banner.style.display = _crEditingId ? 'flex' : 'none';
+}
+
+/* ⚡ v4.1 — Quitte le mode édition pour repartir d'un CR vierge (sans changer de patient) */
+function crNewFromEdit() {
+  _crEditingId = null;
+  crReset();
+  if (typeof showToast === 'function') showToast('info', 'Nouveau compte-rendu', 'La prochaine sauvegarde créera une nouvelle entrée.');
+}
+
+/* ⚡ v4.1 — Charge un CR existant dans le formulaire pour modification.
+            Doctrine : Patient existe + index trouvé → MAJ, jamais de doublon. */
+async function crEdit(id) {
+  if (!_crCurrentPatient) { if (typeof showToast === 'function') showToast('warning','Sélectionnez d\'abord un patient'); return; }
+  try {
+    const db = await _crDb();
+    const obj = await new Promise((res, rej) => {
+      const tx  = db.transaction(CR_STORE, 'readonly');
+      const req = tx.objectStore(CR_STORE).get(id);
+      req.onsuccess = e => res(e.target.result);
+      req.onerror   = e => rej(e.target.error);
+    });
+    if (!obj) { if (typeof showToast === 'function') showToast('warning','Compte-rendu introuvable'); return; }
+
+    // Pré-remplir tous les champs
+    const setVal = (eid, val) => { const el = document.getElementById(eid); if (el && val != null) el.value = val; };
+    let dateLocal = '';
+    if (obj.date) {
+      try {
+        const d = new Date(obj.date);
+        if (!isNaN(d)) {
+          const pad = n => String(n).padStart(2, '0');
+          dateLocal = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+      } catch (_) {}
+    }
+    setVal('cr-date',          dateLocal);
+    setVal('cr-medecin',       obj.medecin);
+    setVal('cr-actes',         obj.actes);
+    setVal('cr-ta',            obj.ta);
+    setVal('cr-gly',           obj.glycemie);
+    setVal('cr-spo2',          obj.spo2);
+    setVal('cr-temp',          obj.temperature);
+    setVal('cr-fc',            obj.fc);
+    setVal('cr-eva',           obj.eva);
+    setVal('cr-observations',  obj.observations);
+    setVal('cr-transmissions', obj.transmissions);
+    setVal('cr-urgence',       obj.urgence || 'normal');
+    const shr = document.getElementById('cr-shared');
+    if (shr) shr.checked = (obj.type === 'shared');
+
+    // ⚡ Activer le mode édition — la prochaine sauvegarde mettra à jour ce CR
+    _crEditingId = id;
+    _crUpdateEditBanner();
+
+    // Scroll vers le formulaire pour visibilité
+    const formSec = document.getElementById('cr-form-section');
+    if (formSec) formSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (typeof showToast === 'function') showToast('info', 'Mode édition activé', 'Modifiez puis cliquez sur Sauvegarder pour mettre à jour.');
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
+}
+
+/* ⚡ v4.1 — Supprime un CR (avec confirmation), rafraîchit historique + IA */
+async function crDelete(id) {
+  if (!confirm('Supprimer définitivement ce compte-rendu ?\n\nCette action est irréversible.')) return;
+  try {
+    const db = await _crDb();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(CR_STORE, 'readwrite');
+      const req = tx.objectStore(CR_STORE).delete(id);
+      req.onsuccess = () => res();
+      req.onerror   = e => rej(e.target.error);
+    });
+    // Si on supprime le CR en cours d'édition → repartir d'une feuille blanche
+    if (_crEditingId === id) {
+      _crEditingId = null;
+      crReset();
+    }
+    if (typeof showToast === 'function') showToast('success', 'Compte-rendu supprimé');
+    try { if (typeof auditLog === 'function') auditLog('CR_DELETED', { id, patient_id: _crCurrentPatient }); } catch (_) {}
+    await crLoadHistory();
+    await crRenderIntelligence();
+    // Sync silencieuse pour propager la suppression
+    try { await crSyncPush(); } catch (_) {}
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+  }
 }
 
 function crGeneratePDF() {
@@ -815,12 +955,22 @@ async function crLoadHistory() {
       const alertBadge = c.alert
         ? `<span style="display:inline-block;background:rgba(239,68,68,.15);color:#ef4444;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;font-family:var(--fm);margin-left:4px">⚠️ ALERTE</span>`
         : '';
+      // ⚡ v4.1 — Boutons Modifier/Supprimer désactivés sur les CR reçus du cabinet
+      //          (médico-légal : on ne touche pas à un CR rédigé par un collègue)
+      const isMine = !c._from_cabinet;
+      const editingNow = _crEditingId === c.id;
+      const actionsHTML = isMine ? `
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn bs bsm" onclick="crEdit(${c.id})" title="Modifier ce compte-rendu" ${editingNow ? 'style="background:rgba(0,212,170,.15);border-color:var(--a);color:var(--a)"' : ''}>${editingNow ? '✏️ En cours…' : '✏️ Modifier'}</button>
+          <button class="btn bs bsm" onclick="crDelete(${c.id})" title="Supprimer ce compte-rendu" style="color:#ef4444">🗑️ Supprimer</button>
+        </div>` : '';
       return `
         <div style="background:var(--s);border:1px solid var(--b);border-left:3px solid ${urgColors[c.urgence]||'var(--b)'};border-radius:10px;padding:12px;margin-bottom:8px">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
             <div style="font-size:13px;font-weight:600">${d}${originBadge}${alertBadge}</div>
           </div>
           <div style="font-size:12px;color:var(--m);line-height:1.5">${(c.actes||'').slice(0,120)}${(c.actes||'').length>120?'…':''}</div>
+          ${actionsHTML}
         </div>`;
     }).join('');
   } catch (err) {
@@ -1113,6 +1263,9 @@ async function crHandleCabinetPull(item) {
 window.crSelectPatient        = crSelectPatient;
 window.crSave                 = crSave;
 window.crReset                = crReset;
+window.crEdit                 = crEdit;          // ⚡ v4.1
+window.crDelete               = crDelete;        // ⚡ v4.1
+window.crNewFromEdit          = crNewFromEdit;   // ⚡ v4.1
 window.crGeneratePDF          = crGeneratePDF;
 window.crGenerateDoctorPDF    = crGenerateDoctorPDF;
 window.crGenerateDoctorMessage = crGenerateDoctorMessage;

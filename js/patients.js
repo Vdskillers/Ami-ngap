@@ -1807,9 +1807,10 @@ async function _renderComptesRendusForPatient(patientId, p, crList) {
           </div>` : ''}
         </div>
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-          ${isCRIdb ? `<button class="btn bs bsm" onclick="_crEditFromCarnet(${idx},'${patientId}')" title="Modifier ce CR dans le module Compte-rendu">✏️ Modifier</button>` : ''}
+          ${isCRIdb && !cr.from_cabinet ? `<button class="btn bs bsm" onclick="_crEditFromCarnet(${idx},'${patientId}')" title="Modifier ce CR dans le module Compte-rendu">✏️ Modifier</button>` : ''}
+          ${cr._source === 'cotation' ? `<button class="btn bs bsm" onclick="_crEditCotationFromCarnet(${idx},'${patientId}')" title="Modifier la cotation associée">✏️ Modifier</button>` : ''}
           <button class="btn bs bsm" onclick="_crPrintFromCarnet(${idx},'${patientId}')" title="Imprimer ou exporter en PDF">🖨️ PDF</button>
-          ${cr._source === 'cotation' ? '' : `<button class="btn bs bsm" onclick="_crDeleteFromCarnet('${patientId}','${esc(cr._source)}','${esc(String(cr._key))}')" title="Suppression de ce compte-rendu" style="color:#ef4444">🧹 Effacer</button>`}
+          ${cr.from_cabinet ? '' : `<button class="btn bs bsm" onclick="_crDeleteFromCarnet('${patientId}','${esc(cr._source)}','${esc(String(cr._key))}')" title="Supprimer ce compte-rendu" style="color:#ef4444">🗑️ Supprimer</button>`}
         </div>
       </div>`;
   }).join('');
@@ -1937,16 +1938,12 @@ async function _crPrintFromCarnet(idx, patientId) {
 }
 
 /**
- * Suppression d'un compte-rendu — gère 2 scénarios :
+ * Suppression d'un compte-rendu — gère 3 scénarios :
  *   - source 'cr_idb' : suppression dans l'IDB ami_cr (module cr-passage.js)
  *   - sources 'compte_rendus' / 'transmissions' / 'crs' / 'passages' : suppression dans la fiche patient
- *   - source 'cotation' : interdite ici (passer par l'onglet Cotations)
+ *   - source 'cotation' : suppression du tableau cotations[] de la fiche patient + Supabase
  */
 async function _crDeleteFromCarnet(patientId, source, key) {
-  if (source === 'cotation') {
-    if (typeof showToast === 'function') showToast('info', 'Action non disponible', 'Pour supprimer une cotation, utilisez l\'onglet Cotations.');
-    return;
-  }
   if (!confirm(`Supprimer définitivement ce compte-rendu ?\n\nCette action est irréversible.`)) return;
 
   // ── Cas 1 : CR du module cr-passage.js (IDB ami_cr / store comptes_rendus) ──
@@ -1973,6 +1970,8 @@ async function _crDeleteFromCarnet(patientId, source, key) {
 
       if (typeof showToast === 'function') showToast('success', 'Compte-rendu supprimé');
       try { if (typeof auditLog === 'function') auditLog('CR_DELETED', { patient_id: patientId, source, id }); } catch (_) {}
+      // Sync silencieuse pour propager la suppression
+      try { if (typeof crSyncPush === 'function') crSyncPush().catch(()=>{}); } catch (_) {}
       _patTab('cr', patientId);
     } catch (err) {
       if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
@@ -1980,7 +1979,42 @@ async function _crDeleteFromCarnet(patientId, source, key) {
     return;
   }
 
-  // ── Cas 2 : CR stocké dans la fiche patient (champ array) ──
+  // ── Cas 2 : cotation signée (fallback) — supprime de la fiche patient + Supabase ──
+  if (source === 'cotation') {
+    try {
+      // key = invoice_number ou cotation_id
+      await initPatientsDB();
+      const rows = await _idbGetAll(PATIENTS_STORE);
+      const row  = rows.find(r => r.id === patientId);
+      if (!row) return;
+      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+      if (Array.isArray(p.cotations)) {
+        p.cotations = p.cotations.filter(c => {
+          const cKey = c.invoice_number || c.cotation_id || c.id;
+          return String(cKey) !== String(key);
+        });
+      }
+      const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+      await _idbPut(PATIENTS_STORE, toStore);
+      if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
+
+      // Tenter aussi de supprimer côté serveur via worker route si disponible
+      try {
+        if (typeof wpost === 'function' && S?.token) {
+          await wpost('/webhook/cotation-delete', { invoice_number: key, patient_id: patientId }).catch(() => {});
+        }
+      } catch (_) {}
+
+      if (typeof showToast === 'function') showToast('success', 'Cotation supprimée');
+      try { if (typeof auditLog === 'function') auditLog('COTATION_DELETED', { patient_id: patientId, key }); } catch (_) {}
+      _patTab('cr', patientId);
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('error', 'Erreur', err.message);
+    }
+    return;
+  }
+
+  // ── Cas 3 : CR stocké dans la fiche patient (champ array) ──
   try {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
@@ -2008,6 +2042,33 @@ async function _crDeleteFromCarnet(patientId, source, key) {
   }
 }
 
+/* ⚡ v4.1 — Wrapper : ouvre le module Cotation NGAP en mode édition pour
+            une cotation signée affichée comme "fallback CR" dans le carnet patient.
+            Permet de modifier l'acte, le montant, les majorations, etc. */
+function _crEditCotationFromCarnet(idx, patientId) {
+  const list = window._currentPatientCRs || [];
+  if (window._currentPatientCRsId !== patientId) {
+    if (typeof showToast === 'function') showToast('warning', 'Veuillez rafraîchir l\'onglet');
+    return;
+  }
+  const cr = list[idx];
+  if (!cr || cr._source !== 'cotation') {
+    if (typeof showToast === 'function') showToast('info', 'Action non disponible', 'Modification possible uniquement pour les cotations signées.');
+    return;
+  }
+  // Pré-charger via _editRef pour activer le mode édition côté cotation.js
+  const editRef = {
+    invoice_number: cr.invoice_id || cr._key,
+    patient_id:     patientId,
+    cotationIdx:    typeof cr._cotationIdx === 'number' ? cr._cotationIdx : null,
+  };
+  try {
+    sessionStorage.setItem('_cotation_editRef', JSON.stringify(editRef));
+  } catch (_) {}
+  if (typeof navTo === 'function') navTo('cotation', null);
+  if (typeof showToast === 'function') showToast('info', 'Cotation chargée', 'Modifiez puis validez la cotation pour mettre à jour cette entrée.');
+}
+
 /* Wrapper : ouvre le module Compte-rendu de passage avec patient présélectionné */
 function _crNewFromCarnet(patientId) {
   if (typeof navTo === 'function') navTo('compte-rendu', null);
@@ -2021,10 +2082,11 @@ function _crNewFromCarnet(patientId) {
 }
 
 /**
- * Wrapper : navigue vers le module CR et pré-remplit le formulaire avec un CR existant.
- * Note médico-légale : un CR sauvegardé est une trace de soin — la "modification" via le
- * module crSave() crée techniquement une nouvelle entrée. Le module CR original ne supporte
- * pas l'édition in-place, on charge donc juste les valeurs dans le formulaire pour ré-utilisation.
+ * Wrapper : navigue vers le module CR et active le MODE ÉDITION (upsert)
+ * via crEdit() exposé par cr-passage.js v4.1.
+ *
+ * ⚡ v4.1 — Plus de "nouvelle version créée" : la sauvegarde MET À JOUR le CR existant.
+ *          Doctrine : Patient existe + CR chargé → MAJ, jamais de doublon.
  */
 function _crEditFromCarnet(idx, patientId) {
   const list = window._currentPatientCRs || [];
@@ -2037,7 +2099,15 @@ function _crEditFromCarnet(idx, patientId) {
     if (typeof showToast === 'function') showToast('info', 'Action non disponible', 'Modification possible uniquement pour les CR créés via le module dédié.');
     return;
   }
-  const raw = cr._raw || {};
+  if (cr.from_cabinet) {
+    if (typeof showToast === 'function') showToast('info', 'CR reçu du cabinet', 'Vous ne pouvez pas modifier un CR rédigé par un collègue.');
+    return;
+  }
+  const idbId = cr._idbId || (cr._key && /^\d+$/.test(String(cr._key)) ? parseInt(cr._key, 10) : null);
+  if (idbId == null) {
+    if (typeof showToast === 'function') showToast('warning', 'Identifiant CR introuvable');
+    return;
+  }
 
   if (typeof navTo === 'function') navTo('compte-rendu', null);
   setTimeout(() => {
@@ -2046,39 +2116,48 @@ function _crEditFromCarnet(idx, patientId) {
       sel.value = patientId;
       if (typeof crSelectPatient === 'function') crSelectPatient(patientId);
     }
-    // Pré-remplir les champs après affichage du formulaire
+    // ⚡ v4.1 — Activer le mode édition via la nouvelle API crEdit()
     setTimeout(() => {
-      const setVal = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
-      // Date au format ISO datetime-local (yyyy-MM-ddTHH:mm)
-      let dateLocal = '';
-      if (raw.date) {
-        try {
-          const d = new Date(raw.date);
-          if (!isNaN(d)) {
-            const pad = n => String(n).padStart(2, '0');
-            dateLocal = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-          }
-        } catch (_) {}
+      if (typeof window.crEdit === 'function') {
+        window.crEdit(idbId);
+      } else {
+        // Fallback : ancien comportement (préremplissage manuel = nouvelle version)
+        _crEditFromCarnetLegacy(cr);
       }
-      setVal('cr-date',         dateLocal);
-      setVal('cr-medecin',      raw.medecin);
-      setVal('cr-actes',        raw.actes);
-      setVal('cr-ta',           raw.ta);
-      setVal('cr-gly',          raw.glycemie);
-      setVal('cr-spo2',         raw.spo2);
-      setVal('cr-temp',         raw.temperature);
-      setVal('cr-fc',           raw.fc);
-      setVal('cr-eva',          raw.eva);
-      setVal('cr-observations', raw.observations);
-      setVal('cr-transmissions',raw.transmissions);
-      setVal('cr-urgence',      raw.urgence || 'normal');
-      // Scroll vers le formulaire
-      const formSec = document.getElementById('cr-form-section');
-      if (formSec) formSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      if (typeof showToast === 'function')
-        showToast('info', 'CR chargé', 'Modifiez les champs et cliquez sur Sauvegarder pour créer une nouvelle version.');
     }, 400);
   }, 350);
+}
+
+/* Fallback legacy si cr-passage.js < v4.1 (sans crEdit). À conserver pour rétrocompat. */
+function _crEditFromCarnetLegacy(cr) {
+  const raw = cr._raw || {};
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  let dateLocal = '';
+  if (raw.date) {
+    try {
+      const d = new Date(raw.date);
+      if (!isNaN(d)) {
+        const pad = n => String(n).padStart(2, '0');
+        dateLocal = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    } catch (_) {}
+  }
+  setVal('cr-date',         dateLocal);
+  setVal('cr-medecin',      raw.medecin);
+  setVal('cr-actes',        raw.actes);
+  setVal('cr-ta',           raw.ta);
+  setVal('cr-gly',          raw.glycemie);
+  setVal('cr-spo2',         raw.spo2);
+  setVal('cr-temp',         raw.temperature);
+  setVal('cr-fc',           raw.fc);
+  setVal('cr-eva',          raw.eva);
+  setVal('cr-observations', raw.observations);
+  setVal('cr-transmissions',raw.transmissions);
+  setVal('cr-urgence',      raw.urgence || 'normal');
+  const formSec = document.getElementById('cr-form-section');
+  if (formSec) formSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (typeof showToast === 'function')
+    showToast('info', 'CR chargé', 'Modifiez les champs et cliquez sur Sauvegarder pour créer une nouvelle version.');
 }
 
 /* ════════════════════════════════════════════════
@@ -3652,6 +3731,15 @@ async function _importSinglePatient(id, target) {
     actes_recurrents:  p.actes_recurrents || '',
     description:       p.actes_recurrents || p.notes || p.pathologies || 'Soin infirmier',
     texte:             p.actes_recurrents || p.notes || p.pathologies || 'Soin infirmier',
+    // ⚡ v4.1 — Date explicite LOCALE au moment de l'ajout (jamais UTC).
+    //          Évite le glissement "patient ajouté dimanche → lundi" causé par
+    //          new Date().toISOString().slice(0,10) qui retourne UTC.
+    //          Le flag _dateFixed empêche tout re-stamp ultérieur par _savePlanning.
+    date:              (() => {
+      const _n = new Date();
+      return [_n.getFullYear(), String(_n.getMonth()+1).padStart(2,'0'), String(_n.getDate()).padStart(2,'0')].join('-');
+    })(),
+    _dateFixed:        true,
     // Adresse — tous les champs pour que openNavigation fonctionne
     adresse:           adresseComplete,
     address:           adresseComplete,
