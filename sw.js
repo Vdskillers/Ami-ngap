@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.5
+/* sw.js — AMI NGAP Service Worker v5.6
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -17,9 +17,14 @@
    ✅ v5.5 — Toast récap dynamique après chaque clic Terminer :
               "💶 12.50 € · ✍️ Signature OK · 📋 CR créé · ✅ 2 consentements créés"
               type warning si signature manquante ou consentements incomplets
+   ✅ v5.6 — Fix bug majeur : modale signature masquée par overlay GPS plein écran
+              (z-index conflict 9999 vs 1500). Solution : cacher l'overlay pendant
+              la signature, le restaurer après. Fix aussi le bug "2e signature
+              apparaît 1s puis disparaît" via flag _sigSaveInProgress qui synchronise
+              correctement closeSignatureModal et la fin de saveSignature.
 */
 
-const CACHE_VERSION = 'ami-v5.5';
+const CACHE_VERSION = 'ami-v5.6';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

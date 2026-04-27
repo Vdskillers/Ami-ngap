@@ -823,13 +823,37 @@ async function _uberAfterDoneFlow(p) {
   // Attend la fermeture (validation ou ✕) avant de continuer.
   // saveSignature() crée automatiquement les consentements requis
   // (mécanique existante dans signature.js v2 — détection d'actes).
+  //
+  // ⚡ v5.6 — Fix bug majeur : l'overlay GPS plein écran (z-index:9999)
+  // masquait la modale signature (z-index:1500). Symptôme : "rien ne se
+  // passe" au clic Terminer en mode plein écran, modale visible seulement
+  // après fermeture de l'overlay (= dernier patient). Solution : on cache
+  // visuellement l'overlay le temps de la signature, puis on le restaure.
+  // L'instance Leaflet et tous les listeners restent intacts — pas de
+  // re-création de la carte ni de cleanup GPS.
   if (typeof openSignatureModal === 'function') {
+    // Snapshot de l'état d'affichage de l'overlay GPS plein écran
+    const _fsOverlayEl = document.getElementById('uber-fs-overlay');
+    const _fsWasVisible = !!(_fsOverlayEl && _fsOverlayEl.style.display !== 'none');
+    if (_fsWasVisible) {
+      _fsOverlayEl.style.display = 'none';
+    }
+
     await new Promise((resolve) => {
       // Stocker un callback que closeSignatureModal pourra appeler.
       // Si la modale est fermée par n'importe quel chemin (✕ ou Valider),
       // on résout pour ne pas bloquer le flow tournée.
       window._uberAfterSignClose = () => {
         try { delete window._uberAfterSignClose; } catch(_) {}
+        // Restaurer l'overlay GPS plein écran s'il était visible avant
+        if (_fsWasVisible && _fsOverlayEl && _fsOverlayEl.parentNode) {
+          _fsOverlayEl.style.display = '';
+          // Forcer Leaflet à recalculer ses dimensions après le reflow
+          // (sinon des tuiles peuvent rester grises).
+          setTimeout(() => {
+            try { if (_uberFSMap) _uberFSMap.invalidateSize(); } catch(_) {}
+          }, 50);
+        }
         resolve();
       };
       try {
@@ -840,12 +864,16 @@ async function _uberAfterDoneFlow(p) {
         });
       } catch (e) {
         console.warn('[AMI] openSignatureModal KO:', e?.message);
+        // Restaurer l'overlay si l'ouverture a planté
+        if (_fsWasVisible && _fsOverlayEl) _fsOverlayEl.style.display = '';
         resolve(); // ne bloque pas la tournée si la modale plante
       }
       // Fail-safe : si la modale ne se ferme jamais (bug), on libère après 5 min
       setTimeout(() => {
         if (typeof window._uberAfterSignClose === 'function') {
           try { delete window._uberAfterSignClose; } catch(_) {}
+          // Restaurer l'overlay
+          if (_fsWasVisible && _fsOverlayEl) _fsOverlayEl.style.display = '';
           resolve();
         }
       }, 5 * 60 * 1000);

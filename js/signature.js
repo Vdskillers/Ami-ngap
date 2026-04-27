@@ -841,11 +841,16 @@ function closeSignatureModal() {
   const modal = document.getElementById('sig-modal');
   if (modal) modal.style.display = 'none';
 
-  // ⚡ v5.4 — Hook pour _uberAfterDoneFlow (uber.js)
+  // ⚡ v5.4/v5.6 — Hook pour _uberAfterDoneFlow (uber.js)
   // Si le Mode Uber Médical attend la fermeture de la modale signature,
-  // on libère sa Promise. Pas d'attente bloquante côté tournée.
+  // on libère sa Promise UNIQUEMENT si saveSignature n'est PAS en cours.
+  // Le flag _sigSaveInProgress est posé au début de saveSignature et retiré
+  // à la toute fin → si l'IDE valide, c'est saveSignature qui déclenche le
+  // callback à la fin (après toutes ses opérations async). Si l'IDE ferme
+  // par ✕ ou par swipe, on déclenche ici directement.
   try {
-    if (typeof window._uberAfterSignClose === 'function') {
+    if (typeof window._uberAfterSignClose === 'function'
+        && !window._sigSaveInProgress) {
       const cb = window._uberAfterSignClose;
       delete window._uberAfterSignClose;
       cb();
@@ -1102,6 +1107,15 @@ function clearSignature() {
 async function saveSignature() {
   if (!_sigCanvas) { closeSignatureModal(); return; }
 
+  // ⚡ v5.6 — Flag pour synchroniser avec _uberAfterDoneFlow (uber.js).
+  // Empêche closeSignatureModal de déclencher le callback _uberAfterSignClose
+  // PENDANT que saveSignature est encore en cours (sinon le flow tournée
+  // enchaîne sur le patient suivant alors que les variables globales
+  // _currentInvoiceId / _currentProofContext sont en train d'être nettoyées
+  // par la fin de saveSignature). Le callback est déclenché manuellement
+  // à la toute fin de cette fonction, après le reset des globals.
+  try { window._sigSaveInProgress = true; } catch(_) {}
+
   // Vérifier si la signature est vide
   const imageData = _sigCtx.getImageData(0, 0, _sigCanvas.width, _sigCanvas.height);
   const hasDrawing = imageData.data.some(v => v !== 0);
@@ -1144,6 +1158,8 @@ async function saveSignature() {
     if (typeof showToast === 'function') {
       showToast('✍️ Signature enregistrée — elle sera injectée dans les PDF générés.', 'ok');
     }
+    // v5.6 — Reset flag (par sécurité — ce mode ne déclenche pas le flow Uber)
+    try { window._sigSaveInProgress = false; } catch(_) {}
     return;
   }
 
@@ -1468,6 +1484,20 @@ async function saveSignature() {
       : '✍️ Signature enregistrée.';
     showToast(msg, 'ok');
   }
+
+  // ⚡ v5.6 — Maintenant que toute saveSignature est terminée (globals
+  // resetés, IDB sauvegardé, sync lancé), on libère le flow tournée.
+  // Sans cette synchro, le clic "Terminer" sur le 2e patient tombait
+  // pendant que le 1er saveSignature finissait et la modale apparaissait
+  // 1s puis disparaissait.
+  try {
+    window._sigSaveInProgress = false;
+    if (typeof window._uberAfterSignClose === 'function') {
+      const cb = window._uberAfterSignClose;
+      delete window._uberAfterSignClose;
+      cb();
+    }
+  } catch (_) {}
 }
 
 async function getSignature(invoiceId) {
