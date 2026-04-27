@@ -868,19 +868,26 @@ function _exportSignaturePNG() {
     const srcCtx = _sigCanvas.getContext('2d');
     const src    = srcCtx.getImageData(0, 0, w, h);
     const sd     = src.data;
-    // 2) Préparer un buffer noir-sur-blanc
+    // 2) Préparer un buffer noir-sur-blanc avec SEUILLAGE de l'alpha
+    //    ────────────────────────────────────────────────────────────
+    //    Le bug : sans seuil, les pixels d'anti-aliasing aux bords du
+    //    trait gardent un alpha faible (8, 16, 32…) ⇒ noir presque
+    //    transparent ⇒ trait délavé sur fond blanc dans le PDF.
+    //    La solution : tout pixel avec alpha ≥ 16 devient noir OPAQUE.
+    //    Résultat : trait plein, lisible même imprimé en N&B.
+    const ALPHA_THRESHOLD = 16;
     const out = new ImageData(w, h);
     const od  = out.data;
     for (let i = 0; i < sd.length; i += 4) {
       const a = sd[i + 3];
-      if (a > 0) {
-        // Pixel dessiné → noir foncé, alpha proportionnel à l'original
+      if (a >= ALPHA_THRESHOLD) {
+        // Pixel dessiné → noir foncé OPAQUE (alpha 255, pas l'alpha source)
         od[i]     = 26;   // #1a — R
         od[i + 1] = 26;   // #1a — G
         od[i + 2] = 32;   // #20 — B (légère teinte bleu nuit, plus élégant que pur noir)
-        od[i + 3] = a;
+        od[i + 3] = 255;  // ⚡ alpha PLEIN — clé pour visibilité PDF
       } else {
-        // Pixel vide → blanc opaque (fond papier)
+        // Pixel vide / antialias trop faible → blanc opaque (fond papier)
         od[i]     = 255;
         od[i + 1] = 255;
         od[i + 2] = 255;
@@ -906,13 +913,108 @@ function _exportSignaturePNG() {
   }
 }
 
+/* ════════════════════════════════════════════════
+   NORMALISATION D'UN PNG LEGACY (rétrocompatibilité)
+   ────────────────────────────────────────────────
+   Les anciennes signatures stockées AVANT le seuillage alpha sont
+   enregistrées avec un trait clair sur fond transparent (ou blanc),
+   parfois avec un alpha très faible aux bords ⇒ presque invisibles
+   dans les PDF actuels.
+   Cette fonction prend un dataURL PNG existant et :
+     1. Le charge dans un canvas hors écran
+     2. Détecte tout pixel non-blanc (= partie du tracé)
+     3. Reseuille → noir opaque sur blanc
+   Le hash SHA-256 stocké pour la preuve médico-légale n'est PAS
+   modifié — on régénère uniquement la version VISUELLE pour
+   l'affichage / l'impression.
+   Async car nécessite un Image.decode().
+════════════════════════════════════════════════ */
+async function _normalizeSignaturePNG(pngDataUrl) {
+  if (!pngDataUrl || typeof pngDataUrl !== 'string') return pngDataUrl;
+  if (!pngDataUrl.startsWith('data:image/')) return pngDataUrl;
+  try {
+    const img = new Image();
+    img.src = pngDataUrl;
+    // decode() = Promise (plus fiable que onload sur petits PNG)
+    if (typeof img.decode === 'function') {
+      await img.decode();
+    } else {
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+    }
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return pngDataUrl;
+
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d');
+    cx.drawImage(img, 0, 0);
+
+    // Lire les pixels — peut throw si tainted (cross-origin), on garde le PNG d'origine
+    let imgData;
+    try { imgData = cx.getImageData(0, 0, w, h); }
+    catch (_) { return pngDataUrl; }
+
+    const d = imgData.data;
+    // Stratégie : un pixel est considéré comme "trait" si :
+    //   - il est non-transparent (alpha > 16) ET pas blanc pur
+    //   - OU sa luminance < 230 (= pas un fond blanc/clair)
+    // Tout pixel "trait" devient noir #1a1a20 alpha 255.
+    // Tout pixel "fond" devient blanc #fff alpha 255.
+    let touched = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i+1], b = d[i+2], a = d[i+3];
+      const luma = (r * 0.299 + g * 0.587 + b * 0.114);
+      const isStroke = (a > 16) && (luma < 230);
+      if (isStroke) {
+        d[i]   = 26;
+        d[i+1] = 26;
+        d[i+2] = 32;
+        d[i+3] = 255;
+        touched++;
+      } else {
+        d[i]   = 255;
+        d[i+1] = 255;
+        d[i+2] = 255;
+        d[i+3] = 255;
+      }
+    }
+    // Si le PNG semble vide (aucun pixel trait détecté), retourner l'original
+    if (touched < 5) return pngDataUrl;
+
+    cx.putImageData(imgData, 0, 0);
+    return cv.toDataURL('image/png');
+  } catch (e) {
+    console.warn('[Signature] _normalizeSignaturePNG fallback :', e.message);
+    return pngDataUrl; // safe fallback : on rend l'original
+  }
+}
+
+/* ── Cache mémoire pour éviter de retraiter le même PNG plusieurs fois ── */
+const _NORM_PNG_CACHE = new Map();
+async function _normalizeSignaturePNGCached(pngDataUrl) {
+  if (!pngDataUrl) return pngDataUrl;
+  // Clé courte = hash rapide du début du dataURL (évite map énorme en mémoire)
+  const key = pngDataUrl.length + '_' + pngDataUrl.slice(60, 120);
+  if (_NORM_PNG_CACHE.has(key)) return _NORM_PNG_CACHE.get(key);
+  const norm = await _normalizeSignaturePNG(pngDataUrl);
+  // LRU simple : limite à 50 entrées
+  if (_NORM_PNG_CACHE.size > 50) {
+    const firstKey = _NORM_PNG_CACHE.keys().next().value;
+    _NORM_PNG_CACHE.delete(firstKey);
+  }
+  _NORM_PNG_CACHE.set(key, norm);
+  return norm;
+}
+
 function _initCanvas() {
   _sigCanvas = document.getElementById('sig-canvas');
   if (!_sigCanvas) return;
   _sigCtx = _sigCanvas.getContext('2d');
   _sigCtx.clearRect(0, 0, _sigCanvas.width, _sigCanvas.height);
   _sigCtx.strokeStyle = '#e8f0f8';
-  _sigCtx.lineWidth   = 2.5;
+  _sigCtx.lineWidth   = 3.2;       // ⚡ 2.5 → 3.2 : trait plus épais ⇒ meilleure
+                                   //    densité après seuillage alpha (export PDF)
   _sigCtx.lineCap     = 'round';
   _sigCtx.lineJoin    = 'round';
   _sigDrawing = false;
@@ -1384,48 +1486,70 @@ async function deleteSignature(invoiceId) {
    profil, puis sa signature est auto-injectée dans tous les PDF générés.
 ════════════════════════════════════════════════ */
 async function injectSignatureInPDF(invoiceId) {
+  // ⚡ Récupérer la signature PATIENT (peut être absente)
+  //    Avant : si pas de signature patient → return '' ⇒ la signature IDE
+  //    n'apparaissait JAMAIS dans la facture, même si elle était enregistrée.
+  //    Maintenant : on génère TOUJOURS le bloc, avec un placeholder côté
+  //    patient si pas de signature, et la signature IDE auto-injectée.
   const row = await _sigGet(invoiceId);
-  if (!row?.png) return '';
-  const png = row.png;
+  const hasPatientSig = !!(row?.png);
+
+  // Normaliser le PNG patient (au cas où c'est une signature legacy clair-sur-transparent)
+  let png = '';
+  if (hasPatientSig) {
+    try { png = await _normalizeSignaturePNGCached(row.png); }
+    catch (_) { png = row.png; }
+  }
 
   // ── Bloc preuve (affiché uniquement si données présentes) ──
-  const hash      = row.signature_hash || '';
+  const hash      = row?.signature_hash || '';
   const hashShort = hash ? hash.slice(0, 16).toUpperCase() + '…' : '';
-  const signedTs  = row.signed_at ? new Date(row.signed_at).toLocaleString('fr-FR') : new Date().toLocaleString('fr-FR');
-  const signedISO = row.signed_at || '';
-  const zone      = row.geozone?.zone || '';
-  const certified = !!(row.server_cert && row.server_cert.server_signature);
-  const certId    = row.server_cert?.cert_id || '';
-  const hasPhoto  = !!row.photo_hash;
+  const signedTs  = row?.signed_at ? new Date(row.signed_at).toLocaleString('fr-FR') : new Date().toLocaleString('fr-FR');
+  const signedISO = row?.signed_at || '';
+  const zone      = row?.geozone?.zone || '';
+  const certified = !!(row?.server_cert && row.server_cert.server_signature);
+  const certId    = row?.server_cert?.cert_id || '';
+  const hasPhoto  = !!row?.photo_hash;
 
   // Détail technique sur 2 lignes pour audit CPAM (lisibilité PDF)
-  const proofMain = [
+  const proofMain = hasPatientSig ? [
     certified ? '✔ HMAC-SHA256 serveur' : null,
     hashShort ? '✔ Hash SHA-256 ' + hashShort : null,
     signedISO ? '✔ Horodatage ISO 8601' : null,
     zone      ? '✔ Géozone floue (~1km)' : null,
     hasPhoto  ? '✔ Preuve photo (hash, RGPD)' : null,
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(' · ') : '';
 
-  const proofMeta = [
+  const proofMeta = hasPatientSig ? [
     signedISO,
     certId ? 'Cert ' + certId : null,
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(' · ') : '';
 
   // ── Récupération de la signature IDE depuis le profil (auto-injection) ──
   let ideSigHTML = `
-    <div style="height:80px;border:1px dashed #ccd5e0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px">
-      À signer
+    <div style="height:80px;border:1px dashed #ccd5e0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px;background:#fafbfc">
+      Aucune signature enregistrée
     </div>`;
   try {
     const ideRow = await _sigGet(IDE_SELF_SIG_ID);
     if (ideRow?.png) {
+      // ⚡ Normaliser le PNG IDE (anciennes signatures legacy clair-sur-transparent)
+      let idePng = ideRow.png;
+      try { idePng = await _normalizeSignaturePNGCached(ideRow.png); } catch (_) {}
       const ideTs = ideRow.signed_at ? new Date(ideRow.signed_at).toLocaleDateString('fr-FR') : '';
       ideSigHTML = `
-        <img src="${ideRow.png}" style="width:100%;max-height:80px;border:1px solid #e0e7ef;border-radius:6px;object-fit:contain;background:#fff">
+        <img src="${idePng}" style="width:100%;max-height:80px;border:1px solid #e0e7ef;border-radius:6px;object-fit:contain;background:#fff;image-rendering:crisp-edges">
         <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signature enregistrée${ideTs ? ' · ' + ideTs : ''}</div>`;
     }
   } catch (_) {}
+
+  // ── Bloc patient (signé OU placeholder "À signer") ──
+  const patientSigHTML = hasPatientSig
+    ? `<img src="${png}" style="width:100%;max-height:80px;border:1px solid #e0e7ef;border-radius:6px;object-fit:contain;background:#fff;image-rendering:crisp-edges">
+       <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signé électroniquement · ${signedTs}</div>`
+    : `<div style="height:80px;border:1px dashed #ccd5e0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px;background:#fafbfc">
+         À signer
+       </div>`;
 
   return `
     <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e0e7ef">
@@ -1436,8 +1560,7 @@ async function injectSignatureInPDF(invoiceId) {
         </div>
         <div>
           <div style="font-size:11px;text-transform:uppercase;color:#6b7a99;letter-spacing:.5px;margin-bottom:8px">Signature patient — accord soins</div>
-          <img src="${png}" style="width:100%;max-height:80px;border:1px solid #e0e7ef;border-radius:6px;object-fit:contain;background:#fff">
-          <div style="font-size:9px;color:#9ca3af;margin-top:3px">Signé électroniquement · ${signedTs}</div>
+          ${patientSigHTML}
         </div>
       </div>
       ${proofMain ? `<div style="margin-top:10px;padding:8px 10px;background:#f3f7fa;border-left:3px solid #00a884;border-radius:4px;font-size:9px;color:#445566;font-family:ui-monospace,Menlo,monospace;line-height:1.5">
@@ -1579,6 +1702,9 @@ window.openIDESignatureModal = openIDESignatureModal;
 window.getIDESignature       = getIDESignature;
 window.deleteIDESignature    = deleteIDESignature;
 window.refreshIDESignatureUI = refreshIDESignatureUI;
+// ── Normalisation PNG legacy (utilisé par consentements.js, transmissions, etc.) ──
+window.normalizeSignaturePNG       = _normalizeSignaturePNG;
+window.normalizeSignaturePNGCached = _normalizeSignaturePNGCached;
 
 /* ── Patch printInv pour injecter la signature automatiquement ── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -1645,11 +1771,14 @@ async function loadSignatureList() {
     // ── 1) Rendu section IDE (slot dédié dans view-sig) ──
     if (ideEl) {
       if (ideSig && ideSig.png) {
+        // ⚡ Normaliser le PNG pour l'aperçu (gère les anciennes signatures legacy)
+        let ideThumbPng = ideSig.png;
+        try { ideThumbPng = await _normalizeSignaturePNGCached(ideSig.png); } catch (_) {}
         const ideDate = ideSig.signed_at ? new Date(ideSig.signed_at).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
         ideEl.innerHTML = `
           <div style="display:flex;align-items:center;gap:14px;padding:8px 0;flex-wrap:wrap">
-            <div style="width:96px;height:56px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
-              <img src="${ideSig.png}" style="width:100%;height:100%;object-fit:contain">
+            <div style="width:96px;height:56px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:#fff">
+              <img src="${ideThumbPng}" style="width:100%;height:100%;object-fit:contain;background:#fff">
             </div>
             <div style="flex:1 1 160px;min-width:140px">
               <div style="font-size:13px;font-weight:500">Signature enregistrée</div>
@@ -1741,8 +1870,8 @@ async function loadSignatureList() {
         : '';
 
       return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b);flex-wrap:wrap">
-        <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.04)">
-          ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px">✍️</div>'}
+        <div style="width:48px;height:48px;border-radius:8px;border:1px solid var(--b);overflow:hidden;flex-shrink:0;background:#fff">
+          ${_previewSrc ? `<img src="${_previewSrc}" style="width:100%;height:100%;object-fit:contain;background:#fff">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;background:#f3f4f6">✍️</div>'}
         </div>
         <div style="flex:1 1 220px;min-width:200px">
           <div style="font-size:13px;font-weight:500;font-family:var(--fm);word-break:break-all">${invoiceId}</div>
@@ -1759,9 +1888,100 @@ async function loadSignatureList() {
     // ⚡ Backfill différé : tente de compléter les signatures sans server_cert
     // ou geozone. Non bloquant — re-render automatique si succès.
     setTimeout(() => { _sigBackfillProofs(); }, 500);
+    // ⚡ Backfill PNG : retraite les anciennes signatures dont le PNG est
+    // stocké en clair-sur-transparent (presque invisibles dans les PDF).
+    // Non bloquant — re-render automatique si quelque chose a changé.
+    setTimeout(() => { _sigBackfillPNGs(); }, 1200);
   } catch(e) {
     el.innerHTML = '<p style="color:var(--d);font-size:13px;padding:20px 0;text-align:center">Erreur de chargement des signatures.</p>';
     console.warn('[Signatures] loadSignatureList:', e);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   BACKFILL PNG LEGACY — normalisation permanente en base
+   ────────────────────────────────────────────────
+   Avant le seuillage alpha (cf. _exportSignaturePNG), les signatures
+   étaient stockées avec un trait clair sur fond transparent ou avec
+   un anti-aliasing très faible. Résultat : presque invisibles une
+   fois injectées dans un PDF blanc.
+   Cette routine :
+     1. Scan toutes les signatures de la base IDB locale
+     2. Pour chacune, applique _normalizeSignaturePNG sur le PNG
+     3. Si le PNG résultant DIFFÈRE significativement de l'original
+        (= la signature était bien legacy), on le ré-enregistre.
+   La transformation est idempotente : refaire ne change rien sur les
+   signatures déjà normalisées. Le hash médico-légal n'est PAS modifié
+   (il reste calculé sur le PNG original, qu'on stocke dans _png_legacy
+   pour audit).
+   Limité à 1 backfill / 6h pour éviter la charge CPU répétée.
+════════════════════════════════════════════════ */
+const _PNG_BACKFILL_KEY = 'ami_sig_png_backfill_v1';
+let _sigPNGBackfillRunning = false;
+async function _sigBackfillPNGs() {
+  if (_sigPNGBackfillRunning) return;
+  // Cooldown 6h pour ne pas refaire à chaque navigation
+  try {
+    const last = parseInt(localStorage.getItem(_PNG_BACKFILL_KEY) || '0', 10);
+    if (last && (Date.now() - last) < 6 * 3600 * 1000) return;
+  } catch (_) {}
+
+  _sigPNGBackfillRunning = true;
+  try {
+    const all = await _sigExec(db => new Promise((res) => {
+      const tx = db.transaction(SIG_STORE, 'readonly');
+      const req = tx.objectStore(SIG_STORE).getAll();
+      req.onsuccess = () => res(req.result || []);
+      req.onerror = () => res([]);
+    }));
+    if (!Array.isArray(all) || !all.length) {
+      try { localStorage.setItem(_PNG_BACKFILL_KEY, String(Date.now())); } catch (_) {}
+      return;
+    }
+
+    let patched = 0;
+    for (const sig of all) {
+      if (!sig?.png) continue;
+      // Skip si déjà marqué comme normalisé
+      if (sig.png_normalized === true) continue;
+      // Skip si le PNG a déjà été retraité une fois (évite boucle)
+      if (sig._png_legacy) continue;
+      try {
+        const original = sig.png;
+        const normalized = await _normalizeSignaturePNG(original);
+        // On considère comme "modifié" si la taille change de plus de 10 %
+        // OU si le début du base64 change (= contenu visuel différent).
+        const sameSize = Math.abs((normalized.length - original.length)) < (original.length * 0.1);
+        const sameHead = normalized.slice(80, 200) === original.slice(80, 200);
+        if (sameSize && sameHead) {
+          // Pas de différence significative → on marque juste comme vérifié
+          await _sigPut({ ...sig, png_normalized: true });
+          continue;
+        }
+        // PNG était bien en mode legacy → on remplace par la version normalisée
+        await _sigPut({
+          ...sig,
+          png:            normalized,
+          png_normalized: true,
+          _png_legacy:    original.length, // garder la taille pour audit, pas le contenu
+        });
+        patched++;
+      } catch (e) {
+        console.warn('[Signature] backfill PNG item KO :', e.message);
+      }
+    }
+    try { localStorage.setItem(_PNG_BACKFILL_KEY, String(Date.now())); } catch (_) {}
+    if (patched > 0) {
+      console.info('[Signature] backfill PNG : ' + patched + ' signature(s) normalisée(s)');
+      // Re-render si la vue est ouverte
+      try { if (typeof loadSignatureList === 'function') loadSignatureList(); } catch (_) {}
+      // Refresh aussi l'UI signature IDE si chargée
+      try { if (typeof refreshIDESignatureUI === 'function') refreshIDESignatureUI(); } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[Signature] _sigBackfillPNGs error :', e.message);
+  } finally {
+    _sigPNGBackfillRunning = false;
   }
 }
 
@@ -1781,6 +2001,8 @@ document.addEventListener('ami:login', () => {
   syncSignaturesFromServer().catch(() => {});
   // Drainer la file HMAC : retry des certifications qui ont échoué offline
   _drainHmacQueue().catch(() => {});
+  // Backfill PNG legacy en arrière-plan (rendre visibles les anciennes signatures)
+  setTimeout(() => { _sigBackfillPNGs().catch(() => {}); }, 4000);
 });
 
 /* Sync push au logout (pour s'assurer que tout est envoyé) */

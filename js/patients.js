@@ -1355,12 +1355,20 @@ async function _renderConsentementsForPatient(patientId) {
   // Résolution parallèle des signatures : signatureDataUrl local → ami_signatures via invoice_id
   const sigGet = (typeof getSignature === 'function') ? getSignature
               : (typeof window.getSignature === 'function' ? window.getSignature : null);
+  // ⚡ Normalisation des PNG legacy (clair-sur-transparent) → noir-sur-blanc
+  const _normFn = (typeof window.normalizeSignaturePNGCached === 'function')
+    ? window.normalizeSignaturePNGCached
+    : null;
   const sigs = await Promise.all(mine.map(async c => {
-    if (c.signatureDataUrl) return c.signatureDataUrl;
-    if (c.invoice_id && sigGet) {
-      try { const png = await sigGet(c.invoice_id); if (png) return png; } catch (_) {}
+    let png = null;
+    if (c.signatureDataUrl) png = c.signatureDataUrl;
+    else if (c.invoice_id && sigGet) {
+      try { png = await sigGet(c.invoice_id); } catch (_) {}
     }
-    return null;
+    if (png && _normFn) {
+      try { png = await _normFn(png); } catch (_) {}
+    }
+    return png;
   }));
   // Index id → signature pour retrouver après groupement
   const sigById = new Map();
@@ -1401,7 +1409,7 @@ async function _renderConsentementsForPatient(patientId) {
         </div>
         ${sigPng ? `
         <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-          <img src="${sigPng}" alt="Signature patient" style="height:40px;max-width:140px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain" title="Signature manuscrite du patient">
+          <img src="${sigPng}" alt="Signature patient" style="height:60px;max-width:200px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain;image-rendering:crisp-edges" title="Signature manuscrite du patient">
           <span style="font-size:10px;color:var(--m)">${c.invoice_id ? '🔗 Liée à la facture ' + c.invoice_id : 'Signature locale'}</span>
         </div>` : ''}
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
@@ -1710,11 +1718,20 @@ async function _renderComptesRendusForPatient(patientId, p, crList) {
 
   const sigGet = (typeof getSignature === 'function') ? getSignature
               : (typeof window.getSignature === 'function' ? window.getSignature : null);
+  // ⚡ Normalisation des PNG legacy (clair-sur-transparent) → noir-sur-blanc
+  const _normFn = (typeof window.normalizeSignaturePNGCached === 'function')
+    ? window.normalizeSignaturePNGCached
+    : null;
 
   // Récupération parallèle des signatures pour les CR ayant un invoice_id (fallback cotations)
   const sigs = await Promise.all(crList.map(async cr => {
     if (!cr.invoice_id || !sigGet) return null;
-    try { return await sigGet(cr.invoice_id); } catch { return null; }
+    let png = null;
+    try { png = await sigGet(cr.invoice_id); } catch { return null; }
+    if (png && _normFn) {
+      try { png = await _normFn(png); } catch (_) {}
+    }
+    return png;
   }));
 
   // Helper d'échappement HTML pour le rendu sécurisé
@@ -1785,7 +1802,7 @@ async function _renderComptesRendusForPatient(patientId, p, crList) {
           </div>
           ${sigPng ? `
           <div style="text-align:center">
-            <img src="${sigPng}" alt="Signature" style="height:46px;max-width:130px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain">
+            <img src="${sigPng}" alt="Signature" style="height:60px;max-width:170px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain;image-rendering:crisp-edges">
             <div style="font-size:9px;color:var(--m);margin-top:3px">Signature patient</div>
           </div>` : ''}
         </div>
@@ -1820,6 +1837,10 @@ async function _crPrintFromCarnet(idx, patientId) {
     let sigPng = null;
     if (cr.invoice_id && sigGet) {
       try { sigPng = await sigGet(cr.invoice_id); } catch (_) {}
+    }
+    // ⚡ Normalisation des PNG legacy (clair-sur-transparent) → noir-sur-blanc
+    if (sigPng && typeof window.normalizeSignaturePNGCached === 'function') {
+      try { sigPng = await window.normalizeSignaturePNGCached(sigPng); } catch (_) {}
     }
 
     const dateStr = cr.date ? new Date(cr.date).toLocaleString('fr-FR') : '—';
@@ -1862,8 +1883,8 @@ async function _crPrintFromCarnet(idx, patientId) {
         .const-cell strong{display:block;color:#666;font-size:10px;margin-bottom:2px}
         .const-cell .v{font-size:14px;font-weight:600}
         .alert-box{background:#fff7ed;border-left:3px solid #f59e0b;border-radius:4px;padding:10px;font-size:12px;margin-top:8px}
-        .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:8px;background:#fff;text-align:center;margin-top:6px}
-        .sigbox img{max-width:280px;max-height:120px}
+        .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:10px;background:#fff;text-align:center;margin-top:6px}
+        .sigbox img{max-width:340px;max-height:150px;background:#fff;image-rendering:crisp-edges}
         @media print{@page{margin:15mm}}
       </style>
       </head><body>

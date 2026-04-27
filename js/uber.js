@@ -762,3 +762,499 @@ function _parseTime(h) {
   const t = new Date(); t.setHours(hh||0, mm||0, 0, 0);
   return t.getTime();
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   🗺️ MODE GPS PLEIN ÉCRAN — Uber Médical v1.0
+   ────────────────────────────────────────────────────────────────────────────
+   Overlay fixed inset:0 avec carte Leaflet dédiée (instance séparée de
+   APP.map pour ne pas casser la carte du Pilotage). Affiche :
+     • Tous les patients de la tournée (markers numérotés)
+     • Position GPS infirmière temps réel (refresh 10s — choix utilisateur)
+     • Polyline OSRM vers le prochain patient
+     • HUD bas : nom prochain patient + 4 boutons d'action
+     • HUD haut : compteur progression + bouton fermer
+   Utilise les fonctions existantes (markUberDone, selectBestPatient,
+   recalcRouteUber, openUrgentPatientModal) pour ne pas dupliquer la logique
+   métier — l'overlay est un pur "wrapper visuel mobile-first" autour du
+   Mode Uber Médical existant.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+let _uberFSMap          = null;   // Instance Leaflet dédiée
+let _uberFSGpsInterval  = null;   // setInterval (10s) de polling GPS
+let _uberFSMarkers      = [];     // Markers patients
+let _uberFSLiveMarker   = null;   // Marker infirmière (bleu pulsant)
+let _uberFSRoutePoly    = null;   // Polyline route OSRM
+let _uberFSWakeLock     = null;   // Wake Lock (empêche extinction écran)
+let _uberFSNextListener = null;   // Unsubscribe APP.on('nextPatient')
+let _uberFSPosListener  = null;   // Unsubscribe APP.on('userPos')
+
+/**
+ * Ouvre l'overlay GPS plein écran. Appelée par le bouton "🗺️ GPS plein écran"
+ * du Mode Uber Médical. Idempotent : si déjà ouvert, ne fait rien.
+ */
+function openUberFullscreenGPS() {
+  if (typeof requireAuth === 'function' && !requireAuth()) return;
+
+  // Garde : déjà ouvert
+  if (document.getElementById('uber-fs-overlay')) {
+    log('[Uber FS] déjà ouvert');
+    return;
+  }
+
+  // Garde : Leaflet dispo
+  if (typeof L === 'undefined') {
+    if (typeof showToast === 'function') showToast('❌ Carte indisponible — Leaflet non chargé');
+    return;
+  }
+
+  // Garde : patients chargés
+  const patients = APP.get('uberPatients') || [];
+  if (!patients.length) {
+    if (typeof showToast === 'function')
+      showToast('⚠️ Aucun patient — démarrez la journée d\'abord', 'wa');
+    return;
+  }
+
+  // ── Construction du DOM overlay ────────────────────────────────────
+  const overlay = document.createElement('div');
+  overlay.id = 'uber-fs-overlay';
+  overlay.innerHTML = `
+    <!-- Carte plein écran -->
+    <div id="uber-fs-map"></div>
+
+    <!-- HUD HAUT : titre + progression + fermer -->
+    <div id="uber-fs-top">
+      <div class="uber-fs-badge">
+        <span class="uber-fs-dot"></span>
+        <span id="uber-fs-gps-status">GPS…</span>
+      </div>
+      <div class="uber-fs-progress" id="uber-fs-progress">— / —</div>
+      <button class="uber-fs-close" onclick="closeUberFullscreenGPS()" aria-label="Fermer">✕</button>
+    </div>
+
+    <!-- HUD BAS : prochain patient + actions -->
+    <div id="uber-fs-bottom">
+      <div class="uber-fs-next-card" id="uber-fs-next-card">
+        <div class="uber-fs-next-label">🎯 PROCHAIN PATIENT</div>
+        <div class="uber-fs-next-name" id="uber-fs-next-name">—</div>
+        <div class="uber-fs-next-meta" id="uber-fs-next-meta">—</div>
+      </div>
+      <div class="uber-fs-actions">
+        <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSRecalcRoute()" title="Recalculer la route">
+          <span>🔄</span><span class="uber-fs-btn-lbl">Recalculer</span>
+        </button>
+        <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSBestNext()" title="Meilleur suivant">
+          <span>🧠</span><span class="uber-fs-btn-lbl">Meilleur</span>
+        </button>
+        <button class="uber-fs-btn uber-fs-btn-urgent" onclick="openUrgentPatientModal()" title="Ajouter un patient urgent">
+          <span>🚨</span><span class="uber-fs-btn-lbl">+ Urgent</span>
+        </button>
+        <button class="uber-fs-btn uber-fs-btn-primary" onclick="_uberFSEndPatient()" title="Terminer ce patient">
+          <span>✅</span><span class="uber-fs-btn-lbl">Terminer</span>
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Bloquer le scroll body en arrière-plan
+  document.body.style.overflow = 'hidden';
+
+  // ── Initialiser la carte Leaflet (instance dédiée) ─────────────────
+  // Centre par défaut : startPoint > position GPS connue > centre France
+  const startPoint = APP.get('startPoint') || APP.get('userPos');
+  const centerLat  = startPoint?.lat || 46.5;
+  const centerLng  = startPoint?.lng || 2.3;
+
+  // Délai requis pour que le container ait sa taille définitive
+  setTimeout(() => {
+    try {
+      _uberFSMap = L.map('uber-fs-map', {
+        zoomControl: true,
+        attributionControl: false,
+      }).setView([centerLat, centerLng], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(_uberFSMap);
+
+      // Premier rendu complet
+      _uberFSRender();
+      _uberFSUpdateHUD();
+
+      // Recadrer sur tous les markers + position
+      _uberFSFitView();
+
+      // Listeners réactifs : si nextPatient ou userPos changent ailleurs,
+      // on re-rend l'overlay sans dépendre de notre propre cycle 10s.
+      _uberFSNextListener = APP.on('nextPatient', () => {
+        if (!_uberFSMap) return;
+        _uberFSRender();
+        _uberFSUpdateHUD();
+      });
+      _uberFSPosListener = APP.on('userPos', () => {
+        if (!_uberFSMap) return;
+        _uberFSDrawLiveMarker();
+      });
+    } catch (e) {
+      logErr('[Uber FS] init carte KO', e);
+      if (typeof showToast === 'function') showToast('❌ Erreur carte : ' + e.message);
+      closeUberFullscreenGPS();
+      return;
+    }
+  }, 50);
+
+  // ── Démarrer le cycle GPS 10s ──────────────────────────────────────
+  _uberFSStartGPSPolling();
+
+  // ── Wake Lock (empêcher l'écran de s'éteindre) ─────────────────────
+  _uberFSAcquireWakeLock();
+
+  if (typeof showToast === 'function') showToast('🗺️ Mode GPS plein écran activé');
+}
+
+/**
+ * Ferme l'overlay et nettoie toutes les ressources (interval, listeners,
+ * wake lock, instance Leaflet, marker GPS).
+ */
+function closeUberFullscreenGPS() {
+  // Stop GPS polling
+  if (_uberFSGpsInterval) {
+    clearInterval(_uberFSGpsInterval);
+    _uberFSGpsInterval = null;
+  }
+
+  // Release wake lock
+  if (_uberFSWakeLock) {
+    try { _uberFSWakeLock.release(); } catch (_) {}
+    _uberFSWakeLock = null;
+  }
+
+  // Detach listeners
+  if (_uberFSNextListener) { try { _uberFSNextListener(); } catch (_) {} _uberFSNextListener = null; }
+  if (_uberFSPosListener)  { try { _uberFSPosListener();  } catch (_) {} _uberFSPosListener  = null; }
+
+  // Detruire la carte Leaflet
+  if (_uberFSMap) {
+    try { _uberFSMap.remove(); } catch (_) {}
+    _uberFSMap = null;
+  }
+  _uberFSMarkers    = [];
+  _uberFSLiveMarker = null;
+  _uberFSRoutePoly  = null;
+
+  // Retirer l'overlay du DOM
+  const overlay = document.getElementById('uber-fs-overlay');
+  if (overlay) overlay.remove();
+
+  // Restaurer le scroll body
+  document.body.style.overflow = '';
+}
+
+/**
+ * (Re)dessine tous les markers patients + polyline route. Appelée à chaque
+ * changement de nextPatient ou de statut patient.
+ */
+function _uberFSRender() {
+  if (!_uberFSMap) return;
+
+  // 1. Nettoyer les anciens markers patients (pas le live marker)
+  _uberFSMarkers.forEach(m => { try { _uberFSMap.removeLayer(m); } catch (_) {} });
+  _uberFSMarkers = [];
+
+  // 2. Markers patients
+  const patients = APP.get('uberPatients') || [];
+  const next     = APP.get('nextPatient');
+  const nextKey  = next ? String(next.patient_id || next.id || '') : '';
+
+  patients.forEach((p, idx) => {
+    if (!p.lat || !p.lng) return;
+    const k = String(p.patient_id || p.id || '');
+    const isNext   = (k === nextKey);
+    const isDone   = !!p.done;
+    const isAbsent = !!p.absent;
+    const isUrgent = !!(p.urgent || p.urgence);
+
+    let bg, fg = '#fff', size = 32;
+    if (isDone)        { bg = '#3dd68c'; }
+    else if (isAbsent) { bg = '#6a8099'; }
+    else if (isUrgent) { bg = '#ff5f6d'; size = 40; }
+    else if (isNext)   { bg = '#ffb547'; size = 42; }
+    else               { bg = '#00d4aa'; }
+
+    const ringStyle = isNext
+      ? 'box-shadow:0 0 0 4px rgba(255,181,71,.35), 0 4px 14px rgba(0,0,0,.4);'
+      : 'box-shadow:0 2px 8px rgba(0,0,0,.35);';
+
+    const marker = L.marker([p.lat, p.lng], {
+      zIndexOffset: isNext ? 900 : (isUrgent ? 500 : 0),
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="
+          width:${size}px;height:${size}px;
+          background:${bg};color:${fg};
+          border:3px solid white;border-radius:50%;
+          display:flex;align-items:center;justify-content:center;
+          font-size:${size>=40?14:12}px;font-weight:700;
+          ${ringStyle}
+          ${isDone||isAbsent ? 'opacity:.55;' : ''}
+        ">${isDone ? '✓' : isAbsent ? '–' : (idx + 1)}</div>`,
+        iconSize:   [size, size],
+        iconAnchor: [size/2, size/2],
+      }),
+    });
+
+    const nom  = ((p.prenom || '') + ' ' + (p.nom || '')).trim()
+              || p.description || p.label || ('Patient ' + (idx + 1));
+    const adr  = p.adresse || p.address || p.addressFull || '';
+    const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+    marker.bindPopup(`
+      <strong style="font-size:13px">${nom}</strong>
+      ${adr ? `<br><span style="font-size:11px;color:#666">${adr}</span>` : ''}
+      ${heure ? `<br><span style="font-size:11px">🕐 ${heure}</span>` : ''}
+      ${isNext ? '<br><span style="color:#ffb547;font-size:11px;font-weight:700">🎯 PROCHAIN</span>' : ''}
+      ${isUrgent ? '<br><span style="color:#ff5f6d;font-size:11px;font-weight:700">🚨 URGENT</span>' : ''}
+    `);
+
+    marker.addTo(_uberFSMap);
+    _uberFSMarkers.push(marker);
+  });
+
+  // 3. Polyline route (position infirmière → prochain patient)
+  _uberFSDrawRoute();
+
+  // 4. Live marker (au cas où il aurait été supprimé)
+  _uberFSDrawLiveMarker();
+}
+
+/**
+ * Dessine ou met à jour le marker bleu pulsant de l'infirmière.
+ */
+function _uberFSDrawLiveMarker() {
+  if (!_uberFSMap) return;
+  const pos = APP.get('userPos');
+  if (!pos || !pos.lat || !pos.lng) return;
+
+  if (_uberFSLiveMarker) {
+    _uberFSLiveMarker.setLatLng([pos.lat, pos.lng]);
+  } else {
+    _uberFSLiveMarker = L.marker([pos.lat, pos.lng], {
+      zIndexOffset: 1000,
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="uber-fs-live-pulse">
+          <div class="uber-fs-live-dot"></div>
+        </div>`,
+        iconSize:   [40, 40],
+        iconAnchor: [20, 20],
+      }),
+    }).addTo(_uberFSMap);
+    _uberFSLiveMarker.bindPopup('📍 Vous êtes ici');
+  }
+}
+
+/**
+ * Trace la route OSRM entre la position actuelle et le prochain patient.
+ * Si pas de position GPS, ne fait rien.
+ */
+async function _uberFSDrawRoute() {
+  if (!_uberFSMap) return;
+
+  // Cleanup ancienne route
+  if (_uberFSRoutePoly) {
+    try { _uberFSMap.removeLayer(_uberFSRoutePoly); } catch (_) {}
+    _uberFSRoutePoly = null;
+  }
+
+  const pos  = APP.get('userPos') || APP.get('startPoint');
+  const next = APP.get('nextPatient');
+  if (!pos || !next || !next.lat || !next.lng) return;
+
+  // Polyline droite immédiate (fallback visible avant OSRM)
+  const fallback = L.polyline([[pos.lat, pos.lng], [next.lat, next.lng]], {
+    color: '#ffb547', weight: 3, opacity: 0.5, dashArray: '6,8',
+  }).addTo(_uberFSMap);
+  _uberFSRoutePoly = fallback;
+
+  // Route OSRM réelle (asynchrone, remplace le fallback)
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson`;
+    const r = await fetch(url, {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined,
+    });
+    const d = await r.json();
+    if (d.code !== 'Ok' || !d.routes?.[0]) return;
+
+    if (!_uberFSMap) return; // overlay fermé entre temps
+
+    // Remplacer la polyline droite par la vraie route
+    if (_uberFSRoutePoly) {
+      try { _uberFSMap.removeLayer(_uberFSRoutePoly); } catch (_) {}
+    }
+    const latlngs = d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    _uberFSRoutePoly = L.polyline(latlngs, {
+      color: '#ffb547', weight: 5, opacity: 0.85,
+    }).addTo(_uberFSMap);
+
+    // Stocker durée + distance pour le HUD
+    const dist = (d.routes[0].distance / 1000).toFixed(1);
+    const dur  = Math.round(d.routes[0].duration / 60);
+    const meta = $('uber-fs-next-meta');
+    if (meta && next) {
+      const adr   = next.adresse || next.address || next.addressFull || '';
+      const heure = next.heure_soin || next.heure_preferee || next.heure || '';
+      meta.innerHTML = `
+        <span class="uber-fs-meta-pill">📏 ${dist} km</span>
+        <span class="uber-fs-meta-pill">⏱️ ~${dur} min</span>
+        ${heure ? `<span class="uber-fs-meta-pill">🕐 ${heure}</span>` : ''}
+        ${adr ? `<div class="uber-fs-meta-addr">${adr}</div>` : ''}
+      `;
+    }
+  } catch (e) {
+    // OSRM KO → on garde le fallback dashé
+    log('[Uber FS] OSRM route KO:', e.message);
+  }
+}
+
+/**
+ * Met à jour la card prochain patient + le compteur progression.
+ */
+function _uberFSUpdateHUD() {
+  const next     = APP.get('nextPatient');
+  const patients = APP.get('uberPatients') || [];
+  const total    = patients.length;
+  const done     = patients.filter(p => p.done || p.absent).length;
+  const reste    = total - done;
+
+  const progEl = $('uber-fs-progress');
+  if (progEl) progEl.textContent = `${done} / ${total} · ${reste} restant${reste > 1 ? 's' : ''}`;
+
+  const nameEl = $('uber-fs-next-name');
+  const metaEl = $('uber-fs-next-meta');
+  if (next) {
+    const nom = ((next.prenom || '') + ' ' + (next.nom || '')).trim()
+             || next.description || next.label || 'Patient suivant';
+    if (nameEl) nameEl.textContent = nom;
+
+    // Meta provisoire (sera enrichie par OSRM avec dist/durée)
+    const adr   = next.adresse || next.address || next.addressFull || '';
+    const heure = next.heure_soin || next.heure_preferee || next.heure || '';
+    if (metaEl) {
+      metaEl.innerHTML = `
+        ${heure ? `<span class="uber-fs-meta-pill">🕐 ${heure}</span>` : ''}
+        ${adr ? `<div class="uber-fs-meta-addr">${adr}</div>` : '<div class="uber-fs-meta-addr">—</div>'}
+      `;
+    }
+  } else {
+    if (nameEl) nameEl.textContent = '✅ Tournée terminée';
+    if (metaEl) metaEl.innerHTML = '<div class="uber-fs-meta-addr">Tous les patients ont été visités</div>';
+  }
+}
+
+/**
+ * Recadre la vue pour englober tous les markers + position GPS.
+ */
+function _uberFSFitView() {
+  if (!_uberFSMap) return;
+  const points = [];
+  const pos = APP.get('userPos') || APP.get('startPoint');
+  if (pos?.lat && pos?.lng) points.push([pos.lat, pos.lng]);
+  (APP.get('uberPatients') || []).forEach(p => {
+    if (p.lat && p.lng && !p.done && !p.absent) points.push([p.lat, p.lng]);
+  });
+  if (points.length >= 2) {
+    try { _uberFSMap.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 15 }); } catch (_) {}
+  } else if (points.length === 1) {
+    _uberFSMap.setView(points[0], 15);
+  }
+}
+
+/**
+ * Cycle GPS toutes les 10s (compromis batterie choisi par l'utilisateur).
+ * Utilise getCurrentPosition + setInterval plutôt que watchPosition pour
+ * un contrôle précis de la fréquence.
+ */
+function _uberFSStartGPSPolling() {
+  if (!navigator.geolocation) {
+    const el = $('uber-fs-gps-status');
+    if (el) el.textContent = 'GPS indisponible';
+    return;
+  }
+
+  const _statusEl = $('uber-fs-gps-status');
+  if (_statusEl) _statusEl.textContent = 'GPS…';
+
+  // Premier fix immédiat (sinon l'utilisateur attend 10s avant de voir le marker)
+  const fetchPos = () => {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        APP.set('userPos', { lat, lng });
+        if (!APP.get('startPoint')) APP.set('startPoint', { lat, lng });
+        if (_statusEl) _statusEl.textContent = `GPS · ${new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+        // _uberFSDrawLiveMarker est appelé via le listener APP.on('userPos')
+      },
+      err => {
+        if (_statusEl) _statusEl.textContent = '❌ GPS perdu';
+        log('[Uber FS] GPS err:', err.message);
+      },
+      { enableHighAccuracy: true, maximumAge: 8000, timeout: 9000 }
+    );
+  };
+
+  fetchPos();
+  _uberFSGpsInterval = setInterval(fetchPos, 10000);
+}
+
+/**
+ * Acquiert un Wake Lock pour empêcher l'écran de s'éteindre pendant la
+ * tournée (utile en voiture sur support GPS). Silencieux si non supporté.
+ */
+async function _uberFSAcquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      _uberFSWakeLock = await navigator.wakeLock.request('screen');
+      log('[Uber FS] Wake Lock acquis');
+    }
+  } catch (e) {
+    log('[Uber FS] Wake Lock KO:', e.message);
+  }
+}
+
+/* ── Wrappers boutons HUD : délèguent à la logique métier existante ── */
+
+async function _uberFSEndPatient() {
+  if (typeof markUberDone === 'function') {
+    await markUberDone();
+    // markUberDone déclenche selectBestPatient → APP.set('nextPatient', ...)
+    // → notre listener APP.on('nextPatient') re-render automatiquement.
+    // Recadrer sur le nouveau prochain patient
+    setTimeout(() => _uberFSFitView(), 200);
+  }
+}
+
+async function _uberFSRecalcRoute() {
+  if (typeof recalcRouteUber === 'function') {
+    await recalcRouteUber();
+  }
+  // Redessiner notre polyline locale (la route globale est dans uber-route-info)
+  _uberFSDrawRoute();
+  if (typeof showToast === 'function') showToast('🔄 Route recalculée');
+}
+
+async function _uberFSBestNext() {
+  if (typeof selectBestPatient === 'function') {
+    await selectBestPatient();
+    setTimeout(() => _uberFSFitView(), 200);
+  }
+  if (typeof showToast === 'function') showToast('🧠 Sélection mise à jour');
+}
+
+/* ── Exposition globale (onclick HTML) ────────────────────────────── */
+if (typeof window !== 'undefined') {
+  window.openUberFullscreenGPS  = openUberFullscreenGPS;
+  window.closeUberFullscreenGPS = closeUberFullscreenGPS;
+  window._uberFSEndPatient      = _uberFSEndPatient;
+  window._uberFSRecalcRoute     = _uberFSRecalcRoute;
+  window._uberFSBestNext        = _uberFSBestNext;
+}

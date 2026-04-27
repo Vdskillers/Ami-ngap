@@ -1614,6 +1614,7 @@
 
         <!-- ── Contrôles GPS Uber ── -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn bp bsm" onclick="openUberFullscreenGPS()" style="background:linear-gradient(135deg,#ffb547,#ff9425);color:#1a0d00;border:none;font-weight:700"><span>🗺️</span> GPS plein écran</button>
           <button class="btn bs bsm" onclick="stopLiveTracking()"><span>⏹️</span> Arrêter GPS</button>
           <button class="btn bv bsm" onclick="recalcRouteUber()"><span>🔄</span> Recalculer route</button>
           <button class="btn bs bsm" onclick="selectBestPatient()"><span>🧠</span> Meilleur suivant</button>
@@ -3359,7 +3360,7 @@
 
 <!-- Modules dépendant de Leaflet -->
 <script src="js/map.js?v=3.8"></script>
-<script src="js/uber.js?v=3.8"></script>
+<script src="js/uber.js?v=5.0"></script>
 
 <!-- Moteurs IA (pas de dépendance Leaflet) — doivent précéder tournee.js -->
 <script src="js/ai-tournee.js?v=3.8"></script>

@@ -1098,16 +1098,23 @@ function _exportConsentSignaturePNG(canvas) {
     const srcCtx = canvas.getContext('2d');
     const src    = srcCtx.getImageData(0, 0, w, h);
     const sd     = src.data;
+    // ⚡ SEUILLAGE alpha (≥ 16) → noir OPAQUE (alpha 255).
+    //    Avant : on conservait l'alpha source ⇒ pixels de bord d'antialias
+    //    avaient alpha 8/16 ⇒ noir presque transparent ⇒ trait délavé sur
+    //    fond blanc dans le PDF.
+    //    Maintenant : tout pixel ayant ne serait-ce qu'un peu de couleur
+    //    devient noir plein ⇒ trait dense et lisible.
+    const ALPHA_THRESHOLD = 16;
     const out = new ImageData(w, h);
     const od  = out.data;
     for (let i = 0; i < sd.length; i += 4) {
       const a = sd[i + 3];
-      if (a > 0) {
-        // Pixel dessiné → noir bleu nuit, alpha conservé pour le rendu lisse
+      if (a >= ALPHA_THRESHOLD) {
+        // Pixel dessiné → noir bleu nuit OPAQUE
         od[i]     = 26;   // #1a — R
         od[i + 1] = 26;   // #1a — G
         od[i + 2] = 32;   // #20 — B (légère teinte bleu nuit, plus élégant que pur noir)
-        od[i + 3] = a;
+        od[i + 3] = 255;  // ⚡ alpha PLEIN — clé pour visibilité PDF
       } else {
         // Pixel vide → blanc opaque (fond papier)
         od[i]     = 255;
@@ -1135,8 +1142,9 @@ function _exportConsentSignaturePNG(canvas) {
 function _initConsentCanvas(canvas) {
   const ctx = canvas.getContext('2d');
   ctx.strokeStyle = '#00d4aa';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 3.2;          // ⚡ 2 → 3.2 : trait plus épais ⇒ meilleure densité PDF
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';       // ⚡ ajout : évite les angles cassants entre segments
 
   const getPos = e => {
     const rect = canvas.getBoundingClientRect();
@@ -1236,7 +1244,15 @@ async function consentLoadHistory() {
     if (delAllBtn) delAllBtn.style.display = '';
 
     // Résolution parallèle des signatures (consent local → ami_signatures via invoice_id)
-    const sigs = await Promise.all(all.map(c => _consentResolveSignature(c).catch(() => null)));
+    // ⚡ Puis normalisation parallèle pour gérer les anciens PNG legacy (clair-sur-transparent)
+    //    qui sinon apparaissent presque invisibles sur la vignette à fond blanc.
+    const sigsRaw = await Promise.all(all.map(c => _consentResolveSignature(c).catch(() => null)));
+    const _normFn = (typeof window.normalizeSignaturePNGCached === 'function')
+      ? window.normalizeSignaturePNGCached
+      : null;
+    const sigs = _normFn
+      ? await Promise.all(sigsRaw.map(p => p ? _normFn(p).catch(() => p) : Promise.resolve(null)))
+      : sigsRaw;
     const sigById = new Map();
     all.forEach((c, i) => sigById.set(c.id, sigs[i]));
 
@@ -1264,7 +1280,7 @@ async function consentLoadHistory() {
       const sigPng = sigById.get(c.id);
       const sigThumb = sigPng ? `
               <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-                <img src="${sigPng}" alt="Signature patient" style="height:40px;max-width:140px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain" title="Signature manuscrite du patient">
+                <img src="${sigPng}" alt="Signature patient" style="height:60px;max-width:200px;border:1px solid var(--b);border-radius:4px;background:#fff;object-fit:contain;image-rendering:crisp-edges" title="Signature manuscrite du patient">
                 <span style="font-size:10px;color:var(--m)">${c.invoice_id ? '🔗 Liée à la facture ' + c.invoice_id : 'Signature locale'}</span>
               </div>` : '';
       return `
@@ -1430,7 +1446,18 @@ async function consentPrintEntry(id) {
 
     // ⚡ Récupération de la signature visuelle (PNG)
     //    Chaîne de fallback : consentement local → ami_signatures via invoice_id
-    const signaturePng = await _consentResolveSignature(c);
+    let signaturePng = await _consentResolveSignature(c);
+    // ⚡ Normalisation des PNG legacy (clair-sur-transparent) → noir-sur-blanc
+    //    Indispensable pour les anciens consentements signés AVANT le seuillage
+    //    alpha. Sans ce traitement, la signature est presque invisible dans le PDF.
+    if (signaturePng) {
+      try {
+        const norm = (typeof window.normalizeSignaturePNGCached === 'function')
+          ? await window.normalizeSignaturePNGCached(signaturePng)
+          : signaturePng;
+        if (norm) signaturePng = norm;
+      } catch (_) { /* on garde le PNG original si la normalisation échoue */ }
+    }
 
     const w = window.open('', '_blank');
     if (!w) {
@@ -1448,8 +1475,8 @@ async function consentPrintEntry(id) {
         .meta div{margin:3px 0}
         .hash{font-family:monospace;font-size:10px;word-break:break-all;color:#444;background:#f0f0f0;padding:6px;border-radius:4px;margin-top:4px}
         .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#e6f7f1;color:#00644a}
-        .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:8px;background:#fff;text-align:center;margin-top:6px}
-        .sigbox img{max-width:280px;max-height:120px;display:block;margin:0 auto}
+        .sigbox{border:1px solid #ccd5e0;border-radius:6px;padding:10px;background:#fff;text-align:center;margin-top:6px}
+        .sigbox img{max-width:340px;max-height:150px;display:block;margin:0 auto;background:#fff;image-rendering:crisp-edges}
         .sigbox .cap{font-size:10px;color:#777;margin-top:6px;text-align:center}
         @media print{@page{margin:15mm}}
       </style>

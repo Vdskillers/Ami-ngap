@@ -1,13 +1,14 @@
-/* sw.js — AMI NGAP Service Worker v4.6
+/* sw.js — AMI NGAP Service Worker v5.0
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
    ✅ v4.9 — bump version + nettoyage résidus SANDBOX + fallback navigation durci
    ✅ Navigation preload activé pour cold start plus rapide
    ✅ Purge agressive des anciens caches (ami-* ET amitest-*)
+   ✅ v5.0 — Mode GPS plein écran Uber Médical (uber.js + mobile-premium.css)
 */
 
-const CACHE_VERSION = 'ami-v4.9';
+const CACHE_VERSION = 'ami-v5.0';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
