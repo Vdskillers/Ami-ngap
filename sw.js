@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.10.2
+/* sw.js — AMI NGAP Service Worker v5.10.3
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -11,9 +11,11 @@
               terrain" dans Pilotage, status pills dans HUD Mode Uber Médical,
               3 modals (config mode auto, simulation, suggestion ajustement)
               → module ai-smart-ui.js
+   ✅ v5.10.3 — Fix anti-spam vocal : "retard estimé" annoncé une seule fois
+              par patient (ré-annoncé seulement si retard aggravé de +5 min)
 */
 
-const CACHE_VERSION = 'ami-v5.10.2';
+const CACHE_VERSION = 'ami-v5.10.3';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

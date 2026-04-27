@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════════════
-   ai-smart-tour.js — AMI NGAP v5.10.0
+   ai-smart-tour.js — AMI NGAP v5.10.3
    ────────────────────────────────────────────────────────────────────
    Couches d'intelligence terrain pour la Tournée IA :
 
@@ -56,7 +56,7 @@
 
   const SMART = (window.AMI_SMART = window.AMI_SMART || {});
   SMART._loaded = true;
-  SMART.version = '5.10.0';
+  SMART.version = '5.10.3';
 
   /* Configuration globale (modifiable par l'IDE via UI) */
   const CFG = (SMART.config = {
@@ -935,6 +935,16 @@
   let _autoPilotInterval = null;
   let _lastNextPatientId = null;
 
+  /* v5.10.3 — Mémoire des retards déjà annoncés vocalement.
+     Map patientId → dernier retard annoncé (en min).
+     Une nouvelle annonce vocale n'a lieu QUE si :
+       - le patient n'a jamais été annoncé, OU
+       - le retard s'est aggravé de plus de +5 min depuis la dernière annonce.
+     Réinitialisé à chaque démarrage de tournée et au stop autopilot. */
+  const _announcedDelays = new Map();
+
+  function _resetAnnouncedDelays() { _announcedDelays.clear(); }
+
   function _autoPilotTick() {
     if (!CFG.autoMode.enabled) return;
     if (typeof APP === 'undefined') return;
@@ -949,10 +959,38 @@
       return;
     }
 
-    /* 2. Détection retard proactive */
+    /* 2. Détection retard proactive
+       v5.10.3 : annonce vocale UNIQUEMENT pour les patients pas encore annoncés
+       OU dont le retard s'est aggravé significativement (+5 min). */
     const late = checkProactiveDelay(route, idx);
     if (late.length && CFG.autoMode.voice) {
-      _speakSafe(`Retard estimé sur ${late.length} patients`);
+      const newAlerts = [];
+      for (const l of late) {
+        const delayMin = Math.round(l.etaMin - l.planned);
+        const prev = _announcedDelays.get(l.patientId);
+        if (prev == null || (delayMin - prev) >= 5) {
+          newAlerts.push({ ...l, delayMin });
+          _announcedDelays.set(l.patientId, delayMin);
+        }
+      }
+      if (newAlerts.length === 1) {
+        const a = newAlerts[0];
+        const target = route.find(p => p.id === a.patientId);
+        const name = target ? (target.nom || target.label || 'un patient') : 'un patient';
+        _speakSafe(`Retard estimé chez ${name}, plus ${a.delayMin} minutes`);
+      } else if (newAlerts.length > 1) {
+        _speakSafe(`Retard détecté sur ${newAlerts.length} nouveaux patients`);
+      }
+
+      /* Nettoyage : oublier les patients qui ne sont plus en retard
+         (par exemple parce que la tournée a été ajustée) */
+      const stillLateIds = new Set(late.map(l => l.patientId));
+      for (const id of _announcedDelays.keys()) {
+        if (!stillLateIds.has(id)) _announcedDelays.delete(id);
+      }
+    } else if (!late.length) {
+      /* Plus aucun retard prévu → on peut tout oublier */
+      if (_announcedDelays.size > 0) _announcedDelays.clear();
     }
 
     /* 3. Replanification automatique (avec garde-fous) */
@@ -1005,6 +1043,7 @@
 
   function startAutoPilot() {
     if (_autoPilotInterval) return;
+    _resetAnnouncedDelays();          /* v5.10.3 : oublier les anciennes annonces */
     _autoPilotInterval = setInterval(_autoPilotTick, 10000);
     if (typeof showToast === 'function') {
       showToast('🤖 Autopilote activé');
@@ -1013,6 +1052,7 @@
 
   function stopAutoPilot() {
     if (_autoPilotInterval) { clearInterval(_autoPilotInterval); _autoPilotInterval = null; }
+    _resetAnnouncedDelays();          /* v5.10.3 : nettoyage à l'arrêt */
     if (typeof showToast === 'function') {
       showToast('⏸ Autopilote désactivé');
     }
