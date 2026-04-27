@@ -15,7 +15,7 @@
               - Helper _osrmExcludeParam() retourne motorway, toll, motorway,toll, ou ''
 */
 
-const CACHE_VERSION = 'ami-v5.9';
+const CACHE_VERSION = 'ami-v5.9.1';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

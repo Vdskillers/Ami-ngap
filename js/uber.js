@@ -74,11 +74,20 @@ function _getRoutePref() {
 }
 
 function _osrmExcludeParam() {
+  // ⚡ v5.9.1 — FIX 400 Bad Request : le serveur public OSRM
+  // (router.project-osrm.org) n'accepte QUE 'motorway' comme classe
+  // d'exclusion routable dans le profil voiture standard. Les valeurs
+  // 'toll', 'ferry' déclenchent un 400 Bad Request.
+  //
+  // Approche C : si avoidToll OU avoidMotorway est actif, on exclut
+  // 'motorway' (les péages français étant ~exclusivement sur autoroute,
+  // exclure les autoroutes exclut DE FAIT les péages).
+  // Limite connue : on perd aussi les autoroutes GRATUITES (A50, A75…)
+  // dans le cas "Éviter péages seul". Compromis acceptable pour OSRM public.
+  // Si on passe un jour à un OSRM self-hosted ou Mapbox, on pourra raffiner.
   const { avoidMotorway, avoidToll } = _getRoutePref();
-  const parts = [];
-  if (avoidMotorway) parts.push('motorway');
-  if (avoidToll)     parts.push('toll');
-  return parts.length ? ('&exclude=' + parts.join(',')) : '';
+  if (avoidMotorway || avoidToll) return '&exclude=motorway';
+  return '';
 }
 
 function _osrmRouteSuffix() {
@@ -86,11 +95,11 @@ function _osrmRouteSuffix() {
 }
 
 function _osrmCacheKeySuffix() {
+  // v5.9.1 — Le cache key ne distingue plus motorway vs toll, puisque
+  // les deux génèrent la même URL OSRM. On garde un suffixe unique '_nm'
+  // pour ne pas mélanger avec le mode standard.
   const { avoidMotorway, avoidToll } = _getRoutePref();
-  let s = '';
-  if (avoidMotorway) s += '_nm';
-  if (avoidToll)     s += '_nt';
-  return s;
+  return (avoidMotorway || avoidToll) ? '_nm' : '';
 }
 
 /**
@@ -134,18 +143,18 @@ function _setRoutePrefGlobal(partialPrefs) {
   const fsBtn = document.getElementById('uber-fs-route-toggle');
   if (fsBtn) {
     let icon = '🛣️', lbl = 'Standard';
-    if (next.avoidMotorway && next.avoidToll)      { icon='🌳'; lbl='RN sans péage'; }
+    if (next.avoidMotorway && next.avoidToll)      { icon='🌳'; lbl='RN/RD'; }
     else if (next.avoidMotorway)                    { icon='🌳'; lbl='RN/RD'; }
-    else if (next.avoidToll)                        { icon='💸'; lbl='Sans péage'; }
+    else if (next.avoidToll)                        { icon='💸'; lbl='Sans péage'; } // = motorway en pratique sur OSRM public
     fsBtn.innerHTML = `<span>${icon}</span><span class="uber-fs-btn-lbl">${lbl}</span>`;
-    fsBtn.title = `Routage : ${lbl} — appui long pour basculer (cycle 4 modes)`;
+    fsBtn.title = `Routage : ${lbl} — appui long pour cycler entre les modes`;
   }
 
   // Labels descriptifs
   const labelText = (() => {
     if (next.avoidMotorway && next.avoidToll) return '🚫 Autoroutes + péages exclus — RN/RD uniquement';
-    if (next.avoidMotorway)                    return '🚫 Autoroutes exclues — péages OK';
-    if (next.avoidToll)                        return '💸 Péages exclus — autoroutes gratuites OK';
+    if (next.avoidMotorway)                    return '🚫 Autoroutes exclues — RN/RD uniquement';
+    if (next.avoidToll)                        return '💸 Péages exclus — autoroutes exclues aussi (limitation OSRM)';
     return '✅ Itinéraire standard';
   })();
   document.querySelectorAll('.route-autoroute-label, #route-autoroute-label').forEach(el => {
@@ -234,10 +243,9 @@ async function _computeRouteDiff(from, to) {
   }
 
   const baseUrl = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
-  const excludeParts = [];
-  if (avoidMotorway) excludeParts.push('motorway');
-  if (avoidToll)     excludeParts.push('toll');
-  const excludeParam = '&exclude=' + excludeParts.join(',');
+  // v5.9.1 — Mêmes règles que _osrmExcludeParam : OSRM public n'accepte
+  // que 'motorway'. Si l'un OU l'autre flag est actif, on exclut motorway.
+  const excludeParam = (avoidMotorway || avoidToll) ? '&exclude=motorway' : '';
 
   try {
     const [autoRes, currRes] = await Promise.all([
