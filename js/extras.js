@@ -835,6 +835,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }, 200);
   } catch(_) {}
 
+  /* v5.9.2 — Test au boot du support OSRM exclude=motorway.
+     Si le serveur public OSRM retourne 400 sur les URL avec ?exclude=…
+     (cas constaté en production sur router.project-osrm.org), on désactive
+     proprement la fonctionnalité côté client → plus aucun 400 ensuite,
+     l'app continue de fonctionner avec un routage standard.
+     Le test est lancé 600ms après le boot pour ne pas concurrencer les
+     autres requêtes de démarrage. */
+  setTimeout(() => {
+    if (typeof window._testOSRMExcludeSupport === 'function') {
+      window._testOSRMExcludeSupport();
+    }
+  }, 600);
+
   /* Écouter l'event réel émis par ui.js (ui:navigate) */
   document.addEventListener('ui:navigate', e=>{
     if(e.detail?.view === 'tur'){

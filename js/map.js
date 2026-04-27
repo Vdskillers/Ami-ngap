@@ -885,10 +885,13 @@ async function useLiveMyLocation() {
                 : '';
               const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
                 + '?overview=full&geometries=geojson&steps=false' + exclude;
-              const res  = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-              const data = await res.json();
+              // v5.9.2 — Fetch safe avec fallback automatique si serveur OSRM
+              // refuse exclude (évite carte vide quand 400 Bad Request).
+              const data = (typeof window._osrmFetchSafe === 'function')
+                ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
+                : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
-              if (data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
 
               const geojson = data.routes[0].geometry; // GeoJSON LineString
               // Convertir [lng, lat] → [lat, lng] pour Leaflet

@@ -82,9 +82,14 @@ function _osrmExcludeParam() {
   // Approche C : si avoidToll OU avoidMotorway est actif, on exclut
   // 'motorway' (les péages français étant ~exclusivement sur autoroute,
   // exclure les autoroutes exclut DE FAIT les péages).
-  // Limite connue : on perd aussi les autoroutes GRATUITES (A50, A75…)
-  // dans le cas "Éviter péages seul". Compromis acceptable pour OSRM public.
-  // Si on passe un jour à un OSRM self-hosted ou Mapbox, on pourra raffiner.
+  //
+  // ⚡ v5.9.2 — Si le boot test ou un fetch précédent a découvert que le
+  // serveur ne supporte PAS du tout exclude, on retourne '' pour éviter
+  // tous les 400 ultérieurs. _osrmFetchSafe gère le retry automatique
+  // si jamais on n'a pas encore fait le test.
+  if (typeof window !== 'undefined' && window._osrmExcludeSupported === false) {
+    return '';
+  }
   const { avoidMotorway, avoidToll } = _getRoutePref();
   if (avoidMotorway || avoidToll) return '&exclude=motorway';
   return '';
@@ -217,6 +222,128 @@ if (typeof window !== 'undefined') {
 }
 
 /* ════════════════════════════════════════════════════════════
+   v5.9.2 — OSRM FETCH SAFE + BOOT TEST EXCLUDE SUPPORT
+   ────────────────────────────────────────────────────────────
+   Problème terrain : router.project-osrm.org renvoie 400 Bad Request
+   sur TOUTE URL contenant '?exclude=...' (le profil voiture du serveur
+   public a été reconfiguré sans support des classes d'exclusion).
+   Symptôme : tournée bloquée, carte vide, aucune optimisation.
+
+   Solution :
+   1. Test au boot (1 seule fois) : on vérifie si exclude est supporté
+   2. Si non supporté, _osrmExcludeParam() retourne '' (pas d'exclude)
+   3. _osrmFetchSafe(url) : wrapper qui fait le retry sans exclude
+      en cas de 400, mémorise et désactive globalement après 1 fail.
+
+   Garantie : l'app ne plante JAMAIS sur OSRM, le fallback est silencieux
+   pour l'IDE. Si le serveur ne supporte pas l'exclusion, on l'informe
+   via 1 toast unique au boot et le label UI devient explicite.
+   ============================================================ */
+
+// null = inconnu (pas encore testé), true = supporté, false = non supporté
+window._osrmExcludeSupported = (window._osrmExcludeSupported !== undefined)
+  ? window._osrmExcludeSupported
+  : null;
+let _osrmExcludeUserNotified = false;
+
+/**
+ * Fetch OSRM résilient avec fallback automatique :
+ *   - Si l'URL contient &exclude=… et reçoit 400/erreur → retry sans exclude
+ *   - Mémorise window._osrmExcludeSupported = false après 1er échec
+ *   - Retourne le JSON parsé OU null (jamais throw)
+ *   - Logue 1 toast UNIQUE pour informer l'IDE
+ */
+window._osrmFetchSafe = async function(url, fetchOptions) {
+  if (!url) return null;
+
+  // Si on sait déjà que exclude n'est pas supporté → on le retire d'office
+  if (window._osrmExcludeSupported === false && url.includes('exclude=')) {
+    url = url.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '');
+    // Nettoyage cosmétique des doubles '&' ou '?&' résiduels
+    url = url.replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
+  }
+
+  try {
+    let res = await fetch(url, fetchOptions);
+
+    // Premier échec : si l'URL contenait exclude, on retry sans
+    if (!res.ok) {
+      if (url.includes('exclude=')) {
+        // Marquer le serveur comme "ne supporte pas exclude"
+        if (window._osrmExcludeSupported !== false) {
+          window._osrmExcludeSupported = false;
+          if (!_osrmExcludeUserNotified && typeof showToast === 'function') {
+            _osrmExcludeUserNotified = true;
+            showToast('ℹ️ Routage : exclusion d\'autoroutes non supportée par le serveur — itinéraire standard utilisé', 'wa');
+          }
+        }
+        const cleanUrl = url.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
+                            .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
+        try {
+          res = await fetch(cleanUrl, fetchOptions);
+          if (!res.ok) return null;
+        } catch (_) { return null; }
+      } else {
+        return null; // erreur sans exclude → vraie panne
+      }
+    }
+
+    const json = await res.json();
+    if (json && json.code && json.code !== 'Ok') {
+      // OSRM peut renvoyer 200 OK avec code "InvalidUrl" / "NoRoute"
+      console.warn('[OSRM] code !== Ok:', json.code, json.message || '');
+      // Si erreur liée à exclude → désactiver et retry
+      if (url.includes('exclude=') && /invalid/i.test(json.code)) {
+        window._osrmExcludeSupported = false;
+        const cleanUrl = url.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
+                            .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
+        try {
+          const retry = await fetch(cleanUrl, fetchOptions);
+          if (retry.ok) {
+            const j2 = await retry.json();
+            return (j2 && j2.code === 'Ok') ? j2 : null;
+          }
+        } catch (_) {}
+        return null;
+      }
+      return null;
+    }
+    return json;
+  } catch (e) {
+    console.warn('[OSRM] fetch fatal:', e?.message);
+    return null;
+  }
+};
+
+/**
+ * Test au boot : envoie 1 requête OSRM avec exclude=motorway pour
+ * détecter si le serveur le supporte. Stocke le résultat dans
+ * window._osrmExcludeSupported pour économiser les retry ensuite.
+ * Appelée par extras.js au DOMContentLoaded.
+ */
+window._testOSRMExcludeSupport = async function() {
+  if (window._osrmExcludeSupported !== null) return; // déjà testé
+
+  // Coords Paris arbitraire : 2 points proches (faible distance, faible coût)
+  const testUrl = 'https://router.project-osrm.org/route/v1/driving/' +
+                  '2.3522,48.8566;2.3622,48.8666?overview=false&exclude=motorway';
+  try {
+    const res = await fetch(testUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (!res.ok) {
+      window._osrmExcludeSupported = false;
+      console.info('[OSRM] Boot test → exclude NON supporté (HTTP ' + res.status + ')');
+      return;
+    }
+    const json = await res.json();
+    window._osrmExcludeSupported = (json && json.code === 'Ok' && json.routes?.[0]);
+    console.info('[OSRM] Boot test → exclude ' + (window._osrmExcludeSupported ? 'SUPPORTÉ ✓' : 'NON supporté'));
+  } catch (e) {
+    window._osrmExcludeSupported = false;
+    console.warn('[OSRM] Boot test KO :', e?.message);
+  }
+};
+
+/* ════════════════════════════════════════════════════════════
    v5.9 — CALCUL DIFF DE TEMPS (autoroute vs sans)
    ────────────────────────────────────────────────────────────
    Pour informer l'IDE du coût en temps de son choix de routage.
@@ -242,24 +369,49 @@ async function _computeRouteDiff(from, to) {
     return cached;
   }
 
+  // ⚡ v5.9.2 — APPROXIMATION INTELLIGENTE (1 appel OSRM au lieu de 2)
+  // Au lieu de faire 2 requêtes OSRM (avec et sans exclude) qui doublent
+  // le coût et risquent l'erreur 400, on fait UNE SEULE requête de base
+  // et on extrapole le surcoût de l'évitement d'autoroute selon la zone :
+  //   - Urbain dense (vitesse < 25 km/h) : +10% (déjà peu d'autoroute)
+  //   - Péri-urbain (25-50 km/h)         : +20% (autoroute épargne moyen)
+  //   - Rural/long trajet (> 50 km/h)    : +30% (autoroute épargne fort)
+  //   - Bonus distance : +5% si > 20km, +10% si > 50km
+  //
+  // Avantages :
+  //   - 50% moins d'appels OSRM
+  //   - Fonctionne MÊME si le serveur ne supporte pas exclude
+  //   - Précision suffisante pour informer l'IDE (« +X min approx »)
+
   const baseUrl = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
-  // v5.9.1 — Mêmes règles que _osrmExcludeParam : OSRM public n'accepte
-  // que 'motorway'. Si l'un OU l'autre flag est actif, on exclut motorway.
-  const excludeParam = (avoidMotorway || avoidToll) ? '&exclude=motorway' : '';
 
   try {
-    const [autoRes, currRes] = await Promise.all([
-      fetch(baseUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined })
-        .then(r => r.json()).catch(() => null),
-      fetch(baseUrl + excludeParam, { signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined })
-        .then(r => r.json()).catch(() => null),
-    ]);
+    const data = await window._osrmFetchSafe(baseUrl);
+    if (!data?.routes?.[0]) return null;
 
-    if (!autoRes?.routes?.[0] || !currRes?.routes?.[0]) return null;
+    const route = data.routes[0];
+    const autoMin    = Math.round(route.duration / 60);
+    const distanceKm = route.distance / 1000;
+    const durationH  = route.duration / 3600;
+    const speed      = durationH > 0 ? distanceKm / durationH : 30;
 
-    const autoMin    = Math.round(autoRes.routes[0].duration / 60);
-    const currentMin = Math.round(currRes.routes[0].duration / 60);
-    const result = { autoMin, currentMin, diffMin: currentMin - autoMin, ts: Date.now() };
+    // Détection zone via vitesse moyenne (pas besoin d'API externe)
+    let factor = 1.20; // péri-urbain par défaut
+    if (speed < 25)      factor = 1.10; // urbain dense
+    else if (speed > 50) factor = 1.30; // rural / long
+
+    // Bonus distance (autoroute épargne plus sur trajets longs)
+    if (distanceKm > 20) factor += 0.05;
+    if (distanceKm > 50) factor += 0.10;
+
+    const currentMin = Math.round(autoMin * factor);
+    const result = {
+      autoMin,
+      currentMin,
+      diffMin: currentMin - autoMin,
+      approx: true,           // marqueur pour l'UI
+      ts: Date.now(),
+    };
     _routeDiffCache.set(key, result);
     return result;
   } catch (_) {
@@ -298,6 +450,10 @@ async function _updateRouteDiffPill() {
     return;
   }
 
+  // v5.9.2 — préfixe '≈' si la valeur est une approximation (cas par défaut
+  // depuis qu'on a passé _computeRouteDiff en mode 1-call)
+  const approxPrefix = diff.approx ? '≈' : '';
+
   if (diff.diffMin <= 0) {
     // Aucune perte (le mode "sans autoroute" est aussi rapide ou plus rapide,
     // cas rare en zone urbaine dense)
@@ -306,17 +462,17 @@ async function _updateRouteDiffPill() {
     pillEl.style.borderColor   = 'rgba(0,212,170,.45)';
     pillEl.style.color         = '#00d4aa';
   } else if (diff.diffMin <= 5) {
-    pillEl.textContent = `+${diff.diffMin} min vs autoroute`;
+    pillEl.textContent = `${approxPrefix} +${diff.diffMin} min vs autoroute`.trim();
     pillEl.style.background    = 'rgba(0,212,170,.12)';
     pillEl.style.borderColor   = 'rgba(0,212,170,.35)';
     pillEl.style.color         = '#00d4aa';
   } else if (diff.diffMin <= 15) {
-    pillEl.textContent = `+${diff.diffMin} min vs autoroute`;
+    pillEl.textContent = `${approxPrefix} +${diff.diffMin} min vs autoroute`.trim();
     pillEl.style.background    = 'rgba(255,181,71,.15)';
     pillEl.style.borderColor   = 'rgba(255,181,71,.4)';
     pillEl.style.color         = '#ffb547';
   } else {
-    pillEl.textContent = `⚠️ +${diff.diffMin} min vs autoroute`;
+    pillEl.textContent = `⚠️ ${approxPrefix} +${diff.diffMin} min vs autoroute`.trim();
     pillEl.style.background    = 'rgba(255,95,109,.15)';
     pillEl.style.borderColor   = 'rgba(255,95,109,.4)';
     pillEl.style.color         = '#ff5f6d';
@@ -388,7 +544,9 @@ async function _updatePilotageRouteDiff() {
   }
 
   const diff = Math.round(totalCurrent - totalAuto);
-  const truncatedHint = factor > 1 ? ' (estimation)' : '';
+  // v5.9.2 — Le diff est désormais toujours approximatif (1-call mode)
+  // donc l'estimation est mentionnée même sans extrapolation
+  const truncatedHint = factor > 1 ? ' (estimation tronquée)' : ' (≈ estimation)';
 
   if (diff <= 0) {
     lineEl.innerHTML = `<span style="color:var(--a)">✅ Aucune perte de temps vs autoroute${truncatedHint}</span>`;
@@ -398,7 +556,7 @@ async function _updatePilotageRouteDiff() {
     if (avoidToll)     reasons.push('péages');
     const color = diff <= 10 ? 'var(--a)' : (diff <= 30 ? '#ffb547' : '#ff5f6d');
     const icon  = diff <= 10 ? '✅' : (diff <= 30 ? '⚠️' : '🚨');
-    lineEl.innerHTML = `<span style="color:${color}">${icon} +${diff} min sur la tournée en évitant ${reasons.join(' + ')}${truncatedHint}</span>`;
+    lineEl.innerHTML = `<span style="color:${color}">${icon} ≈ +${diff} min sur la tournée en évitant ${reasons.join(' + ')}${truncatedHint}</span>`;
   }
 }
 
@@ -418,9 +576,8 @@ async function getETA(from, to) {
   if (!to.lat || !to.lng) return 999;
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false${_osrmExcludeParam()}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    return d.routes?.[0]?.duration / 60 || 999;
+    const d = await window._osrmFetchSafe(url);
+    return d?.routes?.[0]?.duration / 60 || 999;
   } catch { return _dist(from, to) * 1000; }
 }
 
@@ -1645,9 +1802,8 @@ async function recalcRouteUber() {
   const coords = [[pos.lng, pos.lat], ...remaining.map(p => [p.lng, p.lat])];
   try {
     const url = `https://router.project-osrm.org/trip/v1/driving/${coords.map(c=>c.join(',')).join(';')}?source=first&roundtrip=false${_osrmExcludeParam()}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    if (d.code === 'Ok') {
+    const d = await window._osrmFetchSafe(url);
+    if (d?.code === 'Ok' && d.trips?.[0]) {
       const totalMin = Math.round(d.trips[0].duration / 60);
       const totalKm  = (d.trips[0].distance / 1000).toFixed(1);
       const el = $('uber-route-info');
@@ -2085,11 +2241,10 @@ async function _uberFSDrawRoute() {
   // Route OSRM réelle (asynchrone, remplace le fallback)
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson${_osrmExcludeParam()}`;
-    const r = await fetch(url, {
+    const d = await window._osrmFetchSafe(url, {
       signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined,
     });
-    const d = await r.json();
-    if (d.code !== 'Ok' || !d.routes?.[0]) return;
+    if (!d || d.code !== 'Ok' || !d.routes?.[0]) return;
 
     if (!_uberFSMap) return; // overlay fermé entre temps
 

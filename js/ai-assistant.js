@@ -460,9 +460,11 @@ async function startVoiceNavigation(patient) {
       ? window._osrmExcludeParam()
       : '';
     const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${patient.lng},${patient.lat}?steps=true&overview=simplified&language=fr${exclude}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    if (d.code === 'Ok') {
+    // v5.9.2 — Fetch safe avec fallback automatique
+    const d = (typeof window._osrmFetchSafe === 'function')
+      ? await window._osrmFetchSafe(url)
+      : await fetch(url).then(r => r.json()).catch(() => null);
+    if (d && d.code === 'Ok' && d.routes?.[0]?.legs?.[0]?.steps) {
       _navSteps = _parseOSRMSteps(d.routes[0].legs[0].steps);
       speak(`Navigation démarrée. ${_navSteps.length} étapes. ${Math.round(d.routes[0].duration/60)} minutes.`);
     }

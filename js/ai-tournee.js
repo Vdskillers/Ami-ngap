@@ -288,7 +288,16 @@ async function _osrmFetchOne(base, relPath, { timeoutMs = 5000 } = {}) {
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   state.lastCall = Date.now();
 
-  const r = await fetch(base + relPath, { signal: AbortSignal.timeout(timeoutMs) });
+  // ⚡ v5.9.2 — Si on sait globalement que exclude n'est pas supporté, on
+  // le retire AVANT d'appeler. Évite les 400 inutiles.
+  if (typeof window !== 'undefined'
+      && window._osrmExcludeSupported === false
+      && relPath.includes('exclude=')) {
+    relPath = relPath.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
+                     .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
+  }
+
+  let r = await fetch(base + relPath, { signal: AbortSignal.timeout(timeoutMs) });
   if (r.status === 429) {
     state.backoffUntil = Date.now() + 30_000;
     throw new Error('429 rate limited');
@@ -296,6 +305,20 @@ async function _osrmFetchOne(base, relPath, { timeoutMs = 5000 } = {}) {
   if (r.status >= 500) {
     state.backoffUntil = Date.now() + 5_000;
     throw new Error('server error ' + r.status);
+  }
+  // ⚡ v5.9.2 — Si 400 ET URL contenait exclude, on désactive globalement
+  // exclude et on retry sans, sur le même mirror (problème de paramètre,
+  // pas de mirror). Évite tournée bloquée.
+  if (r.status === 400 && relPath.includes('exclude=')) {
+    if (typeof window !== 'undefined' && window._osrmExcludeSupported !== false) {
+      window._osrmExcludeSupported = false;
+      console.info('[OSRM] exclude rejeté (400) — désactivation globale');
+    }
+    const cleanPath = relPath.replace(/[?&]exclude=[^&]*/g, m => m.startsWith('?') ? '?' : '')
+                              .replace(/\?&/, '?').replace(/&&+/g, '&').replace(/[?&]$/, '');
+    r = await fetch(base + cleanPath, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' (after exclude retry)');
+    return r;
   }
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r;
