@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.6
+/* sw.js — AMI NGAP Service Worker v5.7
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -14,17 +14,17 @@
    ✅ v5.4 — Flow unifié bouton Terminer (Mode classique ET GPS plein écran) :
               cotation → modale signature → CR de passage auto → consentements auto
               tous écrits dans IDB → carnet patient onglets Cotation/Consent/CR
-   ✅ v5.5 — Toast récap dynamique après chaque clic Terminer :
-              "💶 12.50 € · ✍️ Signature OK · 📋 CR créé · ✅ 2 consentements créés"
-              type warning si signature manquante ou consentements incomplets
-   ✅ v5.6 — Fix bug majeur : modale signature masquée par overlay GPS plein écran
-              (z-index conflict 9999 vs 1500). Solution : cacher l'overlay pendant
-              la signature, le restaurer après. Fix aussi le bug "2e signature
-              apparaît 1s puis disparaît" via flag _sigSaveInProgress qui synchronise
-              correctement closeSignatureModal et la fin de saveSignature.
+   ✅ v5.5 — Toast récap dynamique après chaque clic Terminer
+   ✅ v5.6 — Fix overlay GPS qui masquait la modale signature (z-index 9999 vs 1500)
+              + flag _sigSaveInProgress pour synchroniser saveSignature
+   ✅ v5.7 — Fix CRITIQUE : la modale signature s'ouvre IMMÉDIATEMENT au clic
+              Terminer, sans attendre l'API CPAM (peut prendre 5-30s). La cotation
+              tourne en parallèle (Promise non-awaited), l'API est awaited APRÈS la
+              fermeture de la modale uniquement pour le CR/consentements.
+              Avant ce fix : "rien ne se passait" 5-30s avant que la modale apparaisse.
 */
 
-const CACHE_VERSION = 'ami-v5.6';
+const CACHE_VERSION = 'ami-v5.7';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

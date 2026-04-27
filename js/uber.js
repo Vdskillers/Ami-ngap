@@ -784,28 +784,52 @@ async function _uberAfterDoneFlow(p) {
     consentsRequired:   0,  // nb total d'actes nécessitant un consentement
   };
 
-  // ── 1. Cotation + import IDB (await pour récupérer invoice_number) ──
-  // _autoCoterEtImporterPatient est idempotent grâce à la fenêtre 6h
-  // (cf. _DEDUP_WINDOW_MS). Si appelée 2 fois pour le même patient, elle
-  // upsert au lieu de doubler. Pas de risque de conflit avec la doctrine
-  // cotation upsert.
-  try {
-    await _autoCoterEtImporterPatient(p);
-    _outcome.cotationOk = !!p?._cotation?.validated;
-    _outcome.cotationTotal = parseFloat(p?._cotation?.total || 0);
-  } catch (e) {
-    console.warn('[AMI] _uberAfterDoneFlow cotation KO:', e?.message);
-  }
+  // ⚡ v5.7 — STRATÉGIE PARALLÈLE pour ne pas bloquer l'UX :
+  // _autoCoterEtImporterPatient peut prendre 5-30s à cause de l'API
+  // CPAM /webhook/ami-calcul (worker N8N + RAG). Si on attendait avant
+  // d'ouvrir la modale signature, l'IDE voyait "rien" pendant 30s.
+  //
+  // FIX : on lance la cotation en parallèle (Promise non awaited),
+  // on ouvre la modale signature IMMÉDIATEMENT avec un invoice_id
+  // provisoire, et on remplace par le vrai invoice_number quand l'API
+  // répond — via le contexte mis à jour dans _lastCotData.
+  // Le flow attend la fin de la cotation seulement PENDANT que l'IDE
+  // signe (donc temps masqué) ou APRÈS la signature avant le CR.
+
+  // ── 1. Lancer la cotation en arrière-plan (NON bloquant) ──
+  const _cotationPromise = _autoCoterEtImporterPatient(p)
+    .then(() => {
+      _outcome.cotationOk    = !!p?._cotation?.validated;
+      _outcome.cotationTotal = parseFloat(p?._cotation?.total || 0);
+      // Mettre à jour _lastCotData une fois l'invoice_number reçu
+      try {
+        if (window._lastCotData && p?._cotation?.invoice_number) {
+          window._lastCotData.invoice_number = p._cotation.invoice_number;
+          window._lastCotData.actes = p._cotation.actes || window._lastCotData.actes;
+          window._lastCotData.total = p._cotation.total || window._lastCotData.total;
+        }
+      } catch(_) {}
+    })
+    .catch(e => {
+      console.warn('[AMI] _uberAfterDoneFlow cotation KO:', e?.message);
+    });
 
   // ── 2. Préparer le contexte pour signature.js ──
-  const invoiceId = p?._cotation?.invoice_number
-                 || ('uber_' + (p.patient_id || p.id || Date.now()) + '_' + Date.now());
-  const actesArr = (p?._cotation?.actes || []).map(a => a.code || a.nom || '').filter(Boolean);
+  // L'invoice_id provisoire est utilisé immédiatement. Si la cotation
+  // remplit p._cotation.invoice_number plus tard, le toast récap et le
+  // CR de passage utiliseront le vrai numéro.
   const patientId = p.patient_id || p.id || '';
+  const provisoireInvoiceId = 'uber_' + (patientId || Date.now()) + '_' + Date.now();
+
+  // Cotation locale a peut-être déjà été calculée par la pré-phase
+  // synchrone de _autoCoterEtImporterPatient (ligne 463+) si actes_recurrents
+  // est dispo. Sinon, vide tableau au pire.
+  const actesArr = (p?._cotation?.actes || []).map(a => a.code || a.nom || '').filter(Boolean);
 
   // Mémoriser la cotation dans _lastCotData pour le fallback consentements
   // (saveSignature.js lit cette variable pour détecter les actes nécessitant
   // un consentement quand _pendingConsentsByInvoice n'est pas pré-rempli).
+  // L'invoice_number sera mis à jour quand l'API répond (cf. _cotationPromise).
   try {
     window._lastCotData = {
       patient_id:  patientId,
@@ -815,7 +839,7 @@ async function _uberAfterDoneFlow(p) {
       date_soin:   new Date().toISOString().slice(0, 10),
       heure_soin:  p._done_at || new Date().toTimeString().slice(0,5),
       notes:       p.actes_recurrents || p.description || p.texte || '',
-      invoice_number: invoiceId,
+      invoice_number: provisoireInvoiceId, // remplacé par le vrai si API répond
     };
   } catch(_) {}
 
@@ -831,6 +855,10 @@ async function _uberAfterDoneFlow(p) {
   // visuellement l'overlay le temps de la signature, puis on le restaure.
   // L'instance Leaflet et tous les listeners restent intacts — pas de
   // re-création de la carte ni de cleanup GPS.
+  //
+  // ⚡ v5.7 — La modale s'ouvre IMMÉDIATEMENT avec provisoireInvoiceId.
+  // L'API CPAM tourne en parallèle. À la fin de la signature, on attend
+  // que la cotation soit prête pour utiliser le vrai invoice_number.
   if (typeof openSignatureModal === 'function') {
     // Snapshot de l'état d'affichage de l'overlay GPS plein écran
     const _fsOverlayEl = document.getElementById('uber-fs-overlay');
@@ -857,7 +885,7 @@ async function _uberAfterDoneFlow(p) {
         resolve();
       };
       try {
-        openSignatureModal(invoiceId, {
+        openSignatureModal(provisoireInvoiceId, {
           patient_id: patientId,
           actes:      actesArr,
           ide_id:     (typeof S !== 'undefined' && S?.user?.id) ? S.user.id : '',
@@ -880,11 +908,24 @@ async function _uberAfterDoneFlow(p) {
     });
   }
 
+  // ⚡ v5.7 — Maintenant que la signature est posée (ou abandonnée), on
+  // attend que la cotation API soit terminée pour avoir le vrai invoice_number
+  // (utilisé par CR + consentements pour la traçabilité médico-légale).
+  // Si l'API a déjà répondu pendant la signature, l'await se résout instantanément.
+  await _cotationPromise;
+
+  // L'invoice_number final : vrai si l'API a répondu, sinon le provisoire
+  // (qui restera utilisé en mode offline/fallback).
+  const finalInvoiceId = p?._cotation?.invoice_number || provisoireInvoiceId;
+
   // Vérifier si la signature a effectivement été posée dans IDB
   // (saveSignature persiste dans ami_signatures via _sigPut)
+  // ⚡ Lookup sur le provisoireInvoiceId puisque c'est avec celui-ci que
+  // la modale a été ouverte. Si le vrai invoice_number diffère, il faudra
+  // une migration côté ami_signatures (TODO si nécessaire).
   try {
     if (typeof _sigGet === 'function') {
-      const sig = await _sigGet(invoiceId);
+      const sig = await _sigGet(provisoireInvoiceId);
       _outcome.signatureOk = !!(sig && sig.png && sig.signed_at);
     }
   } catch(_) {}
@@ -894,7 +935,7 @@ async function _uberAfterDoneFlow(p) {
   // afin de garantir la traçabilité médico-légale ; l'IDE peut ensuite
   // l'éditer dans l'onglet "CR Passage" du carnet patient.
   try {
-    const crRes = await _uberAutoCreateCRPassage(p, invoiceId);
+    const crRes = await _uberAutoCreateCRPassage(p, finalInvoiceId);
     _outcome.crOk = !!(crRes && crRes.ok);
   } catch (e) {
     console.warn('[AMI] CR auto KO:', e?.message);
@@ -905,7 +946,7 @@ async function _uberAfterDoneFlow(p) {
   // sans match consentement), on tente quand même la détection ici pour
   // la trace médico-légale. Best-effort, silencieux.
   try {
-    const cRes = await _uberAutoEnsureConsentements(p, invoiceId);
+    const cRes = await _uberAutoEnsureConsentements(p, finalInvoiceId);
     if (cRes) {
       _outcome.consentsRequired   = cRes.required   || 0;
       _outcome.consentsCreated    = cRes.created    || 0;
