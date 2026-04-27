@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.1
+/* sw.js — AMI NGAP Service Worker v5.3
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -7,9 +7,13 @@
    ✅ Purge agressive des anciens caches (ami-* ET amitest-*)
    ✅ v5.0 — Mode GPS plein écran Uber Médical (uber.js + mobile-premium.css)
    ✅ v5.1 — Auto-clôture journée + journal km au dernier patient en GPS plein écran
+   ✅ v5.2 — Bouton ❌ Absent dans HUD GPS plein écran + auto-clôture si dernier
+   ✅ v5.3 — Détection retard fonctionnelle : toast + alerte + bouton recalculer
+              + badge ⏰ dans liste patients + marker rouge ⏰ sur carte plein écran
+              + promotion clinique automatique (insuline/glycémie/chimio)
 */
 
-const CACHE_VERSION = 'ami-v5.1';
+const CACHE_VERSION = 'ami-v5.3';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

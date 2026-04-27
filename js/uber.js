@@ -206,12 +206,157 @@ function _updateMapLive(lat, lng) {
   }
 }
 
-/* ── Détection retards ───────────────────────── */
+/* ── Détection retards ───────────────────────────────────────────────
+   Marque `p.late = true` les patients dont l'heure planifiée + 15 min
+   est dépassée. Pour CHAQUE NOUVEAU patient en retard détecté :
+     • Toast unique (anti-spam via _lateNotified)
+     • Mise à jour de l'alerte #live-delay-alert avec bouton 🔄 Recalculer
+     • Mise à jour du HUD GPS plein écran si overlay ouvert
+   Re-render systématique de la liste patients (badge ⏰ rouge).
+   Réinitialisation de _lateNotified au chargement et à l'arrêt GPS. */
+
+let _lateNotified = new Set(); // patient_id déjà notifiés par toast
+let _delayAlertDismissed = false; // l'utilisateur a cliqué ✕ Masquer
+
 function detectDelaysUber() {
   const now = Date.now();
-  APP.get('uberPatients').forEach(p => {
-    if (p.time && !p.done && now > p.time + 15 * 60 * 1000) p.late = true;
+  const patients = APP.get('uberPatients') || [];
+  const newlyLate = [];
+
+  patients.forEach(p => {
+    if (p.time && !p.done && !p.absent && now > p.time + 15 * 60 * 1000) {
+      const wasLate = p.late === true;
+      p.late = true;
+      const k = String(p.patient_id || p.id || '');
+      if (!wasLate && k && !_lateNotified.has(k)) {
+        _lateNotified.add(k);
+        newlyLate.push(p);
+      }
+    }
   });
+
+  // Toast unique au moment où un nouveau patient passe en retard
+  if (newlyLate.length > 0 && typeof showToast === 'function') {
+    const nom = ((newlyLate[0].prenom || '') + ' ' + (newlyLate[0].nom || '')).trim()
+             || newlyLate[0].description || 'patient';
+    if (newlyLate.length === 1) {
+      showToast(`⏰ Retard détecté sur ${nom}`, 'wa');
+    } else {
+      showToast(`⏰ Retard sur ${newlyLate.length} patients (${nom}…)`, 'wa');
+    }
+    // Si l'utilisateur avait masqué l'alerte, un nouveau retard la rouvre
+    _delayAlertDismissed = false;
+  }
+
+  // Toujours rafraîchir l'UI (alerte + liste + overlay GPS)
+  _renderDelayAlert();
+  if (typeof renderLivePatientList === 'function') {
+    try { renderLivePatientList(); } catch (_) {}
+  }
+  if (_uberFSMap) {
+    _uberFSRender();
+    _uberFSUpdateHUD();
+  }
+}
+
+/**
+ * Met à jour le contenu et la visibilité de #live-delay-alert.
+ * Inclut un bouton "🔄 Recalculer" qui appelle recalcOnDelay()
+ * et un bouton "✕" qui masque l'alerte jusqu'au prochain nouveau retard.
+ */
+function _renderDelayAlert() {
+  const alertEl = $('live-delay-alert');
+  if (!alertEl) return;
+
+  const patients = APP.get('uberPatients') || [];
+  const lates = patients.filter(p => p.late && !p.done && !p.absent);
+
+  if (lates.length === 0 || _delayAlertDismissed) {
+    alertEl.style.display = 'none';
+    return;
+  }
+
+  // Construire le message principal selon le ou les patients en retard
+  const now = Date.now();
+  const worst = lates.reduce((acc, p) => {
+    const delta = p.time ? Math.round((now - p.time) / 60000) : 0;
+    return delta > acc.delta ? { p, delta } : acc;
+  }, { p: lates[0], delta: 0 });
+
+  const nom = ((worst.p.prenom || '') + ' ' + (worst.p.nom || '')).trim()
+           || worst.p.description || 'patient suivant';
+  const heure = worst.p.heure_soin || worst.p.heure_preferee || worst.p.heure || '';
+  const msg = lates.length === 1
+    ? `Retard de ${worst.delta} min sur ${nom}${heure ? ' (prévu ' + heure + ')' : ''}.`
+    : `${lates.length} patients en retard · le pire : ${nom} (${worst.delta} min).`;
+
+  alertEl.style.display = 'block';
+  alertEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:18px;flex-shrink:0">⏰</span>
+      <span id="live-delay-msg" style="flex:1;min-width:200px;font-size:13px;color:var(--w)">${msg}</span>
+      <button class="btn bv bsm" onclick="recalcOnDelay()" style="white-space:nowrap;font-size:11px;padding:5px 10px"><span>🔄</span> Recalculer</button>
+      <button class="btn bs bsm" onclick="dismissDelayAlert()" style="white-space:nowrap;font-size:11px;padding:5px 8px" title="Masquer l'alerte">✕</button>
+    </div>
+  `;
+}
+
+/**
+ * Masque l'alerte jusqu'au prochain nouveau retard (toast déclencheur).
+ */
+function dismissDelayAlert() {
+  _delayAlertDismissed = true;
+  const alertEl = $('live-delay-alert');
+  if (alertEl) alertEl.style.display = 'none';
+}
+
+/**
+ * Recalcul demandé par l'utilisateur suite à une alerte retard.
+ *  1. Réoptimise la route OSRM (recalcRouteUber : distance/durée actualisées)
+ *  2. Si un patient en retard a une fenêtre médicale critique (insuline / glycémie
+ *     / chimio à jeun), le promeut en `nextPatient` pour respecter la priorité
+ *     clinique au lieu de l'ordre VRPTW figé.
+ *  3. Toast confirmation.
+ */
+async function recalcOnDelay() {
+  const patients = APP.get('uberPatients') || [];
+  const lates = patients.filter(p => p.late && !p.done && !p.absent);
+
+  // 1. Réoptimisation route OSRM (durée + distance affichées)
+  if (typeof recalcRouteUber === 'function') {
+    try { await recalcRouteUber(); } catch (_) {}
+  }
+
+  // 2. Réordonnancement clinique : si un patient en retard a une fenêtre critique,
+  //    on le passe en `nextPatient` (passerelle vers le scoring _computeScore).
+  const _CRITIQUE_RX = /insuline|inject|glyc[eé]mie|à jeun|chimio|perfusion.*critique/i;
+  const lateCritique = lates.find(p => {
+    const acte = (p.actes_recurrents || p.description || p.texte || '').toLowerCase();
+    return _CRITIQUE_RX.test(acte);
+  });
+
+  if (lateCritique) {
+    const currentNext = APP.get('nextPatient');
+    const currentKey = currentNext ? String(currentNext.patient_id || currentNext.id || '') : '';
+    const lateKey    = String(lateCritique.patient_id || lateCritique.id || '');
+
+    // Promouvoir uniquement si pas déjà le suivant et pas de contrainte explicite
+    const hasConstraint = !!(APP._constraintFirst || APP._constraintSecond);
+    if (currentKey !== lateKey && !hasConstraint) {
+      APP.set('nextPatient', lateCritique);
+      const nom = ((lateCritique.prenom || '') + ' ' + (lateCritique.nom || '')).trim()
+               || lateCritique.description || 'patient critique';
+      if (typeof showToast === 'function')
+        showToast(`🚨 Priorité clinique → ${nom} promu en suivant`, 'wa');
+      // Re-render
+      if (typeof renderLivePatientList === 'function') renderLivePatientList();
+      if (_uberFSMap) { _uberFSRender(); _uberFSUpdateHUD(); _uberFSFitView(); }
+      return;
+    }
+  }
+
+  // 3. Toast confirmation simple si aucun changement d'ordre
+  if (typeof showToast === 'function') showToast('🔄 Route recalculée');
 }
 
 /* ── GPS CONTINU — throttlé 3s ───────────────────
@@ -229,6 +374,9 @@ const _onGPSUpdate = throttle((lat, lng) => {
 function startLiveTracking() {
   if (!navigator.geolocation) { alert('GPS non supporté'); return; }
   if (_watchId !== null) { log('GPS déjà actif'); return; }
+  // Reset détection retards : nouvelle journée = nouveaux retards potentiels
+  _lateNotified = new Set();
+  _delayAlertDismissed = false;
   const el = $('uber-tracking-status');
   if (el) el.textContent = '📡 GPS actif — suivi continu';
   _watchId = navigator.geolocation.watchPosition(
@@ -236,13 +384,20 @@ function startLiveTracking() {
     err => { logErr('GPS LIVE ERROR', err); if (el) el.textContent = '❌ GPS perdu — ' + err.message; },
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
   );
-  /* Recalcul auto toutes les 15s */
+  /* Recalcul auto + détection retards toutes les 15s */
   _uberInterval = setInterval(() => { detectDelaysUber(); selectBestPatient(); }, 15000);
+  // Première passe immédiate (sinon on attend 15s avant 1ère détection)
+  setTimeout(() => detectDelaysUber(), 1000);
 }
 
 function stopLiveTracking() {
   if (_watchId !== null) { navigator.geolocation.clearWatch(_watchId); _watchId = null; }
   if (_uberInterval) { clearInterval(_uberInterval); _uberInterval = null; }
+  // Reset alerte retard à l'arrêt GPS
+  _lateNotified = new Set();
+  _delayAlertDismissed = false;
+  const alertEl = $('live-delay-alert');
+  if (alertEl) alertEl.style.display = 'none';
   const el = $('uber-tracking-status');
   if (el) el.textContent = '⏹️ Suivi GPS arrêté';
 }
@@ -840,18 +995,25 @@ function openUberFullscreenGPS() {
         <div class="uber-fs-next-meta" id="uber-fs-next-meta">—</div>
       </div>
       <div class="uber-fs-actions">
-        <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSRecalcRoute()" title="Recalculer la route">
-          <span>🔄</span><span class="uber-fs-btn-lbl">Recalculer</span>
-        </button>
-        <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSBestNext()" title="Meilleur suivant">
-          <span>🧠</span><span class="uber-fs-btn-lbl">Meilleur</span>
-        </button>
-        <button class="uber-fs-btn uber-fs-btn-urgent" onclick="openUrgentPatientModal()" title="Ajouter un patient urgent">
-          <span>🚨</span><span class="uber-fs-btn-lbl">+ Urgent</span>
-        </button>
-        <button class="uber-fs-btn uber-fs-btn-primary" onclick="_uberFSEndPatient()" title="Terminer ce patient">
-          <span>✅</span><span class="uber-fs-btn-lbl">Terminer</span>
-        </button>
+        <div class="uber-fs-actions-row uber-fs-actions-secondary">
+          <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSRecalcRoute()" title="Recalculer la route">
+            <span>🔄</span><span class="uber-fs-btn-lbl">Recalculer</span>
+          </button>
+          <button class="uber-fs-btn uber-fs-btn-secondary" onclick="_uberFSBestNext()" title="Meilleur suivant">
+            <span>🧠</span><span class="uber-fs-btn-lbl">Meilleur</span>
+          </button>
+          <button class="uber-fs-btn uber-fs-btn-urgent" onclick="openUrgentPatientModal()" title="Ajouter un patient urgent">
+            <span>🚨</span><span class="uber-fs-btn-lbl">+ Urgent</span>
+          </button>
+        </div>
+        <div class="uber-fs-actions-row uber-fs-actions-primary">
+          <button class="uber-fs-btn uber-fs-btn-absent" onclick="_uberFSAbsentPatient()" title="Patient absent">
+            <span>❌</span><span class="uber-fs-btn-lbl">Absent</span>
+          </button>
+          <button class="uber-fs-btn uber-fs-btn-primary" onclick="_uberFSEndPatient()" title="Terminer ce patient">
+            <span>✅</span><span class="uber-fs-btn-lbl">Terminer</span>
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -974,20 +1136,34 @@ function _uberFSRender() {
     const isDone   = !!p.done;
     const isAbsent = !!p.absent;
     const isUrgent = !!(p.urgent || p.urgence);
+    const isLate   = !!p.late && !isDone && !isAbsent;
 
     let bg, fg = '#fff', size = 32;
     if (isDone)        { bg = '#3dd68c'; }
     else if (isAbsent) { bg = '#6a8099'; }
     else if (isUrgent) { bg = '#ff5f6d'; size = 40; }
+    else if (isLate)   { bg = '#ff5f6d'; size = 38; }  // patient en retard
     else if (isNext)   { bg = '#ffb547'; size = 42; }
     else               { bg = '#00d4aa'; }
 
-    const ringStyle = isNext
-      ? 'box-shadow:0 0 0 4px rgba(255,181,71,.35), 0 4px 14px rgba(0,0,0,.4);'
-      : 'box-shadow:0 2px 8px rgba(0,0,0,.35);';
+    let ringStyle;
+    if (isNext) {
+      ringStyle = 'box-shadow:0 0 0 4px rgba(255,181,71,.35), 0 4px 14px rgba(0,0,0,.4);';
+    } else if (isLate) {
+      ringStyle = 'box-shadow:0 0 0 3px rgba(255,95,109,.45), 0 4px 12px rgba(0,0,0,.4);';
+    } else {
+      ringStyle = 'box-shadow:0 2px 8px rgba(0,0,0,.35);';
+    }
+
+    // Symbole : ⏰ si retard et non-next, sinon numéro/coche
+    const symbol = isDone ? '✓'
+                  : isAbsent ? '–'
+                  : (isLate && !isNext) ? '⏰'
+                  : (idx + 1);
+    const fontSize = (isLate && !isNext) ? 16 : (size>=40 ? 14 : 12);
 
     const marker = L.marker([p.lat, p.lng], {
-      zIndexOffset: isNext ? 900 : (isUrgent ? 500 : 0),
+      zIndexOffset: isNext ? 900 : (isUrgent ? 500 : (isLate ? 400 : 0)),
       icon: L.divIcon({
         className: '',
         html: `<div style="
@@ -995,10 +1171,10 @@ function _uberFSRender() {
           background:${bg};color:${fg};
           border:3px solid white;border-radius:50%;
           display:flex;align-items:center;justify-content:center;
-          font-size:${size>=40?14:12}px;font-weight:700;
+          font-size:${fontSize}px;font-weight:700;
           ${ringStyle}
           ${isDone||isAbsent ? 'opacity:.55;' : ''}
-        ">${isDone ? '✓' : isAbsent ? '–' : (idx + 1)}</div>`,
+        ">${symbol}</div>`,
         iconSize:   [size, size],
         iconAnchor: [size/2, size/2],
       }),
@@ -1008,11 +1184,14 @@ function _uberFSRender() {
               || p.description || p.label || ('Patient ' + (idx + 1));
     const adr  = p.adresse || p.address || p.addressFull || '';
     const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+    // Calcul minutes de retard si applicable
+    const lateMin = (isLate && p.time) ? Math.round((Date.now() - p.time) / 60000) : 0;
     marker.bindPopup(`
       <strong style="font-size:13px">${nom}</strong>
       ${adr ? `<br><span style="font-size:11px;color:#666">${adr}</span>` : ''}
       ${heure ? `<br><span style="font-size:11px">🕐 ${heure}</span>` : ''}
       ${isNext ? '<br><span style="color:#ffb547;font-size:11px;font-weight:700">🎯 PROCHAIN</span>' : ''}
+      ${isLate ? `<br><span style="color:#ff5f6d;font-size:11px;font-weight:700">⏰ RETARD ${lateMin > 0 ? lateMin + ' min' : ''}</span>` : ''}
       ${isUrgent ? '<br><span style="color:#ff5f6d;font-size:11px;font-weight:700">🚨 URGENT</span>' : ''}
     `);
 
@@ -1139,8 +1318,16 @@ function _uberFSUpdateHUD() {
     // Meta provisoire (sera enrichie par OSRM avec dist/durée)
     const adr   = next.adresse || next.address || next.addressFull || '';
     const heure = next.heure_soin || next.heure_preferee || next.heure || '';
+    // Pill retard si applicable (calc minutes depuis l'heure planifiée)
+    const lateMin = (next.late && next.time)
+      ? Math.round((Date.now() - next.time) / 60000)
+      : 0;
+    const latePill = (lateMin > 0)
+      ? `<span class="uber-fs-meta-pill uber-fs-late-pill">⏰ Retard ${lateMin} min</span>`
+      : '';
     if (metaEl) {
       metaEl.innerHTML = `
+        ${latePill}
         ${heure ? `<span class="uber-fs-meta-pill">🕐 ${heure}</span>` : ''}
         ${adr ? `<div class="uber-fs-meta-addr">${adr}</div>` : '<div class="uber-fs-meta-addr">—</div>'}
       `;
@@ -1223,16 +1410,60 @@ async function _uberFSAcquireWakeLock() {
 
 /* ── Wrappers boutons HUD : délèguent à la logique métier existante ── */
 
+/**
+ * Détermine si on est sur le dernier patient restant (avant l'action courante).
+ * "Restants" = patients non encore done ET non encore absent.
+ * Si <= 1, l'action en cours (Terminer ou Absent) clôt la journée.
+ */
+function _uberFSIsLastPatient() {
+  const _before = (APP.get('uberPatients') || []);
+  const _restantsAvant = _before.filter(p => !p.done && !p.absent).length;
+  return _restantsAvant <= 1;
+}
+
+/**
+ * Déclenche l'auto-clôture de la journée + ouverture du bilan, en répliquant
+ * exactement le comportement du clic "🏁 Clôturer la journée" du Pilotage.
+ * Utilisée par _uberFSEndPatient et _uberFSAbsentPatient lorsqu'il s'agit
+ * du dernier patient de la journée.
+ */
+function _uberFSAutoCloseDay(reason) {
+  if (typeof terminerTourneeAvecBilan !== 'function') return;
+
+  if (typeof showToast === 'function') {
+    const msg = reason === 'absent'
+      ? '✅ Dernier patient marqué absent — clôture de la journée…'
+      : '✅ Dernier patient terminé — clôture de la journée…';
+    showToast(msg);
+  }
+
+  // Délai court : laisse markUberDone()/markUberAbsent() finaliser leur cotation
+  // async (selectBestPatient + _autoCoterEtImporterPatient en arrière-plan)
+  // avant que terminerTourneeAvecBilan ne fasse son inventaire.
+  setTimeout(async () => {
+    try {
+      // Fermer l'overlay AVANT d'ouvrir la modale Bilan, sinon le bilan
+      // s'affiche derrière la carte plein écran et reste invisible.
+      closeUberFullscreenGPS();
+
+      // skipConfirm: true → bypass du dialogue "Clôturer la journée ?"
+      // La logique métier (km journal + bilan) est strictement identique
+      // à celle déclenchée par le bouton 🏁 Clôturer du Pilotage.
+      await terminerTourneeAvecBilan({ skipConfirm: true });
+    } catch (e) {
+      logErr('[Uber FS] auto-clôture KO:', e);
+      if (typeof showToast === 'function')
+        showToast('⚠️ Erreur clôture auto — clique sur 🏁 Clôturer la journée', 'wa');
+    }
+  }, 600);
+}
+
 async function _uberFSEndPatient() {
   if (typeof markUberDone !== 'function') return;
 
   // Snapshot AVANT markUberDone : sert à détecter si le patient qu'on vient
   // de terminer était le dernier (= aucun autre patient restant).
-  // On compte les "restants AVANT ce clic" — s'il n'y en a qu'un (= celui en
-  // cours), alors c'est le dernier de la journée.
-  const _before = (APP.get('uberPatients') || []);
-  const _restantsAvant = _before.filter(p => !p.done && !p.absent).length;
-  const _estDernier = (_restantsAvant <= 1);
+  const _estDernier = _uberFSIsLastPatient();
 
   // Cotation + import + km incrémental + sélection du patient suivant
   await markUberDone();
@@ -1243,33 +1474,37 @@ async function _uberFSEndPatient() {
   setTimeout(() => _uberFSFitView(), 200);
 
   // ── Si c'était le dernier patient → auto-clôture journée ─────────────
-  // Réplique exactement le comportement du clic "🏁 Clôturer la journée"
-  // du Mode Uber Médical, y compris l'écriture du journal kilométrique
-  // (km de retour cabinet, journal_km IDB, sync serveur via _syncKmToServer).
-  if (_estDernier && typeof terminerTourneeAvecBilan === 'function') {
-    if (typeof showToast === 'function')
-      showToast('✅ Dernier patient terminé — clôture de la journée…');
+  // Réplique exactement le comportement du clic "🏁 Clôturer la journée".
+  if (_estDernier) _uberFSAutoCloseDay('done');
+}
 
-    // Délai court : laisse markUberDone() finaliser sa cotation async
-    // (selectBestPatient + _autoCoterEtImporterPatient en arrière-plan)
-    // avant que terminerTourneeAvecBilan ne fasse son inventaire.
-    setTimeout(async () => {
-      try {
-        // Fermer l'overlay AVANT d'ouvrir la modale Bilan, sinon le bilan
-        // s'affiche derrière la carte plein écran et reste invisible.
-        closeUberFullscreenGPS();
+/**
+ * Marque le patient courant comme absent (pas de cotation, pas de CA).
+ * Pose une confirmation rapide (action irréversible côté tournée).
+ * Si c'est le dernier patient restant → auto-clôture journée.
+ */
+async function _uberFSAbsentPatient() {
+  if (typeof markUberAbsent !== 'function') return;
 
-        // skipConfirm: true → bypass du dialogue "Clôturer la journée ?"
-        // La logique métier (km journal + bilan) est strictement identique
-        // à celle déclenchée par le bouton 🏁 Clôturer du Pilotage.
-        await terminerTourneeAvecBilan({ skipConfirm: true });
-      } catch (e) {
-        logErr('[Uber FS] auto-clôture KO:', e);
-        if (typeof showToast === 'function')
-          showToast('⚠️ Erreur clôture auto — clique sur 🏁 Clôturer la journée', 'wa');
-      }
-    }, 600);
-  }
+  const next = APP.get('nextPatient');
+  if (!next) return;
+
+  // Confirmation tactile pour éviter les mis-clics (le bouton est gros)
+  const nom = ((next.prenom || '') + ' ' + (next.nom || '')).trim()
+           || next.description || next.label || 'ce patient';
+  if (!confirm(`Marquer ${nom} comme absent ?\n\nAucune cotation ne sera enregistrée pour ce patient.`)) return;
+
+  // Snapshot AVANT pour détection dernier patient
+  const _estDernier = _uberFSIsLastPatient();
+
+  // Pose absent=true et déclenche selectBestPatient → re-render auto via listener
+  markUberAbsent();
+
+  // Recadrer sur le nouveau prochain patient
+  setTimeout(() => _uberFSFitView(), 200);
+
+  // Si c'était le dernier patient → auto-clôture journée
+  if (_estDernier) _uberFSAutoCloseDay('absent');
 }
 
 async function _uberFSRecalcRoute() {
@@ -1294,6 +1529,10 @@ if (typeof window !== 'undefined') {
   window.openUberFullscreenGPS  = openUberFullscreenGPS;
   window.closeUberFullscreenGPS = closeUberFullscreenGPS;
   window._uberFSEndPatient      = _uberFSEndPatient;
+  window._uberFSAbsentPatient   = _uberFSAbsentPatient;
   window._uberFSRecalcRoute     = _uberFSRecalcRoute;
   window._uberFSBestNext        = _uberFSBestNext;
+  // v5.3 — détection retard + recalcul
+  window.recalcOnDelay          = recalcOnDelay;
+  window.dismissDelayAlert      = dismissDelayAlert;
 }

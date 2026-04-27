@@ -509,32 +509,14 @@ function showNextPatientLocal(){
   if(typeof renderLivePatientList === 'function') renderLivePatientList();
 }
 
-/* Détection retard via IMPORTED_DATA + badge */
+/* v5.3 — Détection retard ORPHELINE : ancien chemin basé sur _liveIndex /
+   IMPORTED_DATA qui ne reflétait pas l'état réel du Mode Uber Médical.
+   Conservée comme shim de compatibilité — délègue au système unifié
+   detectDelaysUber() qui itère sur APP.get('uberPatients'), gère le toast
+   unique, l'alerte DOM avec bouton recalculer, et le marqueur carte. */
 function detectDelayLocal(){
-  const data = APP.get('importedData')?.patients || window.IMPORTED_DATA || [];
-  const idx  = window._liveIndex || 0;
-  const p    = data[idx];
-  if(!p?.heure_soin && !p?.heure_preferee && !p?.time && !p?.heure) return;
-
-  const heure = p.heure_soin || p.heure_preferee || p.time || p.heure;
-  const [h,m] = heure.split(':').map(Number);
-  const target = new Date();
-  target.setHours(h, m, 0, 0);
-
-  if(new Date() > target){
-    const badge = $('live-badge');
-    if(badge){
-      badge.textContent = 'RETARD';
-      badge.style.background = 'var(--dd)';
-      badge.style.color = 'var(--d)';
-    }
-    const alertEl = $('live-delay-alert');
-    const msgEl   = $('live-delay-msg');
-    if(alertEl && msgEl){
-      const diffMin = Math.round((Date.now() - target.getTime()) / 60000);
-      msgEl.textContent = `Retard de ${diffMin} min sur ${heure}. Souhaitez-vous recalculer ?`;
-      alertEl.style.display = 'block';
-    }
+  if (typeof detectDelaysUber === 'function') {
+    try { detectDelaysUber(); } catch(_) {}
   }
 }
 
@@ -561,9 +543,11 @@ function startDayLocal(){
 
   showNextPatientLocal();
 
-  /* Détecter retards toutes les 2 minutes */
-  if(window._delayInterval) clearInterval(window._delayInterval);
-  window._delayInterval = setInterval(detectDelayLocal, 120000);
+  /* v5.3 — Détection retards désormais centralisée dans uber.js (detectDelaysUber)
+     déclenchée par startLiveTracking toutes les 15s. L'ancien interval 2 min
+     basé sur _liveIndex / IMPORTED_DATA est désactivé pour éviter les doubles
+     alertes et la fragmentation du système. */
+  if (window._delayInterval) { clearInterval(window._delayInterval); window._delayInterval = null; }
 
   return true; // signale que le mode local a été activé
 }

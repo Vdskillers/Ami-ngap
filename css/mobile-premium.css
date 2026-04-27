@@ -866,6 +866,19 @@
   white-space: nowrap;
 }
 
+/* v5.3 — Pill retard sur le prochain patient dans le HUD bas */
+.uber-fs-late-pill {
+  background: rgba(255,95,109,.18) !important;
+  border-color: rgba(255,95,109,.45) !important;
+  color: #ff5f6d !important;
+  animation: uberFSLateBlink 2s ease-in-out infinite;
+}
+
+@keyframes uberFSLateBlink {
+  0%,100% { opacity: .85; }
+  50%     { opacity: 1; box-shadow: 0 0 8px rgba(255,95,109,.5); }
+}
+
 .uber-fs-meta-addr {
   flex-basis: 100%;
   font-size: 12px;
@@ -877,9 +890,24 @@
 
 /* ── Boutons d'action ──────────────────────────────────────────────── */
 .uber-fs-actions {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.uber-fs-actions-row {
+  display: grid;
+  gap: 8px;
+}
+
+/* Ligne 1 : Recalculer | Meilleur | + Urgent (3 boutons secondaires) */
+.uber-fs-actions-secondary {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Ligne 2 : Absent | Terminer (2 boutons d'action principale, plus larges) */
+.uber-fs-actions-primary {
+  grid-template-columns: 1fr 1.4fr;
 }
 
 .uber-fs-btn {
@@ -914,6 +942,19 @@
   color: #001a14;
   border-color: transparent;
   box-shadow: 0 4px 14px rgba(0,212,170,.35);
+  font-size: 13px;
+}
+.uber-fs-btn-primary > span:first-child { font-size: 22px; }
+
+.uber-fs-btn-absent {
+  background: rgba(106,128,153,.18);
+  color: #c8d4e0;
+  border-color: rgba(106,128,153,.4);
+  font-size: 13px;
+}
+.uber-fs-btn-absent > span:first-child { font-size: 22px; }
+.uber-fs-btn-absent:active {
+  background: rgba(106,128,153,.3);
 }
 
 .uber-fs-btn-urgent {

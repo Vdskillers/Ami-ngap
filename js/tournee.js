@@ -2483,18 +2483,26 @@ function startLiveTimer(){
 }
 
 function detectDelay(currentPatient){
-  if(!currentPatient?.heure_soin)return;
-  const now=new Date();
-  const [hh,mm]=(currentPatient.heure_soin||'00:00').split(':').map(Number);
-  const planned=new Date(now);planned.setHours(hh,mm,0,0);
-  const diffMin=Math.round((now-planned)/60000);
-  const alertEl=$('live-delay-alert'),msgEl=$('live-delay-msg');
-  if(diffMin>15&&alertEl&&msgEl){
-    msgEl.textContent=`Retard de ${diffMin} min sur ${currentPatient.heure_soin||'l\'horaire prévu'}. Souhaitez-vous recalculer ?`;
-    alertEl.style.display='block';
-  }else if(alertEl){
-    alertEl.style.display='none';
-  }
+  /* v5.3 — Délègue au système unifié detectDelaysUber (uber.js) qui gère
+     toast unique, alerte avec bouton recalculer, badge liste patients,
+     et marqueur carte plein écran. La fonction est conservée pour
+     compatibilité avec le chemin liveAction='patient_done' qui l'appelait
+     directement, mais elle ne fait plus de manipulation DOM directe. */
+  if (!currentPatient?.heure_soin) return;
+  // Marquer late=true sur le patient courant si applicable, puis laisser
+  // detectDelaysUber prendre le relais.
+  try {
+    const now = Date.now();
+    const [hh,mm] = (currentPatient.heure_soin||'00:00').split(':').map(Number);
+    const planned = new Date(now); planned.setHours(hh,mm,0,0);
+    if (now > planned.getTime() + 15 * 60 * 1000) {
+      const k = String(currentPatient.patient_id || currentPatient.id || '');
+      const pats = APP.get('uberPatients') || [];
+      const target = pats.find(p => String(p.patient_id || p.id || '') === k);
+      if (target) target.late = true;
+    }
+  } catch(_) {}
+  if (typeof detectDelaysUber === 'function') detectDelaysUber();
 }
 
 async function autoFacturation(patient){
@@ -4189,6 +4197,8 @@ function renderLivePatientList() {
       ...p,
       _done:   p._done   || p.done   || u._done   || u.done   || false,
       _absent: p._absent || p.absent || u._absent || u.absent || false,
+      _late:   !!(u.late || p.late),  // v5.3 — flag retard depuis uberPatients
+      _time:   u.time || p.time || null, // pour calcul minutes retard
       amount:  p.amount  || u.amount  || 0,
       _cotation: p._cotation || u._cotation,
     };
@@ -4314,9 +4324,20 @@ function renderLivePatientList() {
         ? 'rgba(34,197,94,.08)'
         : p._absent
           ? 'rgba(255,95,109,.05)'
-          : isNext ? 'rgba(0,212,170,.08)' : 'var(--s)';
-      const borderStyle = isNext ? 'border:2px solid var(--a);' : 'border:1px solid var(--b);';
+          : p._late
+            ? 'rgba(255,95,109,.10)'  // v5.3 — patient en retard : fond rouge léger
+            : isNext ? 'rgba(0,212,170,.08)' : 'var(--s)';
+      const borderStyle = p._late && !p._done && !p._absent
+        ? 'border:2px solid rgba(255,95,109,.5);'  // v5.3 — bordure rouge si retard
+        : (isNext ? 'border:2px solid var(--a);' : 'border:1px solid var(--b);');
       const heure = p.heure_soin || p.heure_preferee || p.heure || '';
+      // v5.3 — minutes de retard pour affichage badge
+      const _lateMin = (p._late && p._time && !p._done && !p._absent)
+        ? Math.round((Date.now() - p._time) / 60000)
+        : 0;
+      const _latePill = (_lateMin > 0)
+        ? `<span style="display:inline-block;background:rgba(255,95,109,.15);color:#ff5f6d;border:1px solid rgba(255,95,109,.4);border-radius:8px;padding:1px 6px;font-size:10px;font-family:var(--fm);font-weight:700;margin-top:2px">⏰ Retard ${_lateMin} min</span>`
+        : '';
       // ⚡ Soin enrichi affiché sous le nom — évite que "Diabète" brut apparaisse
       // alors que la cotation et l'Historique contiennent le détail.
       const _soinLivePat = (typeof _enrichSoinLabel === 'function')
@@ -4338,6 +4359,7 @@ function renderLivePatientList() {
           ${_showSoin ? `<div style="font-size:10px;color:var(--m);margin-top:2px;line-height:1.3">💊 ${_soinLivePat}</div>` : ''}
           ${isNext ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a);margin-top:1px">▶ Prochain patient</div>` : ''}
           ${heure ? `<div style="font-size:11px;color:var(--m);margin-top:2px">🕐 ${heure}</div>` : ''}
+          ${_latePill}
           ${p._cotation?.validated ? `<div style="font-size:10px;color:var(--a);margin-top:2px;font-family:var(--fm)">✅ ${p._cotation.total?.toFixed(2)} € validés</div>` : ''}
           ${((APP._ideAssignments||{})[k]||[]).length ? `<div style="font-size:10px;font-family:var(--fm);color:var(--a2);margin-top:2px">🎯 ${(APP._ideAssignments[k]).map(a=>a.label).join(' · ')}</div>` : ''}
           ${isNext ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
