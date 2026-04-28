@@ -1234,6 +1234,22 @@ async function _cotationPipeline() {
     // l'utilisateur a explicitement cliqué pour AVOIR une vraie correction IA.
     const _viaFab = !!window._cotFromReCoteFAB;
 
+    // ⚡ FIX TDZ — résolution patient_nom + heure_soin AVANT _n8nPayload/_clientMeta
+    // (auparavant déclarés après → ReferenceError "Cannot access '_heureResolved' before initialization")
+    //
+    // patient_nom : 3 sources en cascade pour ne JAMAIS envoyer vide
+    //   1. Champ form f-pt (saisie utilisateur courante)
+    //   2. _prePatientNom (résolu depuis IDB par nom OU par patient_id)
+    //   3. Champ form _editRef.patient_nom (édition d'une cotation existante)
+    const _patNomFormVal = (gv('f-pt') || '').trim();
+    const _patNomResolved = _patNomFormVal || _prePatientNom || (_editRef?.patient_nom || '').trim() || '';
+    // heure_soin : si f-hs vide, fallback heure courante (HH:MM local)
+    const _heureFormVal = gv('f-hs');
+    const _heureResolved = _heureFormVal || (() => {
+      const _now = new Date();
+      return `${String(_now.getHours()).padStart(2,'0')}:${String(_now.getMinutes()).padStart(2,'0')}`;
+    })();
+
     // ⚡ PAYLOAD N8N MINIMAL — N8N n'a besoin QUE des éléments nécessaires
     // au calcul de cotation. Tout le reste (infirmière, patient, prescripteur,
     // preuve_soin, invoice_number) est passé en _client_meta et géré par le
@@ -1252,18 +1268,6 @@ async function _cotationPipeline() {
 
     // Méta-données conservées côté client — réinjectées dans la réponse pour
     // la sauvegarde Supabase et le rendu (renderCot).
-    // ⚡ v9.1 patient_nom : 3 sources en cascade pour ne JAMAIS envoyer vide
-    //   1. Champ form f-pt (saisie utilisateur courante)
-    //   2. _prePatientNom (résolu depuis IDB par nom OU par patient_id)
-    //   3. Champ form _editRef.patient_nom (édition d'une cotation existante)
-    const _patNomFormVal = (gv('f-pt') || '').trim();
-    const _patNomResolved = _patNomFormVal || _prePatientNom || (_editRef?.patient_nom || '').trim() || '';
-    // ⚡ v9.1 heure_soin : si f-hs vide, fallback heure courante (HH:MM local)
-    const _heureFormVal = gv('f-hs');
-    const _heureResolved = _heureFormVal || (() => {
-      const _now = new Date();
-      return `${String(_now.getHours()).padStart(2,'0')}:${String(_now.getMinutes()).padStart(2,'0')}`;
-    })();
 
     const _clientMeta = {
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
@@ -1385,6 +1389,20 @@ async function _cotationPipeline() {
     _clearSlowTimers();
     $('cbody').innerHTML = renderCot(d);
     $('res-cot').classList.add('show');
+
+    // ── Toast info : cotation calculée localement par le moteur NGAP ───────
+    // Informe l'IDE que le calcul a été fait sans transmettre les données
+    // patient à l'IA distante (RGPD-safe, instantané, déterministe).
+    try {
+      const _engineStr = String(d._engine || d._source || '').toLowerCase();
+      const _isLocal = !!d.fallback || (_engineStr && !/n8n/.test(_engineStr));
+      if (_isLocal) {
+        const _toast = typeof showToast === 'function'
+          ? showToast
+          : (typeof showToastSafe === 'function' ? showToastSafe : null);
+        if (_toast) _toast('⚡ Cotation calculée par le moteur NGAP local — aucune donnée transmise à l\'IA');
+      }
+    } catch {}
 
     // ── Upsert cotation dans le carnet patient (IDB) ───────────────────────
     // RÈGLE STRICTE :
@@ -1688,6 +1706,29 @@ function renderCot(d) {
       </div>`
     : '';
 
+  // ── Badge moteur de calcul (LOCAL vs IA distante) ───────────────────────────
+  // Indique à l'infirmière si la cotation a été produite par le moteur NGAP
+  // local (déterministe, instantané, sans transmission de données) ou par
+  // l'IA distante N8N (analyse du texte libre).
+  // Critère : on regarde _engine, _source, et le flag fallback retournés par
+  // le worker. Tout ce qui n'est PAS 'n8n_*' est considéré comme local.
+  const _engineRaw = String(d._engine || d._source || '').toLowerCase();
+  const _isMoteurLocal = !!d.fallback || (_engineRaw && !/n8n/.test(_engineRaw));
+  const _moteurLabel = (() => {
+    if (!_isMoteurLocal) return null;
+    if (/declarative|engine_v2/.test(_engineRaw)) return 'Moteur NGAP officiel';
+    if (/rule/.test(_engineRaw))                   return 'Moteur NGAP local · règles';
+    if (/^ml$|cache/.test(_engineRaw))             return 'Moteur NGAP local · ML';
+    if (d.fallback)                                 return 'Moteur NGAP local';
+    return 'Moteur NGAP local';
+  })();
+  const moteurBadge = _moteurLabel
+    ? `<div title="Calcul effectué localement à partir du référentiel NGAP officiel — aucune donnée patient transmise à l'IA"
+            style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;background:rgba(0,212,170,.12);color:#00b894;border:1px solid rgba(0,212,170,.25)">
+        ⚡ ${_moteurLabel}
+      </div>`
+    : '';
+
   // ── Bloc simulation CPAM N8N v7 ─────────────────────────────────────────────
   // Avec gestion intelligente de l'absence de preuve : si l'unique anomalie
   // (ou l'anomalie principale) est l'absence de preuve terrain, on propose
@@ -1844,6 +1885,7 @@ function renderCot(d) {
         ${d.dre_requise ? '<div class="dreb">📋 DRE requise</div>' : ''}
         ${ngapBadge}
         ${horaireBadge}
+        ${moteurBadge}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
         ${fraudBadge}
