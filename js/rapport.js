@@ -301,11 +301,12 @@ async function loadSystemHealth() {
     const frontErrors  = (logs?.stats?.frontend_errors   || 0);
 
     // ── Analyse fine des logs pour distinguer les événements réellement problématiques ──
-    // IA_FALLBACK_RECOVERED (INFO) = fallback a marché, cotation OK → PAS une vraie panne
     // IA_FALLBACK_AI_VIDE (INFO) = n8n a répondu mais IA vide → cotation OK par règles → PAS critique
     // IA_FALLBACK sans suffixe (WARN) = fallback + vraie erreur → à surveiller
     // N8N_FAILURE (ERROR) = vraie panne n8n → critique
     // INTERNAL_ERROR (ERROR) = bug worker → critique
+    // (Les rattrapages silencieux du moteur NGAP local ne sont plus loggés —
+    //  comportement nominal, pas un incident.)
     const criticalEvents = sl.filter(l =>
       (l.level === 'error' || l.level === 'critical') &&
       ['N8N_FAILURE','IA_FALLBACK','INTERNAL_ERROR','FRAUD_ALERT'].includes(l.event)
@@ -314,11 +315,8 @@ async function loadSystemHealth() {
       l.level === 'warn' &&
       ['IA_FALLBACK','N8N_TIMEOUT'].includes(l.event)
     ).length;
-    const recoveredEvents = sl.filter(l =>
-      l.event === 'IA_FALLBACK_RECOVERED' || l.event === 'IA_FALLBACK_AI_VIDE'
-    ).length;
 
-    // Seuils tolérants — un fallback recovered n'est PAS une panne
+    // Seuils tolérants
     const n8nOk    = criticalEvents === 0 && warningEvents < 3;
     const iaOk     = iaFallbacks < 10 && criticalEvents === 0;  // doublé le seuil
     const fraudOk  = fraudAlerts === 0;
@@ -330,14 +328,11 @@ async function loadSystemHealth() {
     } else if (criticalEvents > 0 || warningEvents >= 3 || iaFallbacks >= 10) {
       overallHealth = 'orange';
     } else {
-      // Tout OK — y compris si des IA_FALLBACK_RECOVERED sont présents (c'est le rôle du fallback)
       overallHealth = 'green';
     }
 
     const healthLabel = overallHealth === 'green'
-      ? (recoveredEvents > 0
-          ? `✅ Opérationnel · ${recoveredEvents} fallback(s) récupéré(s)`
-          : '✅ Opérationnel')
+      ? '✅ Opérationnel'
       : overallHealth === 'orange' ? '⚠️ Dégradé' : '🔴 Incident';
 
     const html = `
@@ -363,9 +358,7 @@ async function loadSystemHealth() {
               ? `${criticalEvents} erreur(s) critique(s)`
               : warningEvents > 0
                 ? `${warningEvents} avertissement(s)`
-                : recoveredEvents > 0
-                  ? `${recoveredEvents} fallback(s) récupéré(s) · OK`
-                  : 'Opérationnel',
+                : 'Opérationnel',
             icon:'🤖' },
           { label:'Moteur cotation IA', ok:iaOk,
             detail: iaFallbacks === 0
