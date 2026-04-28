@@ -1241,8 +1241,24 @@ async function _cotationPipeline() {
     //   1. Champ form f-pt (saisie utilisateur courante)
     //   2. _prePatientNom (résolu depuis IDB par nom OU par patient_id)
     //   3. Champ form _editRef.patient_nom (édition d'une cotation existante)
+    // ⚡ Filtrage sentinelles : "Patient non renseigné" et "Patient #XXXXXX" sont
+    //    des fallbacks worker (pas de vrais noms). Si f-pt en contient un (cas
+    //    cotation orpheline rechargée pour édition), on l'ignore et on tente
+    //    un meilleur fallback. Sans ce filtre, la base ne se réparait jamais.
+    const _isSentinelNom = (n) => {
+      const s = String(n || '').trim();
+      if (!s) return true;
+      if (/^patient\s+non\s+renseign[ée]?$/i.test(s)) return true;
+      if (/^patient\s*#[a-f0-9]{6,}$/i.test(s)) return true;
+      return false;
+    };
     const _patNomFormVal = (gv('f-pt') || '').trim();
-    const _patNomResolved = _patNomFormVal || _prePatientNom || (_editRef?.patient_nom || '').trim() || '';
+    const _patNomCandidates = [
+      _patNomFormVal,
+      _prePatientNom || '',
+      (_editRef?.patient_nom || '').trim(),
+    ];
+    const _patNomResolved = _patNomCandidates.find(n => !_isSentinelNom(n)) || '';
     // heure_soin : si f-hs vide, fallback heure courante (HH:MM local)
     const _heureFormVal = gv('f-hs');
     const _heureResolved = _heureFormVal || (() => {
@@ -2710,8 +2726,24 @@ async function _cotationOfflinePipeline() {
       return `${String(_now.getHours()).padStart(2,'0')}:${String(_now.getMinutes()).padStart(2,'0')}`;
     })();
 
+    // ⚡ patient_nom : cascade avec filtre anti-sentinelle (cohérent avec _cotationPipeline).
+    //    "Patient non renseigné" et "Patient #XXXXXX" sont des fallbacks worker — pas
+    //    de vrais noms. Si f-pt en contient un (cas re-cotation d'une cotation orpheline),
+    //    on l'ignore et on tente un meilleur fallback (_prePatientNom IDB > _editRef).
+    const _isSentinelNomCab = (n) => {
+      const s = String(n || '').trim();
+      if (!s) return true;
+      if (/^patient\s+non\s+renseign[ée]?$/i.test(s)) return true;
+      if (/^patient\s*#[a-f0-9]{6,}$/i.test(s)) return true;
+      return false;
+    };
     const _patNomFormVal = (gv('f-pt') || '').trim();
-    const _patNomResolved = _patNomFormVal || _prePatientNom || (_editRef?.patient_nom || '').trim() || '';
+    const _patNomCandidatesCab = [
+      _patNomFormVal,
+      _prePatientNom || '',
+      (_editRef?.patient_nom || '').trim(),
+    ];
+    const _patNomResolved = _patNomCandidatesCab.find(n => !_isSentinelNomCab(n)) || '';
 
     // ── Preuve soin (signature si disponible) ───────────────────────────────
     const _sigEl = document.querySelector('[data-last-sig-hash]');

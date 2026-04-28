@@ -2766,7 +2766,17 @@ async function editCotationPatient(patientId, cotationIdx) {
 
     // Stocker la référence pour mise à jour après re-cotation
     // invoice_number original indispensable pour l'upsert Supabase
-    window._editingCotation = { patientId, cotationIdx, invoice_number: c.invoice_number || null };
+    // ⚡ patient_nom : 3e fallback de la cascade _patNomResolved côté pipeline
+    //    cotation. Évite que le worker reçoive vide → "Patient non renseigné" en base.
+    //    On filtre les valeurs sentinelles ("Patient #XXXXXX") qui sont des fallbacks
+    //    worker — pas de vrais noms.
+    const _nomFromFiche = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+    window._editingCotation = {
+      patientId,
+      cotationIdx,
+      invoice_number: c.invoice_number || null,
+      patient_nom:    _nomFromFiche || null,
+    };
 
     showToastSafe(`✏️ Cotation du ${new Date(c.date).toLocaleDateString('fr-FR')} chargée — modifiez et recotez.`);
   }, 250);
@@ -3253,11 +3263,16 @@ async function coterDepuisPatient(id) {
   window._editingCotation = null;
   try {
     const _todayStr = new Date().toISOString().slice(0, 10);
+    // ⚡ patient_nom : indispensable pour la cascade _patNomResolved côté pipeline
+    //    cotation. Sans ça, si le user efface accidentellement f-pt, le worker
+    //    reçoit vide et écrit "Patient non renseigné" dans l'Historique.
+    const _nomFromFiche = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
     // Marqueur de provenance — propagé jusqu'au pipeline de cotation
     // ↳ même sans cotation pré-existante, on pose le flag pour que la
     //   vérification post-save dans l'Historique des soins se déclenche.
     window._editingCotation = {
       patientId:    row.id,
+      patient_nom:  _nomFromFiche || null,
       _fromPatient: true,
       _fromCarnet:  true,
     };
@@ -3269,6 +3284,7 @@ async function coterDepuisPatient(id) {
           patientId:      row.id,
           cotationIdx:    _existIdx,
           invoice_number: _existCot.invoice_number || null,
+          patient_nom:    _nomFromFiche || null,
           _fromPatient:   true,
           _fromCarnet:    true,
           _autoDetected:  true, // sera remplacé par le choix explicite de l'utilisateur

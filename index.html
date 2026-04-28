@@ -4136,6 +4136,25 @@ async function editFromHist(data) {
     }
   } catch (_e) { console.warn('[editFromHist] IDB lookup:', _e?.message); }
 
+  // ⚡ FIX patient_nom — résoudre AVANT de poser _editingCotation
+  // Source IDB en priorité, puis data.patient_nom (depuis dataset), en filtrant
+  // les valeurs sentinelles ("Patient non renseigné", "Patient #XXXXXX") qui sont
+  // des fallbacks worker — pas de vrais noms. Sans ce filtre, on ré-envoie la
+  // sentinelle au worker → la base ne se répare jamais.
+  const _isSentinelNom = (n) => {
+    const s = String(n || '').trim();
+    if (!s) return true;
+    if (/^patient\s+non\s+renseign[ée]?$/i.test(s)) return true;
+    if (/^patient\s*#[a-f0-9]{6,}$/i.test(s)) return true;
+    return false;
+  };
+  const _nomFromIDB  = ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim();
+  const _nomFromData = String(data.patient_nom || '').trim();
+  const _patNomForEdit =
+    (!_isSentinelNom(_nomFromIDB)  && _nomFromIDB)  ||
+    (!_isSentinelNom(_nomFromData) && _nomFromData) ||
+    '';
+
   // ── Poser _editingCotation explicitement ───────────────────────────────
   // _userChose:true             → bypass garanti de la modale doublon (le user
   //                               a cliqué ✏️ → choix explicite, pas de modale)
@@ -4146,10 +4165,13 @@ async function editFromHist(data) {
   //                               lieu du "ne rien faire" anti-doublon.
   //                               SAFE : n'agit que si patientId est connu
   //                               (donc le patient existe vraiment dans l'IDB).
+  // patient_nom : 3e fallback de la cascade _patNomResolved côté pipeline
+  //               cotation, garantit que le worker reçoit toujours un vrai nom.
   window._editingCotation = {
     patientId:             patientId,
     cotationIdx:           cotationIdx >= 0 ? cotationIdx : null,
     invoice_number:        invNum,
+    patient_nom:           _patNomForEdit,
     _fromHist:             true,
     _userChose:            true,
     _forceAttachToPatient: !!patientId && cotationIdx < 0,
@@ -4195,14 +4217,18 @@ async function editFromHist(data) {
     // Fallback : si l'IDB ne retourne aucun nom (admin ou cotation sans fiche IDB),
     // utiliser patient_nom transmis depuis l'historique via data-hist-patnom.
     // Fonctionne pour admin ET nurse.
-    if (!patData.nom && !patData.prenom && data.patient_nom) {
+    if (!patData.nom && !patData.prenom && data.patient_nom && !_isSentinelNom(data.patient_nom)) {
       const _parts = data.patient_nom.trim().split(/\s+/);
       // Convention : "Prénom NOM" → dernier mot = nom, reste = prénom
       patData.prenom = _parts.slice(0, -1).join(' ') || _parts[0] || '';
       patData.nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
     }
-    const nomComplet = ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim()
-                    || data.patient_nom || '';
+    // ⚡ Utiliser le nom filtré anti-sentinelle (calculé plus haut), pas data.patient_nom brut.
+    //    Sans ça, "Patient non renseigné" en base se retrouverait dans f-pt → renvoyé tel
+    //    quel au worker → la base ne se répare jamais.
+    const nomComplet = _patNomForEdit
+                    || ([patData.prenom, patData.nom].filter(Boolean).join(' ')).trim()
+                    || '';
     setV('f-pt',  nomComplet  || '');
     setV('f-ddn', patData.ddn     || '');
     setV('f-amo', patData.amo     || '');
@@ -4223,6 +4249,25 @@ async function editFromHist(data) {
 
     if (typeof showToast === 'function')
       showToast(`✏️ Cotation #${data.id} chargée — modifiez et recotez pour mettre à jour.`);
+
+    // ⚡ Avertissement si le nom n'a pas pu être résolu (cas cotation orpheline en base
+    //    avec patient_nom = sentinelle "Patient non renseigné"). L'utilisateur doit
+    //    saisir le bon nom dans f-pt avant de re-coter, sinon le worker écrasera
+    //    encore patient_nom par la sentinelle.
+    if (!_patNomForEdit) {
+      setTimeout(() => {
+        if (typeof showToast === 'function') {
+          showToast('⚠️ Nom du patient absent — saisissez-le manuellement avant de coter, sinon il restera "Patient non renseigné" dans l\'Historique.', 'wa', 7000);
+        }
+        const fPt = document.getElementById('f-pt');
+        if (fPt) {
+          fPt.style.outline = '2px solid #f59e0b';
+          fPt.focus();
+          // Retirer l'outline dès que l'utilisateur tape quelque chose
+          fPt.addEventListener('input', () => { fPt.style.outline = ''; }, { once: true });
+        }
+      }, 400);
+    }
   }, 250);
 }
 

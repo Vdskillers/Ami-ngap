@@ -30,7 +30,7 @@
               • Badge dynamique du nb d'incidents ouverts dans la nav admin
 */
 
-const CACHE_VERSION = 'ami-v5.10.9-pla-add-carnet';
+const CACHE_VERSION = 'ami-v5.10.10-cot-patnom-fix';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
