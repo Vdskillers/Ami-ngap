@@ -4919,6 +4919,40 @@ document.addEventListener('keydown', function(e){
         }));
       }, 30);
     }
+
+    // 5) ⚡ FIX dashboard auto-load — Quand on entre dans le hub Outils ou qu'on
+    //    switche vers l'onglet Dashboard, déclencher loadDash() automatiquement.
+    //    Avant : ui.js écoutait `view === 'dash'` mais avec le système de hub,
+    //    l'event reçu est `outils-hub` (pas `dash`) → loadDash n'était jamais
+    //    déclenché et l'écran restait sur "Chargement des statistiques..." en
+    //    permanence tant qu'on ne cliquait pas sur "Actualiser".
+    if (hubName === 'outils') {
+      setTimeout(function() {
+        try {
+          if (tab === 'dash' && typeof window.loadDash === 'function') {
+            window.loadDash();
+            if (typeof window.loadStatsAvancees === 'function') {
+              setTimeout(window.loadStatsAvancees, 300);
+            }
+          }
+          if (tab === 'tresor' && typeof window.loadTresor === 'function') {
+            window.loadTresor();
+          }
+          if (tab === 'rapport' && typeof window.loadRapport === 'function') {
+            window.loadRapport();
+          }
+          if (tab === 'copilote' && typeof window.initCopiloteSection === 'function') {
+            window.initCopiloteSection();
+          }
+          if (tab === 'charges' && typeof window.loadCharges === 'function') {
+            window.loadCharges();
+          }
+          if (tab === 'modeles' && typeof window.loadModeles === 'function') {
+            window.loadModeles();
+          }
+        } catch(e) { console.warn('[hubSwitch outils auto-load]', e.message); }
+      }, 50);
+    }
   }
 
   /* ── Mapping (hub, onglet) → vue clinique attendue par les modules v2 ─ */

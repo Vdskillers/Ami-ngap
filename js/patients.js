@@ -704,7 +704,6 @@ async function loadPatients() {
         ${(typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'))
           ? `<button class="bxs" onclick="event.stopPropagation();_importSinglePatient('${p.id}','tur')" title="Ajouter à la tournée IA — géocode et importe ce patient dans la tournée optimisée" style="background:rgba(0,212,170,.1);color:var(--a);border:1px solid rgba(0,212,170,.2)">🗺️ Tournée</button>`
           : ''}
-        <button class="bxs" onclick="event.stopPropagation();_importSinglePatient('${p.id}','live')" title="Ajouter au pilotage journée — à utiliser avec le point de départ GPS" style="background:rgba(79,168,255,.1);color:var(--a2);border:1px solid rgba(79,168,255,.25)">📍 Pilotage</button>
         <button class="bxs b-del" onclick="event.stopPropagation();deletePatient('${p.id}','${fullName.replace(/'/g,'')}')">🗑️</button>
       </div>
     </div>`;
@@ -750,6 +749,11 @@ async function openPatientDetail(id) {
 
   // ── Pré-chargement consentements + CR pour les compteurs d'onglets ──
   // Consentements : depuis l'IDB de consentements.js (exposée via window._consentGetAllRaw)
+  // ⚡ FIX badge : on compte TOUTES les entrées (actives + archivées) pour rester
+  // cohérent avec le module Consentements qui affiche `group.length` (cf. consentements.js
+  // L.1351 : "${group.length} entrée${group.length>1?'s':''}"). Sans ce fix, un patient
+  // n'ayant que des versions archivées (toutes obsolètes) affichait 0 alors que le
+  // module listait bien plusieurs entrées.
   let consentCount = 0;
   try {
     const fn = (typeof _consentGetAllRaw === 'function')
@@ -757,7 +761,7 @@ async function openPatientDetail(id) {
       : (typeof window._consentGetAllRaw === 'function' ? window._consentGetAllRaw : null);
     if (fn) {
       const all = await fn();
-      consentCount = (all || []).filter(c => c.patient_id === id && c.status !== 'archived').length;
+      consentCount = (all || []).filter(c => c.patient_id === id).length;
     }
   } catch (_) {}
 
@@ -3417,7 +3421,6 @@ async function openPatientImportPicker() {
         ${(typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'))
           ? `<button onclick="_importPickerPatients('tur')" class="btn bp bsm" id="btn-picker-import-tur" title="Importer dans la Tournée optimisée par IA">📥 Tournée IA</button>`
           : ''}
-        <button onclick="_importPickerPatients('live')" class="btn bp bsm" id="btn-picker-import-live" style="background:rgba(79,168,255,.15);color:var(--a2);border-color:rgba(79,168,255,.4)" title="Importer dans le Pilotage journée (point de départ GPS)">📍 Pilotage journée</button>
       </div>
     </div>`;
 

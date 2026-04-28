@@ -957,6 +957,7 @@ async function useLiveMyLocation() {
 let _heatmapLayer    = null;
 let _heatmapVisible  = false;
 let _heatmapPanelOpen = false;   // v5.10.4 : état "panneau ouvert" indépendant du layer
+let _heatmapMarkers  = [];       // ⚡ FIX zones-sur-carte : markers visibles superposés au heatmap
 
 /**
  * gridKey — clé de grille géographique (précision ~110m par défaut)
@@ -1000,8 +1001,14 @@ function computeHeatmap(cotations) {
 }
 
 /**
- * renderHeatmap — affiche la heatmap sur la carte Leaflet
+ * renderHeatmap — affiche la heatmap sur la carte Leaflet + markers visibles
  * Nécessite le plugin Leaflet.heat (chargé si absent)
+ * ⚡ FIX zones-sur-carte (v5.10.6) : ajoute des markers cerclés visibles pour
+ *    chaque zone rentable, en plus du heatmap diffus. Avant ce fix, le heatmap
+ *    Leaflet était bien ajouté mais à faible opacité, peu lisible et souvent
+ *    hors écran si la vue était centrée ailleurs. Désormais chaque zone se voit
+ *    par un cercle coloré (vert→orange→rouge selon le €/h) qui s'affiche
+ *    **sans perturber** le routage ni la tournée actuelle.
  */
 async function renderHeatmap(grid, metric = 'revenue_per_hour') {
   if (!APP.map) return;
@@ -1011,6 +1018,8 @@ async function renderHeatmap(grid, metric = 'revenue_per_hour') {
     try { APP.map.removeLayer(_heatmapLayer); } catch(_) {}
     _heatmapLayer = null;
   }
+  // Supprimer les markers visibles précédents
+  _clearHeatmapMarkers();
 
   const entries = Object.values(grid).filter(g => g.lat && g.lng);
   if (!entries.length) return;
@@ -1032,15 +1041,82 @@ async function renderHeatmap(grid, metric = 'revenue_per_hour') {
 
   if (typeof L.heatLayer === 'function') {
     _heatmapLayer = L.heatLayer(points, {
-      radius:  25,
-      blur:    15,
+      radius:  35,
+      blur:    25,
       maxZoom: 17,
+      minOpacity: 0.45,
       gradient: { 0.2: '#3b82f6', 0.5: '#f59e0b', 0.8: '#ef4444', 1.0: '#7c3aed' },
     }).addTo(APP.map);
     _heatmapVisible = true;
   }
 
+  // ⚡ FIX zones-sur-carte : markers cerclés visibles, indépendants du plugin heat
+  // (fonctionnent même si Leaflet.heat n'a pas pu être chargé)
+  _renderHeatmapMarkers(entries, metric, maxVal);
+
   return grid;
+}
+
+/**
+ * _clearHeatmapMarkers — supprime tous les markers de zones rentables
+ */
+function _clearHeatmapMarkers() {
+  if (!APP.map) return;
+  for (const m of _heatmapMarkers) {
+    try { APP.map.removeLayer(m); } catch(_) {}
+  }
+  _heatmapMarkers = [];
+}
+
+/**
+ * _renderHeatmapMarkers — dessine un cercle visible par zone rentable.
+ * Couleur : vert si €/h ≥ 35, orange si ≥ 20, rouge sinon.
+ * Rayon : proportionnel au revenu de la zone (8..18 px).
+ * Le marker NE remplace PAS les markers de tournée — il s'ajoute en couche
+ * inférieure (zIndexOffset négatif) pour ne pas perturber l'interaction GPS.
+ */
+function _renderHeatmapMarkers(entries, metric, maxVal) {
+  if (!APP.map || !entries.length) return;
+
+  for (const g of entries) {
+    const v = g[metric] || g.revenue || 0;
+    const ratio = Math.min(1, v / maxVal);
+    const radius = 8 + Math.round(ratio * 10); // 8..18 px
+
+    // Couleur basée sur le €/h (revenue_per_hour)
+    const eph = g.revenue_per_hour || 0;
+    const color = eph >= 35 ? '#22c55e'
+               : eph >= 20 ? '#f59e0b'
+               : eph > 0   ? '#ef4444'
+               : '#7c3aed';
+
+    const circle = L.circleMarker([g.lat, g.lng], {
+      radius,
+      color,
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.35,
+      pane: 'overlayPane',
+      interactive: true
+    });
+
+    const popupHtml = `
+      <div style="font-family:system-ui,sans-serif;font-size:12px;line-height:1.5;min-width:160px">
+        <div style="font-weight:700;color:${color};margin-bottom:4px">🔥 Zone rentable</div>
+        <div><strong>${(g.revenue || 0).toFixed(2)} €</strong> · ${g.count || 0} cotation${(g.count||0)>1?'s':''}</div>
+        ${eph > 0 ? `<div>⚡ <strong>${eph.toFixed(1)} €/h</strong></div>` : ''}
+        ${g.revenue_per_visit ? `<div>👤 ${g.revenue_per_visit.toFixed(1)} €/visite</div>` : ''}
+        <div style="font-size:10px;color:#888;margin-top:4px">${(+g.lat).toFixed(3)}, ${(+g.lng).toFixed(3)}</div>
+      </div>`;
+    circle.bindPopup(popupHtml);
+
+    try {
+      circle.addTo(APP.map);
+      _heatmapMarkers.push(circle);
+    } catch(e) {
+      console.warn('[heatmap marker]', e.message);
+    }
+  }
 }
 
 /**
@@ -1083,6 +1159,8 @@ function closeHeatmap() {
     try { APP.map.removeLayer(_heatmapLayer); } catch(_) {}
     _heatmapLayer = null;
   }
+  // ⚡ FIX zones-sur-carte : nettoyer aussi les markers cerclés visibles
+  _clearHeatmapMarkers();
   _hideHeatmapPanel();
 }
 
@@ -1275,9 +1353,25 @@ function _showHeatmapPanel(grid, cotations) {
     </div>
     ${summaryHtml}
     ${zonesHtml}
-    ${entries.length ? `<div style="margin-top:8px;font-size:10px;color:var(--m)">Basé sur ${Object.keys(grid).length} zone(s)</div>` : ''}`;
+    ${entries.length ? `<div style="margin-top:8px;font-size:10px;color:var(--m)">Basé sur ${Object.keys(grid).length} zone(s)</div>` : ''}
+    ${entries.length ? `<button onclick="centerMapOnHeatmapZones()" style="margin-top:8px;width:100%;background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.35);color:var(--a);border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:var(--fm)" title="Recentre la carte pour englober toutes les zones rentables">🎯 Centrer sur zones</button>` : ''}`;
 
   panel.style.display = 'block';
+}
+
+/**
+ * centerMapOnHeatmapZones — recadre la carte pour englober tous les markers
+ * de zones rentables. Action explicite (clic utilisateur) → ne perturbe jamais
+ * automatiquement l'affichage en cours.
+ */
+function centerMapOnHeatmapZones() {
+  if (!APP.map || !_heatmapMarkers.length) return;
+  try {
+    const grp = L.featureGroup(_heatmapMarkers);
+    APP.map.fitBounds(grp.getBounds(), { padding: [40, 40], maxZoom: 14 });
+  } catch(e) {
+    console.warn('[centerMapOnHeatmapZones]', e.message);
+  }
 }
 
 /**
@@ -1311,9 +1405,10 @@ function _showHeatmapEmpty(isAdmin) {
 }
 
 if (typeof window !== 'undefined') {
-  window.toggleHeatmap = toggleHeatmap;
-  window.closeHeatmap  = closeHeatmap;
-  window.openHeatmap   = openHeatmap;
+  window.toggleHeatmap            = toggleHeatmap;
+  window.closeHeatmap             = closeHeatmap;
+  window.openHeatmap              = openHeatmap;
+  window.centerMapOnHeatmapZones  = centerMapOnHeatmapZones;
 }
 
 function _hideHeatmapPanel() {

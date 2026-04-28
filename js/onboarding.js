@@ -288,6 +288,55 @@ function showPatientsIntro() {
       tip: '🔔 Un badge orange s\'affiche sur l\'onglet Patients quand des ordonnances approchent de leur expiration.'
     },
     {
+      icon: '🗂️',
+      bg: 'rgba(79,168,255,.1)',
+      badge: 'Fiche patient complète',
+      title: 'Tous les onglets de la fiche',
+      body: `Chaque fiche patient regroupe l'intégralité du suivi médico-légal. Cliquez sur un patient pour ouvrir ses <strong style="color:var(--t)">onglets cliniques</strong> :<br><br>
+        <span style="display:flex;flex-direction:column;gap:5px">
+          <span>📋 <strong style="color:var(--t)">Infos</strong> — identité, contacts, médecin, mutuelle</span>
+          <span>🧾 <strong style="color:var(--t)">Cotations</strong> — historique facturation NGAP</span>
+          <span>💊 <strong style="color:var(--t)">Ordonnances</strong> — prescriptions en cours</span>
+          <span>💊 <strong style="color:var(--t)">Semainier</strong> — pilulier hebdomadaire avec alertes</span>
+          <span>📊 <strong style="color:var(--t)">Constantes</strong> — TA, glycémie, SpO2, poids…</span>
+          <span>🩺 <strong style="color:var(--t)">BSI</strong> — Bilan de Soins Infirmiers (DI/DSI)</span>
+          <span>🛡️ <strong style="color:var(--t)">Consentements</strong> — éclairés (Art. L1111-4 CSP)</span>
+          <span>📋 <strong style="color:var(--t)">CR de passage</strong> — preuve de soin horodatée</span>
+          <span>📝 <strong style="color:var(--t)">Notes</strong> — transmissions ciblées libres</span>
+        </span>`,
+      tip: '🔁 Toutes les données saisies sont automatiquement réutilisées par les autres modules d\'AMI (cotation, tournée, copilote IA).'
+    },
+    {
+      icon: '🔐',
+      bg: 'rgba(0,212,170,.1)',
+      badge: 'Sécurité maximale',
+      title: 'Chiffrement AES-256-GCM local',
+      body: `Vos données patients sont protégées au niveau le plus strict de l'industrie médicale :<br><br>
+        <span style="display:flex;flex-direction:column;gap:6px">
+          <span>🔒 <strong style="color:var(--t)">Stockage 100% local</strong> dans IndexedDB chiffré <strong style="color:var(--a)">AES-256-GCM</strong></span>
+          <span>🚫 <strong style="color:var(--t)">Zéro transmission</strong> au serveur — les données ne quittent jamais votre appareil</span>
+          <span>🔑 <strong style="color:var(--t)">Mot de passe hashé</strong> PBKDF2-SHA-256 (600 000 itérations OWASP)</span>
+          <span>📜 <strong style="color:var(--t)">Logs d'audit chiffrés</strong> traçant tous les accès aux données de santé</span>
+          <span>⏱️ <strong style="color:var(--t)">Déconnexion auto</strong> et purge des sessions expirées</span>
+        </span>`,
+      tip: '🛡️ AMI respecte le RGPD, le secret médical (Art. L1110-4 CSP) et anticipe la certification HDS.'
+    },
+    {
+      icon: '⚖️',
+      bg: 'rgba(124,77,255,.1)',
+      badge: 'Vos droits RGPD',
+      title: 'Droits utilisateurs & traçabilité',
+      body: `Conformément au RGPD (Art. 15 à 22), vous gardez la maîtrise totale de vos données :<br><br>
+        <span style="display:flex;flex-direction:column;gap:6px">
+          <span>📥 <strong style="color:var(--t)">Droit à la portabilité</strong> — export RGPD complet en JSON chiffré</span>
+          <span>✏️ <strong style="color:var(--t)">Droit de rectification</strong> — édition libre de chaque fiche</span>
+          <span>🗑️ <strong style="color:var(--t)">Droit à l'effacement</strong> — suppression définitive avec tombstone</span>
+          <span>📋 <strong style="color:var(--t)">Consentement explicite</strong> tracé pour chaque acte (Art. L1111-4)</span>
+          <span>🚨 <strong style="color:var(--t)">Notification CNIL &lt; 72 h</strong> en cas d'incident (Art. 33 RGPD)</span>
+        </span>`,
+      tip: '📤 Le bouton « Export RGPD » en haut du carnet déclenche l\'export à tout moment, sans condition.'
+    },
+    {
       icon: '📥',
       bg: 'rgba(0,212,170,.08)',
       badge: 'Export RGPD',

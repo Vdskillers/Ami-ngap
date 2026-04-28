@@ -50,6 +50,32 @@ document.addEventListener('ui:navigate', e => {
     if (typeof loadStatsAvancees === 'function') setTimeout(loadStatsAvancees, 300);
   }
 
+  /* Hub Outils pratiques → charger l'onglet actif (par défaut Dashboard) — ⚡ FIX
+     Avant ce fix : naviguer vers `outils-hub` n'émettait que `view === 'outils-hub'`
+     dans l'event ui:navigate, donc `loadDash()` n'était jamais appelé et l'utilisateur
+     voyait "Chargement des statistiques…" en permanence jusqu'à un clic manuel
+     sur "Actualiser". */
+  if (v === 'outils-hub') {
+    setTimeout(() => {
+      let activeTab = 'dash';
+      try { activeTab = sessionStorage.getItem('ami:hub:outils') || 'dash'; } catch(_) {}
+      if (activeTab === 'dash') {
+        if (typeof loadDash === 'function') loadDash();
+        if (typeof loadStatsAvancees === 'function') setTimeout(loadStatsAvancees, 300);
+      } else if (activeTab === 'tresor' && typeof loadTresor === 'function') {
+        loadTresor();
+      } else if (activeTab === 'rapport' && typeof loadRapport === 'function') {
+        loadRapport();
+      } else if (activeTab === 'copilote' && typeof initCopiloteSection === 'function') {
+        initCopiloteSection();
+      } else if (activeTab === 'charges' && typeof loadCharges === 'function') {
+        loadCharges();
+      } else if (activeTab === 'modeles' && typeof loadModeles === 'function') {
+        loadModeles();
+      }
+    }, 120);
+  }
+
   /* Copilote IA → monter l'interface */
   if (v === 'copilote' && typeof initCopiloteSection === 'function') {
     setTimeout(initCopiloteSection, 80);
