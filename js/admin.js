@@ -1241,9 +1241,9 @@ function _renderAdmMessages(messages) {
     el.innerHTML = '<div class="empty" style="padding:24px 0"><div class="ei">📭</div><p style="margin-top:8px;color:var(--m)">Aucun message pour l\'instant.</p></div>';
     return;
   }
-  const catLabel  = { bug:'🐛 Bug', amelioration:'💡 Amélioration', question:'❓ Question', ngap:'📋 Cotation NGAP', autre:'📩 Autre' };
-  const statusColor = { sent:'#ef4444', read:'#f59e0b', replied:'#00d4aa' };
-  const statusLabel = { sent:'🔴 Non lu', read:'👁️ Lu', replied:'✅ Répondu' };
+  const catLabel  = { bug:'🐛 Bug', amelioration:'💡 Amélioration', question:'❓ Question', ngap:'📋 Cotation NGAP', ngap_alerts_pending:'🚨 Alertes NGAP', ngap_correction:'🔧 Suggestion AMI', ngap_auto_applied:'✅ Correction auto', autre:'📩 Autre' };
+  const statusColor = { sent:'#ef4444', read:'#f59e0b', replied:'#00d4aa', archived:'var(--m)' };
+  const statusLabel = { sent:'🔴 Non lu', read:'👁️ Lu', replied:'✅ Répondu', archived:'📦 Archivé' };
 
   el.innerHTML = messages.map(m => {
     const date     = new Date(m.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
@@ -1281,11 +1281,17 @@ function _renderAdmMessages(messages) {
     // Formulaire TOUJOURS affiché — permet d'ajouter autant de réponses que nécessaire.
     const btnLabel   = thread.length ? '➕ Ajouter une réponse' : '📤 Répondre';
     const placeholder = thread.length ? `Ajouter une réponse à ${nurseName}…` : `Répondre à ${nurseName}…`;
+    const isArchived = m.status === 'archived';
+    const archiveBtn = isArchived
+      ? `<button class="btn bs bsm" style="font-size:11px" onclick="unarchiveAdmMessage('${m.id}')" title="Désarchiver ce message">↩️ Désarchiver</button>`
+      : `<button class="btn bs bsm" style="font-size:11px" onclick="archiveAdmMessage('${m.id}')" title="Archiver ce message (réversible)">📦 Archiver</button>`;
     const replyForm = `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
            <textarea id="reply-${m.id}" placeholder="${placeholder}" style="flex:1;min-width:200px;padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fi);resize:vertical;min-height:60px" maxlength="1000"></textarea>
            <div style="display:flex;flex-direction:column;gap:6px">
              <button class="btn bp bsm" style="white-space:nowrap" onclick="replyToMessage('${m.id}','${_escAdm(nurseName)}')">${btnLabel}</button>
              ${isUnread ? `<button class="btn bs bsm" style="font-size:11px" onclick="markMessageRead('${m.id}')">👁️ Marquer lu</button>` : ''}
+             ${archiveBtn}
+             <button class="btn bs bsm" style="font-size:11px;color:#ef4444;border-color:rgba(239,68,68,.3)" onclick="deleteAdmMessage('${m.id}')" title="Supprimer définitivement">🗑️ Supprimer</button>
            </div>
          </div>`;
 
@@ -1316,6 +1322,78 @@ async function markMessageRead(id) {
     await wpost('/webhook/admin-message-read', { id });
     const m = ADM_MESSAGES.find(x => x.id === id);
     if (m) { m.status = 'read'; _renderAdmMessages(ADM_MESSAGES); }
+  } catch (e) { admAlert(e.message, 'e'); }
+}
+
+/* ════════════════════════════════════════════════
+   Archiver un message (soft : status = 'archived')
+   Réversible via unarchiveAdmMessage().
+════════════════════════════════════════════════ */
+async function archiveAdmMessage(id) {
+  if (!confirm('📦 Archiver ce message ?\n\nIl ne sera plus affiché dans la liste principale, mais reste consultable via le filtre "Archivés".')) return;
+  try {
+    const d = await wpost('/webhook/admin-message-archive', { id, action: 'archive' });
+    if (!d.ok) throw new Error(d.error || 'Archivage impossible');
+    // Retire le message de la vue courante (sauf si on est sur le filtre archived)
+    const filter = $('adm-msg-filter')?.value || 'all';
+    if (filter !== 'archived') {
+      ADM_MESSAGES = ADM_MESSAGES.filter(x => x.id !== id);
+    } else {
+      const m = ADM_MESSAGES.find(x => x.id === id);
+      if (m) m.status = 'archived';
+    }
+    _renderAdmMessages(ADM_MESSAGES);
+    // Recalcul badge non-lus
+    const unread = ADM_MESSAGES.filter(m => m.status === 'sent').length;
+    const badge  = $('adm-msg-badge');
+    if (badge) {
+      badge.textContent = unread;
+      badge.style.display = unread > 0 ? 'inline' : 'none';
+    }
+    admAlert('📦 Message archivé.', 'o');
+  } catch (e) { admAlert(e.message, 'e'); }
+}
+
+/* ════════════════════════════════════════════════
+   Désarchiver un message (status repasse à 'read'
+   ou 'replied' selon présence de réponses).
+════════════════════════════════════════════════ */
+async function unarchiveAdmMessage(id) {
+  try {
+    const d = await wpost('/webhook/admin-message-archive', { id, action: 'unarchive' });
+    if (!d.ok) throw new Error(d.error || 'Désarchivage impossible');
+    const filter = $('adm-msg-filter')?.value || 'all';
+    if (filter === 'archived') {
+      // On était sur la vue "Archivés" → on retire le message de la liste
+      ADM_MESSAGES = ADM_MESSAGES.filter(x => x.id !== id);
+    } else {
+      const m = ADM_MESSAGES.find(x => x.id === id);
+      if (m) m.status = d.status || 'read';
+    }
+    _renderAdmMessages(ADM_MESSAGES);
+    admAlert('↩️ Message désarchivé.', 'o');
+  } catch (e) { admAlert(e.message, 'e'); }
+}
+
+/* ════════════════════════════════════════════════
+   Supprimer définitivement un message (DELETE).
+   Action irréversible — confirmation explicite.
+════════════════════════════════════════════════ */
+async function deleteAdmMessage(id) {
+  if (!confirm('🗑️ SUPPRESSION DÉFINITIVE\n\nCe message sera supprimé de manière irréversible (impossible à restaurer).\n\nConfirmer la suppression ?')) return;
+  try {
+    const d = await wpost('/webhook/admin-message-delete', { id });
+    if (!d.ok) throw new Error(d.error || 'Suppression impossible');
+    ADM_MESSAGES = ADM_MESSAGES.filter(x => x.id !== id);
+    _renderAdmMessages(ADM_MESSAGES);
+    // Recalcul badge non-lus
+    const unread = ADM_MESSAGES.filter(m => m.status === 'sent').length;
+    const badge  = $('adm-msg-badge');
+    if (badge) {
+      badge.textContent = unread;
+      badge.style.display = unread > 0 ? 'inline' : 'none';
+    }
+    admAlert('🗑️ Message supprimé.', 'o');
   } catch (e) { admAlert(e.message, 'e'); }
 }
 
