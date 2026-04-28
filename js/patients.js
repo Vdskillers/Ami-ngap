@@ -2712,7 +2712,16 @@ async function editCotationPatient(patientId, cotationIdx) {
   // Pré-remplir tous les champs après navigation
   setTimeout(() => {
     // Champs patient
-    const fPt  = $('f-pt');  if (fPt)  fPt.value  = (p.prenom+' '+p.nom).trim();
+    // ⚡ v9.1 — failsafe nom : si la fiche n'a ni nom ni prénom (cas anormal mais
+    // possible — patient créé via tournée/import sans nom complet), utiliser
+    // "Patient #XXXXXX" comme placeholder visible. Évite que l'utilisateur valide
+    // une cotation avec un champ patient vide sans s'en apercevoir.
+    const fPt  = $('f-pt');
+    if (fPt) {
+      let _nomVal = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+      if (!_nomVal && p.id) _nomVal = `Patient #${String(p.id).slice(-6)}`;
+      fPt.value = _nomVal;
+    }
     const fDdn = $('f-ddn'); if (fDdn && p.ddn)  fDdn.value  = p.ddn;
     const fAmo = $('f-amo'); if (fAmo && p.amo)  fAmo.value  = p.amo;
     const fAmc = $('f-amc'); if (fAmc && p.amc)  fAmc.value  = p.amc;
@@ -2728,9 +2737,22 @@ async function editCotationPatient(patientId, cotationIdx) {
       const d = new Date(c.date);
       if (fDs) fDs.value = d.toISOString().slice(0, 10); // YYYY-MM-DD
     }
+    // ⚡ v9.1 — Si la cotation d'origine n'a pas d'heure (cotation rapide sans
+    // heure remplie au moment de la création), utiliser l'heure courante au lieu
+    // de laisser le champ vide ET de bloquer son écrasement avec _userEdited=true.
+    // Conséquence ancienne : l'utilisateur validait sans s'apercevoir → cotation
+    // sauvegardée avec heure_soin=NULL → "heure non renseignée" dans Historique.
     if (fHs) {
-      fHs.value = (c.heure || '').trim().slice(0, 5); // heure dédiée, vide si non renseignée
-      fHs._userEdited = true; // bloque tout écrasement ultérieur par l'heure courante
+      const _heureExist = (c.heure || '').trim().slice(0, 5);
+      if (_heureExist && /^\d{1,2}:\d{2}$/.test(_heureExist)) {
+        fHs.value = _heureExist;
+        fHs._userEdited = true; // heure d'origine valide → on protège contre écrasement
+      } else {
+        // Pas d'heure d'origine → heure courante au format HH:MM (locale)
+        const _now = new Date();
+        fHs.value = String(_now.getHours()).padStart(2,'0') + ':' + String(_now.getMinutes()).padStart(2,'0');
+        // PAS de _userEdited=true — on laisse l'utilisateur ajuster s'il le souhaite
+      }
     }
 
     // Description des actes → champ principal IA
@@ -3259,7 +3281,14 @@ async function coterDepuisPatient(id) {
 
   navTo('cot', null);
   setTimeout(() => {
-    const fPt = $('f-pt'); if(fPt) fPt.value = (p.prenom+' '+p.nom).trim();
+    // ⚡ v9.1 — failsafe nom : si la fiche n'a ni nom ni prénom, utiliser
+    // "Patient #XXXXXX" comme placeholder visible (évite cotation vide silencieuse)
+    const fPt = $('f-pt');
+    if (fPt) {
+      let _nomVal = ((p.prenom||'') + ' ' + (p.nom||'')).trim();
+      if (!_nomVal && row.id) _nomVal = `Patient #${String(row.id).slice(-6)}`;
+      fPt.value = _nomVal;
+    }
     const fDdn= $('f-ddn'); if(fDdn && p.ddn) fDdn.value = p.ddn;
     const fAmo= $('f-amo'); if(fAmo && p.amo) fAmo.value = p.amo;
     const fAmc= $('f-amc'); if(fAmc && p.amc) fAmc.value = p.amc;

@@ -638,9 +638,17 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
   );
 
+  // ⚡ v9.1 — heure : fallback heure courante locale au lieu de '' (qui causait
+  // des cotations IDB sans heure → bloquait éditCotationPatient → cotations
+  // sauvegardées avec heure_soin=NULL dans Supabase Historique).
+  const _heureNewCot = gv('f-hs') || (() => {
+    const _n = new Date();
+    return String(_n.getHours()).padStart(2,'0') + ':' + String(_n.getMinutes()).padStart(2,'0');
+  })();
+
   const _newCot = {
     date:           _cotDate,
-    heure:          gv('f-hs') || '',
+    heure:          _heureNewCot,
     actes:          myCot.actes || [],
     total:          parseFloat(myCot.total || 0),
     part_amo:       parseFloat(myCot.part_amo || 0),
@@ -694,9 +702,16 @@ async function _cotationCabinetPersistMyPart(d, txt) {
 
   } else if (!_editRef) {
     // ── Patient absent + pas de correction → créer fiche + cotation ────
+    // ⚡ v9.1 — split nom/prénom robuste :
+    //   - "Dupont" (1 mot)              → nom="Dupont", prenom=""
+    //   - "Jean Dupont" (2 mots)        → prenom="Jean", nom="Dupont"
+    //   - "Jean-Marie Dupont" (2 mots)  → prenom="Jean-Marie", nom="Dupont"
+    //   - "Jean Marie Dupont" (3+ mots) → prenom="Jean Marie", nom="Dupont"
+    // Ancien comportement : "Dupont" → prenom="Dupont", nom="" (illogique pour
+    // un nom de famille saisi seul, qui est généralement le nom de famille).
     const _parts  = _patNom.trim().split(/\s+/);
-    const _prenom = _parts.slice(0, -1).join(' ') || _patNom;
-    const _nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
+    const _nom    = _parts.length >= 1 ? _parts[_parts.length - 1] : _patNom;
+    const _prenom = _parts.length >= 2 ? _parts.slice(0, -1).join(' ') : '';
     const _newPat = {
       id:         'pat_' + Date.now(),
       nom:        _nom,
@@ -1154,6 +1169,7 @@ async function _cotationPipeline() {
     // ── Pré-résolution patient IDB ─────────────────────────────────────────
     // Nécessaire pour envoyer patient_id à planning_patients AVANT le résultat IA
     let _prePatientId = _editRef?.patientId || null;
+    let _prePatientNom = null; // ⚡ v9.1 : nom résolu côté frontend (cas où f-pt vide mais ID connu)
     if (!_prePatientId) {
       try {
         const _patNomPre = (gv('f-pt') || '').trim();
@@ -1164,9 +1180,29 @@ async function _cotationPipeline() {
             ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomPre) ||
             ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomPre)
           );
-          if (_preRow) _prePatientId = _preRow.id;
+          if (_preRow) {
+            _prePatientId = _preRow.id;
+            _prePatientNom = ((_preRow.prenom||'') + ' ' + (_preRow.nom||'')).trim() || null;
+          }
         }
       } catch (_) {}
+    }
+
+    // ⚡ v9.1 — Si on a un patient_id mais pas de nom (cas édition tournée, etc.),
+    // tenter une résolution inverse depuis IDB : patient_id → fiche → nom.
+    // Garantit que patient_nom n'est JAMAIS manquant à l'envoi quand on a
+    // déjà identifié le patient (sinon Historique des soins affiche "—").
+    if (_prePatientId && typeof _idbGetAll === 'function') {
+      const _patNomFromForm = (gv('f-pt') || '').trim();
+      if (!_prePatientNom && !_patNomFromForm) {
+        try {
+          const _allRows = await _idbGetAll(PATIENTS_STORE);
+          const _row = _allRows.find(r => r.id === _prePatientId);
+          if (_row) {
+            _prePatientNom = ((_row.prenom||'') + ' ' + (_row.nom||'')).trim() || null;
+          }
+        } catch (_) {}
+      }
     }
     // ── Preuve soin (N8N v7) — bouclier anti-redressement CPAM ──
     // La photo / signature ne sont JAMAIS transmises — uniquement leur hash
@@ -1208,7 +1244,7 @@ async function _cotationPipeline() {
       mode: 'ngap',
       texte: txt,
       date_soin: gv('f-ds'),
-      heure_soin: gv('f-hs'),
+      heure_soin: _heureResolved,  // ⚡ v9.1 : fallback heure courante si f-hs vide
       exo: gv('f-exo'),
       ddn: gv('f-ddn'),
       _skip_db: true,  // bypass sauvegarde Postgres N8N (worker fait Supabase)
@@ -1216,6 +1252,19 @@ async function _cotationPipeline() {
 
     // Méta-données conservées côté client — réinjectées dans la réponse pour
     // la sauvegarde Supabase et le rendu (renderCot).
+    // ⚡ v9.1 patient_nom : 3 sources en cascade pour ne JAMAIS envoyer vide
+    //   1. Champ form f-pt (saisie utilisateur courante)
+    //   2. _prePatientNom (résolu depuis IDB par nom OU par patient_id)
+    //   3. Champ form _editRef.patient_nom (édition d'une cotation existante)
+    const _patNomFormVal = (gv('f-pt') || '').trim();
+    const _patNomResolved = _patNomFormVal || _prePatientNom || (_editRef?.patient_nom || '').trim() || '';
+    // ⚡ v9.1 heure_soin : si f-hs vide, fallback heure courante (HH:MM local)
+    const _heureFormVal = gv('f-hs');
+    const _heureResolved = _heureFormVal || (() => {
+      const _now = new Date();
+      return `${String(_now.getHours()).padStart(2,'0')}:${String(_now.getMinutes()).padStart(2,'0')}`;
+    })();
+
     const _clientMeta = {
       infirmiere: ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
       adeli:     u.adeli || '',
@@ -1224,7 +1273,7 @@ async function _cotationPipeline() {
       amo: gv('f-amo'),
       amc: gv('f-amc'),
       regl: gv('f-regl'),
-      patient_nom: (gv('f-pt') || '').trim(),
+      patient_nom: _patNomResolved,
       patient_id:  _prePatientId || null,
       prescripteur_nom:  gv('f-pr') || '',
       prescripteur_rpps: gv('f-pr-rp') || '',
@@ -1370,9 +1419,17 @@ async function _cotationPipeline() {
           throw new Error('__SKIP_IDB__'); // intercepté par le catch local ci-dessous
         }
 
+        // ⚡ v9.1 — heure : fallback heure courante locale au lieu de ''.
+        // Évite que la cotation IDB stocke heure='' → editCotationPatient
+        // bloquerait l'écrasement → cotation re-sauvegardée sans heure dans Supabase.
+        const _heureNewCotMain = gv('f-hs') || (() => {
+          const _n = new Date();
+          return String(_n.getHours()).padStart(2,'0') + ':' + String(_n.getMinutes()).padStart(2,'0');
+        })();
+
         const _newCot = {
           date:           _cotDate,
-          heure:          gv('f-hs') || '',
+          heure:          _heureNewCotMain,
           actes:          d.actes || [],
           total:          parseFloat(d.total || 0),
           part_amo:       parseFloat(d.part_amo || 0),
@@ -1430,9 +1487,10 @@ async function _cotationPipeline() {
         } else if (!_editRef) {
           // ── Patient absent du carnet → créer la fiche + la cotation ──
           // Uniquement si ce n'est pas une correction (mode édition)
+          // ⚡ v9.1 — split nom/prénom robuste (cf _persistCotationCabinet)
           const _parts = _patNom.trim().split(/\s+/);
-          const _prenom = _parts.slice(0, -1).join(' ') || _patNom;
-          const _nom    = _parts.length > 1 ? _parts[_parts.length - 1] : '';
+          const _nom    = _parts.length >= 1 ? _parts[_parts.length - 1] : _patNom;
+          const _prenom = _parts.length >= 2 ? _parts.slice(0, -1).join(' ') : '';
           const _newPat = {
             id:         'pat_' + Date.now(),
             nom:        _nom,
@@ -1861,6 +1919,17 @@ if (typeof window !== 'undefined' && !window._cotPreuveListenerInstalled) {
   document.addEventListener('ami:preuve_updated', function(ev) {
     try {
       const detail = ev?.detail || {};
+
+      // ⚡ FAILSAFE : supprimer DIRECTEMENT le bouton « Faire signer le patient »
+      // dès la réception de l'event, AVANT toute tentative de re-render.
+      // Si le re-render réussit ensuite (cas nominal), .sig-btn-wrap aura été
+      // remplacé par renderCot(). Si le re-render échoue (last absent, _cbody
+      // introuvable, etc.), le bouton aura quand même été retiré.
+      try {
+        const _existingSigWrap = document.querySelector('.sig-btn-wrap');
+        if (_existingSigWrap) _existingSigWrap.remove();
+      } catch (_) {}
+
       const last = window._lastCotData;
       if (!last || typeof renderCot !== 'function') return;
       // Vérifier que c'est bien la cotation actuellement affichée

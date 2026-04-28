@@ -2580,7 +2580,8 @@ async function autoFacturation(patient){
     /* ── 3. Résoudre patient_nom + patient_id — INDISPENSABLE pour l'Historique ──
        Sans ces champs, la ligne Supabase reste avec patient_nom=null et affiche
        "?" + ID#XXX dans la colonne Patient de l'Historique des soins.
-       Priorité : patient.prenom/nom (mémoire) > ficheIDB (fallback IDB).      */
+       Priorité : patient.prenom/nom (mémoire) > ficheIDB (fallback IDB).
+       v9.1 : si toujours vide mais patient_id connu → "Patient #XXXXXX" (failsafe). */
     let _patNom = ((patient.prenom || '') + ' ' + (patient.nom || '')).trim();
     if (!_patNom && ficheIDB && (ficheIDB.nom || ficheIDB.prenom)) {
       _patNom = ((ficheIDB.prenom || '') + ' ' + (ficheIDB.nom || '')).trim();
@@ -2589,6 +2590,8 @@ async function autoFacturation(patient){
       patient.prenom = patient.prenom || ficheIDB.prenom || '';
     }
     const _patId = patient.patient_id || patient.id || null;
+    // ⚡ v9.1 — failsafe ultime : "Patient #XXXXXX" plutôt que vide
+    if (!_patNom && _patId) _patNom = `Patient #${String(_patId).slice(-6)}`;
 
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap', texte: texteForCot,
@@ -2607,8 +2610,15 @@ async function autoFacturation(patient){
       // ⚡ Nom + ID patient → stockés dans planning_patients pour affichage dans
       // l'Historique des soins (colonne Patient). Sans ces champs, la ligne
       // remontait avec un avatar "?" et "ID #XXX" seul.
+      // v9.1 : on les met aussi dans _client_meta pour homogénéité avec cotation.js
+      // (le worker lit _client_meta en priorité, body en fallback compat).
       ...(_patNom ? { patient_nom: _patNom } : {}),
       ...(_patId  ? { patient_id:  _patId  } : {}),
+      _client_meta: {
+        patient_nom: _patNom || '',
+        patient_id:  _patId  || null,
+        preuve_soin: { type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
+      },
       preuve_soin: { type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     return d;
@@ -5727,8 +5737,10 @@ async function openCotationPatient(patientIndex) {
     const _heureForApi = _heureEditExist || new Date().toTimeString().slice(0, 5);
     // ⚡ Nom + ID patient — INDISPENSABLE pour l'Historique des soins.
     // Sans ces champs, la ligne remonte avec un avatar "?" et "ID #XXX" seul.
-    const _patNomOCP = ((patient.prenom || '') + ' ' + (patient.nom || '')).trim();
+    // v9.1 : failsafe "Patient #XXXXXX" si nom vide mais ID connu.
+    let _patNomOCP = ((patient.prenom || '') + ' ' + (patient.nom || '')).trim();
     const _patIdOCP  = patient.patient_id || patient.id || null;
+    if (!_patNomOCP && _patIdOCP) _patNomOCP = `Patient #${String(_patIdOCP).slice(-6)}`;
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'ngap',
       texte: texteForCot,
@@ -5739,6 +5751,11 @@ async function openCotationPatient(patientIndex) {
       _live_auto: true,
       ...(_patNomOCP ? { patient_nom: _patNomOCP } : {}),
       ...(_patIdOCP  ? { patient_id:  _patIdOCP  } : {}),
+      _client_meta: {
+        patient_nom: _patNomOCP || '',
+        patient_id:  _patIdOCP  || null,
+        preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
+      },
       preuve_soin:{ type:'auto_declaration', timestamp:new Date().toISOString(), certifie_ide:true, force_probante:'STANDARD' },
     });
     cotation = d;

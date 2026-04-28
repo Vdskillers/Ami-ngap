@@ -1859,6 +1859,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const cbody = document.getElementById('cbody');
     if (!cbody) return;
     if (cbody.querySelector('.sig-btn-wrap')) return;
+
+    // ⚡ FIX : ne pas injecter le bouton si une signature existe déjà pour
+    // cette cotation dans IDB (cas d'une re-cotation/édition après signature).
+    try {
+      const existing = await _sigGet(invoiceId);
+      if (existing && existing.signature_data) {
+        // Signature existante → ne pas remettre le bouton "Faire signer"
+        return;
+      }
+    } catch (_) { /* fail-soft : on continue avec l'injection si IDB KO */ }
+
     const wrap = document.createElement('div');
     wrap.className = 'sig-btn-wrap';
     wrap.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--b);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
