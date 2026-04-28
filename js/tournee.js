@@ -209,6 +209,13 @@ function _savePlanning(patients) {
     // Sans ça, la date serait recalculée à chaque renderPlanning → glissement quotidien
     const patientsWithDate = (patients || []).map(p => {
       if (!p) return p;
+      // ⚡ Patient récurrent (ajouté depuis le Carnet avec mode "récurrent") :
+      //    pas de date — il apparaît chaque semaine sur les jours configurés dans
+      //    p._recurrence.jours. Ne JAMAIS lui stamper une date du jour, sinon il
+      //    deviendrait un patient ponctuel et perdrait sa récurrence.
+      if (p._recurrence && Array.isArray(p._recurrence.jours) && p._recurrence.jours.length) {
+        return { ...p, _dateFixed: true };
+      }
       // Date déjà présente → on la normalise au format YYYY-MM-DD si possible mais on la conserve
       if (p.date || p.date_soin || p.date_prevue) {
         // Marquer comme verrouillée pour empêcher tout futur écrasement
@@ -766,6 +773,22 @@ async function renderPlanning(d){
   weekEnd.setHours(23, 59, 59, 999); // inclure la fin du dimanche
 
   const patientsThisWeek = patients.filter(p => {
+    // ⚡ Patient récurrent (ajouté depuis le Carnet avec jours fixés) :
+    //    visible chaque semaine sur les jours configurés. Toujours inclus,
+    //    quelle que soit la semaine affichée (passée, courante ou future).
+    if (p._recurrence && Array.isArray(p._recurrence.jours) && p._recurrence.jours.length) {
+      // Optionnel : respecter une date de fin si définie (mode récurrence bornée)
+      if (p._recurrence.fin) {
+        const finDate = _parseDateLocal(p._recurrence.fin);
+        if (finDate && finDate < weekStart) return false;
+      }
+      // Optionnel : respecter une date de début si définie
+      if (p._recurrence.debut) {
+        const debutDate = _parseDateLocal(p._recurrence.debut);
+        if (debutDate && debutDate > weekEnd) return false;
+      }
+      return true;
+    }
     // ⚡ Patients sans date → uniquement visibles sur la semaine courante (zone "non planifiés")
     //    Jamais sur une semaine passée/future, pour éviter qu'ils apparaissent partout.
     if (!p.date) return _planningWeekOffset === 0;
@@ -803,6 +826,37 @@ async function renderPlanning(d){
 
   const nonPlanifies = [];
   patientsToShow.forEach((p) => {
+    // ⚡ Patient récurrent : ajouté à TOUS les jours configurés dans _recurrence.jours
+    //    pour la semaine affichée. On crée une copie virtuelle par jour avec une
+    //    date "calculée" pour la semaine en cours (utile pour l'affichage, mais
+    //    pas persistée — le patient récurrent reste sans date dans le storage).
+    if (p._recurrence && Array.isArray(p._recurrence.jours) && p._recurrence.jours.length) {
+      p._recurrence.jours.forEach(jour => {
+        const jourIdx = JOURS.indexOf(jour);
+        if (jourIdx < 0) return;
+        const dateThisWeek = weekDateKeys[jourIdx]; // YYYY-MM-DD locale
+        // Vérification optionnelle des bornes debut/fin
+        if (p._recurrence.debut) {
+          const debutDate = _parseDateLocal(p._recurrence.debut);
+          const dateThis  = _parseDateLocal(dateThisWeek);
+          if (debutDate && dateThis && dateThis < debutDate) return;
+        }
+        if (p._recurrence.fin) {
+          const finDate  = _parseDateLocal(p._recurrence.fin);
+          const dateThis = _parseDateLocal(dateThisWeek);
+          if (finDate && dateThis && dateThis > finDate) return;
+        }
+        // Copie virtuelle : on assigne la date du jour de la semaine en cours
+        // (date d'affichage uniquement — _recurrence reste source de vérité)
+        byDay[jour].patients.push({
+          ...p,
+          date: dateThisWeek,
+          _virtualFromRecurrence: true,
+        });
+      });
+      return;
+    }
+
     let jourKey = null;
     // 1) Priorité absolue : la date du patient doit tomber dans la semaine affichée
     try {
@@ -979,6 +1033,7 @@ async function renderPlanning(d){
         <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
           <span title="${dateRaw ? 'Date assignée au planning' : 'Aucune date — réimportez ce patient pour le placer sur un jour'}" style="font-size:10px;font-family:var(--fm);${dateBadgeStyle};padding:1px 7px;border-radius:20px;white-space:nowrap">${dateAff}</span>
           ${heure ? `<span style="font-size:10px;font-family:var(--fm);background:rgba(255,181,71,.08);color:var(--w);border:1px solid rgba(255,181,71,.2);padding:1px 7px;border-radius:20px;white-space:nowrap">⏰ ${heure}</span>` : ''}
+          ${p._virtualFromRecurrence ? `<span title="Patient récurrent — apparaît chaque semaine sur les jours configurés" style="font-size:10px;font-family:var(--fm);background:rgba(168,85,247,.1);color:#a855f7;border:1px solid rgba(168,85,247,.25);padding:1px 7px;border-radius:20px;white-space:nowrap">🔁 Hebdo</span>` : ''}
           ${p.done ? `<span style="font-size:9px;background:rgba(0,212,170,.1);color:var(--a);border-radius:20px;padding:1px 6px">✅</span>` : ''}
         </div>
       </div>
@@ -1190,8 +1245,24 @@ async function renderPlanning(d){
       // Tous les patients de ce jour, tous IDEs confondus — avec couleur IDE
       const allDayPats = [];
       ideList.forEach(([ideId, a]) => {
-        a.patients.filter(p => resolveJour(p) === j).forEach(p => {
-          allDayPats.push({ p, ideId, color: a.color, prenom: a.prenom });
+        a.patients.forEach(p => {
+          // ⚡ Patient récurrent : inclus si jour ∈ p._recurrence.jours.
+          //    Chaque jour matchant produit une carte virtuelle datée pour
+          //    cohérence d'affichage (date du jour de la semaine en cours).
+          if (p._recurrence && Array.isArray(p._recurrence.jours)) {
+            if (p._recurrence.jours.includes(j)) {
+              const dateThisWeek = weekDateKeys[ji];
+              allDayPats.push({
+                p: { ...p, date: dateThisWeek, _virtualFromRecurrence: true },
+                ideId, color: a.color, prenom: a.prenom,
+              });
+            }
+            return;
+          }
+          // Patient ponctuel : routage classique par date (resolveJour)
+          if (resolveJour(p) === j) {
+            allDayPats.push({ p, ideId, color: a.color, prenom: a.prenom });
+          }
         });
       });
 
@@ -1432,7 +1503,18 @@ function _planningRemovePatient(idx) {
   const nom = [p?.prenom, p?.nom].filter(Boolean).join(' ')
     || p?.description?.split(' ').slice(0,3).join(' ')
     || 'ce patient';
-  if (!confirm(`Retirer ${nom} du planning ?`)) return;
+
+  // ⚡ Patient récurrent : la suppression retire l'entrée pour TOUTES les semaines
+  //    (puisqu'une seule entrée _recurrence couvre tous les jours configurés).
+  //    On adapte le message pour que l'infirmière comprenne l'impact.
+  let confirmMsg;
+  if (p._recurrence && Array.isArray(p._recurrence.jours) && p._recurrence.jours.length) {
+    const joursLbl = p._recurrence.jours.join(', ');
+    confirmMsg = `Retirer ${nom} du planning récurrent ?\n\nCe patient est planifié chaque semaine (${joursLbl}). Toutes ses occurrences seront supprimées.`;
+  } else {
+    confirmMsg = `Retirer ${nom} du planning ?`;
+  }
+  if (!confirm(confirmMsg)) return;
 
   const newArr = arr.filter((_, i) => i !== idx);
 
@@ -1541,17 +1623,52 @@ window.planningImportDayToTour = async function(jourKey, dateISO) {
     }
 
     // Filtrer les patients du jour spécifié (même logique que la distribution hebdo)
-    const patientsDuJour = allPatients.filter(p => {
-      try {
-        const pd = new Date(p.date);
-        if (!isNaN(pd)) {
-          const pdKey = pd.toISOString().slice(0, 10);
-          return pdKey === dateISO;
+    const patientsDuJour = [];
+    allPatients.forEach(p => {
+      // ⚡ Patient récurrent : inclus si jourKey ∈ p._recurrence.jours
+      //    On crée une copie virtuelle datée pour la Tournée IA (qui s'attend à une date).
+      if (p._recurrence && Array.isArray(p._recurrence.jours)) {
+        if (!p._recurrence.jours.includes(jourKey)) return;
+        // Vérification optionnelle des bornes
+        if (p._recurrence.debut) {
+          const debut = p._recurrence.debut.slice(0, 10);
+          if (dateISO < debut) return;
         }
-      } catch {}
+        if (p._recurrence.fin) {
+          const fin = p._recurrence.fin.slice(0, 10);
+          if (dateISO > fin) return;
+        }
+        patientsDuJour.push({ ...p, date: dateISO, _virtualFromRecurrence: true });
+        return;
+      }
+      // Patient ponctuel : filtrer par date stricte (string YYYY-MM-DD ou parsing local)
+      let pdKey = null;
+      if (typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(p.date)) {
+        pdKey = p.date.slice(0, 10);
+      } else if (p.date) {
+        try {
+          const pd = new Date(p.date);
+          if (!isNaN(pd)) {
+            // ⚡ Conversion en heure LOCALE (pas UTC) pour éviter le décalage timezone
+            pdKey = [
+              pd.getFullYear(),
+              String(pd.getMonth() + 1).padStart(2, '0'),
+              String(pd.getDate()).padStart(2, '0'),
+            ].join('-');
+          }
+        } catch {}
+      }
+      if (pdKey && pdKey === dateISO) {
+        patientsDuJour.push(p);
+        return;
+      }
       // Fallback : mot-clé jour dans la description (uniquement si date manquante)
-      const desc = (p.description || p.texte || '').toLowerCase();
-      return new RegExp('\\b' + jourKey + '\\b').test(desc);
+      if (!pdKey) {
+        const desc = (p.description || p.texte || '').toLowerCase();
+        if (new RegExp('\\b' + jourKey + '\\b').test(desc)) {
+          patientsDuJour.push(p);
+        }
+      }
     });
 
     if (patientsDuJour.length === 0) {
@@ -1618,6 +1735,374 @@ function _planningResetAll() {
   if (banner) banner.style.display = 'none';
   if (typeof showToast === 'function') showToast('🗑️ Planning effacé.');
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   AJOUT DEPUIS LE CARNET PATIENTS — Planning hebdomadaire
+   ────────────────────────────────────────────────────────────────────────
+   Ouvre une modale qui liste les patients du Carnet (IDB local, par utilisateur)
+   et permet, pour chaque patient sélectionné :
+     • de cocher un ou plusieurs jours de la semaine
+     • de choisir le mode :
+         - "récurrent"  : apparaît chaque semaine sur les jours cochés
+         - "une fois"   : créneaux réservés uniquement sur la semaine affichée
+   ⚠️ Aucune cotation n'est créée — uniquement réservation de créneau.
+   ⚠️ Anti-doublon : pour un patient récurrent déjà présent, on fusionne les
+      jours plutôt que de créer une seconde entrée. Pour un patient ponctuel,
+      on évite de re-créer une entrée pour un jour déjà occupé.
+════════════════════════════════════════════════════════════════════════ */
+
+// État local de la modale (réinitialisé à chaque ouverture)
+let _plaCarnetState = {
+  patients: [],              // liste des patients du Carnet (chargée depuis IDB)
+  selection: {},             // { patientId: { jours: ['lundi', ...], mode: 'recurrent'|'week' } }
+  filter: '',
+};
+
+window.planningOpenAddFromCarnet = async function() {
+  const modal = document.getElementById('modal-pla-add-carnet');
+  if (!modal) return;
+  // Reset état
+  _plaCarnetState = { patients: [], selection: {}, filter: '' };
+  const searchInput = document.getElementById('pla-carnet-search');
+  if (searchInput) searchInput.value = '';
+  modal.style.display = 'block';
+  // Empêcher le scroll du body en arrière-plan
+  document.body.style.overflow = 'hidden';
+
+  const list = document.getElementById('pla-carnet-list');
+  if (list) list.innerHTML = '<div style="text-align:center;padding:24px;color:var(--m);font-size:13px">⏳ Chargement du carnet…</div>';
+
+  try {
+    if (typeof getAllPatients !== 'function') {
+      throw new Error('getAllPatients non disponible (patients.js non chargé)');
+    }
+    const all = await getAllPatients();
+    // Tri alphabétique par nom puis prénom
+    all.sort((a, b) => {
+      const an = (a.nom || '').toLowerCase();
+      const bn = (b.nom || '').toLowerCase();
+      if (an !== bn) return an.localeCompare(bn);
+      return (a.prenom || '').toLowerCase().localeCompare((b.prenom || '').toLowerCase());
+    });
+    _plaCarnetState.patients = all;
+    _renderPlaCarnetList();
+  } catch (e) {
+    console.warn('[planningOpenAddFromCarnet] KO:', e.message);
+    if (list) list.innerHTML = `<div class="ai er">Erreur de chargement du carnet : ${e.message}</div>`;
+  }
+};
+
+window.planningCloseAddFromCarnet = function() {
+  const modal = document.getElementById('modal-pla-add-carnet');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+  _plaCarnetState = { patients: [], selection: {}, filter: '' };
+};
+
+window.planningFilterCarnetPatients = function(query) {
+  _plaCarnetState.filter = (query || '').toLowerCase().trim();
+  _renderPlaCarnetList();
+};
+
+function _plaPatientLabel(p) {
+  const nomComplet = [p.prenom, p.nom].filter(Boolean).join(' ').trim();
+  return nomComplet || `Patient #${String(p.id || '').slice(-6)}`;
+}
+
+function _renderPlaCarnetList() {
+  const list = document.getElementById('pla-carnet-list');
+  if (!list) return;
+
+  const q = _plaCarnetState.filter;
+  const filtered = !q
+    ? _plaCarnetState.patients
+    : _plaCarnetState.patients.filter(p => {
+        const hay = `${p.nom || ''} ${p.prenom || ''}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--m);font-size:13px">
+      ${_plaCarnetState.patients.length === 0
+        ? '📭 Aucun patient dans le carnet. Ajoutez d\'abord des fiches dans "Carnet patients".'
+        : 'Aucun résultat pour cette recherche.'}
+    </div>`;
+    return;
+  }
+
+  const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+  const JOURS_SHORT = ['L','Ma','Me','J','V','S','D'];
+
+  list.innerHTML = filtered.map(p => {
+    const sel  = _plaCarnetState.selection[p.id];
+    const isSelected = !!sel;
+    const jours = sel?.jours || [];
+    const mode  = sel?.mode  || 'recurrent';
+    const label = _plaPatientLabel(p);
+    const actes = (p.actes_recurrents || '').slice(0, 80);
+    const safeId = String(p.id).replace(/'/g, "\\'");
+
+    // Boutons jours (visibles uniquement si patient sélectionné)
+    const joursBtns = JOURS.map((j, i) => {
+      const checked = jours.includes(j);
+      return `<button type="button"
+        onclick="planningTogglePatientDay('${safeId}','${j}')"
+        style="padding:5px 9px;font-family:var(--fm);font-size:11px;border-radius:6px;
+               border:1px solid ${checked ? 'rgba(0,212,170,.5)' : 'var(--b)'};
+               background:${checked ? 'rgba(0,212,170,.15)' : 'var(--c)'};
+               color:${checked ? 'var(--a)' : 'var(--t)'};
+               cursor:pointer;font-weight:${checked ? '700' : '500'};min-width:32px">
+        ${JOURS_SHORT[i]}
+      </button>`;
+    }).join('');
+
+    // Toggle mode (récurrent / une fois)
+    const modeUI = `<div style="display:flex;gap:6px;align-items:center;font-family:var(--fm);font-size:11px;flex-wrap:wrap">
+      <span style="color:var(--m)">Mode :</span>
+      <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid ${mode==='recurrent'?'rgba(168,85,247,.4)':'var(--b)'};background:${mode==='recurrent'?'rgba(168,85,247,.1)':'transparent'};color:${mode==='recurrent'?'#a855f7':'var(--t)'}">
+        <input type="radio" name="pla-mode-${safeId}" value="recurrent" ${mode==='recurrent'?'checked':''}
+          onchange="planningSetPatientMode('${safeId}','recurrent')"
+          style="accent-color:#a855f7;width:11px;height:11px">
+        🔁 Récurrent (chaque semaine)
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid ${mode==='week'?'rgba(79,168,255,.4)':'var(--b)'};background:${mode==='week'?'rgba(79,168,255,.08)':'transparent'};color:${mode==='week'?'var(--a2)':'var(--t)'}">
+        <input type="radio" name="pla-mode-${safeId}" value="week" ${mode==='week'?'checked':''}
+          onchange="planningSetPatientMode('${safeId}','week')"
+          style="accent-color:var(--a2);width:11px;height:11px">
+        📌 Cette semaine uniquement
+      </label>
+    </div>`;
+
+    return `<div style="background:var(--c);border:1px solid ${isSelected?'rgba(0,212,170,.35)':'var(--b)'};border-radius:10px;padding:10px 12px;${isSelected?'box-shadow:0 0 0 1px rgba(0,212,170,.15)':''}">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" ${isSelected?'checked':''}
+          onchange="planningToggleCarnetPatient('${safeId}', this.checked)"
+          style="width:16px;height:16px;accent-color:var(--a);flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--t);overflow-wrap:anywhere">${label}</div>
+          ${actes ? `<div style="font-size:11px;color:var(--m);margin-top:2px;line-height:1.3">${actes}${(p.actes_recurrents || '').length > 80 ? '…' : ''}</div>` : ''}
+        </div>
+      </label>
+      ${isSelected ? `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--b);display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-family:var(--fm);font-size:11px;color:var(--m)">Jours :</span>
+            ${joursBtns}
+          </div>
+          ${modeUI}
+        </div>
+      ` : ''}
+    </div>`;
+  }).join('');
+
+  _refreshPlaCarnetSummary();
+}
+
+window.planningToggleCarnetPatient = function(patientId, checked) {
+  if (checked) {
+    _plaCarnetState.selection[patientId] = _plaCarnetState.selection[patientId] || {
+      jours: [],
+      mode:  'recurrent',
+    };
+  } else {
+    delete _plaCarnetState.selection[patientId];
+  }
+  _renderPlaCarnetList();
+};
+
+window.planningTogglePatientDay = function(patientId, jour) {
+  const sel = _plaCarnetState.selection[patientId];
+  if (!sel) return;
+  const i = sel.jours.indexOf(jour);
+  if (i >= 0) sel.jours.splice(i, 1);
+  else        sel.jours.push(jour);
+  _renderPlaCarnetList();
+};
+
+window.planningSetPatientMode = function(patientId, mode) {
+  const sel = _plaCarnetState.selection[patientId];
+  if (!sel) return;
+  if (mode !== 'recurrent' && mode !== 'week') return;
+  sel.mode = mode;
+  _renderPlaCarnetList();
+};
+
+function _refreshPlaCarnetSummary() {
+  const summary = document.getElementById('pla-carnet-summary');
+  const txt     = document.getElementById('pla-carnet-summary-text');
+  const btn     = document.getElementById('pla-carnet-confirm-btn');
+  const sel     = _plaCarnetState.selection;
+  const ids     = Object.keys(sel);
+  // Patients sélectionnés AVEC au moins un jour coché
+  const ready = ids.filter(id => sel[id].jours.length > 0);
+
+  if (!ids.length) {
+    if (summary) summary.style.display = 'none';
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (summary) summary.style.display = 'block';
+
+  let creneaux = 0;
+  ready.forEach(id => { creneaux += sel[id].jours.length; });
+
+  if (txt) {
+    if (ids.length === ready.length) {
+      txt.innerHTML = `✅ <strong>${ready.length}</strong> patient(s) · <strong>${creneaux}</strong> créneau(x) à réserver`;
+    } else {
+      const incomplete = ids.length - ready.length;
+      txt.innerHTML = `⚠️ <strong>${incomplete}</strong> patient(s) sans jour sélectionné · <strong>${ready.length}</strong> prêt(s)`;
+    }
+  }
+  if (btn) btn.disabled = ready.length === 0;
+}
+
+/* Confirmation : injecte les patients sélectionnés dans le planning hebdo */
+window.planningConfirmAddFromCarnet = async function() {
+  const sel = _plaCarnetState.selection;
+  const carnet = _plaCarnetState.patients;
+  const ids = Object.keys(sel).filter(id => sel[id].jours.length > 0);
+  if (!ids.length) return;
+
+  // Calculer les dates de la semaine affichée (pour le mode "week")
+  const today      = new Date();
+  const dayOfWeek  = today.getDay();
+  const mondayThis = new Date(today);
+  mondayThis.setDate(today.getDate() - ((dayOfWeek + 6) % 7) + _planningWeekOffset * 7);
+  mondayThis.setHours(0, 0, 0, 0);
+  const JOURS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+  const _toLocalISO = (d) => [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+  const weekDateKeys = JOURS.map((_, i) => {
+    const d = new Date(mondayThis);
+    d.setDate(mondayThis.getDate() + i);
+    return _toLocalISO(d);
+  });
+
+  // Récupérer le planning courant (source unique de vérité)
+  const planData = window.APP._planningData || { patients: [], total: 0, source: 'planning' };
+  const arr = Array.isArray(planData.patients) ? planData.patients.slice() : [];
+
+  // Index de recherche : patient_id → première occurrence dans le planning (anti-doublon)
+  const findRecurrentIdx = (pid) =>
+    arr.findIndex(x => (x.patient_id === pid || x.id === pid)
+                       && x._recurrence
+                       && Array.isArray(x._recurrence.jours));
+
+  let nbAjoutes  = 0;  // nouvelles entrées
+  let nbFusion   = 0;  // patients existants enrichis
+  let nbSkipped  = 0;  // créneaux déjà présents (skippés)
+
+  ids.forEach(pid => {
+    const fiche = carnet.find(c => String(c.id) === String(pid));
+    if (!fiche) return;
+    const { jours, mode } = sel[pid];
+
+    if (mode === 'recurrent') {
+      // ── MODE RÉCURRENT ─────────────────────────────────────────────
+      // Si le patient a déjà une entrée récurrente → fusion des jours.
+      // Sinon → création d'une nouvelle entrée _recurrence.
+      const existIdx = findRecurrentIdx(fiche.id);
+      if (existIdx >= 0) {
+        const existJours = arr[existIdx]._recurrence.jours || [];
+        const merged = Array.from(new Set([...existJours, ...jours]));
+        const ajoutsReels = merged.length - existJours.length;
+        if (ajoutsReels > 0) {
+          arr[existIdx] = {
+            ...arr[existIdx],
+            _recurrence: { ...arr[existIdx]._recurrence, jours: merged },
+          };
+          nbFusion++;
+        } else {
+          nbSkipped += jours.length;
+        }
+      } else {
+        arr.push({
+          patient_id:       fiche.id,
+          id:               fiche.id,
+          nom:              fiche.nom    || '',
+          prenom:           fiche.prenom || '',
+          actes_recurrents: fiche.actes_recurrents || '',
+          pathologies:      fiche.pathologies || '',
+          adresse:          fiche.adresse || '',
+          // ⚡ Pas de date — la récurrence pilote l'affichage
+          _recurrence: {
+            jours,                           // ['lundi', 'jeudi', ...]
+            debut: _toLocalISO(new Date()),  // début = aujourd'hui (récurrence ouverte)
+            fin:   null,                     // sans fin
+          },
+          _sourceCarnet: true,
+          _addedAt:      new Date().toISOString(),
+        });
+        nbAjoutes++;
+      }
+    } else {
+      // ── MODE "CETTE SEMAINE UNIQUEMENT" ────────────────────────────
+      // Une entrée par jour sélectionné, avec sa date précise pour la semaine affichée.
+      jours.forEach(jour => {
+        const jIdx = JOURS.indexOf(jour);
+        if (jIdx < 0) return;
+        const dateISO = weekDateKeys[jIdx];
+        // Anti-doublon 1 : déjà une entrée ponctuelle pour ce patient à cette date ?
+        const existsPonctuel = arr.some(x =>
+          (String(x.patient_id) === String(fiche.id) || String(x.id) === String(fiche.id)) &&
+          !x._recurrence &&
+          x.date && String(x.date).slice(0,10) === dateISO
+        );
+        if (existsPonctuel) { nbSkipped++; return; }
+        // Anti-doublon 2 : patient déjà couvert par une récurrence sur ce jour de la semaine ?
+        // (sinon l'utilisateur verrait deux cartes identiques le même jour)
+        const existsRecurrent = arr.some(x =>
+          (String(x.patient_id) === String(fiche.id) || String(x.id) === String(fiche.id)) &&
+          x._recurrence && Array.isArray(x._recurrence.jours) &&
+          x._recurrence.jours.includes(jour)
+        );
+        if (existsRecurrent) { nbSkipped++; return; }
+        arr.push({
+          patient_id:       fiche.id,
+          id:               fiche.id,
+          nom:              fiche.nom    || '',
+          prenom:           fiche.prenom || '',
+          actes_recurrents: fiche.actes_recurrents || '',
+          pathologies:      fiche.pathologies || '',
+          adresse:          fiche.adresse || '',
+          date:             dateISO,
+          _dateFixed:       true,
+          _sourceCarnet:    true,
+          _addedAt:         new Date().toISOString(),
+        });
+        nbAjoutes++;
+      });
+    }
+  });
+
+  // Persister localement + serveur
+  const stamped = _savePlanning(arr) || arr;
+  window.APP._planningData = {
+    patients: stamped,
+    total:    stamped.length,
+    source:   'carnet_add',
+  };
+  // Bloquer la re-sync serveur n'a plus lieu d'être : on a re-rempli volontairement
+  _planningManuallyCleared = false;
+  _syncPlanningToServer(stamped).catch(() => {});
+
+  // Fermer la modale et rafraîchir
+  planningCloseAddFromCarnet();
+  renderPlanning({}).catch(() => {});
+
+  // Toast de confirmation
+  if (typeof showToast === 'function') {
+    const parts = [];
+    if (nbAjoutes) parts.push(`${nbAjoutes} entrée(s) ajoutée(s)`);
+    if (nbFusion)  parts.push(`${nbFusion} récurrence(s) enrichie(s)`);
+    if (nbSkipped) parts.push(`${nbSkipped} déjà présent(s)`);
+    showToast('✅ ' + (parts.join(' · ') || 'Planning mis à jour'), 'ok');
+  }
+};
 
 /* ============================================================
    ROUTING OSRM

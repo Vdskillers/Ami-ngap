@@ -2305,6 +2305,9 @@
       <!-- Barre d'actions -->
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
         <button class="btn bs bsm" onclick="refreshPlanning()">↻ Actualiser</button>
+        <button class="btn bp bsm" onclick="planningOpenAddFromCarnet()" title="Ajouter un ou plusieurs patients du Carnet à un ou plusieurs jours de la semaine">
+          <span>➕</span> Ajouter du Carnet
+        </button>
         <!-- Toggle vue cabinet — affiché uniquement si cabinet actif -->
         <div id="pla-cabinet-toggle-wrap" style="display:none">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 12px;border:1px solid rgba(0,212,170,.25);border-radius:20px;background:rgba(0,212,170,.04);font-size:12px">
@@ -2318,6 +2321,54 @@
           <button class="btn bs bsm" id="pla-week-prev" onclick="planningWeekNav(-1)">← Sem. préc.</button>
           <span id="pla-week-label" style="font-size:12px;color:var(--m);font-family:var(--fm);white-space:nowrap;min-width:120px;text-align:center">Cette semaine</span>
           <button class="btn bs bsm" id="pla-week-next" onclick="planningWeekNav(+1)">Sem. suiv. →</button>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════════════
+           MODALE "AJOUTER DU CARNET" — sélection patients + jours + mode
+           Mode "Récurrent" : le patient apparaît chaque semaine sur les jours choisis
+           Mode "Cette semaine uniquement" : créneau réservé pour la semaine affichée
+           ⚠️ N'écrit PAS de cotation — uniquement réservation de créneau
+      ════════════════════════════════════════════════════════════════════ -->
+      <div id="modal-pla-add-carnet" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);padding:16px;overflow-y:auto;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)">
+        <div style="max-width:720px;margin:3vh auto;background:#0b0f14;border:1px solid rgba(30,45,61,.95);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+          <!-- Header -->
+          <div style="padding:18px 22px;border-bottom:1px solid rgba(30,45,61,.95);display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div>
+              <div style="font-family:var(--fs);font-size:17px;color:var(--t);font-weight:600">➕ Ajouter du Carnet patients</div>
+              <div style="font-size:12px;color:var(--m);margin-top:3px">Sélectionnez les patients, les jours et le mode de récurrence — aucune cotation n'est créée.</div>
+            </div>
+            <button onclick="planningCloseAddFromCarnet()" style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--m);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>
+          </div>
+
+          <!-- Body -->
+          <div style="padding:18px 22px;max-height:70vh;overflow-y:auto">
+            <!-- Recherche -->
+            <div style="margin-bottom:14px">
+              <input type="text" id="pla-carnet-search"
+                placeholder="🔍 Rechercher un patient (nom, prénom)…"
+                oninput="planningFilterCarnetPatients(this.value)"
+                style="width:100%;padding:10px 14px;border:1px solid var(--b);border-radius:8px;background:var(--s);color:var(--t);font-size:14px">
+            </div>
+
+            <!-- Liste patients du carnet -->
+            <div id="pla-carnet-list" style="display:flex;flex-direction:column;gap:8px;max-height:380px;overflow-y:auto;margin-bottom:14px">
+              <div style="text-align:center;padding:24px;color:var(--m);font-size:13px">Chargement du carnet…</div>
+            </div>
+
+            <!-- Compteur de sélection -->
+            <div id="pla-carnet-summary" style="font-size:12px;color:var(--m);font-family:var(--fm);padding:8px 12px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.15);border-radius:8px;margin-bottom:6px;display:none">
+              <span id="pla-carnet-summary-text">0 patient(s) sélectionné(s)</span>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div style="padding:14px 22px;border-top:1px solid rgba(30,45,61,.95);display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;background:var(--s)">
+            <button class="btn bs bsm" onclick="planningCloseAddFromCarnet()">Annuler</button>
+            <button class="btn bp bsm" id="pla-carnet-confirm-btn" onclick="planningConfirmAddFromCarnet()" disabled>
+              <span>✅</span> Ajouter au planning
+            </button>
+          </div>
         </div>
       </div>
 
