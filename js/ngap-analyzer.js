@@ -406,6 +406,80 @@
   }
 
   /* ════════════════════════════════════════════════
+     E.bis RENDER PUR — affiche un payload déjà fetché
+     (pas de wpost) — utilisé par admin.js pour éviter
+     les double-appels et garantir la fiabilité des
+     boutons d'auto-correction.
+  ════════════════════════════════════════════════ */
+  function renderRealLossAnalysis(containerOrId, d) {
+    const el = (typeof containerOrId === 'string')
+      ? document.getElementById(containerOrId)
+      : containerOrId;
+    if (!el) { console.warn('[NGAPAnalyzer] container introuvable'); return; }
+    if (!d || !d.ok) { el.innerHTML = `<div class="ai er">⚠️ ${(d && d.error) || 'Analyse indisponible.'}</div>`; return; }
+
+    const details = Array.isArray(d.details) ? d.details : [];
+    const gain    = parseFloat(d.gain_total || 0);
+    const count   = parseInt(d.count || details.length || 0, 10);
+
+    if (!details.length) {
+      el.innerHTML = '<div class="ai su">✅ Aucune perte détectée — vos cotations sont optimisées.</div>';
+      return;
+    }
+
+    /* Agrégation par pattern */
+    const byPattern = {};
+    details.forEach(x => {
+      const k = x.pattern || 'autre';
+      if (!byPattern[k]) byPattern[k] = { count:0, gain:0 };
+      byPattern[k].count++;
+      byPattern[k].gain += parseFloat(x.perte || 0);
+    });
+    const topPatterns = Object.entries(byPattern)
+      .sort((a,b) => b[1].gain - a[1].gain)
+      .slice(0,5);
+
+    el.innerHTML = `
+      <div class="card" style="background:linear-gradient(135deg,rgba(0,212,170,.08),transparent);border:1px solid rgba(0,212,170,.3);padding:16px;margin-bottom:12px">
+        <div style="font-size:13px;color:var(--m);margin-bottom:4px">💸 Gain potentiel récupérable</div>
+        <div style="font-size:32px;font-weight:700;color:#00b894;font-family:var(--fs)">${gain.toFixed(2)} €</div>
+        <div style="font-size:11px;color:var(--m);margin-top:4px">sur ${count} cotation${count>1?'s':''} à optimiser · période analysée : 30j glissants · données anonymisées</div>
+      </div>
+      ${topPatterns.length ? `
+      <div class="card" style="padding:14px;margin-bottom:12px">
+        <h4 style="margin:0 0 10px;font-size:13px">🔍 Top patterns de sous-cotation</h4>
+        ${topPatterns.map(([k,v]) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--b);font-size:12px">
+            <span>${k}</span>
+            <span style="color:#ef4444;font-weight:600">${v.gain.toFixed(2)}€ <small style="color:var(--m);font-weight:400">(×${v.count})</small></span>
+          </div>
+        `).join('')}
+      </div>` : ''}
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--m);padding:6px 0">Voir le détail (${details.length} lignes · anonymisées)</summary>
+        <div style="max-height:420px;overflow:auto;margin-top:8px">
+          ${details.slice(0,100).map(x => `
+            <div style="padding:10px;border-bottom:1px solid var(--b);font-size:12px">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                <strong style="font-size:13px">${(x.patient_ref || '—')}</strong>
+                <span style="color:#ef4444;font-weight:600">−${parseFloat(x.perte||0).toFixed(2)}€</span>
+              </div>
+              <div style="color:var(--m);margin-top:4px">
+                ${parseFloat(x.actuel||0).toFixed(2)}€ → <strong style="color:#00b894">${parseFloat(x.optimal||0).toFixed(2)}€</strong>
+              </div>
+              ${x.suggestion ? `<div style="margin-top:6px;font-size:11px;color:var(--a)">💡 ${x.suggestion}</div>` : ''}
+              ${x.regle ? `<div style="margin-top:2px;font-size:10px;color:var(--m);font-family:var(--fm)">${x.regle}</div>` : ''}
+            </div>
+          `).join('')}
+          ${details.length > 100 ? `<div style="padding:10px;text-align:center;color:var(--m);font-size:11px">+${details.length - 100} lignes — tronqué à 100 pour affichage</div>` : ''}
+        </div>
+      </details>
+      <div style="font-size:10px;color:var(--m);margin-top:10px;padding:8px;background:var(--s);border-radius:6px">
+        🛡️ RGPD : analyses basées sur les cotations anonymisées (hash patient) — aucune donnée identifiable n'est traitée côté client.
+      </div>`;
+  }
+
+  /* ════════════════════════════════════════════════
      F. RENDER ANOMALIES — UI référentiel
      Affiche les suggestions détectées dans le référentiel
   ════════════════════════════════════════════════ */
@@ -446,6 +520,7 @@
     applyNGAPFix,
     liveAnalyzeCotation,
     runRealLossAnalysis,
+    renderRealLossAnalysis,
     renderAnomaliesUI,
     // accès utilitaires
     _getTarif,

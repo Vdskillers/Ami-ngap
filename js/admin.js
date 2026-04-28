@@ -43,7 +43,7 @@ function admTab(tab) {
     sec.style.display = sec.dataset.tab === tab ? 'block' : 'none';
   });
   if (tab === 'comptes')   { loadAdmComptes(); }
-  if (tab === 'stats')     { loadAdmStats(); }
+  if (tab === 'stats')     { loadAdmStats(); loadAdmSecurityStats(); }
   if (tab === 'logs')      { loadAdmLogs(); }
   if (tab === 'sante')     { loadSystemHealth(); }
   if (tab === 'messages')  { loadAdmMessages(); }
@@ -134,8 +134,11 @@ function _admInjectNgapButton() {
     <button class="btn bv bsm" onclick="admOpenNgapAnalysis()" title="Analyse les cotations réelles et détecte les pertes € (anonymisé)">
       💸 Analyse pertes NGAP
     </button>
-    <button class="btn bs bsm" onclick="admOpenNgapAnomalies()" title="Détecte les anomalies dans le référentiel NGAP">
-      🔍 Vérifier référentiel
+    <button class="btn bs bsm" onclick="admVerifyAlerts()" title="Scanne toutes les cotations avec alertes (par infirmière, anonymisé)">
+      🔔 Vérifier alertes
+    </button>
+    <button class="btn bp bsm" onclick="admFixAlertsNgap()" title="Auto-fix des alertes résolvables + notification messagerie pour le reste" style="background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff">
+      🚨 Fixer alertes NGAP
     </button>
     <button id="adm-ngap-autocorrect-btn" class="btn bp bsm" onclick="admAutoCorrectSuggestions()" title="Envoie les suggestions de correction aux infirmières concernées via leur messagerie (elles valident)" style="display:none;background:linear-gradient(135deg,#00d4aa,#10b981);color:#fff">
       🔧 Corriger via l'infirmière
@@ -166,43 +169,75 @@ window._ADM_NGAP_LAST_ANALYSIS = null;
 async function admOpenNgapAnalysis() {
   const res = document.getElementById('adm-ngap-result');
   if (!res) return;
-  if (!window.NGAPAnalyzer || typeof NGAPAnalyzer.runRealLossAnalysis !== 'function') {
+  if (!window.NGAPAnalyzer || typeof NGAPAnalyzer.renderRealLossAnalysis !== 'function') {
     res.innerHTML = '<div class="ai er">⚠️ Module NGAPAnalyzer non chargé.</div>';
     return;
   }
-  // Délègue à ngap-analyzer.js qui gère le rendu complet (utilise la route /webhook/admin-ngap-analyze-real)
-  await NGAPAnalyzer.runRealLossAnalysis('adm-ngap-result');
 
-  // Rappel direct de la route pour stocker les détails (ngap-analyzer fait un appel, mais ne stocke pas le JSON brut)
+  // ✅ Vérification rôle admin côté client (le worker re-vérifie aussi)
+  const isAdm = (typeof S !== 'undefined' && S?.role === 'admin') ||
+                (typeof APP !== 'undefined' && APP?.user?.role === 'admin');
+  if (!isAdm) {
+    res.innerHTML = '<div class="ai wa">⚠️ Accès réservé aux administrateurs.</div>';
+    return;
+  }
+
+  // Loader
+  res.innerHTML = '<div class="ai in" style="display:flex;align-items:center;gap:10px">' +
+    '<div class="spin spinw" style="width:20px;height:20px"></div>' +
+    '<span>Analyse des cotations réelles en cours…</span></div>';
+
+  // ⚡ UN SEUL appel API — la double-call précédente provoquait des
+  //   ratés silencieux qui laissaient les boutons d'auto-fix cachés.
+  let d = null;
   try {
-    if (typeof wpost === 'function') {
-      const d = await wpost('/webhook/admin-ngap-analyze-real', {});
-      if (d && d.ok && Array.isArray(d.details) && d.details.length > 0) {
-        window._ADM_NGAP_LAST_ANALYSIS = d;
-        // Afficher le bouton correction auto (gain > 0 seulement)
-        const gainPositif = d.details.filter(x => (x.perte || 0) > 0).length;
-        const autoBtn = document.getElementById('adm-ngap-autocorrect-btn');
-        if (autoBtn && gainPositif > 0) {
-          autoBtn.style.display = '';
-          autoBtn.title = `Envoyer ${gainPositif} suggestion(s) de correction aux infirmières concernées`;
-        }
-        // Afficher aussi le bouton "Corriger directement"
-        const directBtn = document.getElementById('adm-ngap-autocorrect-direct-btn');
-        if (directBtn && gainPositif > 0) {
-          directBtn.style.display = '';
-          directBtn.title = `Appliquer immédiatement ${gainPositif} correction(s) — l'infirmière recevra juste une notification`;
-        }
-      } else {
-        // Rien à corriger — cacher les 2 boutons
-        const autoBtn = document.getElementById('adm-ngap-autocorrect-btn');
-        if (autoBtn) autoBtn.style.display = 'none';
-        const directBtn = document.getElementById('adm-ngap-autocorrect-direct-btn');
-        if (directBtn) directBtn.style.display = 'none';
-      }
-    }
-  } catch(e) { console.warn('[adm-ngap] load details KO:', e.message); }
+    d = await wpost('/webhook/admin-ngap-analyze-real', {});
+  } catch(e) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message || 'Analyse indisponible')}</div>`;
+    return;
+  }
+  if (!d || !d.ok) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(d?.error || 'Analyse indisponible')}</div>`;
+    return;
+  }
 
-  // Attacher handlers pour les éventuels boutons "Appliquer fix" générés
+  // ✅ Stocke AVANT le rendu — garantit que les boutons d'auto-fix
+  //    trouveront window._ADM_NGAP_LAST_ANALYSIS dans tous les cas.
+  window._ADM_NGAP_LAST_ANALYSIS = d;
+
+  // Rendu via NGAPAnalyzer (sans re-fetch)
+  try {
+    NGAPAnalyzer.renderRealLossAnalysis(res, d);
+  } catch(e) {
+    console.warn('[adm-ngap] render KO:', e.message);
+    res.innerHTML = `<div class="ai er">⚠️ Erreur d'affichage : ${_escAdm(e.message)}</div>`;
+    return;
+  }
+
+  // Affiche les boutons d'auto-fix si gain potentiel
+  const details   = Array.isArray(d.details) ? d.details : [];
+  const gainCount = details.filter(x => (x.perte || 0) > 0).length;
+  const autoBtn   = document.getElementById('adm-ngap-autocorrect-btn');
+  const directBtn = document.getElementById('adm-ngap-autocorrect-direct-btn');
+  if (gainCount > 0) {
+    if (autoBtn) {
+      autoBtn.style.display = '';
+      autoBtn.disabled      = false;
+      autoBtn.innerHTML     = '🔧 Corriger via l\'infirmière';
+      autoBtn.title         = `Envoyer ${gainCount} suggestion(s) aux infirmières concernées`;
+    }
+    if (directBtn) {
+      directBtn.style.display = '';
+      directBtn.disabled      = false;
+      directBtn.innerHTML     = '⚡ Corriger directement';
+      directBtn.title         = `Appliquer immédiatement ${gainCount} correction(s)`;
+    }
+  } else {
+    if (autoBtn)   autoBtn.style.display   = 'none';
+    if (directBtn) directBtn.style.display = 'none';
+  }
+
+  // Handlers fix-référentiel (si présents dans le rendu)
   res.querySelectorAll('[data-ngap-fix]').forEach(btn => {
     btn.addEventListener('click', () => {
       try {
@@ -459,6 +494,231 @@ function admOpenNgapAnomalies() {
     return;
   }
   NGAPAnalyzer.renderAnomaliesUI('adm-ngap-result');
+}
+
+/* ════════════════════════════════════════════════
+   🔔 VÉRIFIER ALERTES — scan des cotations avec
+      alertes (anonymisé, par infirmière)
+════════════════════════════════════════════════ */
+async function admVerifyAlerts() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+
+  const isAdm = (typeof S !== 'undefined' && S?.role === 'admin') ||
+                (typeof APP !== 'undefined' && APP?.user?.role === 'admin');
+  if (!isAdm) {
+    res.innerHTML = '<div class="ai wa">⚠️ Accès réservé aux administrateurs.</div>';
+    return;
+  }
+
+  res.innerHTML = '<div class="ai in" style="display:flex;align-items:center;gap:10px">' +
+    '<div class="spin spinw" style="width:20px;height:20px"></div>' +
+    '<span>Scan des alertes en cours…</span></div>';
+
+  let d = null;
+  try {
+    d = await wpost('/webhook/admin-alerts-scan', {});
+  } catch(e) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message || 'Scan impossible')}</div>`;
+    return;
+  }
+  if (!d || !d.ok) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(d?.error || 'Scan impossible')}</div>`;
+    return;
+  }
+
+  // Stocker pour permettre un fix ciblé après le scan
+  window._ADM_ALERTS_LAST_SCAN = d;
+
+  const total       = parseInt(d.total_with_alerts || 0, 10);
+  const fixable     = parseInt(d.fixable_count     || 0, 10);
+  const notify      = parseInt(d.notify_count      || 0, 10);
+  const nurses      = Array.isArray(d.by_nurse) ? d.by_nurse : [];
+  const totalNurses = nurses.length;
+
+  if (total === 0) {
+    res.innerHTML = `
+      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(0,212,170,.08),transparent);border:1px solid rgba(0,212,170,.3)">
+        <div style="font-size:13px;font-weight:700;color:#00d4aa">✅ Aucune alerte détectée</div>
+        <div style="font-size:11px;color:var(--m);margin-top:4px">${d.total_scanned || 0} cotation(s) scannée(s) — base saine.</div>
+      </div>`;
+    if (typeof showToast === 'function') showToast('success', 'Base propre', 'Aucune alerte sur les cotations.');
+    return;
+  }
+
+  // Classement par nb d'alertes décroissant
+  const nursesSorted = [...nurses].sort((a,b) => (b.alerts_count || 0) - (a.alerts_count || 0));
+
+  res.innerHTML = `
+    <div class="card" style="background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border:1px solid rgba(245,158,11,.3);padding:16px;margin-bottom:12px">
+      <div style="font-size:13px;color:var(--m);margin-bottom:4px">🔔 Cotations avec alertes</div>
+      <div style="font-size:32px;font-weight:700;color:#f59e0b;font-family:var(--fs)">${total}</div>
+      <div style="font-size:11px;color:var(--m);margin-top:4px">
+        sur ${d.total_scanned || 0} cotation(s) scannée(s) ·
+        <strong style="color:#00d4aa">${fixable}</strong> auto-fixable(s) ·
+        <strong style="color:#f59e0b">${notify}</strong> à notifier ·
+        ${totalNurses} infirmière(s) concernée(s)
+      </div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:12px">
+      <h4 style="margin:0 0 10px;font-size:13px">👥 Détail par infirmière (anonymisé côté patient)</h4>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--b);border-radius:8px">
+        ${nursesSorted.map(n => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--b);font-size:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:160px">
+              <div style="font-weight:600">${_escAdm(n.prenom || '')} ${_escAdm(n.nom || '')}</div>
+              <div style="font-size:10px;color:var(--m);margin-top:2px">
+                ${n.fixable || 0} auto-fixable · ${n.notify || 0} à notifier
+              </div>
+            </div>
+            <div style="font-family:var(--fm);font-size:14px;color:#f59e0b;font-weight:700">${n.alerts_count || 0}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    ${(d.top_alerts && d.top_alerts.length) ? `
+      <div class="card" style="padding:14px;margin-bottom:12px">
+        <h4 style="margin:0 0 10px;font-size:13px">🔍 Top alertes les plus fréquentes</h4>
+        ${d.top_alerts.slice(0,8).map(a => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--b);font-size:11px">
+            <span>${_escAdm(a.msg)}</span>
+            <span style="color:#f59e0b;font-weight:600;font-family:var(--fm)">×${a.count}</span>
+          </div>
+        `).join('')}
+      </div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      ${fixable > 0 || notify > 0 ? `
+        <button class="btn bp bsm" onclick="admFixAlertsNgap()" style="background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff">
+          🚨 Lancer le fix (${fixable} auto + ${notify} notif.)
+        </button>` : ''}
+      <button class="btn bs bsm" onclick="document.getElementById('adm-ngap-result').innerHTML=''">Fermer</button>
+    </div>
+    <div style="font-size:10px;color:var(--m);margin-top:10px;padding:8px;background:var(--s);border-radius:6px">
+      🛡️ RGPD/HDS : seules les alertes (texte) et l'identité de l'infirmière sont retournées — aucune donnée patient.
+    </div>`;
+
+  if (typeof showToast === 'function') {
+    showToast('info', `${total} alerte(s) détectée(s)`,
+      `${fixable} auto-fixable(s) · ${notify} à notifier · ${totalNurses} infirmière(s)`);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   🚨 FIXER ALERTES NGAP — auto-fix + notification
+      messagerie pour les alertes non résolvables
+════════════════════════════════════════════════ */
+async function admFixAlertsNgap() {
+  const res = document.getElementById('adm-ngap-result');
+  if (!res) return;
+
+  const isAdm = (typeof S !== 'undefined' && S?.role === 'admin') ||
+                (typeof APP !== 'undefined' && APP?.user?.role === 'admin');
+  if (!isAdm) {
+    res.innerHTML = '<div class="ai wa">⚠️ Accès réservé aux administrateurs.</div>';
+    return;
+  }
+
+  // Confirmation : si on a un scan préalable, on affiche les chiffres
+  const last      = window._ADM_ALERTS_LAST_SCAN;
+  const fixable   = last ? parseInt(last.fixable_count || 0, 10) : null;
+  const notify    = last ? parseInt(last.notify_count  || 0, 10) : null;
+  const totalScan = last ? parseInt(last.total_with_alerts || 0, 10) : null;
+
+  let confirmMsg = '🚨 FIX ALERTES NGAP\n\n';
+  if (last && totalScan != null) {
+    confirmMsg += `${totalScan} cotation(s) avec alertes détectée(s) :\n`;
+    confirmMsg += `  • ${fixable} auto-fixable(s) → réécriture immédiate\n`;
+    confirmMsg += `  • ${notify} non résolvable(s) → message à l'infirmière\n\n`;
+  } else {
+    confirmMsg += 'Toutes les cotations avec alertes seront analysées.\n';
+    confirmMsg += '  • Auto-fix : si le moteur déclaratif les résout sans dégrader le total\n';
+    confirmMsg += '  • Notification : pour les alertes nécessitant une action manuelle\n\n';
+  }
+  confirmMsg += 'Confirmer ?';
+
+  if (!confirm(confirmMsg)) return;
+
+  res.innerHTML = '<div class="ai in" style="display:flex;align-items:center;gap:10px">' +
+    '<div class="spin spinw" style="width:20px;height:20px"></div>' +
+    '<span>Application des corrections…</span></div>';
+
+  let d = null;
+  try {
+    d = await wpost('/webhook/admin-alerts-fix', {});
+  } catch(e) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(e.message || 'Fix impossible')}</div>`;
+    return;
+  }
+  if (!d || !d.ok) {
+    res.innerHTML = `<div class="ai er">⚠️ ${_escAdm(d?.error || 'Fix impossible')}</div>`;
+    return;
+  }
+
+  const fixed     = parseInt(d.auto_fixed || 0, 10);
+  const notified  = parseInt(d.nurses_notified || 0, 10);
+  const messages  = parseInt(d.messages_sent  || 0, 10);
+  const errors    = parseInt(d.errors || 0, 10);
+  const summary   = Array.isArray(d.summary) ? d.summary : [];
+  const total     = parseInt(d.total_processed || 0, 10);
+
+  res.innerHTML = `
+    <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(0,212,170,.08),transparent);border:1px solid rgba(0,212,170,.3);margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:#00d4aa;margin-bottom:8px">
+        ✅ Fix alertes NGAP — ${total} cotation(s) traitée(s)
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px">
+        <div style="padding:10px;background:rgba(0,212,170,.06);border-radius:8px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#00d4aa;font-family:var(--fs)">${fixed}</div>
+          <div style="font-size:10px;color:var(--m)">Auto-fixées</div>
+        </div>
+        <div style="padding:10px;background:rgba(245,158,11,.06);border-radius:8px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#f59e0b;font-family:var(--fs)">${messages}</div>
+          <div style="font-size:10px;color:var(--m)">Messages envoyés</div>
+        </div>
+        <div style="padding:10px;background:var(--s);border-radius:8px;text-align:center">
+          <div style="font-size:22px;font-weight:700;font-family:var(--fs)">${notified}</div>
+          <div style="font-size:10px;color:var(--m)">Infirmière(s) notifiée(s)</div>
+        </div>
+        ${errors > 0 ? `
+        <div style="padding:10px;background:rgba(239,68,68,.06);border-radius:8px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#ef4444;font-family:var(--fs)">${errors}</div>
+          <div style="font-size:10px;color:var(--m)">Erreur(s)</div>
+        </div>` : ''}
+      </div>
+    </div>
+    ${summary.length ? `
+      <div class="card" style="padding:14px">
+        <h4 style="margin:0 0 10px;font-size:13px">👥 Synthèse par infirmière</h4>
+        <div style="max-height:280px;overflow-y:auto;border:1px solid var(--b);border-radius:8px">
+          ${summary.map(s => `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--b);font-size:12px;flex-wrap:wrap">
+              <span style="flex:1;min-width:140px"><strong>${_escAdm(s.prenom || '')} ${_escAdm(s.nom || '')}</strong></span>
+              <span style="color:var(--m);font-family:var(--fm);font-size:11px">
+                ${s.fixed > 0 ? `<span style="color:#00d4aa">✓${s.fixed}</span>` : ''}
+                ${s.notified > 0 ? `<span style="color:#f59e0b;margin-left:8px">📨${s.notified}</span>` : ''}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+    <div style="font-size:10px;color:var(--m);margin-top:10px;padding:8px;background:var(--s);border-radius:6px">
+      🛡️ Auto-fix appliqué uniquement quand le moteur résout l'alerte sans dégrader le total. Sinon, l'infirmière reçoit un message détaillé dans sa messagerie pour résoudre manuellement.
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn bs bsm" onclick="loadAdmStats(); admVerifyAlerts()">↻ Re-scan</button>
+      <button class="btn bs bsm" onclick="document.getElementById('adm-ngap-result').innerHTML=''">Fermer</button>
+    </div>`;
+
+  // Mémoire : invalide le scan précédent (les chiffres ont changé)
+  delete window._ADM_ALERTS_LAST_SCAN;
+
+  if (typeof showToast === 'function') {
+    showToast('success', 'Fix alertes terminé',
+      `${fixed} auto-fix · ${messages} message(s) · ${notified} infirmière(s)`);
+  }
+
+  // Rafraîchit les KPIs admin pour voir nb_alertes diminuer
+  try { loadAdmStats(); } catch(_) {}
 }
 
 /* Filtre la liste par nom/prénom */
