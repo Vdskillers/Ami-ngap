@@ -2719,25 +2719,123 @@ async function _cotationOfflinePipeline() {
     const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
     const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
 
-    // ── Calcul local via NGAPPipeline ───────────────────────────────────────
-    const pipeline = new window.NGAPPipeline(window.NGAP_REFERENTIEL);
-    const result = pipeline.cotateFromText({
-      texte:        txt,
-      date_soin:    gv('f-ds') || new Date().toISOString().slice(0, 10),
-      heure_soin:   _heureResolved,
-      exo:          gv('f-exo') || '0',
-      amo:          gv('f-amo') || '',
-      amc:          gv('f-amc') || '',
-      regl:         gv('f-regl') || 'CB',
-      ddn:          gv('f-ddn') || '',
-      distance_km:  0,
-      historique:   [],
-      preuve_soin:  { type: _preuveType, force_probante: _preuveForce, hash_preuve: _sigHash, certifie_ide: true, timestamp: new Date().toISOString() },
-      infirmiere:   ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
-      adeli:        u.adeli || '',
-      rpps:         u.rpps || '',
-      structure:    u.structure || '',
-    });
+    // ── Calcul local : codes bruts détectés OU NLP (langage naturel) ────────
+    // Si l'utilisateur a saisi des codes NGAP directement (ex: "AMI1 + AMI14"),
+    // on bypasse le NLP et on appelle directement le moteur déclaratif
+    // (NGAPEngine.compute) — sinon on passe par la pipeline NLP complète
+    // (NGAPPipeline.cotateFromText) qui gère le langage naturel ("injection insuline SC").
+    //
+    // Heuristique : on n'utilise le mode codes bruts QUE si le texte est
+    // principalement des codes (pas de description médicale autour). Si l'IDE
+    // a écrit "Je viens faire l'AMI14", on reste en NLP — sinon on raterait
+    // les détections de contexte (domicile, BSI, etc.) qui enrichissent la cotation.
+    const _NGAP_CODE_REGEX = /\b(AM[IX]\d+(?:[._]\d+)?|AIS\d+(?:[._]\d+)?|BS[ABC]|IFD|IFI|IK|MCI|MIE|MAU|NUIT(?:_PROF)?|DIM|CIA|CIB|RKD|TLS|TLL|TLD|RQD|TMI|MSG|MSD|MIR|PAI\d*)\b/gi;
+    const _rawCodesFound = [...new Set(
+      (txt.match(_NGAP_CODE_REGEX) || []).map(c => c.toUpperCase().replace(/\./g, '_'))
+    )];
+    // Texte dépouillé des codes et connecteurs neutres (+, -, et, ou, ; ,)
+    const _txtWithoutCodes = txt
+      .replace(_NGAP_CODE_REGEX, '')
+      .replace(/\b(et|ou|avec|puis|plus)\b/gi, '')
+      .replace(/[+,;\-]/g, ' ')
+      .trim();
+    const _nonCodeWords = _txtWithoutCodes.split(/\s+/).filter(w => w.length > 2);
+    const _useRawCodesMode = _rawCodesFound.length > 0 && _nonCodeWords.length < 3;
+
+    let result;
+    if (_useRawCodesMode) {
+      // ── Mode codes bruts : appel direct du moteur déclaratif ────────────
+      const engine = new window.NGAPEngine(window.NGAP_REFERENTIEL);
+      const _engineRes = engine.compute({
+        codes:           _rawCodesFound.map(c => ({ code: c })),
+        date_soin:       gv('f-ds') || new Date().toISOString().slice(0, 10),
+        heure_soin:      _heureResolved,
+        historique_jour: [],
+        mode:            'permissif',
+        zone:            'metropole',
+        distance_km:     0,
+      });
+
+      // Mapper actes_finaux → format cotateFromText (actes:[{code,nom,coefficient,total}])
+      const _actes = (_engineRes.actes_finaux || []).map(a => ({
+        code:        a.code,
+        nom:         a.label,
+        coefficient: a.coefficient,
+        total:       a.tarif_final,
+      }));
+
+      // Calculer parts AMO/AMC selon exo/regl (même logique que stage3 du pipeline)
+      const _exoVal  = (gv('f-exo') || '0').toString();
+      const _amoStr  = gv('f-amo') || '';
+      const _amcStr  = gv('f-amc') || '';
+      const _reglVal = (gv('f-regl') || 'CB').toString();
+      const _amoNum  = _amoStr !== '' ? parseFloat(_amoStr) : null;
+      const _amcNum  = _amcStr !== '' ? parseFloat(_amcStr) : null;
+      const _amoAsRate = (_amoNum !== null && _amoNum > 1) ? _amoNum / 100 : _amoNum;
+      const _amcAsRate = (_amcNum !== null && _amcNum > 1) ? _amcNum / 100 : _amcNum;
+      const _total = parseFloat(_engineRes.total) || 0;
+
+      let _tauxAmo = 0.6, _partAmo = 0, _partAmc = 0, _partPatient = 0, _dreRequise = false;
+      if (_exoVal === '1' || /ALD|exo/i.test(_exoVal)) {
+        _tauxAmo = 1; _partAmo = _total; _partPatient = 0;
+      } else if (_amoAsRate !== null && _amcAsRate !== null) {
+        _tauxAmo = _amoAsRate;
+        _partAmo = Math.round(_total * _amoAsRate * 100) / 100;
+        _partAmc = Math.round(_total * _amcAsRate * 100) / 100;
+        _partPatient = Math.round((_total - _partAmo - _partAmc) * 100) / 100;
+        _dreRequise = _amcAsRate > 0 && (/^TP$|tiers/i.test(_reglVal));
+      } else if (_amoAsRate !== null) {
+        _tauxAmo = _amoAsRate;
+        _partAmo = Math.round(_total * _amoAsRate * 100) / 100;
+        _partPatient = Math.round((_total - _partAmo) * 100) / 100;
+      } else {
+        _partAmo     = Math.round(_total * 0.6 * 100) / 100;
+        _partPatient = Math.round(_total * 0.4 * 100) / 100;
+      }
+      if (!isFinite(_partAmo))     _partAmo = 0;
+      if (!isFinite(_partAmc))     _partAmc = 0;
+      if (!isFinite(_partPatient)) _partPatient = 0;
+
+      result = {
+        ok:            true,
+        actes:         _actes,
+        total:         _total,
+        part_amo:      _partAmo,
+        part_amc:      _partAmc,
+        part_patient:  _partPatient,
+        amo_amount:    _partAmo,
+        amc_amount:    _partAmc,
+        taux_amo:      _tauxAmo,
+        dre_requise:   _dreRequise,
+        alerts:        _engineRes.alerts || [],
+        optimisations: [],
+        warnings_strict: _engineRes.warnings_strict || [],
+        ngap_version: (_engineRes.audit?.version_referentiel) || (window.NGAP_REFERENTIEL?.version || '2026.4'),
+        nlp_detected: _rawCodesFound,
+        nlp_contexte: { _direct_codes_mode: true },
+        audit:        _engineRes.audit,
+      };
+    } else {
+      // ── Mode NLP : pipeline complet (langage naturel → actes) ───────────
+      const pipeline = new window.NGAPPipeline(window.NGAP_REFERENTIEL);
+      result = pipeline.cotateFromText({
+        texte:        txt,
+        date_soin:    gv('f-ds') || new Date().toISOString().slice(0, 10),
+        heure_soin:   _heureResolved,
+        exo:          gv('f-exo') || '0',
+        amo:          gv('f-amo') || '',
+        amc:          gv('f-amc') || '',
+        regl:         gv('f-regl') || 'CB',
+        ddn:          gv('f-ddn') || '',
+        distance_km:  0,
+        historique:   [],
+        preuve_soin:  { type: _preuveType, force_probante: _preuveForce, hash_preuve: _sigHash, certifie_ide: true, timestamp: new Date().toISOString() },
+        infirmiere:   ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
+        adeli:        u.adeli || '',
+        rpps:         u.rpps || '',
+        structure:    u.structure || '',
+      });
+    }
 
     if (!result || !result.ok) {
       throw new Error("Le moteur NGAP local n'a pas pu calculer la cotation. Vérifiez la description du soin.");
