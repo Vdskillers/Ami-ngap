@@ -81,11 +81,15 @@ async function loadAdmComptes() {
 /* ── Onglet 2 : Statistiques globales + par infirmière ── */
 let _ADM_PER_USER_DATA = []; // cache pour filtre/tri client
 
-async function loadAdmStats() {
+async function loadAdmStats(force = false) {
   const puEl = $('adm-per-user-stats');
   if (puEl) puEl.innerHTML = '<div class="ai in" style="font-size:12px">Chargement…</div>';
   try {
-    const d = await wpost('/webhook/admin-stats', {});
+    // ✅ Si force=true, invalide le cache NET frontend pour forcer un vrai refresh
+    if (force && typeof NET !== 'undefined' && NET.invalidate) {
+      NET.invalidate('POST:/webhook/admin-stats');
+    }
+    const d = await wpost('/webhook/admin-stats', force ? { force: true } : {});
     if (!d.ok) return;
     const s = d.stats;
     if ($('kpi-ca'))     $('kpi-ca').textContent     = (s.ca_total    || 0).toFixed(0) + '€';
@@ -1143,9 +1147,13 @@ function resetAuditFilters() {
 
 
 /* ── Stats sécurité temps réel ─────────────────── */
-async function loadAdmSecurityStats(){
+async function loadAdmSecurityStats(force = false){
   try{
-    const d=await wpost('/webhook/admin-security-stats',{});
+    // ✅ Si force=true, invalide le cache NET frontend pour forcer un vrai refresh
+    if (force && typeof NET !== 'undefined' && NET.invalidate) {
+      NET.invalidate('POST:/webhook/admin-security-stats');
+    }
+    const d=await wpost('/webhook/admin-security-stats', force ? { force: true } : {});
     if(!d.ok) return;
     const s=d.security;
     if($('kpi-login-fails'))  $('kpi-login-fails').textContent=s.login_fails||0;
