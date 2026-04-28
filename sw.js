@@ -51,7 +51,7 @@ const STATIC_ASSETS = [
   './admin.js',
   './profil.js',
   './cotation.js',
-  './ngap_engine.js',                                  // ⚙️ moteur NGAP local (cotation offline)
+  './ngap-engine/ngap_engine.js',                      // ⚙️ moteur NGAP local (cotation offline) — colocalisé avec le référentiel
   './ngap-engine/ngap_referentiel_2026.json',          // 📚 référentiel NGAP — requis par le moteur offline
   './voice.js',
   './dashboard.js',
