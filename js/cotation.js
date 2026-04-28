@@ -2746,7 +2746,7 @@ async function _cotationOfflinePipeline() {
     if (_useRawCodesMode) {
       // ── Mode codes bruts : appel direct du moteur déclaratif ────────────
       const engine = new window.NGAPEngine(window.NGAP_REFERENTIEL);
-      const _engineRes = engine.compute({
+      const _rawEngineRes = engine.compute({
         codes:           _rawCodesFound.map(c => ({ code: c })),
         date_soin:       gv('f-ds') || new Date().toISOString().slice(0, 10),
         heure_soin:      _heureResolved,
@@ -2755,6 +2755,27 @@ async function _cotationOfflinePipeline() {
         zone:            'metropole',
         distance_km:     0,
       });
+
+      // ── 🛡️ PIPELINE CPAM (Validator + AutoCorrector) ──────────────────
+      // S'applique automatiquement même en mode offline pour conformité CPAM.
+      let _engineRes = _rawEngineRes;
+      let _cpamReport = null;
+      try {
+        if (typeof window.applyCPAMPipeline === 'function') {
+          const _pipe = window.applyCPAMPipeline(_rawEngineRes, {
+            texte: txt,
+            domicile: false,  // mode codes bruts = pas de contexte texte clair
+            distance_km: 0,
+            mode_cpam_autocorrect: true,
+            mode_cpam_strict: false,  // pas de blocage en offline (juste correction silencieuse)
+            preuve_soin: { signature_patient: true },  // signature locale = preuve par défaut en offline
+          }, engine);
+          _engineRes = _pipe.result;
+          _cpamReport = _pipe.cpam;
+        }
+      } catch (cpamErr) {
+        console.warn('[CPAM offline] erreur pipeline:', cpamErr);
+      }
 
       // Mapper actes_finaux → format cotateFromText (actes:[{code,nom,coefficient,total}])
       const _actes = (_engineRes.actes_finaux || []).map(a => ({
@@ -2807,13 +2828,18 @@ async function _cotationOfflinePipeline() {
         amc_amount:    _partAmc,
         taux_amo:      _tauxAmo,
         dre_requise:   _dreRequise,
-        alerts:        _engineRes.alerts || [],
+        alerts:        [
+          ...(_engineRes.alerts || []),
+          ...((_cpamReport?.alerts || []).map(a => '🛡️ CPAM: ' + a)),
+          ...((_cpamReport?.corrections || []).map(c => '🛠️ Auto-correction: ' + c)),
+        ],
         optimisations: [],
         warnings_strict: _engineRes.warnings_strict || [],
         ngap_version: (_engineRes.audit?.version_referentiel) || (window.NGAP_REFERENTIEL?.version || '2026.4'),
         nlp_detected: _rawCodesFound,
         nlp_contexte: { _direct_codes_mode: true },
-        audit:        _engineRes.audit,
+        audit:        { ..._engineRes.audit, cpam_pipeline: _cpamReport },
+        cpam:         _cpamReport,  // raccourci UI
       };
     } else {
       // ── Mode NLP : pipeline complet (langage naturel → actes) ───────────
