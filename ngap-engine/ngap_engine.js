@@ -779,7 +779,14 @@ class NGAPPipeline {
 
     // ─── CONTEXTE PATIENT ─────────────────────────────────────────────
     const isCancerCtx   = /cancer|canc[ée]reux|chimio|immunod[eé]prim|mucoviscidose|h[eé]mato|lymphome|my[ée]lome|leuc[eé]mie|m[ée]tastas/.test(texte);
-    const isInsulinoCtx = /insulino|insuline|diab[eé]tique.*insulin|glyc[eé]mie.*insulin|type 1|dt1/.test(texte);
+    // ⚡ FIX CPAM-safe : exiger DEUX preuves textuelles pour activer 5bis
+    //   1. contexte patient (diabétique / insulino-traité / type 1 / DT1 / DT2 / ALD)
+    //   2. acte/geste insuline (injection insuline / glycémie capillaire)
+    // Évite que la simple mention "insuline" déclenche le 5bis sans contexte
+    // patient documenté → fallback automatique sur 11B (plus prudent CPAM).
+    const _hasDiabContext = /diab[eé]tique|insulino[-\s]?trait[ée]|\bdt[12]\b|\btype\s*[12]\b|ald.*diab[eé]t/i.test(texte);
+    const _hasInsulinAct  = /insuline|insulino|glyc[eé]mie|dextro\b|hgt\b/i.test(texte);
+    const isInsulinoCtx = _hasDiabContext && _hasInsulinAct;
     const isDependant   = /d[eé]pendance|grabataire|alit[eé]|nursing|toilette compl[eè]te|bsi|bsa|bsb|bsc/.test(texte);
     const isPostOp      = /post.?op[eé]|post op|postop|surveillance clinique|chirurgie|redon|drain/.test(texte);
     const isBPCO        = /bpco|insuffisance cardiaque|ic\b|bronchopneumopathie chronique/.test(texte);
@@ -1449,14 +1456,264 @@ class NGAPPipeline {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 🛡️  CPAM STRICT MODE — Validator + AutoCorrector + Optimizer (offline)
+// ═══════════════════════════════════════════════════════════════════════
+// Pipeline embarqué côté frontend pour la cotation OFFLINE.
+// Identique fonctionnellement à celui de worker.js (server-side).
+// Branché APRÈS engine.compute() dans cotation.js → _cotationOfflinePipeline.
+// ═══════════════════════════════════════════════════════════════════════
+
+function _isDomicileStrict(texte) {
+  if (!texte || typeof texte !== 'string') return false;
+  return /(?:à|au)\s+domicile|domicile\s+du?\s+patient|chez\s+(?:le|la|son|sa|monsieur|madame|m\.|mme|mr|le\s+patient)|au\s+lit\s+du\s+patient|ehpad|résidence(?:\s+autonomie)?|maison\s+de\s+retraite|au\s+foyer|foyer\s+logement/i.test(texte);
+}
+
+function _hasPreuveSoinOpposable(preuve_soin) {
+  if (!preuve_soin || typeof preuve_soin !== 'object') return false;
+  return (
+    preuve_soin.signature_patient === true ||
+    preuve_soin.signature_b64 ||
+    preuve_soin.photo_presente === true ||
+    preuve_soin.photo_b64 ||
+    preuve_soin.geo_zone ||
+    preuve_soin.qr_validation ||
+    preuve_soin.nfc_tag ||
+    preuve_soin.empreinte_horodatee
+  );
+}
+
+function validateCPAM({ actes = [], contexte = {}, preuve_soin = null, total = 0, _refIncompat = [] } = {}) {
+  const alerts = [];
+  const errors = [];
+  let riskScore = 0;
+  const _norm = (c) => String(c || '').toUpperCase().replace(/[\s_]/g, '');
+  const codes = actes.map(a => String(a.code || '').toUpperCase());
+
+  const isMajoration = (c) => /^(IFD|IFI|IK|MCI|MIE|MAU|NUIT|NUIT_PROF|DIM|ISN_NUIT|ISN_NUIT_PROFONDE|ISD|MSG|MSD|MIR|RKD|IAS_PDSA)$/.test(c);
+  const isBSI = (c) => /^(BSA|BSB|BSC)$/.test(c);
+  const isDI  = (c) => /^(DI2\.5|DI1\.2|DI)$/.test(c);
+  const isTele= (c) => /^(TLS|TLD|TLL|TMI|RQD)$/.test(c);
+  const techActs = (actes || []).filter(a => {
+    const c = String(a.code || '').toUpperCase();
+    return !isMajoration(c) && !isBSI(c) && !isDI(c) && !isTele(c) && !a._hors_ngap;
+  });
+  const fullActs = techActs.filter(a => {
+    const coef = (typeof a.coefficient_applique === 'number') ? a.coefficient_applique
+               : (typeof a.coefficient === 'number') ? a.coefficient : 1;
+    const taux = String(a.taux || '').toLowerCase();
+    return coef >= 0.99 && !taux.includes('demi') && !taux.includes('art11b');
+  });
+  if (techActs.length > 1 && fullActs.length > 1) {
+    const allDerog = fullActs.every(a => /derogatoire|plein_perfusion|plein_5bis|plein_postop|plein_bsi|plein_pansement/i.test(String(a.taux || '')));
+    if (!allDerog) {
+      alerts.push('Article 11B : plusieurs actes à taux plein sans dérogation explicite');
+      riskScore += 3;
+    }
+  }
+
+  const hasIFD = codes.some(c => /^IF[DI]$/.test(c));
+  if (hasIFD) {
+    const texte = String(contexte.texte || contexte.texte_original || '');
+    const ctxDomicile = (contexte.domicile === true) || _isDomicileStrict(texte);
+    const preuveOk = _hasPreuveSoinOpposable(preuve_soin);
+    if (!ctxDomicile) {
+      errors.push('IFD/IFI sans preuve textuelle domicile (mention "à domicile", "EHPAD", "résidence" requise)');
+      riskScore += 5;
+    } else if (!preuveOk) {
+      alerts.push('IFD/IFI : domicile mentionné mais aucune preuve opposable (signature, photo ou geo)');
+      riskScore += 2;
+    }
+  }
+
+  const hasBSI = codes.some(c => /^BS[ABC]$/.test(c));
+  const hasAIS = codes.some(c => /^AIS/.test(c));
+  const bsiCount = codes.filter(c => /^BS[ABC]$/.test(c)).length;
+  if (hasBSI && hasAIS) { errors.push('Cumul interdit : AIS + BSI'); riskScore += 5; }
+  if (bsiCount > 1) { errors.push(`Cumul interdit : ${bsiCount} forfaits BSI`); riskScore += 5; }
+  for (const incompat of _refIncompat) {
+    if (incompat.severity !== 'critical') continue;
+    const inA = codes.some(c => (incompat.groupe_a || []).map(_norm).includes(_norm(c)));
+    const inB = codes.some(c => (incompat.groupe_b || []).map(_norm).includes(_norm(c)));
+    if (inA && inB) {
+      errors.push(`Incompatibilité NGAP : ${incompat.msg || (incompat.groupe_a.join('+') + ' avec ' + incompat.groupe_b.join('+'))}`);
+      riskScore += 4;
+    }
+  }
+
+  const has5bisPlein = (actes || []).some(a => /5bis|plein_derogatoire/i.test(String(a.taux || '')));
+  if (has5bisPlein) {
+    const texte = String(contexte.texte || contexte.texte_original || '').toLowerCase();
+    const hasDiabCtx = /diab[eé]tique|insulino[-\s]?trait[eé]|\bdt[12]\b|\btype\s*[12]\b|ald.*diab/i.test(texte);
+    const hasInsAct = /insuline|insulino|glyc[eé]mie|dextro|hgt/i.test(texte);
+    if (!(hasDiabCtx && hasInsAct)) {
+      alerts.push('Article 5bis sans double preuve (diabète + insuline)');
+      riskScore += 2;
+    }
+  }
+
+  const distKm = parseFloat(contexte.distance_km || 0) || 0;
+  const hasIK = codes.some(c => c === 'IK');
+  if (hasIK && distKm > 30) {
+    const geoOk = preuve_soin && (preuve_soin.geo_zone || preuve_soin.geo_lat || preuve_soin.geo_distance_calculee);
+    if (!geoOk) { alerts.push(`IK ${distKm} km sans preuve géographique`); riskScore += 2; }
+  }
+  if (hasIK && distKm > 100 && !preuve_soin?.geo_zone) {
+    errors.push(`IK ${distKm} km absurde sans preuve geo → bloqué (suspicion fraude)`);
+    riskScore += 5;
+  }
+
+  let status = 'OK';
+  if (errors.length > 0) status = 'BLOCKED';
+  else if (alerts.length > 0) status = 'WARNING';
+  return { status, riskScore, alerts, errors, isSafe: status === 'OK' };
+}
+
+function autoCorrectCPAM({ actes = [], contexte = {}, preuve_soin = null, _refIncompat = [] } = {}) {
+  let correctedActes = actes.map(a => ({ ...a }));
+  const corrections = [];
+
+  const hasIF = correctedActes.some(a => /^IF[DI]$/.test(String(a.code).toUpperCase()));
+  if (hasIF) {
+    const texte = String(contexte.texte || contexte.texte_original || '');
+    const ctxDomicile = (contexte.domicile === true) || _isDomicileStrict(texte);
+    if (!ctxDomicile) {
+      const before = correctedActes.length;
+      correctedActes = correctedActes.filter(a => !/^IF[DI]$/.test(String(a.code).toUpperCase()));
+      if (correctedActes.length < before) corrections.push('IFD/IFI supprimé (absence preuve domicile)');
+    }
+  }
+
+  const codes = correctedActes.map(a => String(a.code).toUpperCase());
+  const hasBSI = codes.some(c => /^BS[ABC]$/.test(c));
+  const hasAIS = codes.some(c => /^AIS/.test(c));
+  if (hasBSI && hasAIS) {
+    const before = correctedActes.length;
+    correctedActes = correctedActes.filter(a => !/^AIS/.test(String(a.code).toUpperCase()));
+    corrections.push(`${before - correctedActes.length} acte(s) AIS supprimé(s) (incompatible BSI)`);
+  }
+
+  const bsiActs = correctedActes.filter(a => /^BS[ABC]$/.test(String(a.code).toUpperCase()));
+  if (bsiActs.length > 1) {
+    const tariffs = { 'BSA': 13.0, 'BSB': 18.2, 'BSC': 28.7 };
+    const highest = bsiActs.reduce((a, b) => (tariffs[String(a.code).toUpperCase()] || 0) > (tariffs[String(b.code).toUpperCase()] || 0) ? a : b);
+    const highestCode = String(highest.code).toUpperCase();
+    correctedActes = correctedActes.filter(a => {
+      const c = String(a.code).toUpperCase();
+      return !/^BS[ABC]$/.test(c) || c === highestCode;
+    });
+    corrections.push(`BSI multiples corrigés (${bsiActs.length} → 1, ${highestCode} conservé)`);
+  }
+
+  const _norm = (c) => String(c || '').toUpperCase().replace(/[\s_]/g, '');
+  for (const incompat of _refIncompat) {
+    if (incompat.severity !== 'critical') continue;
+    const codesNow = correctedActes.map(a => _norm(a.code));
+    const inA = codesNow.some(c => (incompat.groupe_a || []).map(_norm).includes(c));
+    const inB = codesNow.some(c => (incompat.groupe_b || []).map(_norm).includes(c));
+    if (inA && inB) {
+      const toRemove = (incompat.supprimer === 'groupe_a') ? (incompat.groupe_a || []) : (incompat.groupe_b || []);
+      const toRemoveNorm = toRemove.map(_norm);
+      const before = correctedActes.length;
+      correctedActes = correctedActes.filter(a => !toRemoveNorm.includes(_norm(a.code)));
+      if (correctedActes.length < before) corrections.push(incompat.msg || `Incompatibilité corrigée`);
+    }
+  }
+
+  const distKm = parseFloat(contexte.distance_km || 0) || 0;
+  const geoOk = preuve_soin && (preuve_soin.geo_zone || preuve_soin.geo_distance_calculee);
+  if (distKm > 100 && !geoOk) {
+    const before = correctedActes.length;
+    correctedActes = correctedActes.filter(a => String(a.code).toUpperCase() !== 'IK');
+    if (correctedActes.length < before) corrections.push(`IK supprimé (${distKm} km sans preuve geo)`);
+  }
+
+  return { actes: correctedActes, corrections, hasCorrection: corrections.length > 0 };
+}
+
+function applyCPAMPipeline(rawResult, body, engine) {
+  const opts = {
+    strict: body?.mode_cpam_strict === true,
+    autocorrect: body?.mode_cpam_autocorrect !== false,
+    optimize: body?.mode_cpam_optimize === true,
+  };
+  const contexte = {
+    texte: body?.texte || body?.texte_original || '',
+    texte_original: body?.texte_original || '',
+    domicile: body?.domicile === true || body?.contexte?.domicile === true,
+    distance_km: parseFloat(body?.distance_km || body?.km || 0) || 0,
+    ...(body?.contexte || {}),
+  };
+  const preuve_soin = body?.preuve_soin || body?.preuveSoin || null;
+  const _refIncompat = engine?.ref?.incompatibilites || [];
+
+  const validation = validateCPAM({
+    actes: rawResult.actes_finaux || [],
+    contexte, preuve_soin, total: rawResult.total, _refIncompat,
+  });
+
+  let corrections = [];
+  let finalResult = rawResult;
+  let _ikRemoved = false;
+  if (opts.autocorrect && validation.status !== 'OK') {
+    const ac = autoCorrectCPAM({
+      actes: rawResult.actes_finaux || [],
+      contexte, preuve_soin, _refIncompat,
+    });
+    if (ac.hasCorrection) {
+      corrections = ac.corrections;
+      _ikRemoved = ac.corrections.some(c => /IK supprimé/i.test(c));
+      const correctedInput = {
+        codes: ac.actes.map(a => ({ code: a.code })),
+        date_soin: body?.date_soin || '',
+        heure_soin: body?.heure_soin || '',
+        historique_jour: body?.historique_jour || [],
+        mode: body?.mode_strict ? 'strict' : 'permissif',
+        zone: body?.zone || (body?.outre_mer ? 'outre_mer' : 'metropole'),
+        distance_km: _ikRemoved ? 0 : contexte.distance_km,
+        contexte_bsi: body?.contexte_bsi === true,
+      };
+      try { finalResult = engine.compute(correctedInput); } catch (e) {}
+    }
+  }
+
+  const finalValidation = (corrections.length > 0) ? validateCPAM({
+    actes: finalResult.actes_finaux || [],
+    contexte, preuve_soin, total: finalResult.total, _refIncompat,
+  }) : validation;
+
+  return {
+    result: finalResult,
+    cpam: {
+      status: finalValidation.status,
+      riskScore: finalValidation.riskScore,
+      alerts: finalValidation.alerts,
+      errors: finalValidation.errors,
+      corrections,
+      original_status: validation.status,
+      original_total: rawResult.total,
+    },
+    blocked: opts.strict && finalValidation.status === 'BLOCKED',
+  };
+}
+
 // Export pour Node.js (worker, n8n)
 if (typeof module !== 'undefined' && module.exports) {
   module.exports        = NGAPEngine;
   module.exports.NGAPEngine   = NGAPEngine;
   module.exports.NGAPPipeline = NGAPPipeline;
+  module.exports.validateCPAM = validateCPAM;
+  module.exports.autoCorrectCPAM = autoCorrectCPAM;
+  module.exports.applyCPAMPipeline = applyCPAMPipeline;
+  module.exports._isDomicileStrict = _isDomicileStrict;
+  module.exports._hasPreuveSoinOpposable = _hasPreuveSoinOpposable;
 }
 // Export navigateur (charge via <script src=…> puis window.NGAPEngine)
 if (typeof window !== 'undefined') {
   window.NGAPEngine   = NGAPEngine;
   window.NGAPPipeline = NGAPPipeline;
+  window.validateCPAM = validateCPAM;
+  window.autoCorrectCPAM = autoCorrectCPAM;
+  window.applyCPAMPipeline = applyCPAMPipeline;
+  window._isDomicileStrictCPAM = _isDomicileStrict;
 }
