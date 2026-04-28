@@ -3401,8 +3401,10 @@ function showToastSafe(msg) {
 
 let _selectedPatientIds = new Set();
 
-/* Ouvre la modale de sélection des patients pour l'import */
-async function openPatientImportPicker() {
+/* Ouvre la modale de sélection des patients pour l'import.
+   @param suggestedTarget — 'tur' | 'live' | undefined — détermine quel bouton
+   est mis en avant. 'live' = Pilotage journée. 'tur' = Tournée IA (défaut). */
+async function openPatientImportPicker(suggestedTarget) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const patients = rows.map(r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) }));
 
@@ -3422,13 +3424,22 @@ async function openPatientImportPicker() {
 
   _selectedPatientIds = new Set();
 
+  // ⚡ FIX Bug 1 — Bouton "Pilotage journée" :
+  //   Le pipeline _importPickerPatients(target) accepte déjà target='live'
+  //   (ligne ~3703 : btn-picker-import-live) mais le bouton n'était pas
+  //   rendu dans la modale. On l'ajoute systématiquement à côté de "Tournée IA".
+  //   Mise en avant (bouton primaire) du target suggéré pour que l'IDE qui
+  //   vient du pilotage atterrisse sur le bon CTA d'emblée.
+  const _suggestLive = (suggestedTarget === 'live');
+  const _hasTurAccess = (typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'));
+
   modal.innerHTML = `
     <div style="background:var(--bg,#0b0f14);border:1px solid var(--b,#1e2d3d);border-radius:16px;padding:24px;max-width:520px;width:100%;max-height:80vh;display:flex;flex-direction:column;gap:16px">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div style="font-family:var(--fs);font-size:18px;color:var(--t,#e2e8f0)">📋 Sélectionner des patients</div>
         <button onclick="document.getElementById('patient-import-picker-modal').style.display='none'" style="background:none;border:none;color:var(--m);font-size:20px;cursor:pointer">✕</button>
       </div>
-      <p style="font-size:12px;color:var(--m);margin:0">Sélectionnez les patients à importer dans l'Import calendrier (tournée IA). Leur adresse sera utilisée pour le routage.</p>
+      <p style="font-size:12px;color:var(--m);margin:0">Sélectionnez les patients à importer ${_suggestLive ? 'dans le <strong>Pilotage journée</strong>' : 'dans la <strong>Tournée IA</strong>'}. Leur adresse sera utilisée pour le routage.</p>
       <input type="text" id="picker-search" placeholder="🔍 Rechercher..." oninput="_filterPickerList()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:13px;width:100%;box-sizing:border-box">
       <div id="picker-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;min-height:200px">
         ${patients.map(p => `
@@ -3447,8 +3458,9 @@ async function openPatientImportPicker() {
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <span id="picker-count" style="font-size:12px;color:var(--m);font-family:var(--fm);flex:1">0 patient(s) sélectionné(s)</span>
         <button onclick="_selectAllPickerPatients()" class="btn bs bsm">☑️ Tout sélectionner</button>
-        ${(typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'))
-          ? `<button onclick="_importPickerPatients('tur')" class="btn bp bsm" id="btn-picker-import-tur" title="Importer dans la Tournée optimisée par IA">📥 Tournée IA</button>`
+        <button onclick="_importPickerPatients('live')" class="${_suggestLive ? 'btn bp' : 'btn bs'} bsm" id="btn-picker-import-live" title="Importer dans le Pilotage journée">📍 Pilotage journée</button>
+        ${_hasTurAccess
+          ? `<button onclick="_importPickerPatients('tur')" class="${_suggestLive ? 'btn bs' : 'btn bp'} bsm" id="btn-picker-import-tur" title="Importer dans la Tournée optimisée par IA">📥 Tournée IA</button>`
           : ''}
       </div>
     </div>`;

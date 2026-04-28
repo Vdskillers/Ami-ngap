@@ -1249,25 +1249,13 @@ async function renderPlanning(d){
       <div style="border:1px solid var(--b);border-radius:10px;overflow:hidden">
         ${dayRows}
       </div>
-      <!-- Barre CA cabinet -->
-      <div style="margin-top:12px;padding:12px 16px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.2);border-radius:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-        <div style="flex:1;min-width:140px">
-          <div style="font-size:10px;color:var(--m);font-family:var(--fm);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">CA ESTIMÉ SEMAINE · CABINET</div>
-          <div style="font-size:20px;font-weight:700;color:var(--a)">${(caValTotal > 0 ? caValTotal : caEstTotal).toFixed(2)} €</div>
-          <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-top:2px">${caValTotal > 0 ? 'cotations validées' : 'estimation NGAP'} · ${patientsForCabinet.length} patient(s)</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${ideList.map(([ideId, a]) => {
-            const shown = (caValByIde[ideId]||0) > 0 ? caValByIde[ideId] : caEstByIde[ideId]||0;
-            return `<div style="padding:6px 12px;background:${a.color}12;border:1px solid ${a.color}30;border-radius:8px;text-align:center;min-width:72px">
-              <div style="font-size:10px;color:var(--m);font-family:var(--fm);margin-bottom:1px">${a.prenom}</div>
-              <div style="font-size:13px;font-weight:700;color:${a.color}">${shown.toFixed(2)} €</div>
-              <div style="font-size:9px;color:var(--m);font-family:var(--fm)">${a.patients.length} pat.</div>
-            </div>`;
-          }).join('')}
-        </div>
-        <button onclick="planningOptimiseCabinetWeek()" class="btn bs bsm" style="font-size:11px;white-space:nowrap">⚡ Optimiser</button>
-      </div>
+      <!-- ⚡ FIX Bug 5 — Barre CA cabinet supprimée (ex-doublon).
+           Avant : on affichait ici "CA ESTIMÉ SEMAINE · CABINET" + breakdown
+           per-IDE + bouton "⚡ Optimiser". Toutes ces infos étaient déjà
+           présentes plus haut dans la vue : cards KPI semaine + cards par
+           IDE (Bastien xx,xx € / Julien xx,xx €) + bouton "Optimiser la
+           répartition" en haut à droite. La duplication créait de la
+           confusion visuelle sans valeur ajoutée. -->
     `;
   }
 
@@ -2147,6 +2135,62 @@ window._refreshCabinetStats = _refreshCabinetStats;
 
 // Auto-refresh panel quand la tournée est recalculée
 document.addEventListener('tournee:updated', () => setTimeout(_renderCabinetAssignmentPanel, 200));
+
+/* ⚡ FIX Bug 3+4 — Race condition cabinet ↔ Tournée IA / Planning hebdo
+   ────────────────────────────────────────────────────────────────────
+   Avant ce fix : si l'utilisateur navigue directement vers Tournée IA
+   ou Planning juste après le login, `initCabinet()` n'a pas encore
+   fini son fetch (~600-1500 ms en moyenne, plus si réseau lent).
+   - tournee.js l. 850 / 866 / 1020 retentent 1× chacun (600-900 ms)
+   - Si les retries échouent silencieusement, la vue reste bloquée sur
+     le spinner « Chargement des membres du cabinet… »
+   - Visiter Cabinet déclenche un nouveau fetch qui finit par marcher
+     mais aucun listener ne re-rend les pages déjà ouvertes
+   → l'utilisateur doit recharger ou re-naviguer manuellement.
+
+   Désormais : on écoute `APP.on('cabinet', ...)`. Dès que les members
+   arrivent dans le store (peu importe le déclencheur — initCabinet OU
+   visite de Cabinet), on re-rend automatiquement :
+     • Le panel d'assignation Tournée IA (#tur-cabinet-result)
+     • La vue Planning hebdomadaire si elle est active
+
+   Garde-fou : on ne re-rend que si on a réellement de nouveaux members
+   pour éviter les re-renders en boucle quand le store est modifié pour
+   d'autres raisons (sync_prefs, etc.). */
+(function _bindCabinetReadyAutoRender() {
+  if (typeof APP === 'undefined' || typeof APP.on !== 'function') return;
+
+  let _lastSeenMembersCount = 0;
+
+  APP.on('cabinet', (newCab) => {
+    const newCount = (newCab?.members?.length) || 0;
+    // Pas de changement significatif → skip
+    if (newCount === _lastSeenMembersCount) return;
+    _lastSeenMembersCount = newCount;
+
+    // 1) Re-rendre le panel d'assignation cabinet sur la Tournée IA
+    //    (silencieux si #tur-cabinet-result n'est pas dans le DOM)
+    try {
+      if (typeof _renderCabinetAssignmentPanel === 'function') {
+        _renderCabinetAssignmentPanel();
+      }
+    } catch (_) {}
+
+    // 2) Si l'utilisateur est actuellement sur le Planning hebdo,
+    //    déclencher un re-rendu immédiat avec les members fraîchement
+    //    chargés. On détecte la vue active par la classe `.on` sur
+    //    #view-pla (convention navTo). Pas de re-rendu sur les autres
+    //    vues — le Planning sera rafraîchi à sa prochaine ouverture
+    //    via le listener app:nav existant (l. 127).
+    try {
+      const viewPla = document.getElementById('view-pla');
+      const isPlanningActive = viewPla && viewPla.classList.contains('on');
+      if (isPlanningActive && typeof renderPlanning === 'function') {
+        renderPlanning({}).catch(() => {});
+      }
+    } catch (_) {}
+  });
+})();
 
 
 /* Retirer un patient de la tournée optimisée */
@@ -4284,8 +4328,12 @@ function renderLivePatientList() {
 
   if (!displayPatients.length) {
     el.innerHTML = `<div class="card">
-      <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong> ou <strong>Tournée IA</strong> pour importer des patients.</div>
-      <button class="btn bp bsm" style="margin-top:10px" onclick="navTo('imp',null)"><span>📂</span> Importer des patients</button>
+      <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong>, <strong>Tournée IA</strong>, ou importez directement depuis votre <strong>Carnet patients</strong>.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn bp bsm" onclick="navTo('imp',null)" title="Importer un fichier ICS / CSV"><span>📂</span> Import calendrier</button>
+        <button class="btn bv bsm" onclick="if(typeof openPatientImportPicker==='function'){openPatientImportPicker('live')}else{showToast&&showToast('warning','Carnet indisponible','Module patients non chargé.')}" title="Importer depuis le carnet patient (vers le pilotage)"><span>📚</span> Depuis le carnet</button>
+        <button class="btn bs bsm" onclick="navTo('tur',null)" title="Aller à la Tournée IA"><span>🗺️</span> Tournée IA</button>
+      </div>
     </div>`;
     return;
   }
