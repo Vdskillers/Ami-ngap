@@ -483,22 +483,40 @@ function medicalWeight(p) {
   let score = 0;
   const d = (p.description || p.label || p.actes || '').toLowerCase();
 
-  /* Urgences absolues */
-  if (p.urgent || p.urgence)               score += 200;
-  if (/urgence|urgente/.test(d))           score += 200;
+  /* ⚡ v5.11 — Échelle médicale RENFORCÉE pour dominer la pénalité géo
+     Avant : insuline=80, perfusion=50, prélèvement=60, injection=40 → l'écart
+     entre actes (~30 pts) était facilement écrasé par travelTime*2 + geoPenalty
+     (jusqu'à ~150 pts pour un détour de 30 min). Résultat : un patient en
+     perfusion proche du départ passait avant un patient insuline plus éloigné,
+     alors que l'insuline est cliniquement prioritaire (timing repas).
 
-  /* Actes contraints (délais biologiques) */
-  if (/insuline/.test(d))                  score += 80;
-  if (/injection/.test(d))                 score += 40;
-  if (/prélèvement|prise de sang/.test(d)) score += 60;
-  if (/perfusion/.test(d))                 score += 50;
+     Décision produit : médical > géo, l'insuline doit TOUJOURS passer avant
+     même au prix d'un détour de 30 min. Les valeurs ci-dessous sont calibrées
+     pour qu'un acte d'un tier supérieur (insuline, prélèvement à jeun) écrase
+     un détour ≥ 30 min (~150 pts) d'un patient d'un tier inférieur. */
 
-  /* Actes lourds (durée longue → placer tôt) */
-  if (/pansement lourd|bsc/.test(d))       score += 40;
-  if (/toilette|nursing/.test(d))          score += 20;
+  /* Tier 0 — URGENCES (toujours premier, écrase tout) */
+  if (p.urgent || p.urgence)               score += 5000;
+  if (/urgence|urgente/.test(d))           score += 5000;
 
-  /* Fenêtre horaire serrée → pénalité si heure dépassée */
-  if (p.window && p.window[1] - p.window[0] < 60) score += 30;
+  /* Tier 1 — Actes timing-critiques (fenêtre biologique stricte) */
+  if (/insuline/.test(d))                  score += 800;   // verrouillé sur repas
+  if (/prélèvement|prise de sang/.test(d)) score += 600;   // glycémie à jeun matin
+  if (/anticoagulant|hbpm|inr/.test(d))    score += 600;   // chronothérapie
+
+  /* Tier 2 — Actes techniques lourds (durée + technicité) */
+  if (/perfusion/.test(d))                 score += 400;
+  if (/chimio|cytostat/.test(d))           score += 400;
+
+  /* Tier 3 — Actes contraints mais flexibles */
+  if (/injection/.test(d))                 score += 200;
+  if (/pansement lourd|bsc|escarre/.test(d)) score += 150;
+
+  /* Tier 4 — Actes nursing (faible contrainte temporelle) */
+  if (/toilette|nursing/.test(d))          score += 60;
+
+  /* Bonus fenêtre serrée (priorise même hors mots-clés) */
+  if (p.window && p.window[1] - p.window[0] < 60) score += 100;
 
   return score;
 }

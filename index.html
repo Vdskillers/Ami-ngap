@@ -2822,7 +2822,29 @@
         <button class="btn bs bsm" onclick="loadDash()">↻ Actualiser tout</button>
         <button class="btn bd bsm" onclick="resetAllHist()" style="margin-left:auto">🗑️ Tout réinitialiser</button>
       </div>
-    
+
+      <!-- ⚡ v5.11 — Préférences itinéraire (toggle "Éviter autoroutes")
+           Pas une nouvelle tab : on injecte une carte discrète au bas du
+           Dashboard pour ne pas alourdir la navigation. Le toggle est lu
+           par map.js au moment de tracer la route OSRM. Tactique best-effort
+           via OSRM `alternatives=true` — voir uber.js _osrmRouteAvoidingMotorways. -->
+      <div style="margin-top:24px;padding:16px;border:1px solid var(--b);border-radius:12px;background:rgba(0,212,170,.04)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="font-size:18px">🛣️</div>
+          <div>
+            <div style="font-weight:700;font-size:14px">Préférences itinéraire</div>
+            <div style="font-size:11px;color:var(--m)">Appliqué au tracé de la Tournée IA · Ne change pas les durées estimées</div>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px;background:var(--s);border:1px solid var(--b);border-radius:8px;margin-top:8px">
+          <input type="checkbox" id="pref-avoid-motorways" onchange="setAvoidMotorways(this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--a)">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600">Éviter les autoroutes (privilégier les nationales)</div>
+            <div style="font-size:11px;color:var(--m);margin-top:2px">Best-effort via OSRM <code>alternatives</code> — choisit l'itinéraire avec le moins d'autoroutes parmi 3 alternatives. Si aucune alternative sans autoroute n'existe, l'itinéraire le plus rapide est gardé.</div>
+          </div>
+        </label>
+      </div>
+
       </div>
       <div class="hub-panel" id="hub-panel-outils-tresor" role="tabpanel" style="display:none">
 

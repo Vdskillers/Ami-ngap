@@ -108,7 +108,7 @@ function _renderMyMessages(messages) {
                  <span style="font-size:11px;color:var(--a);font-family:var(--fm)">💬 ADMIN${thread.length>1?` · RÉPONSE ${i+1}/${thread.length}`:''}</span>
                  ${rd ? `<span style="font-size:10px;color:var(--m);font-family:var(--fm)">${rd}</span>` : ''}
                </div>
-               <div style="font-size:13px;line-height:1.6;white-space:pre-wrap">${_escHtml(r.message)}</div>
+               <div style="font-size:13px;line-height:1.6;white-space:pre-wrap">${_autolinkInvoices(_escHtml(r.message))}</div>
              </div>`;
            }).join('')}
          </div>`
@@ -124,7 +124,7 @@ function _renderMyMessages(messages) {
           ${statut}
         </div>
       </div>
-      <div style="font-size:13px;color:var(--m);line-height:1.6;white-space:pre-wrap">${_escHtml(_stripMeta(m.message))}</div>
+      <div style="font-size:13px;color:var(--m);line-height:1.6;white-space:pre-wrap">${_autolinkInvoices(_escHtml(_stripMeta(m.message)))}</div>
       ${replyBloc}
       ${_renderMessageActions(m)}
     </div>`;
@@ -135,6 +135,36 @@ function _renderMyMessages(messages) {
 function _stripMeta(s) {
   if (!s) return '';
   return String(s).replace(/\n*<!--AMI_META:[^]*?-->\n*/g, '').trim();
+}
+
+/* ────────────────────────────────────────────────────────────────
+   🔗 AUTO-LIEN DES NUMÉROS DE FACTURE
+   ────────────────────────────────────────────────────────────────
+   Convertit chaque occurrence de F2026-XXXXXX-NNNNNN dans le texte
+   échappé en un lien cliquable qui appelle openCotationByInvoice().
+   Format géré : F + 4 chiffres + - + 1-8 alphanumériques + - + 4-8 chiffres,
+   avec ou sans préfixe `#`. Le préfixe # est conservé hors du lien.
+   ⚠️ Doit être appliqué APRÈS _escHtml — la regex ne matche que des
+   caractères safe (lettres/chiffres/tirets), pas de risque d'XSS.
+──────────────────────────────────────────────────────────────── */
+function _autolinkInvoices(html) {
+  if (!html) return '';
+  return String(html).replace(
+    /(#?)(F\d{4}-[A-Z0-9]+-\d{4,8})\b/g,
+    (full, prefix, invoice) =>
+      `${prefix}<a href="javascript:void(0)" onclick="event.preventDefault();event.stopPropagation();(window.openCotationByInvoice||function(){})('${invoice}')" title="Ouvrir cette cotation dans le carnet patient" style="color:var(--a);font-family:var(--fm);font-weight:600;text-decoration:underline;cursor:pointer">${invoice}</a>`
+  );
+}
+
+/* Extrait la liste des invoice_numbers présents dans un message
+   (utilisé pour ajouter un bouton d'action global "Ouvrir les cotations") */
+function _extractInvoiceNumbers(text) {
+  if (!text) return [];
+  const found = new Set();
+  const re = /\bF\d{4}-[A-Z0-9]+-\d{4,8}\b/g;
+  let m;
+  while ((m = re.exec(text)) !== null) found.add(m[0]);
+  return [...found];
 }
 
 /* Boutons d'action contextuels selon la catégorie du message */
@@ -150,6 +180,23 @@ function _renderMessageActions(m) {
   if (m.categorie === 'ngap_auto_applied' && m.status === 'sent') {
     actions.push(`<span style="font-size:11px;color:#10b981;font-family:var(--fm);padding:6px 12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:6px">✓ Correction déjà appliquée dans votre historique</span>`);
   }
+
+  // 🔗 Bouton "Ouvrir cotations" pour les messages contenant des numéros de facture
+  //    (alertes pending, suggestions, corrections auto). Dispo seulement pour
+  //    les catégories "actionnables" pour ne pas polluer les autres conversations.
+  const linkableCats = ['ngap_alerts_pending','ngap_correction','ngap_auto_applied'];
+  if (linkableCats.includes(m.categorie)) {
+    const invoices = _extractInvoiceNumbers(_stripMeta(m.message || ''));
+    if (invoices.length === 1) {
+      // Une seule cotation → bouton direct
+      actions.push(`<button class="btn bs bsm" onclick="(window.openCotationByInvoice||function(){})('${invoices[0]}')" title="Ouvrir la cotation ${invoices[0]} dans le carnet patient" style="color:var(--a);border-color:rgba(0,212,170,.3);background:rgba(0,212,170,.06)">🔗 Ouvrir la cotation</button>`);
+    } else if (invoices.length > 1) {
+      // Plusieurs → bouton qui ouvre la première et signale qu'il y a un menu
+      const ids = invoices.map(i => `'${i}'`).join(',');
+      actions.push(`<button class="btn bs bsm" onclick="contactOpenInvoicesMenu([${ids}], event)" title="Choisir parmi ${invoices.length} cotation(s)" style="color:var(--a);border-color:rgba(0,212,170,.3);background:rgba(0,212,170,.06)">🔗 Ouvrir cotation (${invoices.length})</button>`);
+    }
+  }
+
   // Bouton supprimer pour TOUS les messages
   actions.push(`<button class="btn bs bsm" onclick="contactDeleteMessage('${_escHtml(m.id)}')" title="Supprimer ce message définitivement" style="color:var(--d)">🗑️ Supprimer</button>`);
 
@@ -159,6 +206,50 @@ function _renderMessageActions(m) {
       ${actions.join('')}
     </div>`;
 }
+
+/* Ouvre un mini-menu avec la liste des cotations à choisir
+   (pour les messages contenant plusieurs numéros de facture) */
+window.contactOpenInvoicesMenu = function(invoices, ev) {
+  if (!Array.isArray(invoices) || invoices.length === 0) return;
+  // Si 1 seule → ouvre direct (sécurité)
+  if (invoices.length === 1) {
+    if (typeof window.openCotationByInvoice === 'function') window.openCotationByInvoice(invoices[0]);
+    return;
+  }
+  // Sinon : popup léger ancré au bouton
+  const btn = ev?.currentTarget || ev?.target;
+  // Retire un menu existant
+  const existing = document.getElementById('contact-inv-menu');
+  if (existing) { existing.remove(); return; }
+
+  const menu = document.createElement('div');
+  menu.id = 'contact-inv-menu';
+  menu.style.cssText = 'position:absolute;z-index:9999;background:var(--c,#0f172a);border:1px solid var(--b);border-radius:10px;padding:6px;box-shadow:0 12px 28px rgba(0,0,0,.4);max-height:300px;overflow:auto;min-width:240px';
+  menu.innerHTML = invoices.map(inv =>
+    `<div style="padding:8px 12px;font-family:var(--fm);font-size:12px;cursor:pointer;border-radius:6px;color:var(--a)" onmouseover="this.style.background='rgba(0,212,170,.08)'" onmouseout="this.style.background=''" onclick="document.getElementById('contact-inv-menu')?.remove();(window.openCotationByInvoice||function(){})('${inv}')">🔗 ${inv}</div>`
+  ).join('');
+
+  if (btn) {
+    const r = btn.getBoundingClientRect();
+    menu.style.top  = (window.scrollY + r.bottom + 4) + 'px';
+    menu.style.left = (window.scrollX + r.left) + 'px';
+  } else {
+    menu.style.top  = '50%';
+    menu.style.left = '50%';
+    menu.style.transform = 'translate(-50%,-50%)';
+  }
+  document.body.appendChild(menu);
+  // Auto-close sur click extérieur
+  setTimeout(() => {
+    const off = (e) => {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', off, true);
+      }
+    };
+    document.addEventListener('click', off, true);
+  }, 50);
+};
 
 /* ──────────────────────────────────────────────────────────────
    ACTIONS SUR LES MESSAGES (Accepter / Refuser / Supprimer)

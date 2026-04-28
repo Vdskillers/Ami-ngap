@@ -1009,7 +1009,7 @@ function _patTabRender(tab, id, p, notes) {
               ? `<span title="Synchronisée vers Supabase" style="font-size:10px;color:var(--a)">☁️✓</span>`
               : `<span title="En attente de synchronisation" style="font-size:10px;color:#f59e0b">☁️…</span>`;
             const idIdx = `<span style="font-size:9px;font-family:var(--fm);color:var(--m);opacity:.6">#${realIdx}</span>`;
-            return `<div style="border:1px solid var(--b);border-radius:var(--r);padding:12px 14px">
+            return `<div data-invoice="${c.invoice_number || ''}" data-cotidx="${realIdx}" style="border:1px solid var(--b);border-radius:var(--r);padding:12px 14px;transition:background .4s,border-color .4s">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                   <span style="font-family:var(--fm);font-size:11px;color:var(--m)">${dateStr} à ${heureStr}</span>
@@ -4560,3 +4560,102 @@ document.addEventListener('ui:navigate', (e) => {
     cotLoadPatientCache().catch(() => {});
   }
 });
+
+/* ════════════════════════════════════════════════════════════════════
+   🔗 NAVIGATION VERS UNE COTATION via numéro de facture
+   ────────────────────────────────────────────────────────────────────
+   Appelée depuis les messages de l'admin (contact.js auto-link) :
+   1. Cherche dans l'IDB le patient qui possède cette cotation
+   2. Navigue vers la vue Patients
+   3. Ouvre la fiche patient
+   4. Switch sur l'onglet "Cotations"
+   5. Scroll + flash highlight de la cotation visée
+═══════════════════════════════════════════════════════════════════════ */
+window.openCotationByInvoice = async function openCotationByInvoice(invoice) {
+  if (!invoice || typeof invoice !== 'string') return;
+  const inv = invoice.trim().replace(/^#/, ''); // tolère le préfixe #
+  if (!inv) return;
+
+  let foundPatientId = null;
+  let foundCotIdx    = -1;
+
+  try {
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    for (const row of rows) {
+      const data = _dec(row._data) || {};
+      const cots = Array.isArray(data.cotations) ? data.cotations : [];
+      // Match strict invoice_number, OU match sur les 8 premiers chars de l'id
+      // (cas fallback worker.js : `#${id.slice(0,8)}`)
+      let idx = cots.findIndex(c => c && c.invoice_number === inv);
+      if (idx < 0 && /^[a-f0-9]{8}$/i.test(inv)) {
+        idx = cots.findIndex(c => c && c.id && String(c.id).slice(0, 8).toLowerCase() === inv.toLowerCase());
+      }
+      if (idx >= 0) {
+        foundPatientId = row.id;
+        foundCotIdx    = idx;
+        break;
+      }
+    }
+  } catch (e) {
+    console.warn('[openCotationByInvoice] IDB scan KO:', e.message);
+  }
+
+  if (!foundPatientId) {
+    if (typeof showToast === 'function') {
+      showToast('warning', 'Cotation introuvable',
+        `${invoice} n'est pas dans votre carnet local — essayez de synchroniser puis réessayez.`);
+    } else {
+      alert(`Cotation ${invoice} introuvable dans votre carnet local — essayez de synchroniser puis réessayez.`);
+    }
+    return;
+  }
+
+  try {
+    // 1. Naviguer vers Patients
+    if (typeof navTo === 'function') navTo('patients', null);
+
+    // 2. Laisser le temps à la vue de s'afficher
+    await new Promise(r => setTimeout(r, 120));
+
+    // 3. Ouvrir la fiche patient
+    if (typeof openPatientDetail === 'function') {
+      await openPatientDetail(foundPatientId);
+    }
+
+    // 4. Aller sur l'onglet Cotations
+    if (typeof _patTab === 'function') {
+      _patTab('cotations', foundPatientId);
+    }
+
+    // 5. Scroll + flash highlight (laisse le rendu async se terminer)
+    setTimeout(() => {
+      const root   = document.getElementById('pat-tab-content') || document.getElementById('patient-detail');
+      if (!root) return;
+      // Sélecteur prioritaire : data-invoice
+      let target = root.querySelector(`[data-invoice="${CSS.escape(inv)}"]`);
+      // Fallback : data-cotidx (si invoice_number absent à l'époque de l'enregistrement)
+      if (!target && foundCotIdx >= 0) {
+        target = root.querySelector(`[data-cotidx="${foundCotIdx}"]`);
+      }
+      if (!target) return;
+      try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(_) { target.scrollIntoView(); }
+      // Flash highlight (vert AMI)
+      const origBg = target.style.background || '';
+      const origBd = target.style.borderColor || '';
+      target.style.background   = 'rgba(0,212,170,.18)';
+      target.style.borderColor  = '#00d4aa';
+      target.style.boxShadow    = '0 0 0 2px rgba(0,212,170,.35)';
+      setTimeout(() => {
+        target.style.background   = origBg;
+        target.style.borderColor  = origBd;
+        target.style.boxShadow    = '';
+      }, 2400);
+    }, 380);
+
+    if (typeof showToast === 'function') {
+      showToast('info', 'Cotation localisée', `${invoice} affichée dans le carnet patient.`);
+    }
+  } catch (e) {
+    console.warn('[openCotationByInvoice] navigation KO:', e.message);
+  }
+};

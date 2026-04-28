@@ -53,6 +53,132 @@ window._osrmFetchSafe = async function(url, fetchOptions) {
   }
 };
 
+/* ════════════════════════════════════════════════════════════
+   v5.11 — TOGGLE "Éviter autoroutes" (best-effort sans clé API)
+   ────────────────────────────────────────────────────────────
+   OSRM public ne supporte pas exclude=motorway (le profil "driving"
+   par défaut n'a pas la classe motorway compilée comme excludable).
+   Stratégie best-effort sans dépendance externe :
+     1. Demander à OSRM d'inclure des routes alternatives
+        (alternatives=true&number=3 → jusqu'à 3 itinéraires)
+     2. Pour chaque itinéraire, compter les portions "autoroute" en
+        analysant les noms/refs de voies dans steps[]
+        → en France, ref commençant par "A" suivi d'un chiffre
+          (A8, A50, A57, etc.) = autoroute
+     3. Choisir l'itinéraire avec le ratio motorway le plus faible,
+        tant qu'il ne dépasse pas 40% de plus que le plus rapide
+        (sinon on prendrait des contournements absurdes pour une
+        économie de 200m d'autoroute).
+
+   Limitations honnêtement annoncées dans l'UI :
+     • Best-effort : si AUCUNE alternative sans autoroute n'existe
+       (ex: trajet long entre 2 villes), on garde l'itinéraire rapide.
+     • Détection par heuristique sur le nom de voie (pas de tag OSM
+       dans la réponse OSRM standard).
+   ============================================================ */
+
+/* Lecture de la préférence — exposée pour map.js / index.html */
+window.getAvoidMotorways = function() {
+  try { return localStorage.getItem('ami_avoid_motorways') === '1'; }
+  catch(_) { return false; }
+};
+
+/* Écriture (appelée par le toggle dans Outils > Dashboard) */
+window.setAvoidMotorways = function(on) {
+  try {
+    localStorage.setItem('ami_avoid_motorways', on ? '1' : '0');
+    if (typeof showToast === 'function') {
+      showToast('success', '🛣️ Préférence enregistrée',
+        on ? 'Les nationales seront privilégiées au prochain affichage de la Tournée IA.'
+           : 'Itinéraire le plus rapide rétabli (autoroutes autorisées).');
+    }
+    // Note : pas de refresh automatique de la Tournée IA depuis ici.
+    // recomputeRoute() n'est pas exporté en global et l'utilisateur change
+    // ce toggle depuis Outils > Dashboard, donc il n'est pas sur la carte
+    // au moment du clic. Le nouveau tracé apparaîtra à la prochaine
+    // navigation vers Tournée IA / au prochain "Optimiser la tournée".
+  } catch(_) {}
+};
+
+/* Restauration de l'état de la checkbox au chargement */
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const cb = document.getElementById('pref-avoid-motorways');
+    if (cb) cb.checked = window.getAvoidMotorways();
+  } catch(_) {}
+});
+
+/* Détection autoroute dans un step OSRM (heuristique France-centric).
+   Examine `step.ref` puis `step.name` pour repérer un préfixe "A" suivi
+   d'un chiffre (ex: "A8", "A50"). Évite les faux-positifs sur les
+   "Avenue", "Allée" en exigeant un chiffre directement collé. */
+function _osrmStepIsMotorway(step) {
+  if (!step) return false;
+  const ref  = String(step.ref  || '').trim();
+  const name = String(step.name || '').trim();
+  // Ref OSRM est le plus fiable : "A8;E80" → bien capturé
+  if (/^A\d/i.test(ref))                          return true;
+  if (/(?:^|[\s;,/])A\d/i.test(ref))              return true;
+  // Fallback nom : "Autoroute A8" / "Autoroute du Soleil"
+  if (/\bautoroute\b/i.test(name))                return true;
+  // Préfixe européen E### souvent = autoroute en France
+  if (/^E\d{2,3}\b/i.test(ref))                   return true;
+  return false;
+}
+
+/* Calcule la part km autoroute / km total d'un itinéraire OSRM */
+function _osrmRouteMotorwayRatio(route) {
+  if (!route) return { motorwayKm: 0, totalKm: 0, ratio: 0 };
+  const totalKm = (route.distance || 0) / 1000;
+  let motorwayKm = 0;
+  for (const leg of (route.legs || [])) {
+    for (const step of (leg.steps || [])) {
+      if (_osrmStepIsMotorway(step)) {
+        motorwayKm += (step.distance || 0) / 1000;
+      }
+    }
+  }
+  return {
+    motorwayKm,
+    totalKm,
+    ratio: totalKm > 0 ? motorwayKm / totalKm : 0,
+  };
+}
+window._osrmRouteMotorwayRatio = _osrmRouteMotorwayRatio;
+
+/* Récupère un itinéraire OSRM en privilégiant les nationales si possible.
+   Renvoie le même format que data.routes[0] (ou null si OSRM KO).
+   La route renvoyée a toujours .geometry, .distance, .duration. */
+window._osrmRouteAvoidingMotorways = async function(coordsCSV, fetchOptions) {
+  if (!coordsCSV) return null;
+  // alternatives=true + number=3 → on demande explicitement 3 itinéraires.
+  // steps=true est obligatoire pour pouvoir scorer les motorways.
+  const url = 'https://router.project-osrm.org/route/v1/driving/' + coordsCSV
+    + '?overview=full&geometries=geojson&steps=true&alternatives=true&number=3';
+  const data = await window._osrmFetchSafe(url, fetchOptions);
+  if (!data || !Array.isArray(data.routes) || !data.routes.length) return null;
+
+  // Score chaque itinéraire
+  const scored = data.routes.map(r => ({ route: r, ..._osrmRouteMotorwayRatio(r) }));
+
+  // Itinéraire de référence (le plus court en distance)
+  const fastest = scored.reduce((a, b) => (a.totalKm < b.totalKm ? a : b));
+
+  // Filtre : on accepte une rallonge maximale de 40% par rapport au plus rapide.
+  // Au-delà, l'économie d'autoroute coûterait trop en temps/km.
+  const cap = fastest.totalKm * 1.4;
+  const acceptable = scored.filter(s => s.totalKm <= cap);
+
+  // Parmi les acceptables, prendre le ratio motorway le plus faible.
+  // En cas d'égalité de ratio, prendre le plus court.
+  const best = acceptable.reduce((a, b) => {
+    if (a.ratio !== b.ratio) return a.ratio < b.ratio ? a : b;
+    return a.totalKm < b.totalKm ? a : b;
+  });
+
+  return best.route;
+};
+
 /* ── Distance euclidienne rapide ─────────────── */
 function _dist(a, b) {
   return Math.sqrt(Math.pow(a.lat-b.lat,2) + Math.pow(a.lng-b.lng,2));
@@ -77,18 +203,34 @@ async function _computeScore(p) {
   // Distance = critère DOMINANT en mode automatique
   let score = eta * 3;
 
-  // Priorité médicale : hiérarchie clinique stricte (pas proxy financier)
+  /* ⚡ v5.11 — Hiérarchie clinique RENFORCÉE (alignée sur ai-tournee.js)
+     Avant : insuline -25, perfusion -22 → un détour de 8 min (eta*3 = 24) suffit
+     à inverser l'ordre. Cliniquement inacceptable : l'insuline doit TOUJOURS
+     passer avant, même au prix d'un détour ≥ 30 min (eta*3 ≈ 90).
+     Les valeurs sont calibrées pour qu'un acte d'un tier supérieur écrase un
+     détour de 30 min d'un patient d'un tier inférieur. */
   const acte = (p.actes_recurrents || p.description || p.texte || '').toLowerCase();
-  if (/insuline|inject|glyc[eé]mie|à jeun|glycem|diab[eè]te/i.test(acte)) score -= 25; // timing critique (ajout diab[eè]te)
-  if (/perfusion|perf\b|chimio|intraveineux/i.test(acte))             score -= 22; // technique lourd
-  if (/pansement.*(complexe|escarre|ulc[eè]re|nécrose)|escarre/i.test(acte)) score -= 12; // risque infectieux
-  if (/pansement/i.test(acte))                                        score -= 6;  // pansement simple
-  if (/nursing|toilette|bsc\b|bsb\b/i.test(acte))                    score -= 4;  // confort, moins urgent
 
-  // Contraintes temporelles (restent absolument prioritaires)
-  if (p.urgence)                       score -= 50;
-  if (p.late)                          score -= 30;
-  if (p.time && Date.now() > p.time)   score -= 20;
+  /* Tier 1 — Timing critique (fenêtre biologique stricte) */
+  if (/insuline|à jeun|glyc[eé]mie|diab[eè]te/i.test(acte))                score -= 400;
+  if (/anticoagulant|hbpm\b|\binr\b/i.test(acte))                          score -= 400;
+  if (/prélèvement|prise.*sang/i.test(acte))                                score -= 350;
+
+  /* Tier 2 — Technique lourd */
+  if (/perfusion|perf\b|chimio|intraveineux/i.test(acte))                  score -= 200;
+
+  /* Tier 3 — Actes flexibles mais contraints */
+  if (/inject/i.test(acte))                                                 score -= 100;
+  if (/pansement.*(complexe|escarre|ulc[eè]re|nécrose)|escarre/i.test(acte)) score -= 80;
+  if (/pansement/i.test(acte))                                              score -= 30;
+
+  /* Tier 4 — Confort */
+  if (/nursing|toilette|bsc\b|bsb\b/i.test(acte))                          score -= 15;
+
+  // Contraintes temporelles (restent absolument prioritaires — écrasent tout)
+  if (p.urgence)                       score -= 5000;
+  if (p.late)                          score -= 1000;
+  if (p.time && Date.now() > p.time)   score -= 500;
 
   return score;
 }

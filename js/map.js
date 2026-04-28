@@ -879,21 +879,52 @@ async function useLiveMyLocation() {
           (async function() {
             try {
               const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
-              // v5.8 — Honore la préférence autoroutes
-              const exclude = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
-                ? window._osrmExcludeParam()
-                : '';
-              const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
-                + '?overview=full&geometries=geojson&steps=false' + exclude;
-              // v5.9.2 — Fetch safe avec fallback automatique si serveur OSRM
-              // refuse exclude (évite carte vide quand 400 Bad Request).
-              const data = (typeof window._osrmFetchSafe === 'function')
-                ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
-                : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
-              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+              // ⚡ v5.11 — Toggle "Éviter autoroutes" (best-effort sans clé API)
+              //    Si la préf est ON et que le helper alternatives existe :
+              //    on lui délègue le choix de l'itinéraire (OSRM alternatives + score motorway).
+              //    Sinon : appel OSRM standard comme avant (driving fastest).
+              const _avoidMotorways = (typeof window.getAvoidMotorways === 'function')
+                && window.getAvoidMotorways();
+              const _hasAvoidHelper = typeof window._osrmRouteAvoidingMotorways === 'function';
 
-              const geojson = data.routes[0].geometry; // GeoJSON LineString
+              let routeFromAvoid = null;
+              if (_avoidMotorways && _hasAvoidHelper) {
+                try {
+                  routeFromAvoid = await window._osrmRouteAvoidingMotorways(
+                    coords,
+                    { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined }
+                  );
+                } catch(_) {
+                  routeFromAvoid = null; // fallback silencieux sur driving fastest
+                }
+              }
+
+              let geojson = null;
+              let _routeMeta = null; // pour log/badge éventuel
+
+              if (routeFromAvoid) {
+                geojson = routeFromAvoid.geometry;
+                // Calcule le ratio motorway pour pouvoir afficher un badge informatif
+                if (typeof window._osrmRouteMotorwayRatio === 'function') {
+                  try { _routeMeta = window._osrmRouteMotorwayRatio(routeFromAvoid); } catch(_) {}
+                }
+              } else {
+                // Chemin standard (compatibilité ascendante exacte)
+                const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
+                  + '?overview=full&geometries=geojson&steps=false';
+                // v5.9.2 — Fetch safe avec fallback automatique si serveur OSRM
+                // refuse exclude (évite carte vide quand 400 Bad Request).
+                const data = (typeof window._osrmFetchSafe === 'function')
+                  ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
+                  : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
+
+                if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+                geojson = data.routes[0].geometry; // GeoJSON LineString
+              }
+
+              if (!geojson || !Array.isArray(geojson.coordinates)) return;
+
               // Convertir [lng, lat] → [lat, lng] pour Leaflet
               const latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
 
@@ -1293,6 +1324,19 @@ function _showHeatmapPanel(grid, cotations) {
     const mapEl = document.getElementById('dep-map');
     if (mapEl) mapEl.appendChild(panel);
     else document.body.appendChild(panel);
+    // ⚡ FIX click-through "Centrer sur zones" — sans cette double désactivation,
+    //    tout clic sur le panneau (boutons Centrer / Fermer / etc.) bubble
+    //    jusqu'au handler `map.on('click', ...)` d'extras.js qui appelle
+    //    setDepartPoint(lat, lng) avec les coords du clic à TRAVERS le panel.
+    //    Résultat : le bouton centre la carte ET déplace le point de départ
+    //    sur l'endroit du clic. disableClickPropagation arrête le bubble
+    //    Leaflet ; disableScrollPropagation évite aussi les conflits de zoom.
+    if (typeof L !== 'undefined' && L.DomEvent) {
+      try {
+        L.DomEvent.disableClickPropagation(panel);
+        L.DomEvent.disableScrollPropagation(panel);
+      } catch(_) {}
+    }
   }
 
   const entries = Object.values(grid || {})
@@ -1388,6 +1432,15 @@ function _showHeatmapEmpty(isAdmin) {
     const mapEl = document.getElementById('dep-map');
     if (mapEl) mapEl.appendChild(panel);
     else document.body.appendChild(panel);
+    // ⚡ FIX click-through (cf. _showHeatmapPanel) — empêche les clics sur le
+    //    panneau de bubbler jusqu'au handler de la carte qui déplacerait le
+    //    point de départ.
+    if (typeof L !== 'undefined' && L.DomEvent) {
+      try {
+        L.DomEvent.disableClickPropagation(panel);
+        L.DomEvent.disableScrollPropagation(panel);
+      } catch(_) {}
+    }
   }
 
   const msg = isAdmin
