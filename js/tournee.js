@@ -746,6 +746,13 @@ async function renderPlanning(d){
       _nomAff:          nom || 'Patient',
       date,
       actes_recurrents: fiche.actes_recurrents || p.actes_recurrents || '',
+      // ⚡ Heure : la fiche carnet fait foi (heure_preferee).
+      //    Si l'infirmière met à jour l'heure préférée dans la fiche, le planning
+      //    reflète automatiquement la nouvelle valeur — pas besoin de re-pousser
+      //    le patient au planning. Fallback p.heure_soin/preferee/heure pour les
+      //    flux qui ne passent pas par le carnet (imports calendrier "live").
+      heure_preferee:   fiche.heure_preferee || p.heure_preferee || p.heure_soin || p.heure || '',
+      heure_soin:       fiche.heure_preferee || p.heure_soin     || p.heure_preferee || p.heure || '',
       _cotation:        p._cotation || uber._cotation || _cotFromCarnet,
       done:             p.done   || p._done   || uber.done   || false,
       absent:           p.absent || p._absent || uber.absent || false,
@@ -2028,6 +2035,11 @@ window.planningConfirmAddFromCarnet = async function() {
           actes_recurrents: fiche.actes_recurrents || '',
           pathologies:      fiche.pathologies || '',
           adresse:          fiche.adresse || '',
+          // ⚡ Heure préférée du carnet → mappée à la fois sur heure_preferee
+          //    ET sur heure_soin (cohérence avec les imports calendrier qui
+          //    écrivent les deux champs). renderPatientCard lit heure_soin en priorité.
+          heure_preferee:   fiche.heure_preferee || '',
+          heure_soin:       fiche.heure_preferee || '',
           // ⚡ Pas de date — la récurrence pilote l'affichage
           _recurrence: {
             jours,                           // ['lundi', 'jeudi', ...]
@@ -2069,6 +2081,11 @@ window.planningConfirmAddFromCarnet = async function() {
           actes_recurrents: fiche.actes_recurrents || '',
           pathologies:      fiche.pathologies || '',
           adresse:          fiche.adresse || '',
+          // ⚡ Heure préférée du carnet → mappée à la fois sur heure_preferee
+          //    ET sur heure_soin (cohérence avec les imports calendrier qui
+          //    écrivent les deux champs). renderPatientCard lit heure_soin en priorité.
+          heure_preferee:   fiche.heure_preferee || '',
+          heure_soin:       fiche.heure_preferee || '',
           date:             dateISO,
           _dateFixed:       true,
           _sourceCarnet:    true,
