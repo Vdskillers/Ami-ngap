@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.10.6
+/* sw.js — AMI NGAP Service Worker v5.10.7-incident
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -18,9 +18,19 @@
                 _afterDoneFlowDone est vrai (pas de re-cotation parasite)
               • Bilan de fin de tournée s'affiche immédiatement après le
                 dernier patient, sans intervention manuelle
+   ✅ v5.10.7-incident — Module Plan d'incident RGPD/CNIL <72h finalisé
+              • Inclusion incident.js dans index.html
+              • Onglet "🚨 Incidents" dans le panneau admin (filtres + stats)
+              • 3 modales DOM ajoutées : signalement, notif CNIL, résolution
+              • Carte d'entrée "Signaler un incident" dans view-contact (nurse)
+              • Génération automatique du pré-remplissage CNIL (téléservice)
+              • Export PDF du rapport d'incident (window.print A4 stylé)
+              • Notification art.34 RGPD aux personnes concernées (template
+                courrier + impression + marquage automatique)
+              • Badge dynamique du nb d'incidents ouverts dans la nav admin
 */
 
-const CACHE_VERSION = 'ami-v5.10.6';
+const CACHE_VERSION = 'ami-v5.10.7-incident';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 

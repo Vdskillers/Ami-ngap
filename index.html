@@ -900,6 +900,7 @@
       <button class="adm-tab-btn"    data-tab="sante"    onclick="admTab('sante')"    style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🖥️ Santé système</button>
       <button class="adm-tab-btn"    data-tab="ngap"     onclick="admTab('ngap')"     style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">⚖️ NGAP</button>
       <button class="adm-tab-btn"    data-tab="messages" onclick="admTab('messages')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">💬 Messages <span id="adm-msg-badge" style="display:none;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></button>
+      <button class="adm-tab-btn"    data-tab="incidents" onclick="admTab('incidents')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:13px;font-family:var(--fi);color:var(--m);transition:all .15s">🚨 Incidents <span id="adm-inc-badge" style="display:none;background:#dc2626;color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;margin-left:4px;font-family:var(--fm)">0</span></button>
     </div>
 
     <style>
@@ -1059,6 +1060,68 @@
       <div id="adm-messages"><div class="empty" style="padding:24px 0"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:10px">Chargement...</p></div></div>
     </div>
 
+    <!-- ═══ ONGLET : INCIDENTS (Plan RGPD < 72h) ═══ -->
+    <div class="adm-tab-section" data-tab="incidents" style="display:none">
+      <div class="adm-notice" style="margin-bottom:20px;background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.3)">
+        <span style="font-size:18px;flex-shrink:0">🚨</span>
+        <p>
+          <strong>Plan de réponse aux incidents — RGPD art. 33-34 :</strong>
+          Notification CNIL obligatoire dans les <strong>72 heures</strong> après prise de connaissance d'une violation de données.
+          Notification aux personnes concernées si le risque est élevé (art. 34).
+          Référence : <code style="font-family:var(--fm);font-size:11px">INCIDENT_RESPONSE.md</code>.
+        </p>
+      </div>
+
+      <!-- Toolbar : filtres + actions -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px">
+        <select id="adm-inc-status" onchange="incFilterStatus(this.value)"
+          style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+          <option value="open" selected>🔴 Ouverts</option>
+          <option value="investigating">🔍 En enquête</option>
+          <option value="notified">📨 CNIL notifiée</option>
+          <option value="resolved">✅ Résolus</option>
+          <option value="dismissed">⚫ Rejetés</option>
+          <option value="">Tous</option>
+        </select>
+        <select id="adm-inc-severity" onchange="incFilterSeverity(this.value)"
+          style="padding:8px 12px;background:var(--dd);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:var(--fm)">
+          <option value="">Toutes sévérités</option>
+          <option value="critical">🚨 Critical</option>
+          <option value="high">🟠 High</option>
+          <option value="medium">🔵 Medium</option>
+          <option value="low">⚪ Low</option>
+        </select>
+        <div style="flex:1"></div>
+        <button class="btn bp bsm" onclick="openIncidentModal()"
+          style="font-size:12px;padding:8px 14px;background:linear-gradient(135deg,#dc2626,#991b1b)">
+          <span>🚨</span> Déclarer un incident
+        </button>
+        <button class="bs bsm" onclick="loadAdmIncidents()" style="padding:8px 14px;font-size:12px">↻ Actualiser</button>
+        <a href="https://notifications.cnil.fr/notifications/index" target="_blank" rel="noopener"
+          class="btn bs bsm" style="font-size:12px;padding:8px 14px;text-decoration:none">
+          🔗 Téléservice CNIL
+        </a>
+      </div>
+
+      <!-- Liste -->
+      <div id="adm-incidents"><div class="empty" style="padding:24px 0"><div class="ei"><div class="spin spinw" style="width:28px;height:28px"></div></div><p style="margin-top:10px">Chargement des incidents...</p></div></div>
+
+      <!-- Procédure rapide rappelée -->
+      <div class="card" style="margin-top:24px;background:rgba(59,130,246,.05);border-color:rgba(59,130,246,.25)">
+        <div class="ct" style="color:#3b82f6">📋 Procédure rapide « Incident détecté »</div>
+        <div style="font-size:12px;line-height:1.7;color:var(--t);font-family:var(--fm)">
+          <div><strong>T0</strong> — Détection (auto via <code>detectAutomatedAttacks</code> ou signalement humain)</div>
+          <div><strong>T+1h</strong> — Qualifier la sévérité (filtre <em>critical/high</em> ci-dessus)</div>
+          <div><strong>T+6h</strong> — Bloquer accès compromis, snapshot logs/DB</div>
+          <div><strong>T+24h</strong> — Investigation : périmètre, cause, impact</div>
+          <div><strong>T+48h</strong> — Décision notification CNIL si <em>critical/high</em> confirmé</div>
+          <div><strong>T+72h</strong> — <strong style="color:#dc2626">Notification CNIL effectuée</strong> + statut « notifié »</div>
+          <div><strong>T+7j</strong> — Notification personnes concernées si risque élevé (art. 34)</div>
+          <div><strong>T+30j</strong> — Clôture incident, REX, mise à jour doctrine</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1104,7 +1167,178 @@
     <div class="af"><label for="p-new">Nouveau mot de passe</label><input type="password" id="p-new" name="new_password" placeholder="••••••••"></div>
     <button class="btn bs" id="btn-change-pwd" style="width:100%;justify-content:center;margin-top:6px">🔑 Changer</button>
     <div class="sep" style="margin-top:24px"><span class="sepl" style="color:var(--d)">Zone dangereuse</span></div>
-    <button class="btn bd" id="btn-del-account" style="width:100%;justify-content:center">🗑️ Supprimer mon compte</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     INCIDENT MODALS — Plan RGPD CNIL < 72h
+     ═══════════════════════════════════════════════════ -->
+
+<!-- 1. SIGNALEMENT D'UN INCIDENT (accessible nurse + admin) -->
+<div id="incident-modal" style="position:fixed;inset:0;z-index:520;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.85);backdrop-filter:blur(8px);padding:20px">
+  <div class="mc" style="max-width:560px">
+    <div class="mh">
+      <div class="mt" style="color:#dc2626">🚨 Signaler un incident de sécurité</div>
+      <button class="mx" onclick="closeIncidentModal()">✕</button>
+    </div>
+    <div class="adm-notice" style="background:rgba(220,38,38,.05);border-color:rgba(220,38,38,.25);margin-bottom:16px">
+      <span style="font-size:18px;flex-shrink:0">⚠️</span>
+      <p style="font-size:12px">
+        Tout incident susceptible de compromettre la confidentialité, l'intégrité ou la disponibilité des données patients
+        <strong>doit être signalé immédiatement</strong>. L'administrateur recevra une alerte automatique pour les incidents
+        de sévérité <em>HIGH</em> ou <em>CRITICAL</em>. La CNIL doit être notifiée sous <strong>72 heures</strong> en cas de violation confirmée.
+      </p>
+    </div>
+
+    <div class="g2" style="margin-bottom:14px">
+      <div class="af">
+        <label for="inc-type">Catégorie</label>
+        <select id="inc-type">
+          <option value="unauthorized">🔓 Accès non autorisé</option>
+          <option value="data_breach">💥 Fuite de données</option>
+          <option value="data_loss">🗑️ Perte de données</option>
+          <option value="service_down">⛔ Service indisponible</option>
+          <option value="vulnerability">🔍 Vulnérabilité</option>
+        </select>
+      </div>
+      <div class="af">
+        <label for="inc-severity">Sévérité estimée</label>
+        <select id="inc-severity">
+          <option value="low">⚪ LOW — Notable, sans impact</option>
+          <option value="medium" selected>🔵 MEDIUM — À surveiller</option>
+          <option value="high">🟠 HIGH — Risque sérieux</option>
+          <option value="critical">🚨 CRITICAL — Notification CNIL imminente</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-summary">Résumé court <span style="color:var(--d)">*</span> <span style="font-size:10px;color:var(--m)">(≥10 caractères)</span></label>
+      <input type="text" id="inc-summary" maxlength="200" placeholder="Ex : Tentative de connexion suspecte depuis IP inconnue">
+    </div>
+
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-impact">Impact estimé</label>
+      <input type="text" id="inc-impact" maxlength="300" placeholder="Ex : 1 compte potentiellement ciblé, aucune donnée exposée">
+    </div>
+
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-affected">Nombre de personnes potentiellement concernées</label>
+      <input type="number" id="inc-affected" min="0" value="0" style="max-width:160px">
+    </div>
+
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-details">Détails complémentaires <span style="font-size:10px;color:var(--m)">(seront chiffrés AES-256-GCM)</span></label>
+      <textarea id="inc-details" rows="4" maxlength="2000" placeholder="Décrivez le contexte : actions effectuées, heure exacte, navigateur, comportements anormaux, captures éventuelles..."></textarea>
+    </div>
+
+    <div id="inc-deadline" style="font-family:var(--fm);font-size:11px;color:var(--m);text-align:center;margin-bottom:8px"></div>
+    <div class="msg o" id="inc-msg-ok" style="display:none"></div>
+    <div class="msg e" id="inc-msg-err" style="display:none"></div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn bp" id="btn-inc-submit" onclick="submitIncident()" style="flex:1;justify-content:center;background:linear-gradient(135deg,#dc2626,#991b1b)">
+        <span>🚨</span> Envoyer le signalement
+      </button>
+      <button class="btn bs" onclick="closeIncidentModal()" style="padding:10px 18px">Annuler</button>
+    </div>
+    <p style="font-size:10px;color:var(--m);margin-top:10px;text-align:center;opacity:.7">
+      🔐 Tous les détails sont chiffrés côté serveur · Conservation 5 ans (recommandation CNIL)
+    </p>
+  </div>
+</div>
+
+<!-- 2. NOTIFIER LA CNIL (admin) -->
+<div id="inc-notify-modal" style="position:fixed;inset:0;z-index:520;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.85);backdrop-filter:blur(8px);padding:20px">
+  <div class="mc" style="max-width:560px">
+    <div class="mh">
+      <div class="mt" style="color:#3b82f6">📨 Notifier la CNIL</div>
+      <button class="mx" onclick="incCloseNotifyModal()">✕</button>
+    </div>
+    <input type="hidden" id="inc-notify-id">
+    <div class="adm-notice" style="background:rgba(59,130,246,.05);border-color:rgba(59,130,246,.25);margin-bottom:16px">
+      <span style="font-size:18px;flex-shrink:0">ℹ️</span>
+      <p style="font-size:12px">
+        Étape 1 — Cliquez sur <strong>« 📋 Générer le pré-remplissage »</strong> pour obtenir un texte prêt à coller dans le téléservice CNIL.<br>
+        Étape 2 — Rendez-vous sur <a href="https://notifications.cnil.fr/notifications/index" target="_blank" rel="noopener" style="color:#3b82f6">notifications.cnil.fr</a> et soumettez la déclaration.<br>
+        Étape 3 — Reportez ci-dessous le <strong>numéro d'enregistrement CNIL</strong> reçu.
+      </p>
+    </div>
+
+    <div style="background:var(--s);border:1px solid var(--b);border-radius:8px;padding:10px;margin-bottom:14px;font-size:12px">
+      <strong style="color:var(--m)">Incident concerné :</strong>
+      <div id="inc-notify-summary" style="margin-top:4px;color:var(--t);font-weight:600;overflow-wrap:anywhere"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn bs bsm" onclick="incGenerateCnilTemplate()" style="font-size:12px;padding:8px 14px">
+        📋 Générer le pré-remplissage CNIL
+      </button>
+      <a href="https://notifications.cnil.fr/notifications/index" target="_blank" rel="noopener"
+        class="btn bp bsm" style="font-size:12px;padding:8px 14px;text-decoration:none;background:linear-gradient(135deg,#3b82f6,#2563eb)">
+        🔗 Ouvrir téléservice CNIL
+      </a>
+    </div>
+
+    <textarea id="inc-notify-template" rows="8" readonly placeholder="Cliquez sur « 📋 Générer le pré-remplissage CNIL » pour produire ici le texte à copier."
+      style="width:100%;font-family:var(--fm);font-size:11px;padding:10px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);margin-bottom:6px;resize:vertical"></textarea>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+      <button class="btn bs bsm" onclick="incCopyCnilTemplate()" style="font-size:11px;padding:6px 12px">
+        📋 Copier le texte
+      </button>
+    </div>
+
+    <div class="sep" style="margin-top:8px"><span class="sepl">Numéro d'enregistrement CNIL</span></div>
+
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-notify-num">N° d'enregistrement CNIL <span style="color:var(--d)">*</span></label>
+      <input type="text" id="inc-notify-num" placeholder="Ex : 2026-0001234" maxlength="80">
+    </div>
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-notify-comment">Commentaire (optionnel)</label>
+      <textarea id="inc-notify-comment" rows="3" maxlength="500" placeholder="Ex : Notification effectuée le 28/04/2026 à 14h32, accusé de réception reçu."></textarea>
+    </div>
+
+    <div class="msg e" id="inc-notify-err" style="display:none"></div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn bp" onclick="incSubmitNotify()" style="flex:1;justify-content:center;background:linear-gradient(135deg,#3b82f6,#2563eb)">
+        <span>📨</span> Marquer comme notifié CNIL
+      </button>
+      <button class="btn bs" onclick="incCloseNotifyModal()" style="padding:10px 18px">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- 3. RÉSOUDRE UN INCIDENT (admin) -->
+<div id="inc-resolve-modal" style="position:fixed;inset:0;z-index:520;display:none;align-items:center;justify-content:center;background:rgba(11,15,20,.85);backdrop-filter:blur(8px);padding:20px">
+  <div class="mc" style="max-width:520px">
+    <div class="mh">
+      <div class="mt" style="color:#10b981">✅ Résoudre l'incident</div>
+      <button class="mx" onclick="incCloseResolveModal()">✕</button>
+    </div>
+    <input type="hidden" id="inc-resolve-id">
+    <div class="adm-notice" style="background:rgba(16,185,129,.05);border-color:rgba(16,185,129,.25);margin-bottom:16px">
+      <span style="font-size:18px;flex-shrink:0">📝</span>
+      <p style="font-size:12px">
+        Décrivez précisément la <strong>résolution apportée</strong> et les <strong>mesures prises</strong> pour éviter la récurrence.
+        Ce texte sera conservé en clair dans le journal d'incident (rétention 5 ans recommandée par la CNIL).
+      </p>
+    </div>
+
+    <div class="af" style="margin-bottom:14px">
+      <label for="inc-resolve-text">Texte de résolution <span style="color:var(--d)">*</span> <span style="font-size:10px;color:var(--m)">(≥10 caractères)</span></label>
+      <textarea id="inc-resolve-text" rows="6" maxlength="1000" placeholder="Ex : Bruteforce stoppé par blocage de l'IP source. Compte ciblé non compromis (mot de passe non deviné). Activation rate-limit renforcé (3 tentatives/min)."></textarea>
+    </div>
+
+    <div class="msg e" id="inc-resolve-err" style="display:none"></div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn bv" onclick="incSubmitResolve()" style="flex:1;justify-content:center;background:linear-gradient(135deg,#10b981,#059669)">
+        <span>✅</span> Marquer comme résolu
+      </button>
+      <button class="btn bs" onclick="incCloseResolveModal()" style="padding:10px 18px">Annuler</button>
+    </div>
   </div>
 </div>
 
@@ -3009,6 +3243,23 @@
         <div class="ct">📬 Mes échanges avec l'administration</div>
         <div id="contact-history"><div class="empty" style="padding:24px 0"><div class="ei">💬</div><p style="margin-top:8px;color:var(--m)">Chargement de vos messages...</p></div></div>
       </div>
+
+      <!-- Signalement d'incident de sécurité (RGPD < 72h) -->
+      <div class="card" style="margin-top:16px;border-left:4px solid #dc2626">
+        <div class="ct" style="color:#dc2626">🚨 Signaler un incident de sécurité</div>
+        <p style="font-size:12px;color:var(--m);margin-bottom:12px">
+          Si vous avez constaté quelque chose d'<strong>anormal touchant à la sécurité ou à la confidentialité des données patients</strong>
+          (accès suspect, perte de matériel, comportement étrange de l'application, message d'erreur inhabituel...),
+          signalez-le immédiatement. L'administrateur sera alerté en temps réel et le délai légal de notification CNIL (72h) sera enclenché si nécessaire.
+        </p>
+        <div class="aic" style="margin-bottom:12px">
+          <div class="ai in" style="font-size:11px"><strong>Quand signaler ?</strong> Tentatives de connexion suspectes · Vol/perte d'appareil · Données affichées par erreur · Message inhabituel · Doute après une mise à jour</div>
+          <div class="ai in" style="font-size:11px"><strong>Le contenu est chiffré</strong> AES-256-GCM côté serveur. Seul l'administrateur peut le déchiffrer pour traitement.</div>
+        </div>
+        <button class="btn bp" onclick="openIncidentModal()" style="background:linear-gradient(135deg,#dc2626,#991b1b)">
+          <span>🚨</span> Signaler un incident
+        </button>
+      </div>
     </section>
 
     <!-- SIGNATURES ÉLECTRONIQUES -->
@@ -3413,6 +3664,7 @@
 <script src="js/ngap-ref-explorer.js?v=1.0"></script><!-- 📚 Explorateur complet du référentiel NGAP -->
 <script src="js/ngap-correction-hints.js?v=1.0"></script><!-- 💡 Badge suggestions AMI côté infirmière -->
 <script src="js/notif-messages.js?v=1.0"></script><!-- 🔔 Panneau notifications enrichi -->
+<script src="js/incident.js?v=1.0"></script><!-- 🚨 Plan incident RGPD/CNIL <72h -->
 
 <!-- 🚀 NGAP Update Manager — gestionnaire unifié de mise à jour (Avenant 11 embarqué) -->
 <!-- Doit être chargé AVANT le fetch du référentiel pour que le bootstrap IDB ait priorité -->

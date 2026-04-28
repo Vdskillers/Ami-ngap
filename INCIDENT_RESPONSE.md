@@ -1,7 +1,7 @@
 # 🚨 AMI — Plan de Réponse aux Incidents de Sécurité
 
 **Conformité : RGPD art. 33-34 — notification CNIL sous 72h**
-**Version : 1.0 — Avril 2026**
+**Version : 1.1 — Avril 2026**
 **Responsable de traitement : Bastien (DPO de fait)**
 
 ---
@@ -244,3 +244,129 @@ CREATE INDEX IF NOT EXISTS idx_incident_deadline ON incident_log(deadline_at) WH
 
 **Dernière révision** : Avril 2026 — Bastien
 **Prochaine revue obligatoire** : Avril 2027 (annuelle) ou après chaque incident critical/high
+
+---
+
+## 9. Outils intégrés à l'application (v1.1)
+
+L'ensemble du workflow décrit ci-dessus est désormais **opérationnel directement depuis le panneau admin** (onglet « 🚨 Incidents ») et depuis la vue **Contact administrateur** côté infirmier(ère).
+
+### 9.1 — Côté infirmière (vue Contact)
+
+Une carte rouge **« 🚨 Signaler un incident de sécurité »** est affichée en bas de la vue Contact. Elle ouvre la modale `#incident-modal` qui permet de déclarer un incident en quelques secondes :
+
+- Catégorie (data_breach / unauthorized / data_loss / service_down / vulnerability)
+- Sévérité estimée (low / medium / high / critical)
+- Résumé court (≥ 10 caractères, obligatoire)
+- Impact estimé
+- Nombre de personnes potentiellement concernées
+- Détails libres (chiffrés AES-256-GCM côté serveur via `encryptField(details, 'incident')`)
+
+À la soumission, le serveur :
+1. Insère la ligne dans `incident_log` avec `details_enc` chiffré et `deadline_at = now() + 72h`
+2. Si `severity ∈ {critical, high}` → écrit un `system_log` level=`error` event=`INCIDENT_TRIGGERED` (visible immédiatement dans l'onglet Santé système de l'admin)
+3. Écrit un `audit_log` event=`INCIDENT_TRIGGERED` (score 80 ou 100 selon sévérité)
+4. Renvoie l'`incident_id` et la `deadline_at` à l'infirmière (affichés en clair pour la traçabilité)
+
+### 9.2 — Côté admin (onglet « 🚨 Incidents »)
+
+L'onglet affiche un bandeau de stats (Total / Ouverts / Critiques / High / Hors délai 72h / Notifiés / Résolus) puis la liste filtrée des incidents. Chaque carte expose :
+
+- **Compteur 72h dynamique** : vert > 24h, ambre 12-24h, rouge < 12h, noir si dépassé
+- **Détails déchiffrés** repliables (depuis `details_enc` via `decryptField`)
+- **Actions selon le statut** :
+  - `🔍 En enquête` → passage statut `investigating`
+  - `📨 Notifier CNIL` → ouvre `#inc-notify-modal`
+  - `✅ Résoudre` → ouvre `#inc-resolve-modal`
+  - `📧 Notifier personnes` (incidents critical/high uniquement) → modale art.34
+  - `📄 Export PDF` → rapport A4 imprimable
+  - `⚫ Rejeter` → statut `dismissed`
+
+Un badge rouge avec le nombre d'incidents ouverts s'affiche à côté du libellé de l'onglet `adm-inc-badge`.
+
+### 9.3 — Pré-remplissage CNIL automatique
+
+Depuis la modale **« 📨 Notifier CNIL »**, le bouton **« 📋 Générer le pré-remplissage CNIL »** produit un texte structuré en 8 sections (responsable, description, nature, personnes, données, conséquences, mesures, détails techniques) — directement copiable dans le téléservice **https://notifications.cnil.fr/notifications/index**. Les champs déduits de l'incident sont préremplis ; les champs nécessitant un jugement humain sont marqués `(à compléter)`.
+
+Le numéro d'enregistrement CNIL retourné par le téléservice doit être saisi dans le champ dédié pour valider la traçabilité (préfixé `[CNIL #...]` dans le champ `resolution`).
+
+### 9.4 — Export PDF du rapport d'incident
+
+Bouton **« 📄 Export PDF »** sur chaque carte. Ouvre une fenêtre A4 stylée (CSS print-friendly) avec :
+
+- En-tête contenant l'ID, badges sévérité/statut/hors-délai
+- Métadonnées complètes (catégorie, sévérité, dates, personnes, impact, statut CNIL/résolution)
+- Tableau des détails techniques déchiffrés
+- Bloc résolution si présent
+- Mention légale RGPD art. 33-34
+- Auto-déclenchement de `window.print()` après chargement
+
+Le PDF généré est conservable hors-ligne pour archivage 5 ans (recommandation CNIL).
+
+### 9.5 — Notification aux personnes concernées (art. 34 RGPD)
+
+Pour les incidents `critical` ou `high`, un bouton **« 📧 Notifier personnes »** ouvre une modale qui génère un **modèle de courrier complet** (objet, nature, données concernées, conséquences, mesures, droits CNIL, contact DPO). Trois actions possibles :
+
+- **📋 Copier** le texte (avec fallback `execCommand` si `navigator.clipboard` indisponible)
+- **🖨️ Imprimer/PDF** dans un format Georgia/serif adapté à un envoi postal
+- **✅ Marquer la notification comme effectuée** → ajoute `[ART34-OK <timestamp>] Personnes concernées notifiées.` dans le champ `resolution` (concaténation si déjà rempli)
+
+Le template indique explicitement les exemptions de l'art. 34.3 (chiffrement adéquat, mesures ultérieures, communication publique en cas d'efforts disproportionnés).
+
+### 9.6 — Refresh automatique
+
+Toutes les 60 secondes, si l'onglet « 🚨 Incidents » est actif, `loadAdmIncidents()` est rappelé pour rafraîchir les compteurs `hours_remaining` et détecter les passages en `overdue`. Le badge d'onglet se met à jour automatiquement à chaque refresh.
+
+---
+
+## 10. Inclusions techniques requises
+
+Pour que le module fonctionne en production, vérifier que les éléments suivants sont en place :
+
+```html
+<!-- Dans index.html, après notif-messages.js : -->
+<script src="js/incident.js?v=1.0"></script>
+```
+
+```sql
+-- Dans Supabase, exécuter UNE fois (cf. section 6) :
+CREATE TABLE IF NOT EXISTS incident_log (...);
+CREATE INDEX IF NOT EXISTS idx_incident_status ON incident_log(status, severity);
+CREATE INDEX IF NOT EXISTS idx_incident_deadline ON incident_log(deadline_at) WHERE status='open';
+```
+
+```javascript
+// Dans worker.js, vérifier la présence des routes :
+//   /webhook/incident-report    (auth: any user)
+//   /webhook/incident-list      (auth: admin / view_logs)
+//   /webhook/incident-update    (auth: admin / view_logs)
+// Et du helper `triggerIncident(D, {...})` + détection auto `detectAutomatedAttacks(D, ip)`
+```
+
+```javascript
+// Dans sw.js, bumper la version après chaque déploiement :
+const CACHE_VERSION = 'ami-v5.10.7-incident';
+```
+
+---
+
+## 11. Tests d'acceptation
+
+Avant de considérer le module opérationnel en production :
+
+```
+[ ] Migration SQL incident_log exécutée et vérifiée (\d incident_log)
+[ ] worker.js redéployé (Cloudflare) avec les 3 routes
+[ ] index.html déployé avec inclusion de incident.js
+[ ] sw.js bumpé pour invalider le cache PWA
+[ ] Test 1 — Nurse signale un incident MEDIUM → vérifier ligne incident_log + 1 audit_log
+[ ] Test 2 — Nurse signale CRITICAL → vérifier en plus 1 system_log level=error
+[ ] Test 3 — Admin charge l'onglet Incidents → liste affichée, stats correctes
+[ ] Test 4 — Admin clique « Pré-remplissage CNIL » → texte structuré généré
+[ ] Test 5 — Admin clique « Export PDF » → fenêtre A4 stylée + auto-print
+[ ] Test 6 — Admin marque comme notifié CNIL → status='notified' + numéro dans resolution
+[ ] Test 7 — Admin clique « Notifier personnes » sur un HIGH → modale + template courrier
+[ ] Test 8 — Bruteforce simulé (>10 LOGIN_FAIL même IP en 15min) → incident HIGH auto-créé
+[ ] Test 9 — Vérifier auto-refresh 60s du compteur hours_remaining
+[ ] Test 10 — Compteur deadline passe au rouge à T-12h, hors-délai au-delà de T+72h
+```
