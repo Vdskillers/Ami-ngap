@@ -1293,32 +1293,32 @@ async function _cotationPipeline() {
       },
     };
 
+    // ⚡ "Coter avec l'IA" — EXCLUSIVEMENT N8N (aucun fallback worker).
+    //    Si N8N est indisponible, on lève une erreur explicite invitant
+    //    l'utilisateur à utiliser le bouton "Cotation Offline" (moteur ngap-engine
+    //    local, déterministe, RGPD-safe, fonctionne sans connexion).
     let d;
-    let _usedFallback = false;
     try {
-      // 1ère tentative : force N8N (vraie IA) avec payload minimal
       d = await apiCall('/webhook/ami-calcul', {
         ..._n8nPayload,
         _force_n8n: true,
         _client_meta: _clientMeta,
         ...(_viaFab ? { _from_fab: true } : {}),
       });
-      if (d && d.ok === false && d._force_n8n) {
+      if (d && d.ok === false) {
         throw new Error(d.error || 'force_n8n_failed');
       }
     } catch (_n8nErr) {
       const errMsg = _n8nErr?.message || '';
-      const is502 = /502|service.*indisponible|n8n.*indisponible|n8n_unavailable|force_n8n_failed/i.test(errMsg);
-      if (!is502) throw _n8nErr;
-      // N8N down : retry sans _force_n8n (laisse le worker gérer fallback ou circuit breaker)
-      console.info('[cotation] N8N indisponible → retry sans _force_n8n (worker fallback)');
-      _usedFallback = true;
-      d = await apiCall('/webhook/ami-calcul', {
-        ..._n8nPayload,
-        _client_meta: _clientMeta,
-      });
-      d.alerts = d.alerts || [];
-      d.alerts.unshift('ℹ️ N8N (IA distante) temporairement indisponible — cotation calculée par le worker.');
+      const isOffline = !navigator.onLine || /pas de connexion/i.test(errMsg);
+      const isN8nDown = /502|503|service.*indisponible|n8n.*indisponible|n8n_unavailable|force_n8n_failed|trop lent/i.test(errMsg);
+      if (isOffline) {
+        throw new Error("📡 Pas de connexion internet — utilisez le bouton « Cotation Offline » (moteur NGAP local, sans transmission de données).");
+      }
+      if (isN8nDown) {
+        throw new Error("🤖 IA distante (N8N) indisponible — utilisez le bouton « Cotation Offline » pour coter avec le moteur NGAP local.");
+      }
+      throw _n8nErr;
     }
     if (d.error) throw new Error(d.error);
 
@@ -2471,6 +2471,10 @@ async function openVerify() {
   $('vm-cotate').style.display = 'none';
   VM_DATA = null;
   try {
+    // ⚡ "Vérifier & corriger" — EXCLUSIVEMENT N8N (aucun fallback worker).
+    //    L'analyse linguistique fine du texte libre nécessite l'IA distante.
+    //    En offline, l'utilisateur doit utiliser le bouton "Cotation Offline"
+    //    (moteur NGAP local) qui calcule directement sans étape de vérification.
     const d = await apiCall('/webhook/ami-calcul', {
       mode: 'verify',
       _force_n8n: true,       // ⚡ force l'appel N8N — bypass moteur local + cache + circuit breaker
@@ -2478,11 +2482,18 @@ async function openVerify() {
       date_soin: gv('f-ds'), heure_soin: gv('f-hs'),
       exo: gv('f-exo'), regl: gv('f-regl')
     });
+    if (d && d.ok === false) throw new Error(d.error || 'force_n8n_failed');
     VM_DATA = d;
     renderVM(d);
   } catch (e) {
     $('vm-loading').style.display = 'none';
-    $('vm-result').innerHTML = `<div class="vm-item warn">⚠️ Erreur : ${e.message}</div>`;
+    const errMsg = e?.message || '';
+    const isOffline = !navigator.onLine || /pas de connexion/i.test(errMsg);
+    const isN8nDown = /502|503|service.*indisponible|n8n.*indisponible|n8n_unavailable|force_n8n_failed|trop lent/i.test(errMsg);
+    let _userMsg = errMsg;
+    if (isOffline) _userMsg = "📡 Pas de connexion internet. La vérification IA nécessite N8N. <strong>Utilisez le bouton « Cotation Offline »</strong> pour coter directement avec le moteur NGAP local.";
+    else if (isN8nDown) _userMsg = "🤖 IA distante (N8N) indisponible. <strong>Utilisez le bouton « Cotation Offline »</strong> pour coter avec le moteur NGAP local.";
+    $('vm-result').innerHTML = `<div class="vm-item warn">⚠️ ${_userMsg}</div>`;
     $('vm-result').style.display = 'block';
   }
 }
@@ -2570,4 +2581,485 @@ function coterDepuisRoute(desc, nomPatient) {
     const elTxt = $('f-txt'); if (elTxt) { elTxt.value = desc; elTxt.focus(); }
     const elPt  = $('f-pt');  if (elPt && nomPatient) elPt.value = nomPatient;
   }, 150);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   COTATION OFFLINE — moteur NGAP local (ngap-engine)
+   ────────────────────────────────────────────────────────────────────────
+   Pipeline 100% local utilisant window.NGAPPipeline (chargé depuis
+   ngap_engine.js) — aucun appel réseau requis. Fonctionne entièrement
+   hors-ligne, RGPD-safe (aucune donnée patient transmise).
+
+   Doctrine d'upsert STRICTE — identique à _cotationPipeline :
+   ─ Patient existant + _editRef + index trouvé → MAJ
+   ─ Patient existant + pas _editRef         → ajout 1ère fois
+   ─ Patient existant + _editRef + idx ø      → rien
+   ─ Patient absent + pas _editRef           → crée fiche + cotation
+   ─ Patient absent + _editRef               → rien (pas de fiche fantôme)
+
+   Sync différée :
+   ─ Si online   → push direct vers /webhook/ami-save-cotation
+   ─ Si offline  → mise en file via queueCotation() (offline-queue.js)
+                   → sync auto au retour de connexion
+   ════════════════════════════════════════════════════════════════════════ */
+async function cotationOffline() {
+  const txt = gv('f-txt');
+  if (!txt) { alert('Veuillez saisir une description.'); return; }
+
+  // ── Vérifier disponibilité du moteur local ──────────────────────────────
+  if (typeof window.NGAPPipeline !== 'function') {
+    alert("⚠️ Moteur NGAP local non chargé. Rafraîchissez la page (Ctrl+F5) pour charger ngap_engine.js.");
+    return;
+  }
+  if (!window.NGAP_REFERENTIEL) {
+    alert("⚠️ Référentiel NGAP non chargé. Rafraîchissez la page (Ctrl+F5) — l'app a besoin du référentiel pour coter en local.");
+    return;
+  }
+
+  // ── Vérification doublon (même logique que pipeline IA) ─────────────────
+  const _canContinue = await _cotationCheckDoublon(
+    () => _cotationOfflinePipeline(),
+    () => _cotationOfflinePipeline()
+  );
+  if (!_canContinue) return;
+
+  await _cotationOfflinePipeline();
+}
+
+async function _cotationOfflinePipeline() {
+  const txt = gv('f-txt');
+  if (!txt) { alert('Veuillez saisir une description.'); return; }
+
+  ld('btn-cot-offline', true);
+  $('res-cot').classList.remove('show');
+  $('cerr').style.display = 'none';
+
+  const _btnEl = $('btn-cot-offline');
+  const _origBtnHTML = _btnEl ? _btnEl.innerHTML : null;
+  if (_btnEl) _btnEl.innerHTML = '<span style="font-size:12px">⚙️ Calcul local…</span>';
+
+  const u = S?.user || {};
+  try {
+    // ── Auto-détection mode édition (idem pipeline IA) ──────────────────────
+    if (!window._editingCotation) {
+      try {
+        const _patNomCheck = (gv('f-pt') || '').trim();
+        const _dateCheck   = gv('f-ds') || new Date().toISOString().slice(0, 10);
+        if (_patNomCheck && typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          const _allRows = await _idbGetAll(PATIENTS_STORE);
+          const _nomLow  = _patNomCheck.toLowerCase();
+          const _foundRow = _allRows.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+          );
+          if (_foundRow && typeof _dec === 'function') {
+            const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+            if (Array.isArray(_foundPat.cotations)) {
+              const _existIdx = _foundPat.cotations.findIndex(c =>
+                (c.date || '').slice(0, 10) === _dateCheck.slice(0, 10)
+              );
+              if (_existIdx >= 0) {
+                const _existCot = _foundPat.cotations[_existIdx];
+                window._editingCotation = {
+                  patientId:    _foundRow.id,
+                  cotationIdx:  _existIdx,
+                  invoice_number: _existCot.invoice_number || null,
+                  _autoDetected: true,
+                };
+              }
+            }
+          }
+        }
+      } catch (_autoDetectErr) { console.warn('[cotationOffline] auto-détection KO:', _autoDetectErr.message); }
+    }
+
+    const _editRef = window._editingCotation || null;
+
+    // ── Pré-résolution patient IDB ──────────────────────────────────────────
+    let _prePatientId = _editRef?.patientId || null;
+    let _prePatientNom = null;
+    if (!_prePatientId) {
+      try {
+        const _patNomPre = (gv('f-pt') || '').trim();
+        if (_patNomPre && typeof _idbGetAll === 'function') {
+          const _preRows = await _idbGetAll(PATIENTS_STORE);
+          const _nomPre  = _patNomPre.toLowerCase();
+          const _preRow  = _preRows.find(r =>
+            ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomPre) ||
+            ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomPre)
+          );
+          if (_preRow) {
+            _prePatientId  = _preRow.id;
+            _prePatientNom = ((_preRow.prenom||'') + ' ' + (_preRow.nom||'')).trim() || null;
+          }
+        }
+      } catch (_) {}
+    }
+    if (_prePatientId && !_prePatientNom && typeof _idbGetAll === 'function') {
+      try {
+        const _allRows = await _idbGetAll(PATIENTS_STORE);
+        const _row = _allRows.find(r => r.id === _prePatientId);
+        if (_row) _prePatientNom = ((_row.prenom||'') + ' ' + (_row.nom||'')).trim() || null;
+      } catch (_) {}
+    }
+
+    // ── Heure de soin (fallback heure courante locale) ──────────────────────
+    const _heureFormVal = gv('f-hs');
+    const _heureResolved = _heureFormVal || (() => {
+      const _now = new Date();
+      return `${String(_now.getHours()).padStart(2,'0')}:${String(_now.getMinutes()).padStart(2,'0')}`;
+    })();
+
+    const _patNomFormVal = (gv('f-pt') || '').trim();
+    const _patNomResolved = _patNomFormVal || _prePatientNom || (_editRef?.patient_nom || '').trim() || '';
+
+    // ── Preuve soin (signature si disponible) ───────────────────────────────
+    const _sigEl = document.querySelector('[data-last-sig-hash]');
+    const _sigHash = _sigEl?.dataset?.lastSigHash || '';
+    const _preuveType = _sigHash ? 'signature_patient' : 'auto_declaration';
+    const _preuveForce = _sigHash ? 'FORTE' : 'STANDARD';
+
+    // ── Calcul local via NGAPPipeline ───────────────────────────────────────
+    const pipeline = new window.NGAPPipeline(window.NGAP_REFERENTIEL);
+    const result = pipeline.cotateFromText({
+      texte:        txt,
+      date_soin:    gv('f-ds') || new Date().toISOString().slice(0, 10),
+      heure_soin:   _heureResolved,
+      exo:          gv('f-exo') || '0',
+      amo:          gv('f-amo') || '',
+      amc:          gv('f-amc') || '',
+      regl:         gv('f-regl') || 'CB',
+      ddn:          gv('f-ddn') || '',
+      distance_km:  0,
+      historique:   [],
+      preuve_soin:  { type: _preuveType, force_probante: _preuveForce, hash_preuve: _sigHash, certifie_ide: true, timestamp: new Date().toISOString() },
+      infirmiere:   ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
+      adeli:        u.adeli || '',
+      rpps:         u.rpps || '',
+      structure:    u.structure || '',
+    });
+
+    if (!result || !result.ok) {
+      throw new Error("Le moteur NGAP local n'a pas pu calculer la cotation. Vérifiez la description du soin.");
+    }
+
+    // ── Génération invoice_number local (préfixe OFF- pour identification) ──
+    // Format : OFF-{userId8}-{YYYYMMDD}-{HHMMSS}
+    // ─ Préfixe OFF distingue les cotations offline des séquentiels CPAM.
+    // ─ Au sync, le worker peut soit conserver le numéro, soit en générer un définitif.
+    const _now = new Date();
+    const _userIdShort = (u.id || 'anon').toString().slice(0, 8);
+    const _localInvNum = _editRef?.invoice_number || (
+      'OFF-' + _userIdShort + '-' +
+      _now.toISOString().slice(0,10).replace(/-/g, '') + '-' +
+      String(_now.getHours()).padStart(2,'0') + String(_now.getMinutes()).padStart(2,'0') + String(_now.getSeconds()).padStart(2,'0')
+    );
+
+    // ── Enrichissement résultat (même shape que réponse N8N) ────────────────
+    const d = {
+      ...result,
+      patient_nom:       _patNomResolved,
+      patient_id:        _prePatientId || null,
+      infirmiere:        ((u.prenom || '') + ' ' + (u.nom || '')).trim(),
+      adeli:             u.adeli || '',
+      rpps:              u.rpps || '',
+      structure:         u.structure || '',
+      prescripteur_nom:  gv('f-pr')   || '',
+      prescripteur_rpps: gv('f-pr-rp') || '',
+      date_prescription: gv('f-pr-dt') || '',
+      amo:               gv('f-amo') || '',
+      amc:               gv('f-amc') || '',
+      regl:              gv('f-regl') || '',
+      invoice_number:    _localInvNum,
+      date_soin:         gv('f-ds') || new Date().toISOString().slice(0, 10),
+      heure_soin:        _heureResolved,
+      preuve_soin:       result.preuve_soin || { type: _preuveType, force_probante: _preuveForce, hash_preuve: _sigHash, certifie_ide: true, timestamp: new Date().toISOString() },
+      _engine:           'ngap_engine_offline',
+      _source:           'local_offline',
+      _is_offline:       true,
+      ngap_version:      result.ngap_version || (window.NGAP_REFERENTIEL?.version || '2026.4'),
+    };
+
+    // Afficher numéro provisoire
+    if (typeof displayInvoiceNumber === 'function') {
+      displayInvoiceNumber(d.invoice_number);
+    }
+
+    // Mémoriser _editingCotation avec invoice_number final
+    {
+      const _existRef = window._editingCotation;
+      window._editingCotation = {
+        patientId:      _existRef?.patientId      || _prePatientId || null,
+        cotationIdx:    _existRef?.cotationIdx    ?? -1,
+        invoice_number: d.invoice_number,
+        _autoDetected:  _existRef?._autoDetected   || false,
+        _prevActes:     Array.isArray(d.actes) && d.actes.length
+          ? d.actes.map(a => ({ code: a.code, nom: a.nom }))
+          : (_existRef?._prevActes || null),
+      };
+    }
+
+    // Cache heures (analyse horaire Dashboard)
+    try {
+      if (typeof _updateHeureCache === 'function' && _heureResolved) {
+        _updateHeureCache([{
+          id:         d.invoice_number,
+          date_soin:  d.date_soin,
+          heure_soin: _heureResolved,
+        }]);
+      }
+    } catch {}
+
+    // ── Rendu ───────────────────────────────────────────────────────────────
+    $('cbody').innerHTML = renderCot(d);
+    $('res-cot').classList.add('show');
+
+    // ── Toast info : cotation locale ────────────────────────────────────────
+    try {
+      const _toast = typeof showToast === 'function' ? showToast
+        : (typeof showToastSafe === 'function' ? showToastSafe : null);
+      if (_toast) _toast('⚙️ Cotation calculée par le moteur NGAP local — RGPD-safe, aucune donnée transmise.');
+    } catch {}
+
+    // ── Persistance IDB (doctrine upsert stricte) ───────────────────────────
+    await _cotationOfflineLocalPersist(d, _editRef, txt);
+
+    // ── Sync différée (online direct, offline → file d'attente) ─────────────
+    await _cotationOfflineSyncOrQueue(d, _patNomResolved);
+
+    // ── Déclencher le bouton signature après cotation ───────────────────────
+    if (d.invoice_number) {
+      try {
+        document.dispatchEvent(new CustomEvent('ami:cotation_done', { detail: { invoice_number: d.invoice_number } }));
+      } catch {}
+    }
+
+    // ── Nettoyer _editingCotation ───────────────────────────────────────────
+    if (window._editingCotation?._autoDetected ||
+        window._editingCotation?._userChose ||
+        window._editingCotation?._fromTournee) {
+      window._editingCotation = null;
+    }
+
+  } catch (e) {
+    if (window._editingCotation?._autoDetected ||
+        window._editingCotation?._userChose ||
+        window._editingCotation?._fromTournee) {
+      window._editingCotation = null;
+    }
+    $('cerr').style.display = 'flex';
+    $('cerr-m').textContent = e.message || String(e);
+    $('res-cot').classList.add('show');
+    console.warn('[cotationOffline] erreur:', e);
+  } finally {
+    if (_btnEl && _origBtnHTML) _btnEl.innerHTML = _origBtnHTML;
+    ld('btn-cot-offline', false);
+  }
+}
+
+/**
+ * Persistance IDB locale après cotation offline.
+ * Applique STRICTEMENT la doctrine d'upsert :
+ *   - Patient existant + _editRef + idx trouvé → MAJ
+ *   - Patient existant + pas _editRef           → ajout 1ère fois
+ *   - Patient existant + _editRef + idx ø        → rien
+ *   - Patient absent + pas _editRef             → crée fiche + cotation
+ *   - Patient absent + _editRef                  → rien (pas de fiche fantôme)
+ */
+async function _cotationOfflineLocalPersist(d, _editRef, txt) {
+  try {
+    const _patNom = (gv('f-pt') || '').trim();
+    if (!_patNom || typeof _idbGetAll !== 'function' || typeof PATIENTS_STORE === 'undefined') return;
+
+    const _patRows = await _idbGetAll(PATIENTS_STORE);
+
+    // Recherche par ID (mode édition) puis par nom
+    let _patRow = _editRef?.patientId
+      ? _patRows.find(r => r.id === _editRef.patientId)
+      : null;
+    if (!_patRow) {
+      const _nomLow = _patNom.toLowerCase();
+      _patRow = _patRows.find(r =>
+        ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_nomLow) ||
+        ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
+      );
+    }
+
+    const _invNum  = d.invoice_number || _editRef?.invoice_number || null;
+    const _cotDate = gv('f-ds') || new Date().toISOString().slice(0,10);
+
+    // Guard : pas de cotation sans acte technique
+    const _CODES_MAJ_CHK = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+    const _actesTechCheck = (d.actes || []).filter(a => !_CODES_MAJ_CHK.has((a.code||'').toUpperCase()));
+    if (!_actesTechCheck.length && !_editRef) {
+      console.warn('[cotationOffline] IDB save ignoré — pas d\'acte technique');
+      return;
+    }
+
+    const _newCot = {
+      date:           _cotDate,
+      heure:          d.heure_soin || (() => {
+        const _n = new Date();
+        return String(_n.getHours()).padStart(2,'0') + ':' + String(_n.getMinutes()).padStart(2,'0');
+      })(),
+      actes:          d.actes || [],
+      total:          parseFloat(d.total || 0),
+      part_amo:       parseFloat(d.part_amo || 0),
+      part_amc:       parseFloat(d.part_amc || 0),
+      part_patient:   parseFloat(d.part_patient || 0),
+      soin:           txt.slice(0, 120),
+      invoice_number: _invNum,
+      source:         _editRef ? 'cotation_offline_edit' : 'cotation_offline',
+      _synced:        false, // ⚡ pas encore synchronisé Supabase
+      _is_offline:    true,
+    };
+
+    if (_patRow) {
+      // ── Patient existant → upsert strict ──────────────────────────
+      const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+      if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
+
+      // Résolution index : cotationIdx > invoice_number > invoice_number original > date YYYY-MM-DD
+      let _idx = -1;
+      if (typeof _editRef?.cotationIdx === 'number' && _editRef.cotationIdx >= 0)
+        _idx = _editRef.cotationIdx;
+      if (_idx < 0 && _invNum)
+        _idx = _pat.cotations.findIndex(c => c.invoice_number === _invNum);
+      if (_idx < 0 && _editRef?.invoice_number)
+        _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
+      const _isForceNewSolo = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
+      if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo) {
+        _idx = _pat.cotations.findIndex(c =>
+          (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
+        );
+      }
+
+      if (_idx >= 0) {
+        _pat.cotations[_idx] = { ..._pat.cotations[_idx], ..._newCot, date_edit: new Date().toISOString() };
+      } else if (!_editRef || _isForceNewSolo) {
+        _pat.cotations.push(_newCot);
+      }
+      // _editRef avec idx ø → rien (évite doublons)
+
+      _pat.updated_at = new Date().toISOString();
+      const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+      await _idbPut(PATIENTS_STORE, _toStore);
+      if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
+
+    } else if (!_editRef) {
+      // ── Patient absent → créer fiche + cotation (1 seule fois) ────
+      const _parts = _patNom.trim().split(/\s+/);
+      const _nom    = _parts.length >= 1 ? _parts[_parts.length - 1] : _patNom;
+      const _prenom = _parts.length >= 2 ? _parts.slice(0, -1).join(' ') : '';
+      const _newPat = {
+        id:         'pat_' + Date.now(),
+        nom:        _nom,
+        prenom:     _prenom,
+        ddn:        gv('f-ddn') || '',
+        amo:        gv('f-amo') || '',
+        amc:        gv('f-amc') || '',
+        exo:        gv('f-exo') || '',
+        medecin:    gv('f-pr')  || '',
+        cotations:  [_newCot],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        source:     'cotation_offline_auto',
+      };
+      const _toStore = { id: _newPat.id, nom: _nom, prenom: _prenom, _data: _enc(_newPat), updated_at: _newPat.updated_at };
+      await _idbPut(PATIENTS_STORE, _toStore);
+      if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
+      if (typeof showToast === 'function')
+        showToast('👤 Fiche patient créée automatiquement pour ' + _patNom);
+    }
+    // Si patient absent + _editRef → rien (silence par design)
+  } catch (e) {
+    console.warn('[cotationOffline] IDB persist KO:', e.message);
+  }
+}
+
+/**
+ * Sync différée Supabase :
+ *   - Online    → push immédiat /webhook/ami-save-cotation (best-effort)
+ *   - Offline   → mise en file via queueCotation (sync auto au retour de connexion)
+ * Dans tous les cas, la cotation est déjà persistée en IDB (visible immédiatement
+ * dans le carnet patient et l'historique).
+ */
+async function _cotationOfflineSyncOrQueue(d, patientNomResolved) {
+  const u = S?.user || {};
+  const _payload = {
+    cotations: [{
+      // ── champs structurels ──
+      invoice_number:  d.invoice_number,
+      date_soin:       d.date_soin,
+      heure_soin:      d.heure_soin,
+      patient_id:      d.patient_id || null,
+      patient_nom:     patientNomResolved || d.patient_nom || '',
+      // ── cotation calculée ──
+      actes:           d.actes || [],
+      total:           parseFloat(d.total || 0),
+      part_amo:        parseFloat(d.part_amo || 0),
+      part_amc:        parseFloat(d.part_amc || 0),
+      part_patient:    parseFloat(d.part_patient || 0),
+      taux_amo:        d.taux_amo,
+      dre_requise:     !!d.dre_requise,
+      // ── méta-infirmière ──
+      infirmiere:      d.infirmiere,
+      adeli:           u.adeli || '',
+      rpps:            u.rpps || '',
+      structure:       u.structure || '',
+      // ── prescription ──
+      prescripteur_nom:  d.prescripteur_nom || '',
+      prescripteur_rpps: d.prescripteur_rpps || '',
+      date_prescription: d.date_prescription || '',
+      // ── couverture ──
+      amo:             d.amo || '',
+      amc:             d.amc || '',
+      regl:            d.regl || '',
+      // ── preuve ──
+      preuve_soin:     d.preuve_soin,
+      // ── source ──
+      source:          'cotation_offline',
+      _engine:         'ngap_engine_offline',
+      ngap_version:    d.ngap_version,
+    }]
+  };
+
+  // Online → push direct
+  if (navigator.onLine && typeof apiCall === 'function') {
+    try {
+      await apiCall('/webhook/ami-save-cotation', _payload);
+      // Marquer la cotation IDB comme synchronisée
+      try {
+        if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
+          const _rows = await _idbGetAll(PATIENTS_STORE);
+          const _row = _rows.find(r => r.id === d.patient_id);
+          if (_row) {
+            const _pat = { id: _row.id, nom: _row.nom, prenom: _row.prenom, ...(_dec(_row._data)||{}) };
+            if (Array.isArray(_pat.cotations)) {
+              const _idx = _pat.cotations.findIndex(c => c.invoice_number === d.invoice_number);
+              if (_idx >= 0) {
+                _pat.cotations[_idx]._synced = true;
+                _pat.updated_at = new Date().toISOString();
+                await _idbPut(PATIENTS_STORE, { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at });
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      return;
+    } catch (_pushErr) {
+      console.info('[cotationOffline] push direct KO → fallback file d\'attente:', _pushErr.message);
+      // Fallthrough vers la file d'attente
+    }
+  }
+
+  // Offline OU push KO → mise en file pour sync au retour
+  if (typeof queueCotation === 'function') {
+    queueCotation({
+      ..._payload.cotations[0],
+      _saveTarget: '/webhook/ami-save-cotation',
+    });
+  } else {
+    console.warn('[cotationOffline] queueCotation indisponible — la cotation reste en IDB seulement.');
+  }
 }

@@ -30,7 +30,7 @@
               • Badge dynamique du nb d'incidents ouverts dans la nav admin
 */
 
-const CACHE_VERSION = 'ami-v5.10.7-incident';
+const CACHE_VERSION = 'ami-v5.10.8-cot-offline';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
@@ -51,6 +51,8 @@ const STATIC_ASSETS = [
   './admin.js',
   './profil.js',
   './cotation.js',
+  './ngap_engine.js',                                  // ⚙️ moteur NGAP local (cotation offline)
+  './ngap-engine/ngap_referentiel_2026.json',          // 📚 référentiel NGAP — requis par le moteur offline
   './voice.js',
   './dashboard.js',
   './ui.js',
