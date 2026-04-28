@@ -579,6 +579,28 @@ class NGAPEngine {
       });
     }
 
+    // 1.5. DÉDUPLICATION par code de facturation
+    // Si l'IA (ou le NLP fallback) a renvoyé deux fois le même code,
+    // on garde uniquement la 1ère occurrence — sinon le 2e doublon
+    // serait pénalisé à 0.5 par l'article 11B (règle Bastien : un
+    // même code NGAP ne peut être facturé qu'une fois par séance).
+    {
+      const _seen = new Set();
+      const _kept = [];
+      let _drops = 0;
+      for (const a of actes) {
+        const _k = this.normCode(a.code);
+        if (!_k) { _kept.push(a); continue; }
+        if (_seen.has(_k)) { _drops++; continue; }
+        _seen.add(_k);
+        _kept.push(a);
+      }
+      if (_drops > 0) {
+        alerts.push(`ℹ️ ${_drops} doublon(s) de code NGAP supprimé(s) — un même code ne peut être facturé qu'une fois par séance.`);
+      }
+      actes = _kept;
+    }
+
     // 2. Ajouter majorations temporelles automatiquement
     const majorations = this.detectMajorationsTemporelles(date_soin, heure_soin);
     for (const maj of majorations) {
@@ -681,7 +703,760 @@ class NGAPEngine {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 🧠 NGAP PIPELINE — Reproduction fidèle du workflow N8N (v15 DUAL RAG)
+// ═══════════════════════════════════════════════════════════════════════
+// Reproduit côté local le pipeline complet du workflow N8N
+// "AI_Agent_AMI_v15_NGAP2026_4_DUAL_RAG", à l'identique des 7 étapes :
+//
+//   1. NLP Médical          (regex + détection contexte clinique)
+//   2. AI Agent (Grok)      → REMPLACÉ localement par génération depuis NLP
+//   3. Parser résultat IA   (parts AMO/AMC selon exo/amo/amc/regl)
+//   4. Validateur NGAP V1   (10 règles de cumul)
+//   5. Optimisateur €       (upgrades AMI6→AMI14, AMI→AMX, +MCI, +IFD, +IK, +MIE…)
+//   6. Validateur NGAP V2   (re-application V1)
+//   7. Recalcul Officiel    (moteur déclaratif NGAPEngine — CIR-9/2025 + 11B)
+//
+// Sans Grok, l'étape 4 (AI Agent) est remplacée par une projection directe
+// du `nlp_detected` en cotation draft. Le moteur déclaratif final corrige
+// alors les écarts (tarifs, coefficients, dérogations) — la sortie reste
+// alignée sur le résultat N8N pour un texte donné, à la nuance près que
+// l'IA Grok peut détecter des patterns que la regex NLP ne voit pas.
+//
+// API d'entrée :
+//   const pipeline = new NGAPPipeline(referentiel);
+//   const result = pipeline.cotateFromText({
+//     texte:        'Injection insuline SC',
+//     date_soin:    '2026-04-28',
+//     heure_soin:   '08:00',
+//     distance_km:  0,
+//     preuve_soin:  { type: 'auto_declaration' },
+//     historique:   [],
+//     mode_admin:   false,
+//     exo:          '0',     amo: '', amc: '', regl: 'CB',
+//     infirmiere:   'Manon TEST',
+//     // ... + tout autre champ passé tel quel par le pipeline
+//   });
+//
+// API de sortie : strictement identique au format retourné par le webhook
+// N8N (ami-calcul) et au worker → directement consommable par cotation.js.
+// ═══════════════════════════════════════════════════════════════════════
+class NGAPPipeline {
+  constructor(referentiel) {
+    this.ref    = referentiel;
+    this.engine = new NGAPEngine(referentiel);
+  }
+
+  // ─── Helper hash (port du _hashStr de N8N pour traçabilité texte/preuve) ─
+  _hashStr(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+      hash = hash >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+  }
+
+  // ─── Helper normalisation de code (mêmes règles que N8N) ──────────────
+  _normCode(c) {
+    if (!c) return '';
+    let s = String(c).toUpperCase().trim().replace(/,/g, '.').replace(/\s+/g, '');
+    if (s === 'AMI4.1') s = 'AMI4_1';
+    if (s === 'AMX4.1') s = 'AMX4_1';
+    return s;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // STAGE 1 — NLP Médical (port direct du noeud N8N "NLP Médical" v8)
+  // ═════════════════════════════════════════════════════════════════════
+  _stage1_nlp(input) {
+    const body  = input.body || input;
+    const texte = String(body.texte || '').toLowerCase();
+    const texteOriginalHash = this._hashStr(body.texte || '');
+
+    const detected = [];
+    const contexte = {};
+
+    // ─── CONTEXTE PATIENT ─────────────────────────────────────────────
+    const isCancerCtx   = /cancer|canc[ée]reux|chimio|immunod[eé]prim|mucoviscidose|h[eé]mato|lymphome|my[ée]lome|leuc[eé]mie|m[ée]tastas/.test(texte);
+    const isInsulinoCtx = /insulino|insuline|diab[eé]tique.*insulin|glyc[eé]mie.*insulin|type 1|dt1/.test(texte);
+    const isDependant   = /d[eé]pendance|grabataire|alit[eé]|nursing|toilette compl[eè]te|bsi|bsa|bsb|bsc/.test(texte);
+    const isPostOp      = /post.?op[eé]|post op|postop|surveillance clinique|chirurgie|redon|drain/.test(texte);
+    const isBPCO        = /bpco|insuffisance cardiaque|ic\b|bronchopneumopathie chronique/.test(texte);
+    const isPalliatif   = /palliatif|palliative|fin de vie|soins palliatifs/.test(texte);
+    const isDomicile    = texte.includes('domicile') || texte.includes('chez ');
+
+    // Lettre-clé par défaut : AMX si dépendance détectée, sinon AMI
+    const LC = isDependant ? 'AMX' : 'AMI';
+
+    // ─── INJECTIONS ───────────────────────────────────────────────────
+    if (texte.match(/injection|piqûre|piqure|insuline|anticoagulant|h[eé]parine|lovenox|fragmine|calciparine/)) {
+      if (texte.match(/intraveineuse|iv directe|ivd/)) {
+        detected.push({ code: LC, label: 'Injection intraveineuse directe', coeff: 2 });
+      } else if (texte.match(/allerg[eè]ne|d[eé]sensibilis|hyposensibilis/)) {
+        detected.push({ code: LC, label: 'Injection allergène', coeff: 3 });
+      } else if (texte.match(/implant|zoladex|d[eé]capeptyl|enantone/)) {
+        detected.push({ code: LC, label: 'Injection implant sous-cutané', coeff: 2.5 });
+      } else {
+        detected.push({ code: LC, label: 'Injection SC/IM', coeff: 1 });
+      }
+    }
+
+    // ─── PRÉLÈVEMENT ──────────────────────────────────────────────────
+    if (texte.match(/prise de sang|pr[eé]l[eè]vement.*veineu|ponction veineuse|pds|tube|bilan sanguin/)) {
+      detected.push({ code: LC, label: 'Prélèvement veineux', coeff: 1.5 });
+    } else if (texte.match(/pr[eé]l[eè]vement.*(cutan|muqueu|urinaire|selles|gorge|nez|expectoration)/)) {
+      detected.push({ code: LC, label: 'Prélèvement autre', coeff: 1 });
+    }
+
+    // ─── PERFUSION (CIR-9/2025) ───────────────────────────────────────
+    const isPerfusion = /perfusion|perfu|baxter|chambre implantable|\bpicc\b|midline|diffuseur|iv lente|ivl|goutte [àa] goutte|\bantibio\b.*(?:iv|intraveineu)/.test(texte);
+    if (isPerfusion) {
+      const isRetrait   = /(retrait|retir[eé])\s+(d[eé]finiti|du\s+dispositif|de\s+(la\s+)?(picc|midline|chambre|perfusion))|d[eé]branchement\s+d[eé]finiti|fin\s+de\s+(traitement|chimio|perfusion)/.test(texte);
+      const is2ePassage = /(changement\s+(?:de\s+)?flacon|rebranche|rebranchement|2\s*[èe]?me?\s+perfusion|deuxi[èe]me\s+perfusion|branchement\s+en\s+y|changement\s+de\s+baxter)/.test(texte);
+      const isCourte    = /(perfusion\s+courte|perfusion\s+[≤<=]\s*1\s*h|perfusion\s+(30|45|60)\s*min|perfusion\s+d['eu]?\s*(une?\s+)?demi\s*[-\s]?heure|perfusion\s+inf[eé]rieure?\s+[aà]\s+(une?\s+heure|1\s*h)|≤\s*1\s*h|moins d.une heure)/.test(texte);
+
+      if (isRetrait) {
+        detected.push({ code: LC, label: 'Retrait définitif dispositif ≥24h', coeff: 5, forfait: true });
+      } else if (is2ePassage) {
+        detected.push({ code: LC, label: 'Changement flacon / 2e branchement même jour', coeff: '4.1', forfait: true, tarif_forfait: 6.30 });
+      } else if (isCourte) {
+        if (isCancerCtx) {
+          detected.push({ code: LC, label: 'Perfusion courte ≤1h — immunodéprimé/cancéreux', coeff: 10, forfait: true });
+        } else {
+          detected.push({ code: LC, label: 'Perfusion courte ≤1h sous surveillance continue', coeff: 9, forfait: true });
+        }
+      } else {
+        if (isCancerCtx) {
+          detected.push({ code: LC, label: 'Forfait perfusion longue — immunodéprimé/cancéreux (1x/jour)', coeff: 15, forfait: true });
+        } else {
+          detected.push({ code: LC, label: 'Forfait perfusion longue >1h (1x/jour)', coeff: 14, forfait: true });
+        }
+      }
+    }
+
+    // ─── PANSEMENT ────────────────────────────────────────────────────
+    if (texte.match(/pansement|plaie|escarre|ulc[eè]re|cicatrice|n[eé]crose|d[eé]tersion/)) {
+      if (texte.match(/stomie|colostomie|il[eé]ostomie/)) {
+        detected.push({ code: LC, label: 'Pansement stomie', coeff: 3 });
+      } else if (texte.match(/trach[eé]otomie|canule/)) {
+        detected.push({ code: LC, label: 'Pansement trachéotomie', coeff: 3 });
+      } else if (texte.match(/complexe|escarre|n[eé]crose|chirurgical|post.?op|d[eé]tersion|greffe|ulc[eè]re|pied diab[eé]tique/)) {
+        detected.push({ code: LC, label: 'Pansement lourd et complexe', coeff: 4 });
+        if (texte.match(/analg[eé]sie topique|emla|lidoca[ïi]ne topique/)) {
+          detected.push({ code: LC, label: 'Analgésie topique préalable', coeff: 1.1 });
+        }
+      } else {
+        detected.push({ code: LC, label: 'Pansement simple', coeff: 1 });
+      }
+    }
+
+    // ─── SONDES & ALIMENTATION ────────────────────────────────────────
+    if (texte.match(/sonde naso.?gastrique|sng|pose.*sonde.*gastrique/)) {
+      detected.push({ code: LC, label: 'Pose sonde naso-gastrique', coeff: 3 });
+    }
+    if (texte.match(/sonde v[eé]sicale|pose.*sonde.*v[eé]sicale|changement sonde urinaire|sonde urinaire/)) {
+      if (texte.match(/homme|masculin|urétral|uretral/)) {
+        detected.push({ code: LC, label: 'Cathétérisme urétral homme', coeff: 4 });
+      } else {
+        detected.push({ code: LC, label: 'Sonde vésicale femme', coeff: 3 });
+      }
+    }
+    if (texte.match(/retrait.*sonde|ablation.*sonde|retrait sonde urinaire/)) {
+      detected.push({ code: LC, label: 'Retrait sonde urinaire', coeff: 2 });
+    }
+    if (texte.match(/alimentation ent[eé]rale|gavage|nutri.?pompe|pompe.*nutrition/)) {
+      if (texte.match(/j[eé]junal|jejunal|pj/)) {
+        detected.push({ code: LC, label: 'Alimentation entérale jéjunale', coeff: 4 });
+      } else {
+        detected.push({ code: LC, label: 'Alimentation entérale par gavage', coeff: 3 });
+      }
+    }
+
+    // ─── SURVEILLANCES & POST-OP ──────────────────────────────────────
+    if (isPostOp && texte.match(/surveillance clinique|surveillance post.?op|accompagnement post.?op/)) {
+      detected.push({ code: LC, label: 'Séance surveillance post-opératoire', coeff: 3.9, forfait: false });
+    }
+    if (texte.match(/retrait.*drain|retrait.*redon|surveillance drain/)) {
+      detected.push({ code: LC, label: 'Retrait drain de redon', coeff: 2.8, forfait: false });
+    }
+    if (texte.match(/cath[eé]ter p[eé]riveineux|analg[eé]sie post.?op/)) {
+      detected.push({ code: LC, label: 'Cathéter périveineux post-op', coeff: 4.2, forfait: false });
+    }
+    if (isBPCO && texte.match(/surveillance|hebdomadaire/)) {
+      detected.push({ code: LC, label: 'Surveillance clinique BPCO/IC (hebdo)', coeff: 5.8, forfait: false });
+    }
+
+    // ─── DIABÈTE (article 5bis — cumul taux plein entre eux) ─────────
+    if (isInsulinoCtx && texte.match(/glyc[eé]mie|dextro|hgt/)) {
+      detected.push({ code: LC, label: 'Surveillance glycémie capillaire', coeff: 1 });
+    }
+
+    // ─── TOILETTE / DÉPENDANCE → BSI ──────────────────────────────────
+    if (texte.match(/toilette|nursing|aide.*vie quotidienne/)) {
+      const depLourde = texte.match(/totale|alit[eé]|grabataire|d[eé]pendance lourde/);
+      const depMod    = texte.match(/mod[eé]r[eé]e|interm[eé]diaire|d[eé]pendance mod[eé]r[eé]e/);
+      const depLegere = texte.match(/l[eé]g[eè]re|partielle|d[eé]pendance l[eé]g[eè]re/);
+      const depClaire = texte.match(/d[eé]pendance/);
+      if (depLourde)       detected.push({ code: 'BSC', label: 'Dépendance lourde', coeff: 1 });
+      else if (depMod)     detected.push({ code: 'BSB', label: 'Dépendance intermédiaire', coeff: 1 });
+      else if (depLegere)  detected.push({ code: 'BSA', label: 'Dépendance légère', coeff: 1 });
+      else if (depClaire)  detected.push({ code: 'BSA', label: 'Dépendance (niveau à préciser)', coeff: 1 });
+      else                 detected.push({ code: 'AIS', label: 'Aide toilette (dépendance non documentée)', coeff: 1 });
+    }
+
+    // ─── ECG ──────────────────────────────────────────────────────────
+    if (texte.match(/ecg|électrocardiogramme|electrocardiogramme/)) {
+      detected.push({ code: LC, label: 'ECG', coeff: 3 });
+    }
+
+    // ─── DISTANCE KM ──────────────────────────────────────────────────
+    let distanceKm = 0;
+    const kmMatch = texte.match(/(\d+(?:[.,]\d+)?)\s*(?:km|kilom[eè]tres?)/);
+    if (kmMatch) distanceKm = parseFloat(kmMatch[1].replace(',', '.'));
+    // Si distance fournie en input, prioriser celle-ci
+    if (parseFloat(body.distance_km) > 0) distanceKm = parseFloat(body.distance_km);
+
+    // ─── CONTEXTE COMPLET ────────────────────────────────────────────
+    contexte.domicile       = isDomicile;
+    contexte.nuit           = !!(texte.match(/nuit|20h|21h|22h|23h|00h|01h|02h|03h|04h|05h/));
+    contexte.nuitProfonde   = !!(texte.match(/23h|00h|01h|02h|03h|04h/));
+    contexte.dimanche       = !!(texte.match(/dimanche|férié|ferie/));
+    contexte.enfant         = !!(texte.match(/enfant|bébé|bebe|nourrisson|< ?7 ?ans|moins de 7/));
+    contexte.ald            = !!(texte.match(/ald|affection longue durée/));
+    contexte.distance       = distanceKm > 0;
+    contexte.complexe       = !!(texte.match(/complexe|escarre|nécrose|chirurgical|post.op/));
+    contexte.cancer         = isCancerCtx;
+    contexte.insulino       = isInsulinoCtx;
+    contexte.dependant      = isDependant;
+    contexte.postop         = isPostOp;
+    contexte.bpco           = isBPCO;
+    contexte.palliatif      = isPalliatif;
+    contexte.lettre_cle     = LC;
+
+    // ─── JUSTIFICATION HORODATÉE ──────────────────────────────────────
+    const justification = {
+      dependance:          isDependant,
+      dependance_lourde:   !!(texte.match(/grabataire|alité|alit[ée]|dépendance lourde|totale/)),
+      plaie:               !!(texte.match(/plaie|escarre|ulcère|ulcere|nécrose|necrose/)),
+      plaie_complexe:      !!(texte.match(/escarre|nécrose|chirurgical|post.op|détersion|pied diabétique/)),
+      domicile:            isDomicile,
+      enfant:              !!(texte.match(/enfant|bébé|< ?7 ?ans/)),
+      nuit_horaire:        !!(texte.match(/20h|21h|22h|23h|00h|01h|02h|03h|04h|05h/)),
+      ald:                 !!(texte.match(/ald|affection longue durée/)),
+      prescription:        !!(texte.match(/ordonnance|prescrit|prescription/)),
+      cancer:              isCancerCtx,
+      insulino:            isInsulinoCtx,
+      postop:              isPostOp,
+      bpco:                isBPCO,
+      palliatif:           isPalliatif,
+      distance_km:         distanceKm,
+      timestamp:           new Date().toISOString(),
+      source:              'NLP_PIPELINE_LOCAL_NGAP2026',
+      texte_original_hash: texteOriginalHash,
+    };
+
+    // ─── PREUVE SOIN ──────────────────────────────────────────────────
+    const preuveRaw = body.preuve_soin || {};
+    const preuveHashInput = preuveRaw.hash_preuve || preuveRaw.signature_data || preuveRaw.photo_hash || '';
+    const preuveHash = preuveHashInput
+      ? this._hashStr(preuveHashInput + (body.date_soin || '') + (body.infirmiere || ''))
+      : '';
+    const geoZone = preuveRaw.geo_zone || body.geo_zone || '';
+    const preuveSoin = {
+      type:              preuveRaw.type || 'auto_declaration',
+      timestamp:         preuveRaw.timestamp || new Date().toISOString(),
+      hash_preuve:       preuveHash || '',
+      certifie_ide:      preuveRaw.certifie_ide === true || preuveRaw.type === 'auto_declaration',
+      signature_patient: preuveRaw.type === 'signature_patient' && preuveHash !== '',
+      photo_presente:    preuveRaw.type === 'photo' && preuveHash !== '',
+      geo_zone:          geoZone,
+      force_probante:    preuveRaw.type === 'photo'              ? 'FORTE'
+                       : preuveRaw.type === 'signature_patient'  ? 'FORTE'
+                       : preuveRaw.type === 'auto_declaration'   ? 'STANDARD'
+                       : 'ABSENTE',
+    };
+
+    return {
+      ...body,
+      nlp_detected:  detected,
+      nlp_contexte:  contexte,
+      justification,
+      distance_km:   distanceKm,
+      _texte_hash:   texteOriginalHash,
+      preuve_soin:   preuveSoin,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // STAGE 2 — AI Output local (substitut Grok)
+  // ═════════════════════════════════════════════════════════════════════
+  // Convertit `nlp_detected` en cotation draft `{actes, total, alerts, optimisations}`,
+  // au format que produirait l'AI Agent. Les tarifs sont récupérés du référentiel.
+  _stage2_aiOutput(data) {
+    const detected = data.nlp_detected || [];
+    const ctx      = data.nlp_contexte || {};
+    const heure    = String(data.heure_soin || '');
+    const dateSoin = String(data.date_soin || '');
+
+    // ─── Convertir chaque acte NLP en {code, nom, coefficient, total} ─
+    const actes = [];
+    for (const d of detected) {
+      const baseLC = String(d.code || '').toUpperCase(); // AMI, AMX, AIS, BSA, BSB, BSC
+      let codeFinal = baseLC;
+      let tarif = 0;
+
+      if (['BSA', 'BSB', 'BSC'].includes(baseLC)) {
+        // Forfait BSI — tarif fixe
+        const f = this.ref.forfaits_bsi?.[baseLC];
+        tarif = f ? f.tarif : (baseLC === 'BSA' ? 13.0 : baseLC === 'BSB' ? 18.2 : 28.7);
+      } else if (['AMI', 'AMX', 'AIS'].includes(baseLC)) {
+        // Code lettre-clé + coefficient → AMI1, AMI4, AMI4.1, AIS3...
+        const coef = d.coeff;
+        if (coef === '4.1' || coef === 4.1) {
+          codeFinal = baseLC + '4.1';
+          tarif = baseLC === 'AIS' ? 0 : (d.tarif_forfait || 12.92);
+        } else {
+          codeFinal = baseLC + String(coef);
+          // Lookup dans le référentiel pour le tarif exact
+          const ref = this.engine.lookup(codeFinal);
+          if (ref && ref.tarif != null) {
+            tarif = ref.tarif;
+          } else {
+            // Fallback : valeur lettre-clé × coefficient
+            const lc = this.ref.lettres_cles?.[baseLC];
+            const lcVal = lc ? lc.valeur : (baseLC === 'AIS' ? 2.65 : 3.15);
+            tarif = Math.round(lcVal * Number(coef) * 100) / 100;
+          }
+        }
+      }
+
+      actes.push({
+        code:        codeFinal,
+        nom:         d.label || codeFinal,
+        coefficient: 1,
+        total:       tarif,
+      });
+    }
+
+    // ─── Majorations temporelles automatiques ────────────────────────
+    const h = heure.slice(0, 5);
+    const FERIES_FR = new Set([
+      '2025-01-01','2025-04-21','2025-05-01','2025-05-08','2025-05-29',
+      '2025-06-09','2025-07-14','2025-08-15','2025-11-01','2025-11-11','2025-12-25',
+      '2026-01-01','2026-04-06','2026-05-01','2026-05-08','2026-05-14',
+      '2026-05-25','2026-07-14','2026-08-15','2026-11-01','2026-11-11','2026-12-25',
+      '2027-01-01','2027-03-29','2027-05-01','2027-05-08','2027-05-06',
+      '2027-05-17','2027-07-14','2027-08-15','2027-11-01','2027-11-11','2027-12-25',
+    ]);
+    if (h) {
+      if (h >= '23:00' || h < '05:00') {
+        actes.push({ code: 'NUIT_PROF', nom: 'Majoration nuit profonde (23h–5h)', coefficient: 1, total: 18.30 });
+      } else if (h >= '20:00' || h < '08:00') {
+        actes.push({ code: 'NUIT', nom: 'Majoration nuit (20h–23h / 5h–8h)', coefficient: 1, total: 9.15 });
+      }
+    }
+    if (dateSoin) {
+      const dParts = dateSoin.slice(0, 10).split('-');
+      const localDate = dParts.length === 3 ? new Date(+dParts[0], +dParts[1] - 1, +dParts[2]) : null;
+      const isDimanche = localDate && localDate.getDay() === 0;
+      const isFerie    = FERIES_FR.has(dateSoin.slice(0, 10));
+      const hasNuit    = actes.some(a => ['NUIT', 'NUIT_PROF'].includes(this._normCode(a.code)));
+      if ((isDimanche || isFerie || ctx.dimanche) && !hasNuit) {
+        actes.push({ code: 'DIM', nom: 'Majoration dimanche/férié', coefficient: 1, total: 8.50 });
+      }
+    }
+
+    // ─── Calcul total brut ──────────────────────────────────────────
+    const total = Math.round(actes.reduce((s, a) => s + (a.total || 0), 0) * 100) / 100;
+
+    return {
+      ...data,
+      actes,
+      total,
+      alerts:        [],
+      optimisations: [],
+      _ai_source:    'NLP_LOCAL_DRAFT',
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // STAGE 3 — Parser résultat (port Parser_resultat_IA.js)
+  // ═════════════════════════════════════════════════════════════════════
+  _stage3_parser(data, input) {
+    const body = input.body || input;
+    const modeAdmin = body.mode_admin === true;
+    const exo  = String(body.exo  || '0');
+    const regl = String(body.regl || 'CB');
+    const rawAMO = body.amo || '';
+    const rawAMC = body.amc || '';
+    const amoValue = (rawAMO !== '' && isFinite(parseFloat(rawAMO))) ? parseFloat(rawAMO) : null;
+    const amcValue = (rawAMC !== '' && isFinite(parseFloat(rawAMC))) ? parseFloat(rawAMC) : null;
+    const total    = isFinite(parseFloat(data.total)) ? Math.round(parseFloat(data.total) * 100) / 100 : 0;
+
+    let partAMO, partAMC, partPatient, dreRequise, tauxAMO;
+    if (exo === '1' || exo.toLowerCase() === 'ald') {
+      tauxAMO = 1.0; partAMO = total; partAMC = 0; partPatient = 0; dreRequise = false;
+    } else if (amoValue !== null && amcValue !== null) {
+      tauxAMO = amoValue;
+      partAMO = Math.round(total * amoValue * 100) / 100;
+      partAMC = Math.round(total * amcValue * 100) / 100;
+      partPatient = Math.round((total - partAMO - partAMC) * 100) / 100;
+      dreRequise = amcValue > 0 && (regl === 'TP' || regl.toLowerCase().includes('tiers'));
+    } else if (amoValue !== null) {
+      tauxAMO = amoValue;
+      partAMO = Math.round(total * amoValue * 100) / 100;
+      partAMC = 0;
+      partPatient = Math.round((total - partAMO) * 100) / 100;
+      dreRequise = false;
+    } else {
+      tauxAMO = 0.6;
+      partAMO = Math.round(total * 0.6 * 100) / 100;
+      partAMC = 0;
+      partPatient = Math.round(total * 0.4 * 100) / 100;
+      dreRequise = false;
+    }
+
+    if (!isFinite(partAMO))     partAMO = 0;
+    if (!isFinite(partAMC))     partAMC = 0;
+    if (!isFinite(partPatient)) partPatient = 0;
+
+    return {
+      ok:               true,
+      actes:            data.actes || [],
+      total,
+      part_amo:         partAMO,
+      part_amc:         partAMC,
+      part_patient:     partPatient,
+      amo_amount:       partAMO,
+      amc_amount:       partAMC,
+      taux_amo:         tauxAMO,
+      dre_requise:      dreRequise,
+      alerts:           data.alerts || [],
+      optimisations:    data.optimisations || [],
+      ngap_version:     body.ngap_version || '2026.4',
+      mode_admin:       modeAdmin,
+      texte:            body.texte || '',
+      historique:       body.historique || [],
+      patient_id:       body.patient_id || body.infirmiere_id || '',
+      nlp_detected:     data.nlp_detected || [],
+      nlp_contexte:     data.nlp_contexte || {},
+      justification:    data.justification || {},
+      preuve_soin:      data.preuve_soin || { type: 'auto_declaration', force_probante: 'ABSENTE' },
+      distance_km:      data.distance_km || 0,
+      _texte_hash:      data._texte_hash || '',
+      invoice_number:   modeAdmin ? null : (body.invoice_number || null),
+      date_soin:        body.date_soin  || '',
+      heure_soin:       body.heure_soin || '',
+      infirmiere:       body.infirmiere || '',
+      structure:        body.structure  || '',
+      _exo: exo, _amo: rawAMO, _amc: rawAMC, _regl: regl,
+      _mode: body.mode || 'ngap',
+      _skip_db: modeAdmin,
+      _ai_source: data._ai_source,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // STAGE 4/6 — Validateur NGAP V1 / V2 (port Validateur_NGAP_V1.js)
+  // ═════════════════════════════════════════════════════════════════════
+  // 10 règles de cumul appliquées de façon identique en V1 et V2.
+  _stage4_validateur(data, label = 'V1') {
+    let actes  = JSON.parse(JSON.stringify(data.actes || []));
+    let alerts = [...(data.alerts || [])];
+
+    const norm = (c) => this._normCode(c);
+    const isMaj = (c) => ['IFD','IFI','IK','MCI','MIE','MAU','NUIT','NUIT_PROF','DIM'].includes(norm(c));
+    const isBSI = (c) => ['BSA','BSB','BSC'].includes(norm(c));
+    const isPerfForfait = (c) => ['AMI9','AMX9','AMI10','AMX10','AMI14','AMX14','AMI15','AMX15','AMI4_1','AMX4_1'].includes(norm(c));
+
+    // R1 : Coefficient — principal(100%) + secondaires(50%) + majorations/forfaits(100%)
+    let principalFound = false;
+    actes = actes.map(a => {
+      const c = norm(a.code);
+      if (isMaj(c) || isBSI(c) || isPerfForfait(c)) return { ...a, coefficient: 1 };
+      if (!principalFound) { principalFound = true; return { ...a, coefficient: 1 }; }
+      return { ...a, coefficient: 0.5 };
+    });
+
+    // R2 : AIS + BSI interdit
+    if (actes.some(a => norm(a.code).startsWith('AIS')) && actes.some(a => isBSI(a.code))) {
+      alerts.push(`❌ [${label}] AIS + BSI interdit → AIS supprimé`);
+      actes = actes.filter(a => !norm(a.code).startsWith('AIS'));
+    }
+
+    // R3 : BSI exclusifs entre eux
+    const bsActs = actes.filter(a => isBSI(a.code));
+    if (bsActs.length > 1) {
+      const order = { BSA: 1, BSB: 2, BSC: 3 };
+      const best = [...bsActs].sort((a, b) => order[norm(b.code)] - order[norm(a.code)])[0];
+      alerts.push(`❌ [${label}] Plusieurs BSI → conservation du plus élevé`);
+      actes = actes.filter(a => !isBSI(a.code));
+      actes.unshift(best);
+    }
+
+    // R4 : IFD/IFI unique par passage
+    let ifdCount = 0;
+    actes = actes.filter(a => {
+      const c = norm(a.code);
+      if (c === 'IFD' || c === 'IFI') {
+        if (ifdCount++) { alerts.push(`❌ [${label}] IFD/IFI multiple → réduit à 1`); return false; }
+      }
+      return true;
+    });
+
+    // R5 : NUIT/NUIT_PROF + DIM non cumulables
+    if (actes.some(a => ['NUIT','NUIT_PROF'].includes(norm(a.code))) && actes.some(a => norm(a.code) === 'DIM')) {
+      alerts.push(`❌ [${label}] Nuit + dimanche interdit → dimanche supprimé`);
+      actes = actes.filter(a => norm(a.code) !== 'DIM');
+    }
+
+    // R6 : NUIT + NUIT_PROF non cumulables (garder NUIT_PROF)
+    if (actes.some(a => norm(a.code) === 'NUIT') && actes.some(a => norm(a.code) === 'NUIT_PROF')) {
+      alerts.push(`❌ [${label}] NUIT + NUIT_PROF → NUIT supprimé`);
+      actes = actes.filter(a => norm(a.code) !== 'NUIT');
+    }
+
+    // R7 : IK sans distance
+    const distKm = parseFloat(data.distance_km) || 0;
+    if (actes.some(a => norm(a.code) === 'IK') && distKm <= 0) {
+      alerts.push(`⚠️ [${label}] IK sans distance documentée → supprimée`);
+      actes = actes.filter(a => norm(a.code) !== 'IK');
+    }
+
+    // R8 : CIR-9/2025 — AMI14 + AMI15 interdits même jour
+    const hasAMI14 = actes.some(a => ['AMI14','AMX14'].includes(norm(a.code)));
+    const hasAMI15 = actes.some(a => ['AMI15','AMX15'].includes(norm(a.code)));
+    if (hasAMI14 && hasAMI15) {
+      alerts.push(`🚨 [${label}] CIR-9/2025 : AMI14 + AMI15 même jour interdit → AMI14 supprimé (AMI15 prioritaire cancer/immunodépr)`);
+      actes = actes.filter(a => !['AMI14','AMX14'].includes(norm(a.code)));
+    }
+
+    // R9 : MCI non cumulable avec BSI/AMX/IFI
+    const hasBSI = actes.some(a => isBSI(a.code));
+    const hasAMX = actes.some(a => norm(a.code).startsWith('AMX'));
+    const hasIFI = actes.some(a => norm(a.code) === 'IFI');
+    if ((hasBSI || hasAMX || hasIFI) && actes.some(a => norm(a.code) === 'MCI')) {
+      alerts.push(`❌ [${label}] MCI non cumulable avec BSI/AMX/IFI → MCI supprimée`);
+      actes = actes.filter(a => norm(a.code) !== 'MCI');
+    }
+
+    // R10 : MAU non cumulable avec BSI
+    if (hasBSI && actes.some(a => norm(a.code) === 'MAU')) {
+      alerts.push(`❌ [${label}] MAU non cumulable avec BSI → MAU supprimée`);
+      actes = actes.filter(a => norm(a.code) !== 'MAU');
+    }
+
+    return { ...data, actes, alerts };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // STAGE 5 — Optimisateur € (port Optimisateur_EUR.js v4)
+  // ═════════════════════════════════════════════════════════════════════
+  _stage5_optimisateur(data) {
+    let actes = JSON.parse(JSON.stringify(data.actes || []));
+    let optimisations = [...(data.optimisations || [])];
+    const texte = String(data.texte || '').toLowerCase();
+    const ctx   = data.nlp_contexte || {};
+    const just  = data.justification || {};
+
+    const norm = (c) => this._normCode(c);
+    const hasCode = (c) => actes.some(a => norm(a.code) === c.toUpperCase());
+
+    // Contextes enrichis
+    const isPerfusion  = /perfusion|perfu|baxter|chambre implantable|\bpicc\b|midline|diffuseur/.test(texte);
+    const isPerfLongue = isPerfusion && /(12\s*h|24\s*h|longue|>\s*1\s*h|plus d'une heure|matin\s+et\s+soir|2\s*fois par jour|chambre implantable|baxter|picc|midline)/.test(texte);
+    const isPerfCourte = isPerfusion && /(30\s*min|45\s*min|60\s*min|≤\s*1\s*h|<\s*1\s*h|surveillance continue|courte)/.test(texte);
+    const isCancerCtx  = ctx.cancer || /cancer|canc[ée]reux|chimio|immunod[eé]prim|mucoviscidose/.test(texte);
+    const is2ePassage  = /(changement\s+(?:de\s+)?flacon|rebranche|rebranchement|2\s*[èe]?me?\s+perfusion|deuxi[èe]me\s+perfusion|branchement\s+en\s+y)/.test(texte);
+    const isBSI        = hasCode('BSA') || hasCode('BSB') || hasCode('BSC');
+    const isPostOp     = ctx.postop || /post.?op|surveillance clinique|redon|drain/.test(texte);
+
+    // ── SECTION 1 — Perfusions (CIR-9/2025) ──────────────────────────
+    // AMI6 → AMI14/AMI15 (sous-cotation perfusion longue)
+    if (hasCode('AMI6') && !hasCode('AMI14') && !hasCode('AMI15') && isPerfLongue) {
+      const target = isCancerCtx ? 'AMI15' : 'AMI14';
+      const targetTarif = isCancerCtx ? 47.25 : 44.10;
+      optimisations.push(`🚀 AMI6 (18,90€) → ${target} (${targetTarif}€) CIR-9/2025 : perfusion longue = forfait journalier. Gain +${(targetTarif - 18.90).toFixed(2)}€`);
+      actes = actes.filter(a => norm(a.code) !== 'AMI6');
+      actes.unshift({ code: target, nom: isCancerCtx ? 'Forfait perfusion longue cancer/immunodépr' : 'Forfait perfusion longue >1h', coefficient: 1, total: targetTarif });
+    }
+    // AMI5 → AMI14/AMI15 (si pas retrait réel)
+    if (hasCode('AMI5') && !hasCode('AMI14') && !hasCode('AMI15') && isPerfLongue && !/retrait|d[eé]branch/.test(texte)) {
+      const target = isCancerCtx ? 'AMI15' : 'AMI14';
+      const targetTarif = isCancerCtx ? 47.25 : 44.10;
+      optimisations.push(`🚀 AMI5 (15,75€) → ${target} (${targetTarif}€) CIR-9/2025 : AMI5 réservé au retrait définitif. Gain +${(targetTarif - 15.75).toFixed(2)}€`);
+      actes = actes.filter(a => norm(a.code) !== 'AMI5');
+      actes.unshift({ code: target, nom: isCancerCtx ? 'Forfait perfusion longue cancer/immunodépr' : 'Forfait perfusion longue >1h', coefficient: 1, total: targetTarif });
+    }
+    // AMI4 → AMI9/AMI10 (sous-cotation perfusion courte)
+    if (hasCode('AMI4') && !hasCode('AMI9') && !hasCode('AMI10') && !hasCode('AMI14') && !hasCode('AMI15') && isPerfCourte) {
+      const target = isCancerCtx ? 'AMI10' : 'AMI9';
+      const targetTarif = isCancerCtx ? 31.50 : 28.35;
+      optimisations.push(`🚀 AMI4 (12,60€) → ${target} (${targetTarif}€) : perfusion courte sous surveillance. Gain +${(targetTarif - 12.60).toFixed(2)}€`);
+      actes = actes.filter(a => norm(a.code) !== 'AMI4');
+      actes.unshift({ code: target, nom: 'Perfusion courte sous surveillance continue', coefficient: 1, total: targetTarif });
+    }
+    // AMI14 → AMI15 si cancer
+    if (hasCode('AMI14') && !hasCode('AMI15') && isCancerCtx) {
+      optimisations.push('🚀 AMI14 → AMI15 (+3,15€) — patient cancéreux/immunodéprimé/mucoviscidose détecté');
+      actes = actes.map(a => norm(a.code) === 'AMI14'
+        ? { ...a, code: 'AMI15', total: 47.25, nom: 'Forfait perfusion longue cancer/immunodépr (1x/jour)' }
+        : a);
+    }
+    // 2ème passage = AMI4.1 (alerte si AMI14/15 déjà coté)
+    if (is2ePassage && !hasCode('AMI4_1') && (hasCode('AMI14') || hasCode('AMI15'))) {
+      optimisations.push('⚠️ CIR-9/2025 — 2e perfusion du jour : retirer AMI14/15 et coter AMI4.1 (6,30€)');
+    }
+
+    // ── SECTION 2 — Dépendance / BSI / AMX ───────────────────────────
+    // AIS → BSI si dépendance documentée
+    if (actes.some(a => norm(a.code).startsWith('AIS')) && !isBSI && (just.dependance || /d[eé]pendance|grabataire|alit[ée]/.test(texte))) {
+      const targetCode = just.dependance_lourde
+        ? 'BSC'
+        : (/mod[eé]r[eé]e|interm[eé]diaire/.test(texte) ? 'BSB' : 'BSA');
+      const targetTarif = { BSA: 13.00, BSB: 18.20, BSC: 28.70 }[targetCode];
+      const gain = targetTarif - 2.65;
+      optimisations.push(`🚀 AIS → ${targetCode} (${targetTarif}€) — dépendance documentée. Gain +${gain.toFixed(2)}€`);
+      actes = actes.filter(a => !norm(a.code).startsWith('AIS'));
+      actes.unshift({ code: targetCode, nom: `Bilan soins infirmiers — ${targetCode}`, coefficient: 1, total: targetTarif });
+    }
+    // AMI → AMX en contexte BSI
+    if (isBSI) {
+      let changed = 0;
+      actes = actes.map(a => {
+        const c = norm(a.code);
+        if (c.startsWith('AMI') && !c.startsWith('AMX')) {
+          changed++;
+          return { ...a, code: c.replace(/^AMI/, 'AMX') };
+        }
+        return a;
+      });
+      if (changed > 0) optimisations.push(`ℹ️ ${changed} AMI convertis en AMX (contexte BSI — article 11B)`);
+    }
+
+    // ── SECTION 3 — Pansements ───────────────────────────────────────
+    const isComplexPansement = actes.some(a => /pansement complexe|escarre|plaie|ulc[eè]re|n[eé]crose|chirurgical|post.op|pied diab[eé]tique/.test((a.nom || '').toLowerCase()))
+      || /pansement complexe|escarre|ulc[eè]re|n[eé]crose|plaie chirurgicale|post.op|pied diab[eé]tique/.test(texte);
+    if (isComplexPansement && !hasCode('MCI') && !isBSI) {
+      optimisations.push('🚀 MCI +5,00€ — soin complexe (pansement/palliatif)');
+      actes.push({ code: 'MCI', nom: 'Majoration coordination infirmière', coefficient: 1, total: 5.00 });
+    }
+    if (hasCode('AMI1') && isComplexPansement && !hasCode('AMI4')) {
+      optimisations.push('🚀 AMI1 → AMI4 (+9,45€) — critères de pansement complexe détectés');
+    }
+
+    // ── SECTION 4 — IFD / IFI / IK / MIE ─────────────────────────────
+    if (!hasCode('IFD') && !hasCode('IFI') && (texte.includes('domicile') || ctx.domicile || just.domicile)) {
+      const code = isBSI ? 'IFI' : 'IFD';
+      optimisations.push(`🚀 ${code} +2,75€ — soin à domicile`);
+      actes.push({ code, nom: isBSI ? 'Indemnité forfaitaire infirmière (BSI)' : 'Indemnité forfaitaire déplacement', coefficient: 1, total: 2.75 });
+    }
+    const distKm = parseFloat(data.distance_km) || 0;
+    if (!hasCode('IK') && distKm > 0) {
+      const ikTotal = Math.round(distKm * 2 * 0.35 * 100) / 100;
+      optimisations.push(`🚀 IK +${ikTotal}€ (${distKm} km aller-retour)`);
+      actes.push({ code: 'IK', nom: 'Indemnité kilométrique', coefficient: 1, base: ikTotal, total: ikTotal });
+    }
+    if (!hasCode('MIE') && (ctx.enfant || just.enfant || /enfant|b[eé]b[eé]|nourrisson|< ?7 ?ans|moins de 7/.test(texte))) {
+      optimisations.push('🚀 MIE +3,15€ — enfant < 7 ans');
+      actes.push({ code: 'MIE', nom: 'Majoration enfant < 7 ans', coefficient: 1, total: 3.15 });
+    }
+
+    // ── SECTION 5 — Post-op / surveillance (Avenant 6) ───────────────
+    if (isPostOp && !actes.some(a => /^AMI3\.9$|^AMX3\.9$/.test(norm(a.code)))) {
+      if (/surveillance clinique|accompagnement post.?op/.test(texte)) {
+        optimisations.push('💡 Surveillance post-op détectée — AMI 3.9 (12,29€) applicable');
+      }
+    }
+
+    return { ...data, actes, optimisations };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // STAGE 7 — Recalcul Officiel (port Recalcul_NGAP_Officiel.js)
+  // ═════════════════════════════════════════════════════════════════════
+  // Délègue au moteur déclaratif `this.engine.compute()` puis fusionne le
+  // résultat avec les données du pipeline (parts AMO/AMC, audit, etc.)
+  _stage7_recalcul(data) {
+    const codesInput = (data.actes || []).map(a => ({ code: a.code || 'AMI1' }));
+    const result = this.engine.compute({
+      codes:           codesInput,
+      date_soin:       data.date_soin || '',
+      heure_soin:      data.heure_soin || '',
+      historique_jour: data.historique || [],
+      mode:            'permissif',
+      zone:            data.zone || 'metropole',
+      distance_km:     parseFloat(data.distance_km) || 0,
+    });
+
+    // Recomposer parts AMO/AMC sur la base du nouveau total
+    const taux = parseFloat(data.taux_amo) || 0.6;
+    const total = result.total;
+    const partAMO = Math.round(total * taux * 100) / 100;
+    const oldTotal = parseFloat(data.total) || 1;
+    const amcRatio = parseFloat(data.amc_amount) / oldTotal;
+    const partAMC = isFinite(amcRatio) && amcRatio > 0 ? Math.round(total * amcRatio * 100) / 100 : 0;
+    const partPatient = Math.round((total - partAMO - partAMC) * 100) / 100;
+
+    const audit = {
+      version:                'NGAP_2026.4',
+      validated:              true,
+      engine:                 'NGAP_PIPELINE_LOCAL_V1',
+      ruleset_version:        result.audit?.version_referentiel,
+      rules_applied:          result.audit?.regles_appliquees || [],
+      ik_blocked:             false,
+      distance_km_used:       parseFloat(data.distance_km) || 0,
+      distance_km_source:     (parseFloat(data.distance_km) || 0) > 0 ? 'NLP_EXTRAIT' : 'NON_DISPONIBLE',
+      actes_count:            (result.actes_finaux || []).length,
+      circulaire_cir9_2025:   { applied: true, rule: 'AMI14/15 1x/jour max, 2e perfusion = AMI4.1' },
+      ai_source:              data._ai_source || 'unknown',
+      timestamp:              new Date().toISOString(),
+    };
+
+    return {
+      ...data,
+      actes: (result.actes_finaux || []).map(a => ({
+        code:        a.code,
+        nom:         a.label,
+        coefficient: a.coefficient,
+        total:       a.tarif_final,
+      })),
+      total,
+      part_amo:     partAMO,
+      part_amc:     partAMC,
+      part_patient: partPatient,
+      amo_amount:   partAMO,
+      amc_amount:   partAMC,
+      alerts:       [...(data.alerts || []), ...(result.alerts || [])],
+      warnings_strict: result.warnings_strict || [],
+      audit,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // 🎯 ENTRY POINT — exécute les 7 étapes dans l'ordre du workflow N8N
+  // ═════════════════════════════════════════════════════════════════════
+  cotateFromText(input) {
+    const stage1 = this._stage1_nlp(input);                  // NLP Médical
+    const stage2 = this._stage2_aiOutput(stage1);            // AI Output local (substitut Grok)
+    const stage3 = this._stage3_parser(stage2, input);       // Parser résultat IA
+    const stage4 = this._stage4_validateur(stage3, 'V1');    // Validateur V1
+    const stage5 = this._stage5_optimisateur(stage4);        // Optimisateur €
+    const stage6 = this._stage4_validateur(stage5, 'V2');    // Validateur V2 (mêmes règles)
+    const stage7 = this._stage7_recalcul(stage6);            // Recalcul Officiel (moteur déclaratif)
+    return stage7;
+  }
+}
+
 // Export pour Node.js (worker, n8n)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = NGAPEngine;
+  module.exports        = NGAPEngine;
+  module.exports.NGAPEngine   = NGAPEngine;
+  module.exports.NGAPPipeline = NGAPPipeline;
+}
+// Export navigateur (charge via <script src=…> puis window.NGAPEngine)
+if (typeof window !== 'undefined') {
+  window.NGAPEngine   = NGAPEngine;
+  window.NGAPPipeline = NGAPPipeline;
 }
