@@ -2747,9 +2747,241 @@ async function deletePatient(id, name) {
   // Supprimer les notes associées
   const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
   for (const n of notes) await _idbDelete(NOTES_STORE, n.id);
+
+  // v9.1 — Cascade silencieuse sur TOUS les stores liés au patient.
+  // Sans ce nettoyage, la suppression d'un patient laissait derrière elle
+  // des données fantômes dans les autres modules (compteurs gonflés,
+  // ordonnances orphelines, etc.). Chaque cascade est protégée par try/catch
+  // et ne bloque pas la suppression du patient en cas d'erreur.
+  // Lookup du nom complet AVANT les cascades pour les modules qui n'ont
+  // pas de clé patient_id (cas des ordonnances localStorage).
+  await Promise.allSettled([
+    _cascadeDeleteConsentementsForPatient(id),
+    _cascadeDeleteBSIForPatient(id),
+    _cascadeDeleteCRPassageForPatient(id),
+    _cascadeDeletePilulierForPatient(id),
+    _cascadeDeleteConstantesForPatient(id),
+    _cascadeDeleteOrdonnancesForPatient(id, name),
+  ]);
+
   await loadPatients();
   _syncDeletePatient(id);
   showToastSafe('🗑️ Patient supprimé.');
+}
+
+/* v9.1 — Suppression cascade silencieuse des consentements d'un patient.
+   Appelée par deletePatient. Pas de confirm/toast, juste delete + tombstone
+   (pour empêcher la résurrection cross-device via consentSyncPull). */
+async function _cascadeDeleteConsentementsForPatient(patientId) {
+  try {
+    const fnGet = (typeof _consentGetAllRaw === 'function')
+      ? _consentGetAllRaw
+      : (typeof window._consentGetAllRaw === 'function' ? window._consentGetAllRaw : null);
+    const fnDel = (typeof _consentDelete === 'function')
+      ? _consentDelete
+      : (typeof window._consentDelete === 'function' ? window._consentDelete : null);
+    const fnTomb = (typeof _consentTombstoneAdd === 'function')
+      ? _consentTombstoneAdd
+      : (typeof window._consentTombstoneAdd === 'function' ? window._consentTombstoneAdd : null);
+
+    if (!fnGet || !fnDel) return; // module consentements pas chargé → rien à faire
+
+    const all = await fnGet();
+    const ofPatient = (all || []).filter(c => String(c.patient_id) === String(patientId));
+    if (!ofPatient.length) return;
+
+    for (const c of ofPatient) {
+      try { await fnDel(c.id); } catch (e) { console.warn('[cascade consent] del KO', c.id, e?.message); }
+      if (fnTomb && c.payload_hash) {
+        try {
+          await fnTomb({
+            payload_hash:    c.payload_hash,
+            patient_id:      c.patient_id,
+            consent_type:    c.type,
+            consent_version: c.version || 1,
+          });
+        } catch (e) { console.warn('[cascade consent] tombstone KO', c.id, e?.message); }
+      }
+    }
+    console.info('[AMI] Cascade consentements : %d supprimé(s) pour patient %s', ofPatient.length, patientId);
+  } catch (e) {
+    console.warn('[cascade consent] fatal', e?.message);
+  }
+}
+
+/* v9.1 — Cascade BSI : utilise _bsiGetAll(patientId) + _bsiDelete(id) exposés
+   par bsi.js. Index 'patient_id' déjà créé sur ami_bsi → lookup direct. */
+async function _cascadeDeleteBSIForPatient(patientId) {
+  try {
+    const fnGet = (typeof window._bsiGetAll === 'function') ? window._bsiGetAll : null;
+    const fnDel = (typeof window._bsiDelete === 'function') ? window._bsiDelete : null;
+    if (!fnGet || !fnDel) return; // bsi.js pas chargé
+
+    const all = await fnGet(patientId);
+    if (!all || !all.length) return;
+    for (const b of all) {
+      try { await fnDel(b.id); } catch (e) { console.warn('[cascade bsi] del KO', b.id, e?.message); }
+    }
+    console.info('[AMI] Cascade BSI : %d évaluation(s) supprimée(s) pour patient %s', all.length, patientId);
+  } catch (e) {
+    console.warn('[cascade bsi] fatal', e?.message);
+  }
+}
+
+/* v9.1 — Cascade CR-passage : pas de helpers exposés sur window par cr-passage.js.
+   On ouvre directement l'IDB ami_cr / store comptes_rendus, on filtre via
+   l'index patient_id et on supprime. Le pattern est déjà utilisé ailleurs
+   dans patients.js (ligne ~2200) pour la suppression d'un CR isolé. */
+async function _cascadeDeleteCRPassageForPatient(patientId) {
+  try {
+    if (typeof indexedDB === 'undefined') return;
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('ami_cr', 1);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!db.objectStoreNames.contains('comptes_rendus')) { db.close(); return; }
+
+    const ids = await new Promise((resolve, reject) => {
+      const tx  = db.transaction('comptes_rendus', 'readonly');
+      const idx = tx.objectStore('comptes_rendus').index('patient_id');
+      const req = idx.getAllKeys(String(patientId));
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!ids.length) { db.close(); return; }
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('comptes_rendus', 'readwrite');
+      const st = tx.objectStore('comptes_rendus');
+      for (const k of ids) st.delete(k);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = e => reject(e.target.error);
+    });
+    db.close();
+    console.info('[AMI] Cascade CR-passage : %d compte-rendu(s) supprimé(s) pour patient %s', ids.length, patientId);
+  } catch (e) {
+    console.warn('[cascade cr] fatal', e?.message);
+  }
+}
+
+/* v9.1 — Cascade pilulier : la DB est isolée par userId (ami_piluliers_<uid>).
+   On reproduit le même nommage que pilulier.js (_pilulierDbName). */
+async function _cascadeDeletePilulierForPatient(patientId) {
+  try {
+    if (typeof indexedDB === 'undefined') return;
+    const uid = (typeof S !== 'undefined' && S?.user)
+      ? (S.user.id || S.user.email || 'local')
+      : (window.S?.user?.id || window.S?.user?.email || 'local');
+    const dbName = 'ami_piluliers_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(dbName, 1);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!db.objectStoreNames.contains('piluliers')) { db.close(); return; }
+
+    const ids = await new Promise((resolve, reject) => {
+      const tx  = db.transaction('piluliers', 'readonly');
+      const idx = tx.objectStore('piluliers').index('patient_id');
+      const req = idx.getAllKeys(String(patientId));
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!ids.length) { db.close(); return; }
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('piluliers', 'readwrite');
+      const st = tx.objectStore('piluliers');
+      for (const k of ids) st.delete(k);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = e => reject(e.target.error);
+    });
+    db.close();
+    console.info('[AMI] Cascade pilulier : %d entrée(s) supprimée(s) pour patient %s', ids.length, patientId);
+  } catch (e) {
+    console.warn('[cascade pilulier] fatal', e?.message);
+  }
+}
+
+/* v9.1 — Cascade constantes : DB isolée par userId (ami_constantes_<uid>).
+   Même pattern que pilulier. */
+async function _cascadeDeleteConstantesForPatient(patientId) {
+  try {
+    if (typeof indexedDB === 'undefined') return;
+    const uid = (typeof S !== 'undefined' && S?.user)
+      ? (S.user.id || S.user.email || 'local')
+      : (window.S?.user?.id || window.S?.user?.email || 'local');
+    const dbName = 'ami_constantes_' + String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(dbName, 1);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!db.objectStoreNames.contains('constantes')) { db.close(); return; }
+
+    const ids = await new Promise((resolve, reject) => {
+      const tx  = db.transaction('constantes', 'readonly');
+      const idx = tx.objectStore('constantes').index('patient_id');
+      const req = idx.getAllKeys(String(patientId));
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!ids.length) { db.close(); return; }
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('constantes', 'readwrite');
+      const st = tx.objectStore('constantes');
+      for (const k of ids) st.delete(k);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = e => reject(e.target.error);
+    });
+    db.close();
+    console.info('[AMI] Cascade constantes : %d mesure(s) supprimée(s) pour patient %s', ids.length, patientId);
+  } catch (e) {
+    console.warn('[cascade constantes] fatal', e?.message);
+  }
+}
+
+/* v9.1 — Cascade ordonnances (localStorage 'ami_ordonnances').
+   ⚠️ Particularité : les entries n'ont pas de patient_id rempli (toujours null
+   dans le code de _saveOrdos, cf. infirmiere-tools.js:847). Le lien avec le
+   patient se fait par le champ texte 'patient' (nom complet). On match donc
+   par nom normalisé (case-insensitive, espaces normalisés) pour ne supprimer
+   QUE les ordonnances explicitement attachées au patient supprimé. Les
+   ordonnances "manuelles" sans correspondance avec un patient du carnet ne
+   sont pas touchées. */
+async function _cascadeDeleteOrdonnancesForPatient(patientId, patientName) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const raw = localStorage.getItem('ami_ordonnances');
+    if (!raw) return;
+    let ordos;
+    try { ordos = JSON.parse(raw); } catch { return; }
+    if (!Array.isArray(ordos) || !ordos.length) return;
+
+    const _norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const targetById   = String(patientId);
+    const targetByName = _norm(patientName);
+
+    const before = ordos.length;
+    const filtered = ordos.filter(o => {
+      // Match prioritaire par patient_id si jamais il a été rempli
+      if (o._patient_id && String(o._patient_id) === targetById) return false;
+      // Sinon match par nom normalisé
+      if (targetByName && _norm(o.patient) === targetByName) return false;
+      return true;
+    });
+    const removed = before - filtered.length;
+    if (!removed) return;
+
+    localStorage.setItem('ami_ordonnances', JSON.stringify(filtered));
+    console.info('[AMI] Cascade ordonnances : %d ordonnance(s) supprimée(s) pour patient %s', removed, patientId);
+  } catch (e) {
+    console.warn('[cascade ordo] fatal', e?.message);
+  }
 }
 
 /* Ajouter une note de soin */
@@ -3629,8 +3861,12 @@ function showToastSafe(msg) {
 let _selectedPatientIds = new Set();
 
 /* Ouvre la modale de sélection des patients pour l'import.
-   @param suggestedTarget — 'tur' | 'live' | undefined — détermine quel bouton
-   est mis en avant. 'live' = Pilotage journée. 'tur' = Tournée IA (défaut). */
+   @param suggestedTarget — 'tur' | 'live' | undefined
+     ⚠️ v9.1 : le bouton "📍 Pilotage journée" a été retiré de la modale à
+     la demande du produit. Ce paramètre est conservé pour compat ascendante
+     (appel `openPatientImportPicker('live')` depuis tournee.js → "Depuis le
+     carnet" du Pilotage journée) mais n'a plus aucun effet visuel : la modale
+     n'offre plus que l'import vers la Tournée IA. */
 async function openPatientImportPicker(suggestedTarget) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const patients = await Promise.all(rows.map(async r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...((await _dec(r._data))||{}) })));
@@ -3651,13 +3887,9 @@ async function openPatientImportPicker(suggestedTarget) {
 
   _selectedPatientIds = new Set();
 
-  // ⚡ FIX Bug 1 — Bouton "Pilotage journée" :
-  //   Le pipeline _importPickerPatients(target) accepte déjà target='live'
-  //   (ligne ~3703 : btn-picker-import-live) mais le bouton n'était pas
-  //   rendu dans la modale. On l'ajoute systématiquement à côté de "Tournée IA".
-  //   Mise en avant (bouton primaire) du target suggéré pour que l'IDE qui
-  //   vient du pilotage atterrisse sur le bon CTA d'emblée.
-  const _suggestLive = (suggestedTarget === 'live');
+  // v9.1 — Bouton "📍 Pilotage journée" retiré. Seul l'import vers Tournée IA
+  // est proposé. _hasTurAccess gardé : si l'utilisateur n'a pas l'accès à la
+  // Tournée IA, on affiche un message au lieu d'un bouton mort.
   const _hasTurAccess = (typeof SUB === 'undefined' || SUB.hasAccess('tournee_ia_vrptw'));
 
   modal.innerHTML = `
@@ -3666,7 +3898,7 @@ async function openPatientImportPicker(suggestedTarget) {
         <div style="font-family:var(--fs);font-size:18px;color:var(--t,#e2e8f0)">📋 Sélectionner des patients</div>
         <button onclick="document.getElementById('patient-import-picker-modal').style.display='none'" style="background:none;border:none;color:var(--m);font-size:20px;cursor:pointer">✕</button>
       </div>
-      <p style="font-size:12px;color:var(--m);margin:0">Sélectionnez les patients à importer ${_suggestLive ? 'dans le <strong>Pilotage journée</strong>' : 'dans la <strong>Tournée IA</strong>'}. Leur adresse sera utilisée pour le routage.</p>
+      <p style="font-size:12px;color:var(--m);margin:0">Sélectionnez les patients à importer dans la <strong>Tournée IA</strong>. Leur adresse sera utilisée pour le routage.</p>
       <input type="text" id="picker-search" placeholder="🔍 Rechercher..." oninput="_filterPickerList()" style="padding:8px 12px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:13px;width:100%;box-sizing:border-box">
       <div id="picker-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;min-height:200px">
         ${patients.map(p => `
@@ -3685,10 +3917,9 @@ async function openPatientImportPicker(suggestedTarget) {
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <span id="picker-count" style="font-size:12px;color:var(--m);font-family:var(--fm);flex:1">0 patient(s) sélectionné(s)</span>
         <button onclick="_selectAllPickerPatients()" class="btn bs bsm">☑️ Tout sélectionner</button>
-        <button onclick="_importPickerPatients('live')" class="${_suggestLive ? 'btn bp' : 'btn bs'} bsm" id="btn-picker-import-live" title="Importer dans le Pilotage journée">📍 Pilotage journée</button>
         ${_hasTurAccess
-          ? `<button onclick="_importPickerPatients('tur')" class="${_suggestLive ? 'btn bs' : 'btn bp'} bsm" id="btn-picker-import-tur" title="Importer dans la Tournée optimisée par IA">📥 Tournée IA</button>`
-          : ''}
+          ? `<button onclick="_importPickerPatients('tur')" class="btn bp bsm" id="btn-picker-import-tur" title="Importer dans la Tournée optimisée par IA">📥 Tournée IA</button>`
+          : `<span style="font-size:11px;color:var(--d)">Tournée IA non incluse dans votre forfait</span>`}
       </div>
     </div>`;
 

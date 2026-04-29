@@ -4829,11 +4829,14 @@ function renderLivePatientList() {
 
   if (!displayPatients.length) {
     el.innerHTML = `<div class="card">
-      <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong>, <strong>Tournée IA</strong>, ou importez directement depuis votre <strong>Carnet patients</strong>.</div>
+      <div class="ai wa">⚠️ Aucun patient importé. Allez dans <strong>Import calendrier</strong> ou <strong>Tournée IA</strong>.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn bp bsm" onclick="navTo('imp',null)" title="Importer un fichier ICS / CSV"><span>📂</span> Import calendrier</button>
-        <button class="btn bv bsm" onclick="if(typeof openPatientImportPicker==='function'){openPatientImportPicker('live')}else{showToast&&showToast('warning','Carnet indisponible','Module patients non chargé.')}" title="Importer depuis le carnet patient (vers le pilotage)"><span>📚</span> Depuis le carnet</button>
         <button class="btn bs bsm" onclick="navTo('tur',null)" title="Aller à la Tournée IA"><span>🗺️</span> Tournée IA</button>
+        <!-- v9.1 — Bouton "📚 Depuis le carnet" retiré : il appelait
+             openPatientImportPicker('live') mais la modale ne propose plus
+             que l'import vers Tournée IA depuis la suppression du bouton
+             "📍 Pilotage journée" → flow incohérent. -->
       </div>
     </div>`;
     return;
