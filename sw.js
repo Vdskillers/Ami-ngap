@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.11.1-ngap-paths-fix
+/* sw.js — AMI NGAP Service Worker v5.12.0-paths-fix
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -10,131 +10,130 @@
    ✅ v5.10.4 — Auto-apprentissage + 1 annonce/patient + heatmap close
    ✅ v5.10.5 — Polling défensif + rattrapage historique + heatmap résumé
    ✅ v5.10.6 — Mode GPS plein écran : auto-clôture du dernier patient
-              • Désactivation du bouton "Terminer" pendant le flow
-                (anti double-clic → anti double signature)
-              • Garde anti-réentrance dans markUberDone et _uberAfterDoneFlow
-              • Suppression du délai 600ms inutile avant l'auto-clôture
-              • terminerTourneeAvecBilan exclut désormais les patients dont
-                _afterDoneFlowDone est vrai (pas de re-cotation parasite)
-              • Bilan de fin de tournée s'affiche immédiatement après le
-                dernier patient, sans intervention manuelle
    ✅ v5.10.7-incident — Module Plan d'incident RGPD/CNIL <72h finalisé
-              • Inclusion incident.js dans index.html
-              • Onglet "🚨 Incidents" dans le panneau admin (filtres + stats)
-              • 3 modales DOM ajoutées : signalement, notif CNIL, résolution
-              • Carte d'entrée "Signaler un incident" dans view-contact (nurse)
-              • Génération automatique du pré-remplissage CNIL (téléservice)
-              • Export PDF du rapport d'incident (window.print A4 stylé)
-              • Notification art.34 RGPD aux personnes concernées (template
-                courrier + impression + marquage automatique)
-              • Badge dynamique du nb d'incidents ouverts dans la nav admin
    ✅ v5.11.0 — Précache COMPLET de tous les modules JS (~50 fichiers)
-              • Avant : ~30 modules (patients.js, incident.js, cabinet.js…)
-                cachés en cache-first au 1er fetch online → routes peu
-                visitées cassées si offline avant 1er passage online
-              • Maintenant : tous les modules sont cachés à l'install
-   ✅ v5.11.1 — Fix chemins NGAP engine + diagnostic install
-              • ngap_engine.js et ngap_referentiel_2026.json sont à la
-                RACINE du projet (pas dans ./ngap-engine/). Le faux chemin
-                ./ngap-engine/* échouait silencieusement → cotation offline
-                cassée tant que ces fichiers n'étaient pas chargés online
-              • Le .catch() de cache.addAll() bouffait l'erreur sans la
-                tracer — maintenant chaque fichier est tenté individuel-
-                lement et les échecs sont listés explicitement dans la
-                console (utile pour les futures régressions de chemin)
+   ✅ v5.12.0 — 🚨 FIX MAJEUR : chemins de précache CASSÉS depuis l'origine
+              ────────────────────────────────────────────────────────────
+              PROBLÈME (audit live de 62 chemins → 58 en 404) :
+                Le sw.js listait tous les modules avec préfixe './X.js' (racine)
+                alors que GitHub Pages les sert depuis 'js/X.js' et 'css/X.css'
+                (cf <script src="js/auth.js?v=3.8"> dans index.html).
+                Conséquence : 58/62 fichiers échouaient au précache (404),
+                et le .catch() global de cache.addAll() masquait l'erreur.
+                Effet réel : AUCUN module JS/CSS n'était caché → l'app ne
+                fonctionnait PAS en mode offline. Toutes les routes vers
+                cotation, tournée, carnet, etc. cassaient hors-ligne.
+
+              SECONDE FAILLE :
+                caches.match(req) sans option matche l'URL EXACTE, query
+                comprise. Or les <script src> utilisent '?v=3.8'/'?v=4.1'.
+                Donc même les rares fichiers cachés (index.html, manifest)
+                ne matchaient pas les requêtes runtime. Maintenant tous les
+                match() utilisent { ignoreSearch: true }.
+
+              CORRECTIFS APPLIQUÉS v5.12.0 :
+                • STATIC_ASSETS : chemins corrects (js/X.js, css/X.css,
+                  ngap-engine/X)
+                • cache.addAll() → Promise.all(STATIC_ASSETS.map(cache.add))
+                  pour avoir un diagnostic individuel et pas un échec global
+                • caches.match(req, { ignoreSearch: true }) sur cacheFirst
+                  ET networkFirst pour absorber les query strings de version
+                • CACHE_VERSION bump → invalide tous les caches existants
+                  (les 58 fichiers absents seront re-précachés au prochain
+                  install)
 */
 
-const CACHE_VERSION = 'ami-v5.11.1-ngap-paths-fix';
+const CACHE_VERSION = 'ami-v5.12.0-paths-fix';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
-/* ⚠️ Les fichiers sont à la racine du projet (pas dans /css/ ou /js/).
-   Les anciens chemins ./css/... et ./js/... échouaient silencieusement
-   au précache → rien n'était caché → au prochain offline l'app ne se
-   chargeait pas et Chrome affichait ERR_INTERNET_DISCONNECTED.
+/* ⚠️ STRUCTURE GITHUB PAGES : les modules sont servis avec préfixes :
+     /Ami-ngap/js/*.js
+     /Ami-ngap/css/*.css
+     /Ami-ngap/ngap-engine/ngap_engine.js
+     /Ami-ngap/ngap-engine/ngap_referentiel_2026.json
+   La racine /Ami-ngap/ N'A PAS de fichiers .js / .css à plat.
 
-   ⚡ v5.11.0 — PRÉCACHE COMPLET : tous les modules JS de l'app sont
-   désormais pré-cachés à l'install, garantissant une disponibilité
-   offline 100% dès le 1er chargement. Avant, ~30 modules (patients.js,
-   incident.js, cabinet.js, signature.js…) étaient cachés en cache-first
-   au 1er fetch online → routes peu visitées cassées si offline avant
-   d'avoir été visitées au moins une fois. */
+   Liste vérifiée fichier par fichier en live (curl HEAD) au moment du
+   bump v5.12.0. Toute régression de chemin sera désormais visible dans
+   le log d'install : "[SW] Précache partiel — N/T fichier(s) en échec".
+*/
 const STATIC_ASSETS = [
   // ── Racine / shell ────────────────────────────────────────────────
   './',
   './index.html',
   './manifest.json',
   // ── Styles ────────────────────────────────────────────────────────
-  './style.css',
-  './mobile-premium.css',
-  './desktop-premium.css',
-  './notes.css',
+  'css/style.css',
+  'css/mobile-premium.css',
+  'css/desktop-premium.css',
+  'css/notes.css',
   // ── Modules core ──────────────────────────────────────────────────
-  './utils.js',
-  './auth.js',
-  './ui.js',
-  './navigation.js',
-  './security.js',
-  './offline-auth.js',
-  './offline-queue.js',
-  './pwa.js',
-  './sw-version-check.js',
+  'js/utils.js',
+  'js/auth.js',
+  'js/ui.js',
+  'js/navigation.js',
+  'js/security.js',
+  'js/offline-auth.js',
+  'js/offline-queue.js',
+  'js/pwa.js',
+  'js/sw-version-check.js',
   // ── Données / patients ────────────────────────────────────────────
-  './patients.js',
-  './patient-form.js',
-  './notes.js',
+  'js/patients.js',
+  'js/patient-form.js',
+  'js/notes.js',
   // ── Cotation / NGAP ───────────────────────────────────────────────
-  './cotation.js',
-  './ngap-analyzer.js',
-  './ngap-correction-hints.js',
-  './ngap-ref-explorer.js',
-  './ngap-suggest.js',
-  './ngap-update-manager.js',
-  './ngap_engine.js',                                  // ⚙️ moteur NGAP local (cotation offline) — racine du projet
-  './ngap_referentiel_2026.json',                      // 📚 référentiel NGAP — requis par le moteur offline (racine)
+  'js/cotation.js',
+  'js/ngap-analyzer.js',
+  'js/ngap-correction-hints.js',
+  'js/ngap-ref-explorer.js',
+  'js/ngap-suggest.js',
+  'js/ngap-update-manager.js',
+  'ngap-engine/ngap_engine.js',                        // ⚙️ moteur NGAP local (cotation offline)
+  'ngap-engine/ngap_referentiel_2026.json',            // 📚 référentiel NGAP — requis par le moteur
   // ── Tournée / planification ───────────────────────────────────────
-  './tournee.js',
-  './uber.js',
-  './ai-tournee.js',
-  './ai-smart-tour.js',
-  './ai-smart-ui.js',
-  './ai-assistant.js',
-  './ai-layer.js',
-  './map.js',
-  './geocode.js',
+  'js/tournee.js',
+  'js/uber.js',
+  'js/ai-tournee.js',
+  'js/ai-smart-tour.js',
+  'js/ai-smart-ui.js',
+  'js/ai-assistant.js',
+  'js/ai-layer.js',
+  'js/map.js',
+  'js/geocode.js',
   // ── Cabinet / multi-IDE ───────────────────────────────────────────
-  './cabinet.js',
-  './consentements.js',
-  './signature.js',
-  './infirmiere-tools.js',
+  'js/cabinet.js',
+  'js/consentements.js',
+  'js/signature.js',
+  'js/infirmiere-tools.js',
   // ── Soins cliniques ───────────────────────────────────────────────
-  './bsi.js',
-  './bsi-engine.js',
-  './pilulier.js',
-  './alertes-medicaments.js',
-  './constantes.js',
-  './transmissions.js',
-  './cr-passage.js',
-  './copilote.js',
+  'js/bsi.js',
+  'js/bsi-engine.js',
+  'js/pilulier.js',
+  'js/alertes-medicaments.js',
+  'js/constantes.js',
+  'js/transmissions.js',
+  'js/cr-passage.js',
+  'js/copilote.js',
   // ── Tableaux de bord / reporting ──────────────────────────────────
-  './dashboard.js',
-  './rapport.js',
-  './tresorerie.js',
+  'js/dashboard.js',
+  'js/rapport.js',
+  'js/tresorerie.js',
   // ── Admin / compliance / sécurité ─────────────────────────────────
-  './admin.js',
-  './admin-ngap.js',
-  './audit-cpam.js',
-  './compliance-engine.js',
-  './incident.js',                                     // 🚨 module Plan d'incident RGPD/CNIL — critique
-  './notif-messages.js',
+  'js/admin.js',
+  'js/admin-ngap.js',
+  'js/audit-cpam.js',
+  'js/compliance-engine.js',
+  'js/incident.js',                                    // 🚨 module Plan d'incident RGPD/CNIL
+  'js/notif-messages.js',
   // ── Profil / abonnement / contact / onboarding ────────────────────
-  './profil.js',
-  './subscription.js',
-  './contact.js',
-  './onboarding.js',
-  './extras.js',
+  'js/profil.js',
+  'js/subscription.js',
+  'js/contact.js',
+  'js/onboarding.js',
+  'js/extras.js',
   // ── Voix ──────────────────────────────────────────────────────────
-  './voice.js',
+  'js/voice.js',
   // ── CDN ───────────────────────────────────────────────────────────
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
@@ -144,17 +143,12 @@ self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(CACHE_STATIC)
       .then(function(cache) {
-        // ⚡ v5.11.1 — Précache résilient avec diagnostic.
-        //   Avant, cache.addAll() était utilisé : si UN SEUL fichier échouait
-        //   (mauvais chemin, 404, CORS), TOUS les autres étaient annulés
-        //   et le .catch global affichait juste un message générique.
-        //   C'est ce qui masquait les chemins ./ngap-engine/* cassés depuis
-        //   la v5.11.0 — la cotation offline ne marchait pas mais aucun log
-        //   ne pointait le vrai problème.
-        //
-        //   Maintenant chaque fichier est tenté individuellement, les échecs
-        //   sont listés explicitement, et le précache est partiel mais utile
-        //   plutôt que totalement vide.
+        // ⚡ Précache résilient avec diagnostic.
+        //   Avant, cache.addAll() plantait globalement si UN SEUL fichier
+        //   échouait → tout l'install était perdu. C'est ce qui masquait
+        //   les 58 chemins en 404 depuis la v5.11.0.
+        //   Maintenant chaque fichier est tenté individuellement et les
+        //   échecs sont listés explicitement.
         var failed = [];
         return Promise.all(STATIC_ASSETS.map(function(url) {
           return cache.add(url).catch(function(err) {
@@ -267,17 +261,18 @@ async function networkFirst(req, cacheName) {
     return fresh;
   } catch(err) {
     // Offline → fallback cache
-    var cached = await caches.match(req);
+    // ⚡ ignoreSearch : matche '?v=3.8' avec la version cachée sans query.
+    var cached = await caches.match(req, { ignoreSearch: true });
     if (cached) return cached;
     // ⚠️ CRITIQUE : pour toute navigation (PWA lancée hors-ligne,
     // URL avec hash #xxx, query params inattendus, etc.), on retombe
     // toujours sur l'index.html caché — sinon Chrome affiche sa page
     // dinosaure et l'utilisateur croit que l'app est cassée.
     if (req.mode === 'navigate') {
-      var fallback = await caches.match('./index.html')
-                  || await caches.match('./')
-                  || await caches.match('/Ami-ngap/index.html')
-                  || await caches.match('/Ami-ngap/');
+      var fallback = await caches.match('./index.html', { ignoreSearch: true })
+                  || await caches.match('./',           { ignoreSearch: true })
+                  || await caches.match('/Ami-ngap/index.html', { ignoreSearch: true })
+                  || await caches.match('/Ami-ngap/',           { ignoreSearch: true });
       if (fallback) return fallback;
 
       // ⚠️ FILET DE DERNIER RECOURS : si même l'index.html n'est pas en cache
@@ -302,7 +297,11 @@ async function networkFirst(req, cacheName) {
 }
 
 async function cacheFirst(req, cacheName) {
-  var cached = await caches.match(req);
+  // ⚡ ignoreSearch : matche les requêtes 'js/auth.js?v=3.8' avec la version
+  //   cachée 'js/auth.js' (sans query). C'est ce qui rend l'app vraiment
+  //   utilisable offline malgré les query strings de cache-busting des
+  //   <script src> et <link href>.
+  var cached = await caches.match(req, { ignoreSearch: true });
   if (cached) return cached;
   try {
     var fresh = await fetch(req);
