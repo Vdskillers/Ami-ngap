@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════
-   profil.js — AMI NGAP (v3.9 — signature IDE)
+   profil.js — AMI NGAP (v3.10 — signature IDE + 2FA)
    ────────────────────────────────────────────────
    Modale profil utilisateur
    - openPM() / closePM()
@@ -7,7 +7,74 @@
    - changePwd() — changement mot de passe
    - delAccount() — suppression compte RGPD
    - ✍️ Onglet signature électronique IDE (via signature.js)
+   - 🔐 Section 2FA (via security.js → renderMfaSection)
 ════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════════
+   🔐 Injection de la section MFA dans la modale profil.
+   Stratégie défensive : crée le container #p-mfa-section au 1er appel
+   et le réutilise (renderMfaSection écrase son innerHTML proprement).
+
+   Placement (ordre de priorité) :
+     1. Avant le bouton delAccount (pour cohérence : sécurité avant zone danger)
+     2. Avant la zone de changement de mot de passe
+     3. À la fin de la modale #pm (fallback)
+════════════════════════════════════════════════════════════════════════ */
+function _ensureMfaSectionInPM() {
+  // Skip si renderMfaSection n'est pas chargé (security.js absent ou ancien)
+  if (typeof renderMfaSection !== 'function') return null;
+
+  let container = document.getElementById('p-mfa-section');
+  if (container) return container;
+
+  const pm = document.getElementById('pm');
+  if (!pm) return null;
+
+  container = document.createElement('div');
+  container.id = 'p-mfa-section';
+  // Le styling de la card est géré par renderMfaSection lui-même.
+  // Un simple wrapper avec marges aérées pour s'intégrer à la modale.
+  container.style.cssText = 'margin:14px 0;padding:0';
+
+  // Ajouter un titre court pour cohérence avec les autres sections du profil
+  const heading = document.createElement('h3');
+  heading.textContent = 'Sécurité du compte';
+  heading.style.cssText = 'font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px;font-weight:600';
+
+  // Stratégie de placement
+  let inserted = false;
+
+  // 1. Avant le bouton delAccount
+  const delBtn = pm.querySelector('button[onclick*="delAccount"]');
+  if (delBtn && delBtn.parentElement) {
+    delBtn.parentElement.insertBefore(heading, delBtn);
+    delBtn.parentElement.insertBefore(container, delBtn);
+    inserted = true;
+  }
+
+  // 2. Avant le bloc password (si pas déjà inséré)
+  if (!inserted) {
+    const pOld = document.getElementById('p-old');
+    if (pOld) {
+      // Remonter au parent direct de l'input (généralement la zone password)
+      let target = pOld.closest('.section, .pwd-section, fieldset, [data-section="password"]') || pOld.parentElement;
+      if (target && target.parentElement) {
+        target.parentElement.insertBefore(heading, target);
+        target.parentElement.insertBefore(container, target);
+        inserted = true;
+      }
+    }
+  }
+
+  // 3. Fallback : fin de la modale
+  if (!inserted) {
+    pm.appendChild(heading);
+    pm.appendChild(container);
+  }
+
+  return container;
+}
+
 /* PROFIL */
 async function openPM(){
   $('pm').classList.add('open');hideM('pe','po','ppe','ppo');
@@ -16,6 +83,11 @@ async function openPM(){
   try{const d=await wpost('/webhook/profil-get',{});if(d.ok&&d.profil){const p=d.profil;$('p-fn').value=p.prenom||'';$('p-ln').value=p.nom||'';$('p-ad').value=p.adeli||'';$('p-rp').value=p.rpps||'';$('p-st').value=p.structure||'';$('p-adr').value=p.adresse||'';$('p-tel').value=p.tel||'';}}catch{}
   // ✍️ Signature électronique IDE — rafraîchir l'UI (preview + état boutons)
   try{if(typeof refreshIDESignatureUI==='function')refreshIDESignatureUI();}catch{}
+  // 🔐 Section 2FA — injection automatique (défensive, no-op si security.js absent)
+  try{
+    const c = _ensureMfaSectionInPM();
+    if (c) renderMfaSection('p-mfa-section');
+  }catch(e){console.warn('[AMI] MFA section injection KO:', e.message);}
 }
 function closePM(){$('pm').classList.remove('open');}
 async function savePM(){

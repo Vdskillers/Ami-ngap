@@ -285,7 +285,20 @@ async function login(){
   if(!em||!pw){showM('le','Email et mot de passe requis.');return;}
   ld('btn-l',true);
   try{
-    const d=await wpost('/webhook/auth-login',{email:em,password:pw});
+    /* ⚡ Trusted device : si on a un device_token stocké pour cet email précis,
+       l'envoyer au worker → skip du challenge MFA si toujours valide (TTL 30j sliding).
+       On lie le token à l'email pour éviter qu'un changement d'utilisateur sur le
+       même appareil hérite du trust de l'utilisateur précédent. */
+    let _deviceToken = null;
+    try {
+      const stored = localStorage.getItem('ami_device_token');
+      const storedFor = localStorage.getItem('ami_device_token_email');
+      if (stored && storedFor === em) _deviceToken = stored;
+    } catch (_) {}
+
+    const d=await wpost('/webhook/auth-login', _deviceToken
+      ? { email:em, password:pw, device_token:_deviceToken }
+      : { email:em, password:pw });
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
 
     /* ⚡ MFA TOTP — admin nécessite second facteur.
@@ -970,9 +983,16 @@ function _showMfaChallengeModal(d) {
       try {
         const r = await wpost('/webhook/auth-mfa-verify', payload);
         if (!r.ok) throw new Error(r.error || 'Code incorrect');
-        // ⚡ Si trusted device confirmé → stocker token en localStorage
+        // ⚡ Si trusted device confirmé → stocker token + email en localStorage.
+        //    L'email permet à login() de ne renvoyer le token que pour le bon user
+        //    (évite qu'un changement d'utilisateur hérite du trust de l'ancien).
         if (r.device_token) {
-          try { localStorage.setItem('ami_device_token', r.device_token); } catch {}
+          try {
+            localStorage.setItem('ami_device_token', r.device_token);
+            if (r.user && r.user.email) {
+              localStorage.setItem('ami_device_token_email', String(r.user.email).toLowerCase().trim());
+            }
+          } catch {}
         }
         modal.remove();
         await _afterMfaSuccess(r);

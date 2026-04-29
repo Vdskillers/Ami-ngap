@@ -639,3 +639,427 @@ async function initSecurity(token) {
   auditLocal('LOGIN', 'Connexion sécurisée');
   log('Module sécurité v2.0 initialisé ✅ — AES-256-GCM · PBKDF2 100k · Fraude surveillée (seuil ' + FRAUD_ALERT_THRESHOLD + ')');
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔐 GESTION MFA — UI dans le profil sécurité
+   ────────────────────────────────────────────────────────────────────────
+   Fonctions exposées au reste de l'app (appelables depuis profil.js,
+   security.js, ou via window.openMfaSettings()) :
+     • openMfaSettings()         → ouvre la modale plein écran 2FA
+     • renderMfaSection(target)  → injecte la section dans un conteneur
+
+   Helpers internes :
+     • _fetchMfaStatus / _fetchMfaDevices
+     • _mfaEnableNurse / _mfaDisableNurse
+     • _mfaRegenerateRecovery
+     • _mfaRevokeAllDevices
+
+   Toutes les routes côté worker sont sous /webhook/auth-mfa-*.
+═════════════════════════════════════════════════════════════════════════ */
+
+async function _fetchMfaStatus() {
+  if (typeof wpost !== 'function') return null;
+  try {
+    const r = await wpost('/webhook/auth-mfa-status', {});
+    return r && r.ok ? r : null;
+  } catch (e) { return null; }
+}
+
+async function _fetchMfaDevices() {
+  if (typeof wpost !== 'function') return [];
+  try {
+    const r = await wpost('/webhook/auth-mfa-devices-list', {});
+    return r && r.ok && Array.isArray(r.devices) ? r.devices : [];
+  } catch (e) { return []; }
+}
+
+/* Workflow opt-in nurse : appelle /auth-mfa-enable, puis ouvre la modale
+   d'enrôlement de auth.js pour saisir le code de confirmation. */
+async function _mfaEnableNurse() {
+  if (typeof wpost !== 'function') return false;
+  try {
+    const r = await wpost('/webhook/auth-mfa-enable', {});
+    if (!r || !r.ok) {
+      alert(r?.error || 'Activation impossible.');
+      return false;
+    }
+    if (typeof _showMfaSetupModal !== 'function') {
+      alert('Module d\'enrôlement indisponible — rechargez la page.');
+      return false;
+    }
+    // Reuse la modale existante de auth.js (gère QR local + recovery codes)
+    return await _showMfaSetupModal(r);
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+    return false;
+  }
+}
+
+/* Désactivation nurse : demande le code TOTP courant pour confirmation. */
+async function _mfaDisableNurse() {
+  if (typeof wpost !== 'function') return false;
+  const code = prompt('Pour désactiver le 2FA, saisissez le code à 6 chiffres affiché par votre application Authenticator :', '');
+  if (!code) return false;
+  const cleaned = String(code).replace(/\D/g, '').slice(0, 6);
+  if (!/^\d{6}$/.test(cleaned)) {
+    alert('Format incorrect — 6 chiffres attendus.');
+    return false;
+  }
+  try {
+    const r = await wpost('/webhook/auth-mfa-disable', { code: cleaned });
+    if (!r || !r.ok) {
+      alert(r?.error || 'Désactivation impossible.');
+      return false;
+    }
+    alert('2FA désactivé. Vos recovery codes et trusted devices ont été supprimés.');
+    return true;
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+    return false;
+  }
+}
+
+/* Régénération recovery codes : nécessite confirmation explicite. */
+async function _mfaRegenerateRecovery() {
+  if (!confirm('⚠️ Régénérer les codes de récupération ?\n\n• Les 8 codes actuels seront invalidés immédiatement.\n• Tous vos navigateurs de confiance seront aussi déconnectés.\n• Vous devrez sauvegarder les nouveaux codes.')) {
+    return false;
+  }
+  if (typeof wpost !== 'function') return false;
+  try {
+    const r = await wpost('/webhook/auth-mfa-recovery-regenerate', {});
+    if (!r || !r.ok) {
+      alert(r?.error || 'Régénération impossible.');
+      return false;
+    }
+    if (Array.isArray(r.recovery_codes) && typeof _showRecoveryCodesModal === 'function') {
+      await _showRecoveryCodesModal(r.recovery_codes);
+    }
+    return true;
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+    return false;
+  }
+}
+
+/* Révoque tous les trusted devices et purge le device_token local. */
+async function _mfaRevokeAllDevices() {
+  if (!confirm('Révoquer tous les navigateurs de confiance ?\n\nVous devrez ressaisir un code 2FA depuis chacun d\'eux au prochain login.')) {
+    return false;
+  }
+  if (typeof wpost !== 'function') return false;
+  try {
+    const r = await wpost('/webhook/auth-mfa-devices-revoke', {});
+    if (!r || !r.ok) {
+      alert(r?.error || 'Révocation impossible.');
+      return false;
+    }
+    // Purger aussi le token de ce navigateur (sinon il continue à skipper le MFA)
+    try { localStorage.removeItem('ami_device_token'); } catch (_) {}
+    alert('Tous les navigateurs de confiance ont été révoqués.');
+    return true;
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+    return false;
+  }
+}
+
+/* Format d'un User-Agent court (Chrome/Mac, Firefox/Windows…) */
+function _shortUA(ua) {
+  if (!ua) return '?';
+  const s = String(ua);
+  let browser = 'Navigateur';
+  if (/Edg\//.test(s)) browser = 'Edge';
+  else if (/Chrome\//.test(s)) browser = 'Chrome';
+  else if (/Firefox\//.test(s)) browser = 'Firefox';
+  else if (/Safari\//.test(s) && !/Chrome/.test(s)) browser = 'Safari';
+  let os = '';
+  if (/Windows/.test(s)) os = 'Windows';
+  else if (/Mac OS X/.test(s) || /Macintosh/.test(s)) os = 'macOS';
+  else if (/Android/.test(s)) os = 'Android';
+  else if (/iPhone|iPad|iOS/.test(s)) os = 'iOS';
+  else if (/Linux/.test(s)) os = 'Linux';
+  return browser + (os ? ' / ' + os : '');
+}
+
+function _formatRelDate(ts) {
+  if (!ts) return '';
+  const diff = ts - Date.now();
+  const days = Math.round(diff / 86400000);
+  if (diff < 0) return 'expiré';
+  if (days === 0) return 'aujourd\'hui';
+  if (days === 1) return 'demain';
+  if (days < 30) return `dans ${days}j`;
+  const months = Math.round(days / 30);
+  return `dans ${months} mois`;
+}
+
+/* Ouvre la modale plein écran "Paramètres 2FA". Affiche le statut, les
+   actions disponibles selon le rôle (admin/nurse), et la liste des trusted devices. */
+async function openMfaSettings() {
+  // Supprimer une modale existante
+  const old = document.getElementById('mfa-settings-modal');
+  if (old) old.remove();
+
+  // Conteneur de chargement
+  const modal = document.createElement('div');
+  modal.id = 'mfa-settings-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:99997;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.92);padding:20px;overflow-y:auto;
+  `;
+  modal.innerHTML = `
+    <div style="background:#0b0f14;border:1px solid rgba(0,212,170,.3);border-radius:16px;
+                padding:24px;max-width:520px;width:100%;color:#e2e8f0;font-family:sans-serif;
+                max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h2 style="font-size:18px;margin:0;color:#fff">🔐 Paramètres 2FA</h2>
+        <button id="mfa-settings-close" aria-label="Fermer"
+          style="background:transparent;color:#64748b;border:none;font-size:24px;cursor:pointer;padding:0 8px">×</button>
+      </div>
+      <div id="mfa-settings-body" style="font-size:13px;color:#94a3b8;line-height:1.6">
+        <div style="text-align:center;padding:30px 0">
+          <span class="spin"></span> Chargement…
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('mfa-settings-close').onclick = () => modal.remove();
+
+  // Charger statut + devices en parallèle
+  const [status, devices] = await Promise.all([
+    _fetchMfaStatus(),
+    _fetchMfaDevices(),
+  ]);
+
+  const body = document.getElementById('mfa-settings-body');
+  if (!body) return;
+
+  if (!status) {
+    body.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px">
+      ⚠️ Impossible de récupérer le statut 2FA.<br>
+      <small>Vérifiez votre connexion ou réessayez.</small>
+    </div>`;
+    return;
+  }
+
+  const enabled    = !!status.enabled;
+  const mandatory  = !!status.mandatory;
+  const optional   = !!status.optional;
+  const remaining  = parseInt(status.recovery_remaining || 0, 10);
+  const confirmedAt = status.confirmed_at ? new Date(status.confirmed_at).toLocaleString('fr-FR') : null;
+
+  const statusBadge = enabled
+    ? `<span style="background:rgba(0,212,170,.15);color:#00d4aa;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600">✅ ACTIVÉ</span>`
+    : `<span style="background:rgba(245,158,11,.15);color:#f59e0b;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600">⚠️ DÉSACTIVÉ</span>`;
+
+  // Construction des sections
+  let html = `
+    <!-- Section status -->
+    <div style="background:rgba(255,255,255,.02);border:1px solid #1e2d3d;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong style="color:#e2e8f0">Authentification à 2 facteurs</strong>
+        ${statusBadge}
+      </div>
+      ${mandatory ? '<div style="font-size:11px;color:#fbbf24">🔒 Obligatoire pour les administrateurs</div>' : ''}
+      ${confirmedAt ? `<div style="font-size:11px;color:#64748b;margin-top:4px">Activé le ${confirmedAt}</div>` : ''}
+    </div>`;
+
+  // Section : activer pour nurse
+  if (!enabled && !mandatory) {
+    html += `
+    <div style="background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:12px;padding:14px;margin-bottom:14px">
+      <strong style="color:#e2e8f0;display:block;margin-bottom:6px">Renforcez la sécurité de votre compte</strong>
+      <p style="font-size:12px;color:#94a3b8;margin:0 0 10px">
+        Le 2FA ajoute une couche de protection au-delà du mot de passe.
+        Recommandé pour tout compte traitant des données patients.
+      </p>
+      <button id="mfa-enable-btn"
+        style="background:#00d4aa;color:#000;border:none;padding:10px 16px;border-radius:8px;
+               font-size:13px;font-weight:700;cursor:pointer">
+        🔐 Activer le 2FA
+      </button>
+    </div>`;
+  }
+
+  // Section : recovery codes (si MFA activé)
+  if (enabled) {
+    const recoveryWarn = remaining <= 2
+      ? `<div style="color:#ef4444;font-size:11px;margin-top:4px">⚠️ Codes presque épuisés — régénérez-les.</div>`
+      : '';
+    html += `
+    <div style="background:rgba(255,255,255,.02);border:1px solid #1e2d3d;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong style="color:#e2e8f0">🆘 Codes de récupération</strong>
+        <span style="font-size:11px;color:${remaining <= 2 ? '#ef4444' : '#94a3b8'}">${remaining} / 8 restants</span>
+      </div>
+      <p style="font-size:12px;color:#94a3b8;margin:0 0 10px">
+        À utiliser si vous perdez votre téléphone. Chaque code n'est valable qu'une seule fois.
+      </p>
+      ${recoveryWarn}
+      <button id="mfa-regen-btn"
+        style="background:#1e2d3d;color:#e2e8f0;border:none;padding:8px 14px;border-radius:6px;
+               font-size:12px;cursor:pointer;margin-top:8px">
+        🔄 Régénérer 8 nouveaux codes
+      </button>
+    </div>`;
+  }
+
+  // Section : trusted devices (si MFA activé)
+  if (enabled) {
+    const now = Date.now();
+    const validDevices = (devices || []).filter(d => (d.expires_at || 0) > now);
+    let devicesHtml = '';
+    if (validDevices.length === 0) {
+      devicesHtml = `<div style="color:#64748b;font-size:12px;font-style:italic;padding:8px 0">
+        Aucun navigateur de confiance enregistré.
+      </div>`;
+    } else {
+      devicesHtml = validDevices.map(d => {
+        const ua = _shortUA(d.ua);
+        const exp = _formatRelDate(d.expires_at);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;
+                            padding:8px 10px;background:rgba(255,255,255,.02);border-radius:6px;margin:4px 0;font-size:12px">
+          <span>📱 <strong style="color:#e2e8f0">${ua}</strong></span>
+          <span style="color:#64748b">expire ${exp}</span>
+        </div>`;
+      }).join('');
+    }
+    html += `
+    <div style="background:rgba(255,255,255,.02);border:1px solid #1e2d3d;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong style="color:#e2e8f0">📱 Navigateurs de confiance</strong>
+        <span style="font-size:11px;color:#94a3b8">${validDevices.length} / 5</span>
+      </div>
+      <p style="font-size:12px;color:#94a3b8;margin:0 0 10px">
+        Ces navigateurs peuvent se connecter sans saisir de code 2FA pendant 30 jours.
+      </p>
+      ${devicesHtml}
+      ${validDevices.length > 0 ? `
+      <button id="mfa-revoke-devices-btn"
+        style="background:#1e2d3d;color:#e2e8f0;border:none;padding:8px 14px;border-radius:6px;
+               font-size:12px;cursor:pointer;margin-top:8px">
+        🚫 Révoquer tous
+      </button>` : ''}
+    </div>`;
+  }
+
+  // Section : désactiver (nurse uniquement, jamais admin)
+  if (enabled && !mandatory) {
+    html += `
+    <div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px;margin-bottom:14px">
+      <strong style="color:#ef4444;display:block;margin-bottom:6px">Zone de danger</strong>
+      <p style="font-size:12px;color:#94a3b8;margin:0 0 10px">
+        Désactiver le 2FA réduit la sécurité de votre compte.
+        Vos recovery codes et navigateurs de confiance seront supprimés.
+      </p>
+      <button id="mfa-disable-btn"
+        style="background:transparent;color:#ef4444;border:1px solid #ef4444;padding:8px 14px;border-radius:6px;
+               font-size:12px;cursor:pointer">
+        🔓 Désactiver le 2FA
+      </button>
+    </div>`;
+  }
+
+  body.innerHTML = html;
+
+  // Bind handlers
+  const enableBtn = document.getElementById('mfa-enable-btn');
+  if (enableBtn) enableBtn.onclick = async () => {
+    enableBtn.disabled = true;
+    enableBtn.innerHTML = '<span class="spin"></span> Activation…';
+    const ok = await _mfaEnableNurse();
+    if (ok) {
+      modal.remove();
+      // La modale d'enrôlement a tout finalisé (login refresh inclus)
+    } else {
+      enableBtn.disabled = false;
+      enableBtn.innerHTML = '🔐 Activer le 2FA';
+    }
+  };
+
+  const regenBtn = document.getElementById('mfa-regen-btn');
+  if (regenBtn) regenBtn.onclick = async () => {
+    regenBtn.disabled = true;
+    regenBtn.innerHTML = '<span class="spin"></span> Régénération…';
+    const ok = await _mfaRegenerateRecovery();
+    if (ok) {
+      modal.remove();
+      // Re-ouvrir pour rafraîchir le compteur (8/8)
+      setTimeout(() => openMfaSettings(), 300);
+    } else {
+      regenBtn.disabled = false;
+      regenBtn.innerHTML = '🔄 Régénérer 8 nouveaux codes';
+    }
+  };
+
+  const revokeBtn = document.getElementById('mfa-revoke-devices-btn');
+  if (revokeBtn) revokeBtn.onclick = async () => {
+    revokeBtn.disabled = true;
+    revokeBtn.innerHTML = '<span class="spin"></span> Révocation…';
+    const ok = await _mfaRevokeAllDevices();
+    if (ok) {
+      modal.remove();
+      setTimeout(() => openMfaSettings(), 300);
+    } else {
+      revokeBtn.disabled = false;
+      revokeBtn.innerHTML = '🚫 Révoquer tous';
+    }
+  };
+
+  const disableBtn = document.getElementById('mfa-disable-btn');
+  if (disableBtn) disableBtn.onclick = async () => {
+    disableBtn.disabled = true;
+    disableBtn.innerHTML = '<span class="spin"></span> Désactivation…';
+    const ok = await _mfaDisableNurse();
+    if (ok) {
+      modal.remove();
+      setTimeout(() => openMfaSettings(), 300);
+    } else {
+      disableBtn.disabled = false;
+      disableBtn.innerHTML = '🔓 Désactiver le 2FA';
+    }
+  };
+}
+
+/* Injecte un bouton "Paramètres 2FA" dans un conteneur DOM existant.
+   Utile pour brancher dans la page profil sans modale. Le bouton ouvre
+   openMfaSettings() au clic. */
+function renderMfaSection(targetId) {
+  const target = typeof targetId === 'string' ? document.getElementById(targetId) : targetId;
+  if (!target) return false;
+  // Status badge async
+  _fetchMfaStatus().then((status) => {
+    const enabled   = status && !!status.enabled;
+    const mandatory = status && !!status.mandatory;
+    const remaining = status ? parseInt(status.recovery_remaining || 0, 10) : 0;
+    const lowCodes  = enabled && remaining <= 2;
+    const badge = enabled
+      ? `<span style="background:rgba(0,212,170,.15);color:#00d4aa;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:600">2FA ON</span>`
+      : `<span style="background:rgba(245,158,11,.15);color:#f59e0b;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:600">2FA OFF</span>`;
+    target.innerHTML = `
+      <button id="mfa-open-settings"
+        style="width:100%;display:flex;justify-content:space-between;align-items:center;
+               background:rgba(255,255,255,.02);border:1px solid #1e2d3d;border-radius:10px;
+               padding:12px 14px;cursor:pointer;color:#e2e8f0;font-family:inherit;font-size:13px;text-align:left">
+        <span style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px">🔐</span>
+          <span>
+            <strong>Authentification 2FA</strong>
+            ${mandatory ? '<span style="display:block;font-size:10px;color:#fbbf24">Obligatoire (admin)</span>' : ''}
+            ${lowCodes ? '<span style="display:block;font-size:10px;color:#ef4444">⚠️ Recovery codes presque épuisés</span>' : ''}
+          </span>
+        </span>
+        <span style="display:flex;align-items:center;gap:8px">${badge}<span style="color:#64748b">›</span></span>
+      </button>`;
+    const btn = document.getElementById('mfa-open-settings');
+    if (btn) btn.onclick = openMfaSettings;
+  });
+  return true;
+}
+
+/* Expose globalement pour appel depuis profil.js, navigation.js, etc. */
+if (typeof window !== 'undefined') {
+  window.openMfaSettings = openMfaSettings;
+  window.renderMfaSection = renderMfaSection;
+}
