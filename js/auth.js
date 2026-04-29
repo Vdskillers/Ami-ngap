@@ -31,40 +31,125 @@ function clientHasPermission(permission){
   return (CLIENT_PERMISSIONS[role] || []).includes(permission);
 }
 
-/* ── IDLE TIMEOUT — déconnexion auto après 15 min d'inactivité ─
+/* ── IDLE TIMEOUT v2 — déconnexion auto contextuelle ───────────
    RGPD/HDS : sessions de données de santé non persistantes au-delà
-   d'une période d'inactivité raisonnable (recommandation ANSSI/CNIL
-   pour le secteur santé : ≤ 15 min).
+   d'une période d'inactivité raisonnable.
 
-   Mécanisme :
-   - Timer reset sur tout événement utilisateur (mouse, key, touch, scroll)
-   - À l'expiration, logout() est appelé → ss.clear() + retour écran login
-   - L'utilisateur en mode hors-ligne est protégé aussi : la session locale
-     est purgée, il devra ressaisir son PIN pour reprendre.
-   - Désactivation possible côté admin via window.AMI_DISABLE_IDLE = true
-     (debug uniquement, ne pas activer en prod)
+   ⚡ Design context-aware (validé avec retour terrain) :
+   ──────────────────────────────────────────────────────────────
+   1. Tournée ACTIVE (APP.uberPatients contient des patients non visités)
+        → idle DÉSACTIVÉ. L'infirmière conduit, le téléphone est en poche,
+          le risque de vol est faible et l'interruption serait critique.
+   2. Mode VOCAL actif (voicebtn.listening)
+        → idle DÉSACTIVÉ. Pas de DOM events pendant les commandes vocales,
+          le timer expirerait à tort.
+   3. PIN OFFLINE configuré (offlineAuth.hasPIN)
+        → après 30 min d'inactivité, ÉCRAN PIN (pas de logout). La session
+          est préservée, l'utilisateur saisit son PIN 4 chiffres et reprend
+          en 2 secondes.
+   4. Aucun PIN, aucune tournée, aucune voix
+        → logout complet après 30 min (force l'utilisateur à reconfigurer
+          son PIN pour la prochaine fois).
 
-   Pour ajuster : modifier IDLE_TIMEOUT_MS ci-dessous.
+   ⚡ Heartbeat manuel : d'autres modules (sync, vocal navigation, GPS)
+      peuvent appeler `window._amiIdleTouch()` pour reset le timer
+      sans simuler un événement DOM.
+
+   Désactivation totale (debug uniquement) : window.AMI_DISABLE_IDLE = true
+   Forcer le timeout pour test : window.AMI_FORCE_IDLE = true (déclenche
+      l'expiration immédiatement sans reset).
+   Override du délai (ms) : window.AMI_IDLE_TIMEOUT_MS = 60_000 (ex: 1 min)
+
+   Ajustement du délai par défaut : modifier IDLE_TIMEOUT_MS_DEFAULT.
 ─────────────────────────────────────────────────────────────── */
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const IDLE_TIMEOUT_MS_DEFAULT = 30 * 60 * 1000; // 30 minutes (recommandation santé)
 let _amiIdleTimer = null;
 let _amiIdleAttached = false;
+let _amiIdleHandling = false; // évite le re-entrée pendant le PIN unlock
+
+function _amiIdleTimeoutMs() {
+  const override = Number(window.AMI_IDLE_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : IDLE_TIMEOUT_MS_DEFAULT;
+}
+
+function _amiIsActiveTournee() {
+  try {
+    const list = (window.APP?.get ? APP.get('uberPatients') : null) || (window.APP?.uberPatients);
+    if (!Array.isArray(list) || list.length === 0) return false;
+    // Tournée considérée active s'il reste au moins un patient non visité
+    return list.some(p => !p?.done);
+  } catch { return false; }
+}
+
+function _amiIsVoiceActive() {
+  try {
+    const btn = document.getElementById('voicebtn');
+    return !!(btn && btn.classList && btn.classList.contains('listening'));
+  } catch { return false; }
+}
+
+function _amiHasPIN() {
+  try {
+    return !!(window.offlineAuth && typeof window.offlineAuth.hasPIN === 'function'
+              && S?.user?.id && window.offlineAuth.hasPIN(S.user.id));
+  } catch { return false; }
+}
 
 function _amiIdleReset() {
   if (window.AMI_DISABLE_IDLE === true) return;
   if (_amiIdleTimer) clearTimeout(_amiIdleTimer);
-  _amiIdleTimer = setTimeout(() => {
-    // Vérifier qu'on a encore une session active avant de logout
-    if (!S?.token) return;
+  if (window.AMI_FORCE_IDLE === true) {
+    // Mode debug : déclenche immédiatement (sans timer)
+    queueMicrotask(_amiIdleExpire);
+    return;
+  }
+  _amiIdleTimer = setTimeout(_amiIdleExpire, _amiIdleTimeoutMs());
+}
+
+// Hook public : permet aux modules sans interaction DOM (sync, vocal, GPS)
+// de signaler une activité utilisateur et reset le timer.
+window._amiIdleTouch = _amiIdleReset;
+
+async function _amiIdleExpire() {
+  if (_amiIdleHandling) return;
+  if (!S?.token) return;
+
+  // 1. Tournée active ou voice active → on diffère, on ne déconnecte pas
+  if (_amiIsActiveTournee() || _amiIsVoiceActive()) {
+    console.info('[AMI] Idle reporté — tournée/voice actif.');
+    _amiIdleReset(); // ré-arme pour le prochain cycle
+    return;
+  }
+
+  _amiIdleHandling = true;
+
+  // 2. PIN configuré → unlock screen plutôt que logout (fast resume offline-first)
+  if (_amiHasPIN() && typeof window.offlineAuth?.showUnlockScreen === 'function') {
+    console.info('[AMI] Idle — PIN unlock requis.');
     try {
-      // Notifier l'utilisateur (si UI dispo) puis logout
-      if (typeof showM === 'function') {
-        try { showM('msg-pilot', 'Session expirée après 15 min d\'inactivité. Reconnexion requise.', 'i'); } catch {}
+      const sess = await window.offlineAuth.showUnlockScreen();
+      if (sess) {
+        // PIN OK → on reprend la session (potentiellement rafraîchie offline)
+        ss.save(sess.token, sess.role, sess.user, sess.dataKey || null);
+        if (typeof initSecurity === 'function') initSecurity(sess.token);
+        _amiIdleHandling = false;
+        _amiIdleReset();
+        return;
       }
-      console.info('[AMI] Idle timeout — logout auto.');
-      if (typeof logout === 'function') logout();
-    } catch (e) { console.warn('[AMI] Idle logout KO:', e); }
-  }, IDLE_TIMEOUT_MS);
+      // sess === null → l'utilisateur a cliqué "Utiliser un autre compte"
+      // → on bascule sur le logout standard ci-dessous
+    } catch (e) { console.warn('[AMI] PIN unlock KO:', e); }
+  }
+
+  // 3. Pas de PIN (ou refus du PIN) → logout complet
+  console.info('[AMI] Idle timeout — logout auto.');
+  try {
+    if (typeof showM === 'function') {
+      try { showM('msg-pilot', 'Session expirée après inactivité prolongée. Reconnexion requise.', 'i'); } catch {}
+    }
+    if (typeof logout === 'function') logout();
+  } catch (e) { console.warn('[AMI] Idle logout KO:', e); }
+  _amiIdleHandling = false;
 }
 
 function _amiIdleAttach() {
@@ -83,6 +168,7 @@ function _amiIdleAttach() {
 
 function _amiIdleDetach() {
   if (_amiIdleTimer) { clearTimeout(_amiIdleTimer); _amiIdleTimer = null; }
+  _amiIdleHandling = false;
   // On laisse les listeners attachés (rallumage automatique au prochain login)
 }
 
