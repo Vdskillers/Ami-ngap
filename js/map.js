@@ -880,48 +880,18 @@ async function useLiveMyLocation() {
             try {
               const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
 
-              // ⚡ v5.11 — Toggle "Éviter autoroutes" (best-effort sans clé API)
-              //    Si la préf est ON et que le helper alternatives existe :
-              //    on lui délègue le choix de l'itinéraire (OSRM alternatives + score motorway).
-              //    Sinon : appel OSRM standard comme avant (driving fastest).
-              const _avoidMotorways = (typeof window.getAvoidMotorways === 'function')
-                && window.getAvoidMotorways();
-              const _hasAvoidHelper = typeof window._osrmRouteAvoidingMotorways === 'function';
+              // v9.1 — Toggle "Éviter autoroutes" retiré. OSRM public ne supporte
+              // ni `exclude=motorway` (HTTP 400) ni `alternatives=true&number=3`
+              // de façon fiable sur trajets longs (HTTP 400 observé). On garde
+              // uniquement le profil driving standard (fastest).
+              const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
+                + '?overview=full&geometries=geojson&steps=false';
+              const data = (typeof window._osrmFetchSafe === 'function')
+                ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
+                : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
-              let routeFromAvoid = null;
-              if (_avoidMotorways && _hasAvoidHelper) {
-                try {
-                  routeFromAvoid = await window._osrmRouteAvoidingMotorways(
-                    coords,
-                    { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined }
-                  );
-                } catch(_) {
-                  routeFromAvoid = null; // fallback silencieux sur driving fastest
-                }
-              }
-
-              let geojson = null;
-              let _routeMeta = null; // pour log/badge éventuel
-
-              if (routeFromAvoid) {
-                geojson = routeFromAvoid.geometry;
-                // Calcule le ratio motorway pour pouvoir afficher un badge informatif
-                if (typeof window._osrmRouteMotorwayRatio === 'function') {
-                  try { _routeMeta = window._osrmRouteMotorwayRatio(routeFromAvoid); } catch(_) {}
-                }
-              } else {
-                // Chemin standard (compatibilité ascendante exacte)
-                const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
-                  + '?overview=full&geometries=geojson&steps=false';
-                // v5.9.2 — Fetch safe avec fallback automatique si serveur OSRM
-                // refuse exclude (évite carte vide quand 400 Bad Request).
-                const data = (typeof window._osrmFetchSafe === 'function')
-                  ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
-                  : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
-
-                if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
-                geojson = data.routes[0].geometry; // GeoJSON LineString
-              }
+              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+              const geojson = data.routes[0].geometry; // GeoJSON LineString
 
               if (!geojson || !Array.isArray(geojson.coordinates)) return;
 
