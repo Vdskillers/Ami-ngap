@@ -22,14 +22,70 @@
    Toute action sensible est re-validée par le backend.
 ─────────────────────────────────────────────── */
 const CLIENT_PERMISSIONS = {
-  nurse: ['create_invoice','view_own_data','import_calendar','manage_tournee','change_password','delete_account','manage_prescripteurs'],
-  admin: ['block_user','unblock_user','delete_user','view_stats','view_logs','view_users_list']
+  nurse: ['create_invoice','view_own_data','import_calendar','manage_tournee','change_password','delete_account','manage_prescripteurs','export_data'],
+  admin: ['block_user','unblock_user','delete_user','view_stats','view_logs','view_users_list','export_data']
   // ⚠️ 'view_patient_data' intentionnellement absent du rôle admin
 };
 function clientHasPermission(permission){
   const role = S?.role || 'nurse';
   return (CLIENT_PERMISSIONS[role] || []).includes(permission);
 }
+
+/* ── IDLE TIMEOUT — déconnexion auto après 15 min d'inactivité ─
+   RGPD/HDS : sessions de données de santé non persistantes au-delà
+   d'une période d'inactivité raisonnable (recommandation ANSSI/CNIL
+   pour le secteur santé : ≤ 15 min).
+
+   Mécanisme :
+   - Timer reset sur tout événement utilisateur (mouse, key, touch, scroll)
+   - À l'expiration, logout() est appelé → ss.clear() + retour écran login
+   - L'utilisateur en mode hors-ligne est protégé aussi : la session locale
+     est purgée, il devra ressaisir son PIN pour reprendre.
+   - Désactivation possible côté admin via window.AMI_DISABLE_IDLE = true
+     (debug uniquement, ne pas activer en prod)
+
+   Pour ajuster : modifier IDLE_TIMEOUT_MS ci-dessous.
+─────────────────────────────────────────────────────────────── */
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+let _amiIdleTimer = null;
+let _amiIdleAttached = false;
+
+function _amiIdleReset() {
+  if (window.AMI_DISABLE_IDLE === true) return;
+  if (_amiIdleTimer) clearTimeout(_amiIdleTimer);
+  _amiIdleTimer = setTimeout(() => {
+    // Vérifier qu'on a encore une session active avant de logout
+    if (!S?.token) return;
+    try {
+      // Notifier l'utilisateur (si UI dispo) puis logout
+      if (typeof showM === 'function') {
+        try { showM('msg-pilot', 'Session expirée après 15 min d\'inactivité. Reconnexion requise.', 'i'); } catch {}
+      }
+      console.info('[AMI] Idle timeout — logout auto.');
+      if (typeof logout === 'function') logout();
+    } catch (e) { console.warn('[AMI] Idle logout KO:', e); }
+  }, IDLE_TIMEOUT_MS);
+}
+
+function _amiIdleAttach() {
+  if (_amiIdleAttached) return;
+  _amiIdleAttached = true;
+  const events = ['mousedown','keydown','touchstart','scroll','click','wheel'];
+  events.forEach(ev => {
+    document.addEventListener(ev, _amiIdleReset, { passive: true, capture: true });
+  });
+  // Visibility change : reset le timer quand l'onglet redevient visible
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) _amiIdleReset();
+  });
+  _amiIdleReset();
+}
+
+function _amiIdleDetach() {
+  if (_amiIdleTimer) { clearTimeout(_amiIdleTimer); _amiIdleTimer = null; }
+  // On laisse les listeners attachés (rallumage automatique au prochain login)
+}
+
 
 /* ── AUTH ─────────────────────────────────────── */
 async function checkAuth(){
@@ -77,6 +133,11 @@ function showApp(){
   if($('sess-inf'))$('sess-inf').textContent=(u.email||'')+' · session active';
   $('voicebtn').classList.add('show');
   updateNavMode();
+
+  // ⚡ RGPD/HDS — Démarrage de l'idle timeout (15 min d'inactivité → logout auto).
+  //   _amiIdleAttach() est idempotent : appelé plusieurs fois (login, retour
+  //   admin → app, etc.), il n'attache les listeners qu'une seule fois.
+  try { _amiIdleAttach(); } catch (e) { console.warn('[AMI] Idle attach KO:', e); }
 
   const isAdmin = S?.role==='admin';
 
@@ -410,6 +471,9 @@ async function register(){
   }catch(e){showM('re',e.message);}finally{ld('btn-r',false);}
 }
 function logout(){
+  // ⚡ RGPD/HDS — Stop le timer idle pour éviter un logout récursif si le timeout
+  //   se déclenche pendant qu'on est déjà en train de logout (ex: confirm offline).
+  try { _amiIdleDetach(); } catch {}
   /* ── Option offline : proposer de conserver l'accès PIN ou tout effacer ── */
   if (window.offlineAuth && S?.user?.id && window.offlineAuth.hasPIN(S.user.id)) {
     const keepPin = confirm(

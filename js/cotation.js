@@ -680,8 +680,15 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     // SANS cotationIdx/invoice_number → le fallback par date trouverait l'ancienne
     // cotation et ferait un upsert silencieux au lieu de respecter le choix utilisateur.
     const _isForceNew = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-    if (_idx < 0 && _editRef && _cotDate && !_isForceNew) {
+    // ⚡ Garde-fou : le fallback par date n'est tenté QUE si _cotDate est au
+    //    format YYYY-MM-DD strict. Une date mal parsée (DD/MM/YYYY ou ISO
+    //    timezone-shifted) court-circuiterait l'égalité `slice(0,10)` et
+    //    pourrait soit louper l'upsert (→ doublon), soit upserter la mauvaise
+    //    cotation. Mieux vaut ne pas matcher que matcher de travers.
+    const _isValidDate = /^\d{4}-\d{2}-\d{2}/.test(_cotDate || '');
+    if (_idx < 0 && _editRef && _cotDate && _isValidDate && !_isForceNew) {
       _idx = _pat.cotations.findIndex(c =>
+        /^\d{4}-\d{2}-\d{2}/.test(c.date || '') &&
         (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
       );
     }
@@ -1497,8 +1504,12 @@ async function _cotationPipeline() {
           //    skip ce fallback pour respecter le choix utilisateur (sinon upsert
           //    silencieux de l'ancienne cotation au lieu de créer une nouvelle).
           const _isForceNewSolo = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-          if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo) {
+          // ⚡ Garde-fou : fallback par date uniquement si _cotDate est YYYY-MM-DD valide
+          //    (cf. _persistCotationCabinet pour le rationnel détaillé).
+          const _isValidDateSolo = /^\d{4}-\d{2}-\d{2}/.test(_cotDate || '');
+          if (_idx < 0 && _editRef && _cotDate && _isValidDateSolo && !_isForceNewSolo) {
             _idx = _pat.cotations.findIndex(c =>
+              /^\d{4}-\d{2}-\d{2}/.test(c.date || '') &&
               (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
             );
           }
@@ -3084,8 +3095,11 @@ async function _cotationOfflineLocalPersist(d, _editRef, txt) {
       if (_idx < 0 && _editRef?.invoice_number)
         _idx = _pat.cotations.findIndex(c => c.invoice_number === _editRef.invoice_number);
       const _isForceNewSolo = _editRef?._userChose && !_editRef?.cotationIdx && !_editRef?.invoice_number;
-      if (_idx < 0 && _editRef && _cotDate && !_isForceNewSolo) {
+      // ⚡ Garde-fou regex (cf. branche cabinet pour le rationnel)
+      const _isValidDateOff = /^\d{4}-\d{2}-\d{2}/.test(_cotDate || '');
+      if (_idx < 0 && _editRef && _cotDate && _isValidDateOff && !_isForceNewSolo) {
         _idx = _pat.cotations.findIndex(c =>
+          /^\d{4}-\d{2}-\d{2}/.test(c.date || '') &&
           (c.date || '').slice(0, 10) === _cotDate.slice(0, 10)
         );
       }

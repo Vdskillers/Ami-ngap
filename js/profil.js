@@ -90,6 +90,92 @@ async function changePwd(){
   try{const d=await wpost('/webhook/change-password',{ancien:old,nouveau:nw});if(!d.ok)throw new Error(d.error);$('p-old').value='';$('p-new').value='';showM('ppo','✅ Mot de passe changé.','o');}catch(e){showM('ppe',e.message);}
 }
 async function delAccount(){
-  if(!confirm('⚠️ Supprimer votre compte définitivement ?'))return;
+  // ⚡ RGPD Art. 17 — confirmation explicite avec scope détaillé.
+  //    Le worker purge 17 tables + anonymise les logs à conservation légale.
+  //    L'utilisateur doit comprendre l'irréversibilité avant de cliquer.
+  const ok = confirm(
+    '⚠️ SUPPRIMER VOTRE COMPTE DÉFINITIVEMENT\n\n' +
+    'Cette action est IRRÉVERSIBLE et conforme RGPD art. 17 (droit à l\'effacement).\n\n' +
+    'Seront supprimés définitivement :\n' +
+    '  • Profil (nom, prénom, ADELI, RPPS, structure, etc.)\n' +
+    '  • Cotations et historique de soins\n' +
+    '  • Carnet patients (vos patients, leurs constantes, leur pilulier, etc.)\n' +
+    '  • Planning, kilométrage, signatures, consentements\n' +
+    '  • Messages de contact, abonnement, intel premium\n' +
+    '  • Appartenance à un cabinet (les autres membres ne sont pas affectés)\n\n' +
+    'Seront ANONYMISÉS (conservation légale 10 ans, sans PII) :\n' +
+    '  • Logs d\'audit, logs forensiques, incidents signalés\n' +
+    '  • Historique des consentements RGPD\n\n' +
+    '💡 Conseil : utilisez d\'abord "📦 Exporter mes données" pour conserver une copie.\n\n' +
+    'Continuer la suppression ?'
+  );
+  if(!ok)return;
   try{const d=await wpost('/webhook/delete-account',{});if(!d.ok)throw new Error(d.error);ss.clear();closePM();showAuthOv();switchTab('l');}catch(e){showM('pe',e.message);}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   📦 EXPORT DONNÉES — RGPD Article 20 (Droit à la portabilité)
+   ────────────────────────────────────────────────────────────────────
+   Récupère l'intégralité des données personnelles + métier de l'utilisateur
+   connecté via /webhook/data-export et les propose en téléchargement JSON.
+
+   - Pas d'envoi côté tiers
+   - Pas de PII résiduelle (les hashes mdp/MFA/clés sont exclus côté worker)
+   - Conforme RGPD art. 20 : format réutilisable, structuré, autodescriptif
+   - Trace l'export dans audit_logs (event RGPD_DATA_EXPORT)
+
+   Le fichier généré contient :
+     • profil (nom/prénom/ADELI/RPPS/structure/...)
+     • cotations, planning, invoice_counters
+     • carnet_patients (chiffré côté serveur — déchiffrable avec data_key)
+     • bsi_sync, constantes, cr_passage, piluliers, signatures, consentements
+     • km_journal, ngap_suggestions, rgpd_consents, contact_messages
+     • subscription, cabinet_membership, audit_logs (déchiffrés)
+═══════════════════════════════════════════════════════════════════════ */
+async function exportMyData(){
+  hideM('pe','po');
+  // Confirmation explicite — l'utilisateur doit comprendre ce qu'il télécharge
+  if (!confirm(
+    '📦 Exporter toutes mes données\n\n' +
+    'Vous allez télécharger un fichier JSON contenant l\'intégralité de vos\n' +
+    'données personnelles et métier (profil, cotations, carnet patients,\n' +
+    'logs, consentements, etc.).\n\n' +
+    '🔐 Les hashes de mot de passe, secrets MFA et clés de chiffrement\n' +
+    '    NE SONT PAS inclus pour des raisons de sécurité.\n\n' +
+    '⚠️ Ce fichier contient des données sensibles (RGPD/HDS).\n' +
+    '    Conservez-le sur un support chiffré et supprimez-le après usage.\n\n' +
+    'Continuer ?'
+  )) return;
+
+  const btn = document.getElementById('btn-export-data');
+  if (btn) ld('btn-export-data', true);
+
+  try {
+    const d = await wpost('/webhook/data-export', {});
+    if (!d.ok) throw new Error(d.error || 'Erreur export.');
+
+    // Sérialise en JSON indenté lisible
+    const payload = JSON.stringify(d, null, 2);
+    const blob    = new Blob([payload], { type: 'application/json;charset=utf-8' });
+    const url     = URL.createObjectURL(blob);
+
+    // Nom de fichier : ami-export_<email-sanitisé>_<YYYY-MM-DD>.json
+    const email   = (S?.user?.email || 'user').toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const dateStr = (typeof _localDateISO === 'function')
+                      ? _localDateISO()
+                      : new Date().toISOString().slice(0, 10);
+    const fileName = `ami-export_${email}_${dateStr}.json`;
+
+    // Déclenche le téléchargement
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    showM('po', `✅ Export téléchargé : ${fileName}`, 'o');
+  } catch (e) {
+    showM('pe', '❌ ' + e.message);
+  } finally {
+    if (btn) ld('btn-export-data', false);
+  }
 }

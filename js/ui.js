@@ -404,6 +404,7 @@ const tabR = $('tab-r');          if (tabR)         tabR.addEventListener('click
 const btnSavePm   = $('btn-save-pm');     if (btnSavePm)    btnSavePm.addEventListener('click', savePM);
 const btnChangePwd= $('btn-change-pwd');  if (btnChangePwd) btnChangePwd.addEventListener('click', changePwd);
 const btnDelAcc   = $('btn-del-account'); if (btnDelAcc)    btnDelAcc.addEventListener('click', delAccount);
+const btnExpData  = $('btn-export-data'); if (btnExpData)   btnExpData.addEventListener('click', exportMyData);
 const admQ        = $('adm-q');           if (admQ)         admQ.addEventListener('input', debounce(filterAccs, 300));
 
 /* ════════════════════════════════════════════════

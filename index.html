@@ -1159,6 +1159,24 @@
     <div class="af"><label for="p-new">Nouveau mot de passe</label><input type="password" id="p-new" name="new_password" placeholder="••••••••"></div>
     <button class="btn bs" id="btn-change-pwd" style="width:100%;justify-content:center;margin-top:6px">🔑 Changer</button>
     <div class="sep" style="margin-top:24px"><span class="sepl" style="color:var(--d)">Zone dangereuse</span></div>
+
+    <!-- ⚡ RGPD art. 20 — Export complet des données utilisateur (JSON téléchargeable) -->
+    <p style="font-size:12px;color:var(--m);margin:10px 0 8px">
+      📦 <strong>Récupérez une copie de toutes vos données</strong> (profil, cotations, carnet patients, logs…)
+      au format JSON. Les hashes mot de passe, secrets MFA et clés ne sont jamais inclus.
+    </p>
+    <button class="btn bs" id="btn-export-data" style="width:100%;justify-content:center;margin-bottom:14px">
+      📦 Exporter mes données (RGPD)
+    </button>
+
+    <!-- ⚡ RGPD art. 17 — Suppression définitive du compte + purge des 17 tables liées -->
+    <p style="font-size:12px;color:var(--d);margin:6px 0 8px">
+      ⚠️ <strong>Suppression définitive du compte</strong> et de toutes vos données métier.
+      Les logs d'audit (rétention légale 10 ans) sont anonymisés. Action irréversible.
+    </p>
+    <button class="btn bd" id="btn-del-account" style="width:100%;justify-content:center;background:rgba(255,95,109,.12);border:1px solid rgba(255,95,109,.35);color:var(--d)">
+      🗑️ Supprimer mon compte
+    </button>
   </div>
 </div>
 
