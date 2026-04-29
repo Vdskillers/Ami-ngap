@@ -1,4 +1,4 @@
-/* sw.js — AMI NGAP Service Worker v5.10.7-incident
+/* sw.js — AMI NGAP Service Worker v5.11.1-ngap-paths-fix
    ✅ Fix: ne cache JAMAIS les requêtes POST (crash "method unsupported")
    ✅ Chemins relatifs pour GitHub Pages /Ami-ngap/
    ✅ Cache uniquement GET
@@ -28,9 +28,23 @@
               • Notification art.34 RGPD aux personnes concernées (template
                 courrier + impression + marquage automatique)
               • Badge dynamique du nb d'incidents ouverts dans la nav admin
+   ✅ v5.11.0 — Précache COMPLET de tous les modules JS (~50 fichiers)
+              • Avant : ~30 modules (patients.js, incident.js, cabinet.js…)
+                cachés en cache-first au 1er fetch online → routes peu
+                visitées cassées si offline avant 1er passage online
+              • Maintenant : tous les modules sont cachés à l'install
+   ✅ v5.11.1 — Fix chemins NGAP engine + diagnostic install
+              • ngap_engine.js et ngap_referentiel_2026.json sont à la
+                RACINE du projet (pas dans ./ngap-engine/). Le faux chemin
+                ./ngap-engine/* échouait silencieusement → cotation offline
+                cassée tant que ces fichiers n'étaient pas chargés online
+              • Le .catch() de cache.addAll() bouffait l'erreur sans la
+                tracer — maintenant chaque fichier est tenté individuel-
+                lement et les échecs sont listés explicitement dans la
+                console (utile pour les futures régressions de chemin)
 */
 
-const CACHE_VERSION = 'ami-v5.11.0-precache-complete';
+const CACHE_VERSION = 'ami-v5.11.1-ngap-paths-fix';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
@@ -76,8 +90,8 @@ const STATIC_ASSETS = [
   './ngap-ref-explorer.js',
   './ngap-suggest.js',
   './ngap-update-manager.js',
-  './ngap-engine/ngap_engine.js',                      // ⚙️ moteur NGAP local (cotation offline) — colocalisé avec le référentiel
-  './ngap-engine/ngap_referentiel_2026.json',          // 📚 référentiel NGAP — requis par le moteur offline
+  './ngap_engine.js',                                  // ⚙️ moteur NGAP local (cotation offline) — racine du projet
+  './ngap_referentiel_2026.json',                      // 📚 référentiel NGAP — requis par le moteur offline (racine)
   // ── Tournée / planification ───────────────────────────────────────
   './tournee.js',
   './uber.js',
@@ -130,8 +144,32 @@ self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(CACHE_STATIC)
       .then(function(cache) {
-        return cache.addAll(STATIC_ASSETS).catch(function(err) {
-          console.warn('[SW] Précache partiel:', err.message);
+        // ⚡ v5.11.1 — Précache résilient avec diagnostic.
+        //   Avant, cache.addAll() était utilisé : si UN SEUL fichier échouait
+        //   (mauvais chemin, 404, CORS), TOUS les autres étaient annulés
+        //   et le .catch global affichait juste un message générique.
+        //   C'est ce qui masquait les chemins ./ngap-engine/* cassés depuis
+        //   la v5.11.0 — la cotation offline ne marchait pas mais aucun log
+        //   ne pointait le vrai problème.
+        //
+        //   Maintenant chaque fichier est tenté individuellement, les échecs
+        //   sont listés explicitement, et le précache est partiel mais utile
+        //   plutôt que totalement vide.
+        var failed = [];
+        return Promise.all(STATIC_ASSETS.map(function(url) {
+          return cache.add(url).catch(function(err) {
+            failed.push({ url: url, error: err && err.message ? err.message : String(err) });
+          });
+        })).then(function() {
+          if (failed.length) {
+            console.warn(
+              '[SW] Précache partiel — ' + failed.length + '/' + STATIC_ASSETS.length +
+              ' fichier(s) en échec :',
+              failed
+            );
+          } else {
+            console.info('[SW] Précache complet : ' + STATIC_ASSETS.length + ' fichiers cachés.');
+          }
         });
       })
       .then(function() { return self.skipWaiting(); })
