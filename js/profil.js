@@ -21,42 +21,35 @@
      3. À la fin de la modale #pm (fallback)
 ════════════════════════════════════════════════════════════════════════ */
 function _ensureMfaSectionInPM() {
-  // Skip si renderMfaSection n'est pas chargé (security.js absent ou ancien)
-  if (typeof renderMfaSection !== 'function') return null;
+  // ⚡ MFA TOTP DÉSACTIVÉ (sur demande utilisateur) — no-op
+  //
+  // La section "Sécurité du compte" avec accès aux paramètres 2FA n'est plus
+  // injectée dans la modale profil. Le code original est conservé en commentaire
+  // pour réactivation future éventuelle.
+  return null;
 
+  /* ── Code original conservé pour réactivation future ──
+  if (typeof renderMfaSection !== 'function') return null;
   let container = document.getElementById('p-mfa-section');
   if (container) return container;
-
   const pm = document.getElementById('pm');
   if (!pm) return null;
-
   container = document.createElement('div');
   container.id = 'p-mfa-section';
-  // Le styling de la card est géré par renderMfaSection lui-même.
-  // Un simple wrapper avec marges aérées pour s'intégrer à la modale.
   container.style.cssText = 'margin:14px 0;padding:0';
-
-  // Ajouter un titre court pour cohérence avec les autres sections du profil
   const heading = document.createElement('h3');
   heading.textContent = 'Sécurité du compte';
   heading.style.cssText = 'font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px;font-weight:600';
-
-  // Stratégie de placement
   let inserted = false;
-
-  // 1. Avant le bouton delAccount
   const delBtn = pm.querySelector('button[onclick*="delAccount"]');
   if (delBtn && delBtn.parentElement) {
     delBtn.parentElement.insertBefore(heading, delBtn);
     delBtn.parentElement.insertBefore(container, delBtn);
     inserted = true;
   }
-
-  // 2. Avant le bloc password (si pas déjà inséré)
   if (!inserted) {
     const pOld = document.getElementById('p-old');
     if (pOld) {
-      // Remonter au parent direct de l'input (généralement la zone password)
       let target = pOld.closest('.section, .pwd-section, fieldset, [data-section="password"]') || pOld.parentElement;
       if (target && target.parentElement) {
         target.parentElement.insertBefore(heading, target);
@@ -65,14 +58,9 @@ function _ensureMfaSectionInPM() {
       }
     }
   }
-
-  // 3. Fallback : fin de la modale
-  if (!inserted) {
-    pm.appendChild(heading);
-    pm.appendChild(container);
-  }
-
+  if (!inserted) { pm.appendChild(heading); pm.appendChild(container); }
   return container;
+  ──────────────────────────────────────────────────── */
 }
 
 /* PROFIL */

@@ -285,38 +285,17 @@ async function login(){
   if(!em||!pw){showM('le','Email et mot de passe requis.');return;}
   ld('btn-l',true);
   try{
-    /* ⚡ Trusted device : si on a un device_token stocké pour cet email précis,
-       l'envoyer au worker → skip du challenge MFA si toujours valide (TTL 30j sliding).
-       On lie le token à l'email pour éviter qu'un changement d'utilisateur sur le
-       même appareil hérite du trust de l'utilisateur précédent. */
-    let _deviceToken = null;
-    try {
-      const stored = localStorage.getItem('ami_device_token');
-      const storedFor = localStorage.getItem('ami_device_token_email');
-      if (stored && storedFor === em) _deviceToken = stored;
-    } catch (_) {}
-
-    const d=await wpost('/webhook/auth-login', _deviceToken
-      ? { email:em, password:pw, device_token:_deviceToken }
-      : { email:em, password:pw });
+    /* ⚡ MFA TOTP DÉSACTIVÉ — login direct email + mot de passe (pas de device_token,
+       pas de challenge, pas d'enrôlement). */
+    const d = await wpost('/webhook/auth-login', { email: em, password: pw });
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
 
-    /* ⚡ MFA TOTP — admin nécessite second facteur.
-       2 cas : enrôlement (1ère fois) ou challenge (logins suivants). */
-    if (d.mfa_setup_required) {
-      ld('btn-l', false);
-      const ok = await _showMfaSetupModal(d);
-      if (!ok) { return; } // utilisateur a annulé → reste sur la page login
-      // _showMfaSetupModal a déjà appelé /auth-mfa-verify et stocké la session.
-      // La suite (showApp, init, etc.) est dans la fonction.
-      return;
-    }
-    if (d.mfa_required) {
-      ld('btn-l', false);
-      const ok = await _showMfaChallengeModal(d);
-      if (!ok) { return; }
-      return;
-    }
+    /* ⚡ MFA TOTP DÉSACTIVÉ (sur demande utilisateur)
+       Le worker ne renvoie plus jamais mfa_setup_required ni mfa_required.
+       Les modales _showMfaSetupModal / _showMfaChallengeModal restent en place
+       (pas appelées) pour réactivation future éventuelle. */
+    // if (d.mfa_setup_required) { ... await _showMfaSetupModal(d); ... return; }
+    // if (d.mfa_required)       { ... await _showMfaChallengeModal(d); ... return; }
 
     /* ── Isolation RGPD : fermer la session précédente en mémoire ──
        APP.importedData et uberPatients sont des données de session (tournée du jour),
@@ -1057,78 +1036,105 @@ function _showMfaChallengeModal(d) {
     return ec;
   }
 
-  // ── Capacity table : ECC L, mode Binary, versions 1-10 ───────────────
-  // [version, totalCodewords, dataCodewords, ecCodewords]
+  // ── Capacity table : ECC L, mode Binary, versions 1-7 ───────────────
+  // Format : { size, blocks: [{ count, data, ec }] }
+  // Multi-block : V6+ = 2 blocks identiques (interleaving requis ISO 18004)
   const _QR_CAP_L = [
     null, // index 0 unused
-    { size: 21, total: 26,  data: 19,  ec: 7  }, // V1
-    { size: 25, total: 44,  data: 34,  ec: 10 }, // V2
-    { size: 29, total: 70,  data: 55,  ec: 15 }, // V3
-    { size: 33, total: 100, data: 80,  ec: 20 }, // V4
-    { size: 37, total: 134, data: 108, ec: 26 }, // V5
-    { size: 41, total: 172, data: 136, ec: 18 }, // V6 (2 blocks of 68 + 18 ec)
-    { size: 45, total: 196, data: 156, ec: 20 }, // V7
-    { size: 49, total: 242, data: 194, ec: 24 }, // V8
-    { size: 53, total: 292, data: 232, ec: 30 }, // V9
-    { size: 57, total: 346, data: 274, ec: 18 }, // V10
+    { size: 21, blocks: [{ count: 1, data: 19,  ec: 7  }] }, // V1 : 1×19+7
+    { size: 25, blocks: [{ count: 1, data: 34,  ec: 10 }] }, // V2 : 1×34+10
+    { size: 29, blocks: [{ count: 1, data: 55,  ec: 15 }] }, // V3 : 1×55+15
+    { size: 33, blocks: [{ count: 1, data: 80,  ec: 20 }] }, // V4 : 1×80+20
+    { size: 37, blocks: [{ count: 1, data: 108, ec: 26 }] }, // V5 : 1×108+26
+    { size: 41, blocks: [{ count: 2, data: 68,  ec: 18 }] }, // V6 : 2×68+18 = 136 data total
+    { size: 45, blocks: [{ count: 2, data: 78,  ec: 20 }] }, // V7 : 2×78+20 = 156 data total (+ version info)
   ];
-  // Pour les versions multi-block, on ne supporte que V1-V5 (1 block) en simple.
-  // Pour otpauth (~80-100 chars binaire) → V4-V5 suffit. On bloque au-delà.
+  // Helpers : taille data totale et nombre total de codewords
+  function _capDataBytes(cap) { return cap.blocks.reduce((s, b) => s + b.count * b.data, 0); }
+  function _capTotalCodewords(cap) { return cap.blocks.reduce((s, b) => s + b.count * (b.data + b.ec), 0); }
+  // Version info BCH pour V7+ (RFC ISO 18004 Annexe D, table D.1)
+  const _QR_VERSION_INFO = { 7: 0x07C94 }; // 18 bits
 
   function _pickVersion(byteLen) {
-    // Mode Binary : 4 bits indicator + 8 bits length (pour V1-V9) + 8*byteLen bits
-    // V1-V9 : length encoded on 8 bits → max 80 chars + bits header
-    // Pour rester simple, on supporte V1-V5 (sufficient pour otpauth)
-    for (let v = 1; v <= 5; v++) {
+    // Mode Binary : 4 bits indicator + 8 bits length (V1-V9) + 8*byteLen bits
+    for (let v = 1; v <= 7; v++) {
       const cap = _QR_CAP_L[v];
-      const dataBits = cap.data * 8;
-      const headerBits = 4 + 8; // mode + length 8 bits
+      const dataBits = _capDataBytes(cap) * 8;
+      const headerBits = 4 + 8; // mode (4) + length (8)
       const payloadBits = byteLen * 8;
       if (headerBits + payloadBits <= dataBits) return v;
     }
     return -1; // trop long
   }
 
-  // ── Encodage des données + ECC ───────────────────────────────────────
+  // ── Encodage des données + ECC (avec interleaving multi-block V6+) ──
   function _encodeData(text, version) {
     const cap = _QR_CAP_L[version];
+    const totalData = _capDataBytes(cap);
     const bytes = new TextEncoder().encode(text);
     const bits = [];
-    // Mode binaire = 0100
-    bits.push(0, 1, 0, 0);
-    // Length (8 bits pour V1-9 en mode binaire)
+    bits.push(0, 1, 0, 0); // mode binaire 0100
     const len = bytes.length;
     for (let i = 7; i >= 0; i--) bits.push((len >> i) & 1);
-    // Data bytes
     for (const b of bytes) {
       for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
     }
-    // Terminator 0000 (max 4 bits)
-    const remaining = cap.data * 8 - bits.length;
+    const remaining = totalData * 8 - bits.length;
     for (let i = 0; i < Math.min(4, remaining); i++) bits.push(0);
-    // Pad to byte boundary
     while (bits.length % 8 !== 0) bits.push(0);
-    // Pad bytes alternant 0xEC / 0x11
     const pads = [0xEC, 0x11];
     let pi = 0;
-    while (bits.length < cap.data * 8) {
+    while (bits.length < totalData * 8) {
       const b = pads[pi++ % 2];
       for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
     }
-    // Convert to bytes
-    const data = new Uint8Array(cap.data);
-    for (let i = 0; i < cap.data; i++) {
+    // Convert to data bytes
+    const data = new Uint8Array(totalData);
+    for (let i = 0; i < totalData; i++) {
       let v = 0;
       for (let j = 0; j < 8; j++) v = (v << 1) | bits[i * 8 + j];
       data[i] = v;
     }
-    // Compute ECC
-    const ec = _rsCompute(Array.from(data), cap.ec);
-    // Final codewords = data + ec
-    const final = new Uint8Array(cap.total);
-    final.set(data, 0);
-    for (let i = 0; i < ec.length; i++) final[cap.data + i] = ec[i];
-    return final;
+
+    // Single-block path (V1-V5) : pas d'interleaving
+    if (cap.blocks.length === 1 && cap.blocks[0].count === 1) {
+      const ec = _rsCompute(Array.from(data), cap.blocks[0].ec);
+      const total = _capTotalCodewords(cap);
+      const final = new Uint8Array(total);
+      final.set(data, 0);
+      for (let i = 0; i < ec.length; i++) final[totalData + i] = ec[i];
+      return final;
+    }
+
+    // Multi-block path (V6+) : interleaving ISO 18004 §8.6
+    const dataBlocks = [];
+    const ecBlocks = [];
+    let offset = 0;
+    for (const spec of cap.blocks) {
+      for (let bi = 0; bi < spec.count; bi++) {
+        const dataBlock = Array.from(data.slice(offset, offset + spec.data));
+        const ecBlock   = _rsCompute(dataBlock, spec.ec);
+        dataBlocks.push(dataBlock);
+        ecBlocks.push(ecBlock);
+        offset += spec.data;
+      }
+    }
+    // Interleave data column-major
+    const maxData = Math.max(...dataBlocks.map(b => b.length));
+    const interleaved = [];
+    for (let i = 0; i < maxData; i++) {
+      for (const block of dataBlocks) {
+        if (i < block.length) interleaved.push(block[i]);
+      }
+    }
+    // Interleave EC column-major
+    const maxEc = Math.max(...ecBlocks.map(b => b.length));
+    for (let i = 0; i < maxEc; i++) {
+      for (const block of ecBlocks) {
+        if (i < block.length) interleaved.push(block[i]);
+      }
+    }
+    return new Uint8Array(interleaved);
   }
 
   // ── Placement des modules sur la matrice ─────────────────────────────
@@ -1158,15 +1164,18 @@ function _showMfaChallengeModal(d) {
   }
   function _placeAlignment(m, version) {
     if (version < 2) return;
-    // Tableau des centres pour V2-V5 (suffit pour notre usage)
+    // Tableau des centres pour V2-V7 (RFC ISO 18004 Annexe E.1)
     const positions = {
       2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30],
+      6: [6, 34],
+      7: [6, 22, 38],
     }[version];
     if (!positions) return;
+    const last = positions[positions.length - 1];
     for (const px of positions) {
       for (const py of positions) {
-        // Skip si chevauchement avec finders
-        if ((px === 6 && py === 6) || (px === 6 && py === positions[positions.length - 1]) || (py === 6 && px === positions[positions.length - 1])) continue;
+        // Skip si chevauchement avec finders top-left/top-right/bottom-left
+        if ((px === 6 && py === 6) || (px === 6 && py === last) || (py === 6 && px === last)) continue;
         for (let dy = -2; dy <= 2; dy++) {
           for (let dx = -2; dx <= 2; dx++) {
             const xx = px + dx, yy = py + dy;
@@ -1177,6 +1186,26 @@ function _showMfaChallengeModal(d) {
           }
         }
       }
+    }
+  }
+
+  // ── Version info pour V7+ (18 bits placés en 6×3 et 3×6) ─────────────
+  // RFC ISO 18004 §8.10. Code BCH(18,6) hardcodé pour les versions supportées.
+  function _placeVersionInfo(m, version) {
+    if (version < 7) return;
+    const code = _QR_VERSION_INFO[version];
+    if (code === undefined) return;
+    const sz = m.length;
+    // Placer en 6×3 zone (au-dessus du finder bottom-left)
+    // et en 3×6 zone (à gauche du finder top-right)
+    for (let i = 0; i < 18; i++) {
+      const bit = (code >> i) & 1;
+      const x = Math.floor(i / 3);
+      const y = (i % 3) + sz - 11;
+      // Zone 1 : 6×3 en bas-gauche
+      m[y][x] = bit;
+      // Zone 2 : 3×6 symétrique en haut-droite
+      m[x][y] = bit;
     }
   }
   function _placeFormat(m, ecLevel /* 0=L */, mask) {
@@ -1293,6 +1322,7 @@ function _showMfaChallengeModal(d) {
       _placeAlignment(m, version);
       _placeTiming(m);
       _placeFormat(m, 0, mask);
+      _placeVersionInfo(m, version);  // ⚡ V7+ requis par ISO 18004
       // reservedMask = positions où modules ne sont PAS data
       const reserved = _newMatrix(sz);
       for (let y = 0; y < sz; y++) for (let x = 0; x < sz; x++) reserved[y][x] = (m[y][x] === -1) ? 0 : 1;

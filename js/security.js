@@ -637,6 +637,8 @@ async function initSecurity(token) {
   cleanOldLogs();
   _startPinTimer();
   auditLocal('LOGIN', 'Connexion sécurisée');
+  // 🔐 Injection accès rapide 2FA dans menus (defensive : no-op si DOM absent)
+  try { if (typeof installMfaQuickAccess === 'function') installMfaQuickAccess(); } catch (_) {}
   log('Module sécurité v2.0 initialisé ✅ — AES-256-GCM · PBKDF2 100k · Fraude surveillée (seuil ' + FRAUD_ALERT_THRESHOLD + ')');
 }
 
@@ -1062,4 +1064,71 @@ function renderMfaSection(targetId) {
 if (typeof window !== 'undefined') {
   window.openMfaSettings = openMfaSettings;
   window.renderMfaSection = renderMfaSection;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🚀 INJECTION RAPIDE DU BOUTON 2FA — menus hamburger + sidebar
+   ────────────────────────────────────────────────────────────────────────
+   Appelé automatiquement depuis initSecurity() après login.
+   Injecte dynamiquement (si pas déjà présents) :
+     • Un bouton "🔐 2FA" dans le menu mobile #mobile-menu (avant "Profil")
+     • Un item de navigation dans le sidebar desktop <nav class="side">
+       sous le bloc "Système"
+
+   Stratégie défensive :
+     - Idempotente (vérif l'existence d'un id avant insertion)
+     - No-op silencieuse si le DOM cible est absent (autre layout)
+     - Style aligné sur les autres items existants (var(--s), var(--b), etc.)
+═════════════════════════════════════════════════════════════════════════ */
+function installMfaQuickAccess() {
+  // ⚡ MFA TOTP DÉSACTIVÉ (sur demande utilisateur) — no-op
+  //
+  // Le code d'injection des boutons "🔐 2FA" dans le menu mobile et le sidebar
+  // desktop reste en place ci-dessous (en commentaire) au cas où on voudrait
+  // réactiver le 2FA plus tard.
+  return;
+
+  /* ── Code original conservé pour réactivation future ──
+  // ── Mobile : injecte dans #mobile-menu juste avant le bouton Profil ──
+  try {
+    const mobileMenu = document.querySelector('#mobile-menu .grid, #mobile-menu > div');
+    const btnProfilMobile = document.getElementById('btn-profil-mobile');
+    if (mobileMenu && !document.getElementById('btn-mfa-mobile')) {
+      const btn = document.createElement('button');
+      btn.id = 'btn-mfa-mobile';
+      btn.className = 'bn-item';
+      btn.style.cssText = 'background:var(--s,#1e2d3d);border:1px solid var(--b,#2a3a4d);border-radius:12px;padding:12px 4px;height:auto;flex:none';
+      btn.innerHTML = '<span class="bn-ic">🔐</span>2FA';
+      btn.onclick = () => {
+        if (typeof toggleMobileMenu === 'function') { try { toggleMobileMenu(); } catch (_) {} }
+        openMfaSettings();
+      };
+      if (btnProfilMobile && btnProfilMobile.parentElement === mobileMenu) {
+        mobileMenu.insertBefore(btn, btnProfilMobile);
+      } else {
+        mobileMenu.appendChild(btn);
+      }
+    }
+  } catch (e) { console.warn('[AMI] MFA mobile button KO:', e.message); }
+
+  try {
+    const sideNav = document.querySelector('nav.side');
+    if (sideNav && !document.getElementById('nav-mfa-desktop')) {
+      const blocks = sideNav.querySelectorAll('.sl');
+      const systemBlock = blocks.length > 0 ? blocks[blocks.length - 1] : null;
+      const item = document.createElement('div');
+      item.className = 'ni';
+      item.id = 'nav-mfa-desktop';
+      item.style.cssText = 'cursor:pointer';
+      item.innerHTML = '<span class="nic">🔐</span> Sécurité 2FA';
+      item.onclick = () => { openMfaSettings(); };
+      if (systemBlock) systemBlock.appendChild(item);
+      else sideNav.appendChild(item);
+    }
+  } catch (e) { console.warn('[AMI] MFA desktop nav item KO:', e.message); }
+  ──────────────────────────────────────────────────── */
+}
+
+if (typeof window !== 'undefined') {
+  window.installMfaQuickAccess = installMfaQuickAccess;
 }
