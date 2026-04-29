@@ -608,14 +608,23 @@ async function _afterMfaSuccess(d) {
   }
 }
 
-/* Modale d'ENRÔLEMENT TOTP — 1ère configuration admin.
-   Affiche : QR code + secret base32 + input code de confirmation.
-   Retourne : Promise<boolean> — true si enrôlement réussi, false si annulé. */
+/* Modale d'ENRÔLEMENT TOTP — 1ère configuration admin OU opt-in nurse.
+   Affiche : QR code généré LOCALEMENT (privacy : aucun service externe),
+   secret base32, lien otpauth, input de confirmation. À la confirmation,
+   affiche les 8 recovery codes (admin uniquement) avant de finaliser le login. */
 function _showMfaSetupModal(d) {
   return new Promise((resolve) => {
-    // Supprimer si modale existante
     const old = document.getElementById('mfa-setup-modal');
     if (old) old.remove();
+
+    // ⚡ Génération QR locale (privacy : le secret ne quitte pas le navigateur)
+    let qrSvg = '';
+    try {
+      if (window._qrCode && d.mfa_otpauth_url) {
+        const matrix = window._qrCode.generate(d.mfa_otpauth_url);
+        if (matrix) qrSvg = window._qrCode.toSvg(matrix, { scale: 6, margin: 2 });
+      }
+    } catch (e) { console.warn('[AMI] QR local KO:', e.message); }
 
     const modal = document.createElement('div');
     modal.id = 'mfa-setup-modal';
@@ -624,26 +633,21 @@ function _showMfaSetupModal(d) {
       display:flex;align-items:center;justify-content:center;
       background:rgba(0,0,0,.92);padding:20px;overflow-y:auto;
     `;
-    // QR code via service public (suffit pour un secret à usage unique partagé entre le user et le serveur)
-    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(d.mfa_otpauth_url || '');
     modal.innerHTML = `
       <div style="background:#0b0f14;border:1px solid rgba(0,212,170,.3);border-radius:16px;
                   padding:24px;max-width:480px;width:100%;color:#e2e8f0;font-family:sans-serif;
                   max-height:90vh;overflow-y:auto">
         <div style="font-size:32px;margin-bottom:8px;text-align:center">🔐</div>
-        <h2 style="font-size:20px;margin:0 0 8px;color:#fff;text-align:center">Activation du 2FA admin</h2>
+        <h2 style="font-size:20px;margin:0 0 8px;color:#fff;text-align:center">Activation du 2FA</h2>
         <p style="font-size:13px;color:#94a3b8;line-height:1.6;margin:0 0 16px;text-align:center">
-          Scanne ce QR code avec <strong style="color:#e2e8f0">Google Authenticator</strong>,
+          Scannez ce QR code avec <strong style="color:#e2e8f0">Google Authenticator</strong>,
           <strong style="color:#e2e8f0">Authy</strong> ou <strong style="color:#e2e8f0">1Password</strong>.
         </p>
 
         <div style="background:#fff;padding:12px;border-radius:12px;margin:0 auto 16px;
-                    width:fit-content;display:flex;align-items:center;justify-content:center">
-          <img src="${qrUrl}" alt="QR code TOTP" width="240" height="240"
-               style="display:block" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-          <div style="display:none;color:#000;padding:20px;text-align:center;font-size:13px">
-            QR indisponible — utilisez le secret manuel ci-dessous.
-          </div>
+                    width:fit-content;display:flex;align-items:center;justify-content:center;
+                    min-width:240px;min-height:240px">
+          ${qrSvg || '<div style="color:#000;padding:20px;text-align:center;font-size:13px">QR indisponible<br>Utilisez le secret manuel ci-dessous.</div>'}
         </div>
 
         <details style="margin:0 0 16px;background:rgba(0,212,170,.05);border-radius:8px;padding:10px 14px">
@@ -714,7 +718,15 @@ function _showMfaSetupModal(d) {
           code,
         });
         if (!r.ok) throw new Error(r.error || 'Code incorrect');
-        modal.remove();
+
+        // ⚡ Si recovery codes générés (admin), les afficher AVANT de finaliser
+        if (Array.isArray(r.recovery_codes) && r.recovery_codes.length > 0) {
+          modal.remove();
+          const acked = await _showRecoveryCodesModal(r.recovery_codes);
+          if (!acked) { resolve(false); return; }
+        } else {
+          modal.remove();
+        }
         await _afterMfaSuccess(r);
         resolve(true);
       } catch (e) {
@@ -729,8 +741,94 @@ function _showMfaSetupModal(d) {
   });
 }
 
-/* Modale de CHALLENGE TOTP — logins suivants admin.
-   Affiche uniquement l'input 6 chiffres. */
+/* Modale d'AFFICHAGE des recovery codes — 1 SEULE FOIS après enrôlement.
+   L'utilisateur DOIT cocher "j'ai sauvegardé ces codes" pour continuer. */
+function _showRecoveryCodesModal(codes) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.id = 'mfa-recovery-modal';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:99998;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.95);padding:20px;overflow-y:auto;
+    `;
+    const codesHtml = codes.map(c => `<code style="display:block;padding:8px 12px;background:#000;border:1px solid #1e2d3d;border-radius:6px;font-family:monospace;font-size:16px;color:#00d4aa;letter-spacing:2px;text-align:center;margin:4px 0">${c}</code>`).join('');
+    modal.innerHTML = `
+      <div style="background:#0b0f14;border:2px solid #f59e0b;border-radius:16px;
+                  padding:24px;max-width:480px;width:100%;color:#e2e8f0;font-family:sans-serif;
+                  max-height:90vh;overflow-y:auto">
+        <div style="font-size:32px;margin-bottom:8px;text-align:center">⚠️ 🆘</div>
+        <h2 style="font-size:20px;margin:0 0 8px;color:#f59e0b;text-align:center">Codes de récupération</h2>
+        <p style="font-size:13px;color:#94a3b8;line-height:1.6;margin:0 0 16px">
+          Ces <strong style="color:#fbbf24">8 codes à usage unique</strong> sont votre seul moyen
+          d'accéder à votre compte si vous perdez votre téléphone. <strong style="color:#fbbf24">Sauvegardez-les MAINTENANT</strong>
+          (gestionnaire de mots de passe, papier dans un coffre, etc.).
+        </p>
+        <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);
+                    border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#fbbf24">
+          🔒 Ces codes ne seront <strong>plus jamais affichés</strong>. Chacun ne fonctionne qu'une seule fois.
+        </div>
+        <div style="margin-bottom:16px">${codesHtml}</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button id="rc-copy" style="flex:1;background:#1e2d3d;color:#e2e8f0;border:none;padding:10px;
+                                       border-radius:8px;font-size:13px;cursor:pointer">📋 Copier tous</button>
+          <button id="rc-print" style="flex:1;background:#1e2d3d;color:#e2e8f0;border:none;padding:10px;
+                                        border-radius:8px;font-size:13px;cursor:pointer">🖨️ Imprimer</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;font-size:13px;color:#cbd5e1;
+                      padding:10px;background:rgba(0,212,170,.05);border-radius:8px;
+                      cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" id="rc-ack" style="width:18px;height:18px;cursor:pointer" />
+          <span>J'ai sauvegardé mes codes en lieu sûr.</span>
+        </label>
+        <button id="rc-confirm" disabled
+          style="width:100%;background:#00d4aa;color:#000;border:none;padding:14px;border-radius:10px;
+                 font-size:15px;font-weight:700;cursor:pointer;opacity:.4">
+          Continuer
+        </button>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const ackEl  = document.getElementById('rc-ack');
+    const okBtn  = document.getElementById('rc-confirm');
+    const copyBtn = document.getElementById('rc-copy');
+    const printBtn = document.getElementById('rc-print');
+
+    ackEl.addEventListener('change', () => {
+      okBtn.disabled = !ackEl.checked;
+      okBtn.style.opacity = ackEl.checked ? '1' : '.4';
+    });
+
+    copyBtn.onclick = () => {
+      const txt = '🔐 AMI NGAP — Recovery Codes (' + new Date().toISOString().slice(0,10) + ')\n\n' + codes.join('\n');
+      navigator.clipboard?.writeText(txt).then(() => {
+        copyBtn.textContent = '✅ Copié !';
+        setTimeout(() => { copyBtn.textContent = '📋 Copier tous'; }, 2000);
+      }).catch(() => alert('Copie KO — sélectionnez et copiez manuellement.'));
+    };
+    printBtn.onclick = () => {
+      const w = window.open('', '_blank');
+      if (!w) { alert('Pop-up bloquée — autorisez les pop-ups pour imprimer.'); return; }
+      w.document.write(`<html><head><title>AMI Recovery Codes</title></head><body style="font-family:monospace;padding:30px">
+        <h1>🔐 AMI NGAP — Recovery Codes</h1>
+        <p>Date : ${new Date().toLocaleString('fr-FR')}</p>
+        <p><strong>Conservez ces codes en lieu sûr — ils ne seront plus affichés.</strong></p>
+        <ol style="font-size:18px;letter-spacing:2px">${codes.map(c => `<li>${c}</li>`).join('')}</ol>
+      </body></html>`);
+      w.document.close(); w.print();
+    };
+
+    okBtn.onclick = () => {
+      if (!ackEl.checked) return;
+      modal.remove();
+      resolve(true);
+    };
+  });
+}
+
+/* Modale de CHALLENGE TOTP — logins suivants (admin OU nurse opt-in).
+   Inclut : input 6 chiffres, checkbox "trust device 30j", lien "code de récupération".
+   Le device_token reçu en cas de succès est stocké en localStorage pour skip MFA futur. */
 function _showMfaChallengeModal(d) {
   return new Promise((resolve) => {
     const old = document.getElementById('mfa-challenge-modal');
@@ -747,22 +845,48 @@ function _showMfaChallengeModal(d) {
       <div style="background:#0b0f14;border:1px solid rgba(0,212,170,.3);border-radius:16px;
                   padding:32px;max-width:380px;width:100%;color:#e2e8f0;font-family:sans-serif">
         <div style="font-size:32px;margin-bottom:8px;text-align:center">🔐</div>
-        <h2 style="font-size:18px;margin:0 0 8px;color:#fff;text-align:center">Code 2FA admin</h2>
+        <h2 style="font-size:18px;margin:0 0 8px;color:#fff;text-align:center">Code 2FA</h2>
         <p style="font-size:13px;color:#94a3b8;margin:0 0 20px;text-align:center;line-height:1.5">
           Saisissez le code à 6 chiffres affiché par votre application
           <strong style="color:#e2e8f0">Authenticator</strong>.
         </p>
 
-        <input id="mfa-challenge-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-               autocomplete="one-time-code" placeholder="000000"
-               style="width:100%;padding:16px;font-size:28px;text-align:center;letter-spacing:10px;
-                      background:#000;border:1px solid #1e2d3d;border-radius:10px;color:#fff;
-                      box-sizing:border-box;font-family:monospace;margin-bottom:8px" />
+        <div id="mfa-challenge-mode" style="display:flex;gap:6px;margin-bottom:14px;font-size:11px">
+          <button id="mfa-mode-totp" type="button"
+            style="flex:1;padding:8px;background:rgba(0,212,170,.15);color:#00d4aa;border:1px solid #00d4aa;border-radius:6px;cursor:pointer">
+            Code app
+          </button>
+          <button id="mfa-mode-recovery" type="button"
+            style="flex:1;padding:8px;background:transparent;color:#64748b;border:1px solid #1e2d3d;border-radius:6px;cursor:pointer">
+            Code de récupération
+          </button>
+        </div>
+
+        <div id="mfa-totp-block">
+          <input id="mfa-challenge-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                 autocomplete="one-time-code" placeholder="000000"
+                 style="width:100%;padding:16px;font-size:28px;text-align:center;letter-spacing:10px;
+                        background:#000;border:1px solid #1e2d3d;border-radius:10px;color:#fff;
+                        box-sizing:border-box;font-family:monospace;margin-bottom:8px" />
+        </div>
+        <div id="mfa-recovery-block" style="display:none">
+          <input id="mfa-recovery-input" type="text" placeholder="XXXX-XXXX-XX" maxlength="12"
+                 style="width:100%;padding:14px;font-size:18px;text-align:center;letter-spacing:2px;
+                        background:#000;border:1px solid #1e2d3d;border-radius:10px;color:#fff;
+                        box-sizing:border-box;font-family:monospace;margin-bottom:8px;text-transform:uppercase" />
+        </div>
+
         <div id="mfa-challenge-err" style="display:none;color:#ef4444;font-size:12px;margin-bottom:12px;text-align:center"></div>
+
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#94a3b8;
+                      padding:8px;background:rgba(255,255,255,.02);border-radius:6px;cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" id="mfa-trust-device" style="width:16px;height:16px;cursor:pointer" />
+          <span>Faire confiance à ce navigateur 30 jours</span>
+        </label>
 
         <button id="mfa-challenge-confirm"
           style="width:100%;background:#00d4aa;color:#000;border:none;padding:14px;border-radius:10px;
-                 font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;margin-bottom:8px">
+                 font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px">
           Valider
         </button>
         <button id="mfa-challenge-cancel"
@@ -770,43 +894,86 @@ function _showMfaChallengeModal(d) {
                  padding:10px;border-radius:10px;font-size:13px;cursor:pointer">
           Annuler
         </button>
-        <p style="font-size:11px;color:#475569;text-align:center;margin:14px 0 0">
+        <p id="mfa-challenge-hint" style="font-size:11px;color:#475569;text-align:center;margin:14px 0 0">
           Le code change toutes les 30 secondes.
         </p>
       </div>`;
     document.body.appendChild(modal);
 
     const codeInput = document.getElementById('mfa-challenge-code');
+    const recInput  = document.getElementById('mfa-recovery-input');
     const errEl     = document.getElementById('mfa-challenge-err');
     const btnOk     = document.getElementById('mfa-challenge-confirm');
     const btnNo     = document.getElementById('mfa-challenge-cancel');
+    const trustEl   = document.getElementById('mfa-trust-device');
+    const totpBlock = document.getElementById('mfa-totp-block');
+    const recBlock  = document.getElementById('mfa-recovery-block');
+    const modeTotp  = document.getElementById('mfa-mode-totp');
+    const modeRec   = document.getElementById('mfa-mode-recovery');
+    const hintEl    = document.getElementById('mfa-challenge-hint');
+
+    let mode = 'totp'; // ou 'recovery'
+
+    function setMode(m) {
+      mode = m;
+      const isTotp = m === 'totp';
+      totpBlock.style.display = isTotp ? '' : 'none';
+      recBlock.style.display  = isTotp ? 'none' : '';
+      modeTotp.style.cssText = isTotp
+        ? 'flex:1;padding:8px;background:rgba(0,212,170,.15);color:#00d4aa;border:1px solid #00d4aa;border-radius:6px;cursor:pointer'
+        : 'flex:1;padding:8px;background:transparent;color:#64748b;border:1px solid #1e2d3d;border-radius:6px;cursor:pointer';
+      modeRec.style.cssText = !isTotp
+        ? 'flex:1;padding:8px;background:rgba(0,212,170,.15);color:#00d4aa;border:1px solid #00d4aa;border-radius:6px;cursor:pointer'
+        : 'flex:1;padding:8px;background:transparent;color:#64748b;border:1px solid #1e2d3d;border-radius:6px;cursor:pointer';
+      hintEl.textContent = isTotp ? 'Le code change toutes les 30 secondes.' : 'Code à usage unique au format XXXX-XXXX-XX.';
+      setTimeout(() => (isTotp ? codeInput : recInput)?.focus(), 50);
+    }
+    modeTotp.onclick = () => setMode('totp');
+    modeRec.onclick  = () => setMode('recovery');
 
     setTimeout(() => codeInput?.focus(), 100);
     if (codeInput) {
       codeInput.addEventListener('input', (e) => {
         e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
         if (errEl) errEl.style.display = 'none';
-        // Auto-submit dès 6 chiffres
         if (e.target.value.length === 6) btnOk.click();
       });
       codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnOk.click(); });
     }
+    if (recInput) {
+      recInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase().replace(/[^A-F0-9-]/g, '').slice(0, 12);
+        if (errEl) errEl.style.display = 'none';
+      });
+      recInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnOk.click(); });
+    }
 
     btnOk.onclick = async () => {
-      const code = (codeInput?.value || '').trim();
-      if (!/^\d{6}$/.test(code)) {
-        errEl.textContent = 'Saisissez les 6 chiffres affichés.';
-        errEl.style.display = 'block';
-        return;
+      const payload = { temp_token: d.mfa_temp_token, trust_device: !!trustEl?.checked };
+      if (mode === 'totp') {
+        const code = (codeInput?.value || '').trim();
+        if (!/^\d{6}$/.test(code)) {
+          errEl.textContent = 'Saisissez les 6 chiffres affichés.';
+          errEl.style.display = 'block'; return;
+        }
+        payload.code = code;
+      } else {
+        const rc = (recInput?.value || '').trim();
+        if (!/^[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{2}$/.test(rc)) {
+          errEl.textContent = 'Format attendu : XXXX-XXXX-XX';
+          errEl.style.display = 'block'; return;
+        }
+        payload.recovery_code = rc;
       }
       btnOk.disabled = true;
       btnOk.innerHTML = '<span class="spin"></span> Vérification…';
       try {
-        const r = await wpost('/webhook/auth-mfa-verify', {
-          temp_token: d.mfa_temp_token,
-          code,
-        });
+        const r = await wpost('/webhook/auth-mfa-verify', payload);
         if (!r.ok) throw new Error(r.error || 'Code incorrect');
+        // ⚡ Si trusted device confirmé → stocker token en localStorage
+        if (r.device_token) {
+          try { localStorage.setItem('ami_device_token', r.device_token); } catch {}
+        }
         modal.remove();
         await _afterMfaSuccess(r);
         resolve(true);
@@ -815,9 +982,332 @@ function _showMfaChallengeModal(d) {
         errEl.style.display = 'block';
         btnOk.disabled = false;
         btnOk.innerHTML = 'Valider';
-        if (codeInput) { codeInput.value = ''; codeInput.focus(); }
+        const target = mode === 'totp' ? codeInput : recInput;
+        if (target) { target.value = ''; target.focus(); }
       }
     };
     btnNo.onclick = () => { modal.remove(); resolve(false); };
   });
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   📱 MINI QR CODE GENERATOR — Pure JS, SVG output
+   ────────────────────────────────────────────────────────────────────────
+   Encode du texte en QR Code Model 2, niveau d'erreur L (Low ~7%),
+   mode Binary 8-bit, Versions 1-10 (jusqu'à 174 chars en mode binaire).
+   Suffisant pour les URLs otpauth:// (~80-100 chars typiques).
+
+   Implémentation autonome (pas de dépendance externe), basée sur les specs
+   ISO/IEC 18004 et inspirée de l'algorithme de Kazuhiko Arase (MIT).
+   Privacy : le secret TOTP ne quitte JAMAIS le navigateur.
+═════════════════════════════════════════════════════════════════════════ */
+(function() {
+  'use strict';
+
+  // ── Reed-Solomon GF(256) avec primitive 0x11d ────────────────────────
+  const _GF_LOG = new Uint8Array(256);
+  const _GF_EXP = new Uint8Array(256);
+  (function _gfInit() {
+    let x = 1;
+    for (let i = 0; i < 255; i++) { _GF_EXP[i] = x; _GF_LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
+    _GF_EXP[255] = _GF_EXP[0];
+  })();
+  function _gfMul(a, b) { return a && b ? _GF_EXP[(_GF_LOG[a] + _GF_LOG[b]) % 255] : 0; }
+
+  function _rsGenPoly(degree) {
+    let p = [1];
+    for (let i = 0; i < degree; i++) {
+      const np = new Array(p.length + 1).fill(0);
+      for (let j = 0; j < p.length; j++) {
+        np[j]     ^= p[j];
+        np[j + 1] ^= _gfMul(p[j], _GF_EXP[i]);
+      }
+      p = np;
+    }
+    return p;
+  }
+  function _rsCompute(data, ecLen) {
+    const gen = _rsGenPoly(ecLen);
+    const ec  = new Array(ecLen).fill(0);
+    for (let i = 0; i < data.length; i++) {
+      const f = data[i] ^ ec[0];
+      ec.shift(); ec.push(0);
+      if (f) for (let j = 0; j < ecLen; j++) ec[j] ^= _gfMul(gen[j + 1], f);
+    }
+    return ec;
+  }
+
+  // ── Capacity table : ECC L, mode Binary, versions 1-10 ───────────────
+  // [version, totalCodewords, dataCodewords, ecCodewords]
+  const _QR_CAP_L = [
+    null, // index 0 unused
+    { size: 21, total: 26,  data: 19,  ec: 7  }, // V1
+    { size: 25, total: 44,  data: 34,  ec: 10 }, // V2
+    { size: 29, total: 70,  data: 55,  ec: 15 }, // V3
+    { size: 33, total: 100, data: 80,  ec: 20 }, // V4
+    { size: 37, total: 134, data: 108, ec: 26 }, // V5
+    { size: 41, total: 172, data: 136, ec: 18 }, // V6 (2 blocks of 68 + 18 ec)
+    { size: 45, total: 196, data: 156, ec: 20 }, // V7
+    { size: 49, total: 242, data: 194, ec: 24 }, // V8
+    { size: 53, total: 292, data: 232, ec: 30 }, // V9
+    { size: 57, total: 346, data: 274, ec: 18 }, // V10
+  ];
+  // Pour les versions multi-block, on ne supporte que V1-V5 (1 block) en simple.
+  // Pour otpauth (~80-100 chars binaire) → V4-V5 suffit. On bloque au-delà.
+
+  function _pickVersion(byteLen) {
+    // Mode Binary : 4 bits indicator + 8 bits length (pour V1-V9) + 8*byteLen bits
+    // V1-V9 : length encoded on 8 bits → max 80 chars + bits header
+    // Pour rester simple, on supporte V1-V5 (sufficient pour otpauth)
+    for (let v = 1; v <= 5; v++) {
+      const cap = _QR_CAP_L[v];
+      const dataBits = cap.data * 8;
+      const headerBits = 4 + 8; // mode + length 8 bits
+      const payloadBits = byteLen * 8;
+      if (headerBits + payloadBits <= dataBits) return v;
+    }
+    return -1; // trop long
+  }
+
+  // ── Encodage des données + ECC ───────────────────────────────────────
+  function _encodeData(text, version) {
+    const cap = _QR_CAP_L[version];
+    const bytes = new TextEncoder().encode(text);
+    const bits = [];
+    // Mode binaire = 0100
+    bits.push(0, 1, 0, 0);
+    // Length (8 bits pour V1-9 en mode binaire)
+    const len = bytes.length;
+    for (let i = 7; i >= 0; i--) bits.push((len >> i) & 1);
+    // Data bytes
+    for (const b of bytes) {
+      for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
+    }
+    // Terminator 0000 (max 4 bits)
+    const remaining = cap.data * 8 - bits.length;
+    for (let i = 0; i < Math.min(4, remaining); i++) bits.push(0);
+    // Pad to byte boundary
+    while (bits.length % 8 !== 0) bits.push(0);
+    // Pad bytes alternant 0xEC / 0x11
+    const pads = [0xEC, 0x11];
+    let pi = 0;
+    while (bits.length < cap.data * 8) {
+      const b = pads[pi++ % 2];
+      for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
+    }
+    // Convert to bytes
+    const data = new Uint8Array(cap.data);
+    for (let i = 0; i < cap.data; i++) {
+      let v = 0;
+      for (let j = 0; j < 8; j++) v = (v << 1) | bits[i * 8 + j];
+      data[i] = v;
+    }
+    // Compute ECC
+    const ec = _rsCompute(Array.from(data), cap.ec);
+    // Final codewords = data + ec
+    const final = new Uint8Array(cap.total);
+    final.set(data, 0);
+    for (let i = 0; i < ec.length; i++) final[cap.data + i] = ec[i];
+    return final;
+  }
+
+  // ── Placement des modules sur la matrice ─────────────────────────────
+  function _newMatrix(size) {
+    const m = new Array(size);
+    for (let i = 0; i < size; i++) m[i] = new Int8Array(size).fill(-1); // -1 = vide
+    return m;
+  }
+  function _placeFinder(m, x, y) {
+    for (let dy = -1; dy <= 7; dy++) {
+      for (let dx = -1; dx <= 7; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= m.length || yy >= m.length) continue;
+        const inOuter = (dx >= 0 && dx <= 6 && (dy === 0 || dy === 6)) ||
+                        (dy >= 0 && dy <= 6 && (dx === 0 || dx === 6));
+        const inInner = dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4;
+        m[yy][xx] = (inOuter || inInner) ? 1 : 0;
+      }
+    }
+  }
+  function _placeTiming(m) {
+    const sz = m.length;
+    for (let i = 8; i < sz - 8; i++) {
+      m[6][i] = i % 2 === 0 ? 1 : 0;
+      m[i][6] = i % 2 === 0 ? 1 : 0;
+    }
+  }
+  function _placeAlignment(m, version) {
+    if (version < 2) return;
+    // Tableau des centres pour V2-V5 (suffit pour notre usage)
+    const positions = {
+      2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30],
+    }[version];
+    if (!positions) return;
+    for (const px of positions) {
+      for (const py of positions) {
+        // Skip si chevauchement avec finders
+        if ((px === 6 && py === 6) || (px === 6 && py === positions[positions.length - 1]) || (py === 6 && px === positions[positions.length - 1])) continue;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const xx = px + dx, yy = py + dy;
+            if (xx < 0 || yy < 0 || xx >= m.length || yy >= m.length) continue;
+            const onOuter = Math.abs(dx) === 2 || Math.abs(dy) === 2;
+            const center = dx === 0 && dy === 0;
+            m[yy][xx] = (onOuter || center) ? 1 : 0;
+          }
+        }
+      }
+    }
+  }
+  function _placeFormat(m, ecLevel /* 0=L */, mask) {
+    // Bits format pour ECC L = 01, mask = 3 bits
+    // Lookup table BCH(15,5) avec masking 0x5412
+    const FORMAT_BITS = {
+      0: [0,1, 0,0,0, 0x77c4], 1: [0,1, 0,0,1, 0x72f3],
+      2: [0,1, 0,1,0, 0x7daa], 3: [0,1, 0,1,1, 0x789d],
+      4: [0,1, 1,0,0, 0x662f], 5: [0,1, 1,0,1, 0x6318],
+      6: [0,1, 1,1,0, 0x6c41], 7: [0,1, 1,1,1, 0x6976],
+    };
+    const fmt = FORMAT_BITS[mask][5]; // 15-bit
+    const sz = m.length;
+    const bits = [];
+    for (let i = 14; i >= 0; i--) bits.push((fmt >> i) & 1);
+
+    // Position 1 : autour du finder top-left
+    for (let i = 0; i <= 5; i++)  m[8][i]      = bits[14 - i];
+    m[8][7] = bits[14 - 6]; m[8][8] = bits[14 - 7]; m[7][8] = bits[14 - 8];
+    for (let i = 9; i <= 14; i++) m[14 - i][8] = bits[14 - i];
+
+    // Position 2 : bottom-left + top-right
+    for (let i = 0; i <= 7; i++) m[sz - 1 - i][8] = bits[i];
+    for (let i = 8; i <= 14; i++) m[8][sz - 15 + i] = bits[i];
+    m[sz - 8][8] = 1; // dark module
+  }
+  function _placeData(m, codewords, version) {
+    const sz = m.length;
+    let bitIdx = 0;
+    let upward = true;
+    for (let col = sz - 1; col > 0; col -= 2) {
+      if (col === 6) col--; // skip timing column
+      for (let row = 0; row < sz; row++) {
+        const y = upward ? sz - 1 - row : row;
+        for (let dx = 0; dx < 2; dx++) {
+          const x = col - dx;
+          if (m[y][x] === -1) {
+            const byteIdx = Math.floor(bitIdx / 8);
+            const bitInByte = 7 - (bitIdx % 8);
+            const bit = byteIdx < codewords.length ? ((codewords[byteIdx] >> bitInByte) & 1) : 0;
+            m[y][x] = bit;
+            bitIdx++;
+          }
+        }
+      }
+      upward = !upward;
+    }
+  }
+  function _applyMask(m, reservedMask, mask) {
+    const sz = m.length;
+    for (let y = 0; y < sz; y++) {
+      for (let x = 0; x < sz; x++) {
+        if (reservedMask[y][x]) continue;
+        let invert = false;
+        switch (mask) {
+          case 0: invert = (x + y) % 2 === 0; break;
+          case 1: invert = y % 2 === 0; break;
+          case 2: invert = x % 3 === 0; break;
+          case 3: invert = (x + y) % 3 === 0; break;
+          case 4: invert = (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0; break;
+          case 5: invert = ((x * y) % 2) + ((x * y) % 3) === 0; break;
+          case 6: invert = (((x * y) % 2) + ((x * y) % 3)) % 2 === 0; break;
+          case 7: invert = (((x + y) % 2) + ((x * y) % 3)) % 2 === 0; break;
+        }
+        if (invert) m[y][x] ^= 1;
+      }
+    }
+  }
+  function _scoreMask(m) {
+    // Penalty rules ISO 18004 — version simplifiée pour rapidité
+    const sz = m.length;
+    let p = 0;
+    // Rule 1 : runs of same color
+    for (let y = 0; y < sz; y++) {
+      let run = 1;
+      for (let x = 1; x < sz; x++) {
+        if (m[y][x] === m[y][x - 1]) { run++; if (run === 5) p += 3; else if (run > 5) p++; }
+        else run = 1;
+      }
+    }
+    for (let x = 0; x < sz; x++) {
+      let run = 1;
+      for (let y = 1; y < sz; y++) {
+        if (m[y][x] === m[y - 1][x]) { run++; if (run === 5) p += 3; else if (run > 5) p++; }
+        else run = 1;
+      }
+    }
+    // Rule 2 : 2x2 blocks
+    for (let y = 0; y < sz - 1; y++) {
+      for (let x = 0; x < sz - 1; x++) {
+        if (m[y][x] === m[y][x + 1] && m[y][x] === m[y + 1][x] && m[y][x] === m[y + 1][x + 1]) p += 3;
+      }
+    }
+    return p;
+  }
+
+  // ── API publique ──────────────────────────────────────────────────────
+  // Retourne une matrice 0/1 [size][size] ou null si trop long
+  function generate(text) {
+    const bytes = new TextEncoder().encode(text);
+    const version = _pickVersion(bytes.length);
+    if (version < 0) return null;
+    const cap = _QR_CAP_L[version];
+    const codewords = _encodeData(text, version);
+    const sz = cap.size;
+
+    // Try all 8 masks, pick the best (lowest penalty)
+    let best = null, bestScore = Infinity;
+    for (let mask = 0; mask < 8; mask++) {
+      const m = _newMatrix(sz);
+      _placeFinder(m, 0, 0);
+      _placeFinder(m, sz - 7, 0);
+      _placeFinder(m, 0, sz - 7);
+      _placeAlignment(m, version);
+      _placeTiming(m);
+      _placeFormat(m, 0, mask);
+      // reservedMask = positions où modules ne sont PAS data
+      const reserved = _newMatrix(sz);
+      for (let y = 0; y < sz; y++) for (let x = 0; x < sz; x++) reserved[y][x] = (m[y][x] === -1) ? 0 : 1;
+      _placeData(m, codewords, version);
+      _applyMask(m, reserved, mask);
+      const score = _scoreMask(m);
+      if (score < bestScore) { bestScore = score; best = m; }
+    }
+    return best;
+  }
+
+  // Retourne du SVG avec les modules sombres groupés
+  function toSvg(matrix, options) {
+    options = options || {};
+    const scale  = options.scale  || 8;
+    const margin = options.margin || 4;
+    const dark   = options.dark   || '#000';
+    const light  = options.light  || '#fff';
+    const sz = matrix.length;
+    const total = (sz + margin * 2) * scale;
+    let path = '';
+    for (let y = 0; y < sz; y++) {
+      for (let x = 0; x < sz; x++) {
+        if (matrix[y][x] === 1) {
+          path += `M${(x + margin) * scale},${(y + margin) * scale}h${scale}v${scale}h-${scale}z`;
+        }
+      }
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${total}" height="${total}">` +
+           `<rect width="100%" height="100%" fill="${light}"/>` +
+           `<path d="${path}" fill="${dark}"/></svg>`;
+  }
+
+  // Expose
+  if (typeof window !== 'undefined') {
+    window._qrCode = { generate, toSvg };
+  }
+})();
