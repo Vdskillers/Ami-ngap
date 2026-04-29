@@ -663,7 +663,7 @@ async function _cotationCabinetPersistMyPart(d, txt) {
 
   if (_patRow) {
     // ── Patient existant → upsert strict ────────────────────────────────
-    const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+    const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...((await _dec(_patRow._data))||{}) };
     if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
 
     // Résolution index (mêmes priorités que le solo)
@@ -696,7 +696,7 @@ async function _cotationCabinetPersistMyPart(d, txt) {
     // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite doublons)
 
     _pat.updated_at = new Date().toISOString();
-    const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+    const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: (await _enc(_pat)), updated_at: _pat.updated_at };
     await _idbPut(PATIENTS_STORE, _toStore);
     if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
 
@@ -730,7 +730,7 @@ async function _cotationCabinetPersistMyPart(d, txt) {
       id:         _newPat.id,
       nom:        _nom,
       prenom:     _prenom,
-      _data:      _enc(_newPat),
+      _data:      (await _enc(_newPat)),
       updated_at: _newPat.updated_at,
     };
     await _idbPut(PATIENTS_STORE, _toStore);
@@ -889,7 +889,7 @@ async function _cotationCheckDoublon(onUpdate, onNew) {
     );
     if (!_foundRow || typeof _dec !== 'function') return true;
 
-    const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+    const _foundPat = { ...((await _dec(_foundRow._data)) || {}), id: _foundRow.id };
     if (!Array.isArray(_foundPat.cotations)) return true;
 
     // Comparer en YYYY-MM-DD (f-ds retourne ce format, c.date peut être ISO complet)
@@ -1138,7 +1138,7 @@ async function _cotationPipeline() {
             ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
           );
           if (_foundRow && typeof _dec === 'function') {
-            const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+            const _foundPat = { ...((await _dec(_foundRow._data)) || {}), id: _foundRow.id };
             if (Array.isArray(_foundPat.cotations)) {
               // Chercher une cotation existante à la même date (comparaison YYYY-MM-DD)
               const _existIdx = _foundPat.cotations.findIndex(c =>
@@ -1477,7 +1477,7 @@ async function _cotationPipeline() {
 
         if (_patRow) {
           // ── Patient existant → upsert strict ──────────────────────────
-          const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+          const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...((await _dec(_patRow._data))||{}) };
           if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
 
           // Résoudre l'index à mettre à jour (ordre de priorité)
@@ -1513,7 +1513,7 @@ async function _cotationPipeline() {
           // Si _editRef avec cotationIdx/invoice_number mais pas d'index trouvé → ne rien faire (évite les doublons)
 
           _pat.updated_at = new Date().toISOString();
-          const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+          const _toStore1 = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: (await _enc(_pat)), updated_at: _pat.updated_at };
           await _idbPut(PATIENTS_STORE, _toStore1);
           // Sync immédiate vers carnet_patients — propagation inter-appareils
           if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore1).catch(() => {});
@@ -1543,7 +1543,7 @@ async function _cotationPipeline() {
             id:         _newPat.id,
             nom:        _nom,
             prenom:     _prenom,
-            _data:      _enc(_newPat),
+            _data:      (await _enc(_newPat)),
             updated_at: _newPat.updated_at,
           };
           await _idbPut(PATIENTS_STORE, _toStore2);
@@ -2076,7 +2076,7 @@ async function _saveEditedCotation(d) {
             source:     'tournee_auto',
           };
           if (typeof _idbPut === 'function') {
-            const _toStoreTN = { id: newPat.id, nom, prenom, _data: _enc(newPat), updated_at: newPat.updated_at };
+            const _toStoreTN = { id: newPat.id, nom, prenom, _data: (await _enc(newPat)), updated_at: newPat.updated_at };
             await _idbPut(PATIENTS_STORE, _toStoreTN);
             // Sync immédiate vers carnet_patients — propagation inter-appareils
             if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStoreTN).catch(() => {});
@@ -2087,7 +2087,7 @@ async function _saveEditedCotation(d) {
       }
 
       if (row) {
-        const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+        const p = { ...((await _dec(row._data))||{}), id: row.id, nom: row.nom, prenom: row.prenom };
         if (!Array.isArray(p.cotations)) p.cotations = [];
 
         // Résoudre l'index de la cotation à mettre à jour :
@@ -2141,7 +2141,7 @@ async function _saveEditedCotation(d) {
         // → NE PAS créer de doublon. L'upsert Supabase (bloc 2) gérera la synchro.
 
         p.updated_at = new Date().toISOString();
-        const _toStoreTE = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+        const _toStoreTE = { id: row.id, nom: row.nom, prenom: row.prenom, _data: (await _enc(p)), updated_at: p.updated_at };
         await _idbPut(PATIENTS_STORE, _toStoreTE);
         // Sync immédiate vers carnet_patients — propagation inter-appareils
         if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStoreTE).catch(() => {});
@@ -2669,7 +2669,7 @@ async function _cotationOfflinePipeline() {
             ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
           );
           if (_foundRow && typeof _dec === 'function') {
-            const _foundPat = { ...(_dec(_foundRow._data) || {}), id: _foundRow.id };
+            const _foundPat = { ...((await _dec(_foundRow._data)) || {}), id: _foundRow.id };
             if (Array.isArray(_foundPat.cotations)) {
               const _existIdx = _foundPat.cotations.findIndex(c =>
                 (c.date || '').slice(0, 10) === _dateCheck.slice(0, 10)
@@ -3072,7 +3072,7 @@ async function _cotationOfflineLocalPersist(d, _editRef, txt) {
 
     if (_patRow) {
       // ── Patient existant → upsert strict ──────────────────────────
-      const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...(_dec(_patRow._data)||{}) };
+      const _pat = { id: _patRow.id, nom: _patRow.nom, prenom: _patRow.prenom, ...((await _dec(_patRow._data))||{}) };
       if (!Array.isArray(_pat.cotations)) _pat.cotations = [];
 
       // Résolution index : cotationIdx > invoice_number > invoice_number original > date YYYY-MM-DD
@@ -3098,7 +3098,7 @@ async function _cotationOfflineLocalPersist(d, _editRef, txt) {
       // _editRef avec idx ø → rien (évite doublons)
 
       _pat.updated_at = new Date().toISOString();
-      const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at };
+      const _toStore = { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: (await _enc(_pat)), updated_at: _pat.updated_at };
       await _idbPut(PATIENTS_STORE, _toStore);
       if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
 
@@ -3121,7 +3121,7 @@ async function _cotationOfflineLocalPersist(d, _editRef, txt) {
         updated_at: new Date().toISOString(),
         source:     'cotation_offline_auto',
       };
-      const _toStore = { id: _newPat.id, nom: _nom, prenom: _prenom, _data: _enc(_newPat), updated_at: _newPat.updated_at };
+      const _toStore = { id: _newPat.id, nom: _nom, prenom: _prenom, _data: (await _enc(_newPat)), updated_at: _newPat.updated_at };
       await _idbPut(PATIENTS_STORE, _toStore);
       if (typeof _syncPatientNow === 'function') _syncPatientNow(_toStore).catch(() => {});
       if (typeof showToast === 'function')
@@ -3190,13 +3190,13 @@ async function _cotationOfflineSyncOrQueue(d, patientNomResolved) {
           const _rows = await _idbGetAll(PATIENTS_STORE);
           const _row = _rows.find(r => r.id === d.patient_id);
           if (_row) {
-            const _pat = { id: _row.id, nom: _row.nom, prenom: _row.prenom, ...(_dec(_row._data)||{}) };
+            const _pat = { id: _row.id, nom: _row.nom, prenom: _row.prenom, ...((await _dec(_row._data))||{}) };
             if (Array.isArray(_pat.cotations)) {
               const _idx = _pat.cotations.findIndex(c => c.invoice_number === d.invoice_number);
               if (_idx >= 0) {
                 _pat.cotations[_idx]._synced = true;
                 _pat.updated_at = new Date().toISOString();
-                await _idbPut(PATIENTS_STORE, { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: _enc(_pat), updated_at: _pat.updated_at });
+                await _idbPut(PATIENTS_STORE, { id: _pat.id, nom: _pat.nom, prenom: _pat.prenom, _data: (await _enc(_pat)), updated_at: _pat.updated_at });
               }
             }
           }

@@ -103,18 +103,125 @@ async function initPatientsDB() {
   return _patientsDBOpeningPromise;
 }
 
-/* ── Chiffrement AES simple (clé dérivée de l'userId stable) ── */
+/* ════════════════════════════════════════════════════════════════════════
+   🔐 RGPD/HDS — CHIFFREMENT IDB v2 (AES-256-GCM réel)
+   ────────────────────────────────────────────────────────────────────────
+   Avant (v1, déprécié) :
+     _enc/_dec = btoa(JSON + '|' + hash32bit(userId))
+     → C'était de la base64 obfusquée, PAS du chiffrement.
+     → atob() révélait directement les données patient.
+     → Contradiction frontale avec la promesse "AES-256" du modal RGPD.
+
+   Maintenant (v2, AES-GCM réel) :
+     - Clé AES-256 = data_key envoyée par le worker au login (S.dataKey),
+       stockée chiffrée côté serveur, jamais exposée hors session active.
+     - IV aléatoire 12 bytes par enregistrement (crypto.getRandomValues).
+     - Format de stockage : "aesgcm$<iv_b64>$<cipher_b64>"
+     - Migration zero-touch : _dec détecte automatiquement legacy vs AES,
+       décode legacy → re-chiffre en AES au prochain _idbPut.
+
+   Compromis : un device volé seul ne suffit plus à exfiltrer les patients.
+   Il faut compromettre simultanément le serveur (vol de la data_key_enc)
+   ET la session active (vol de S.dataKey en mémoire). Conformité réelle
+   au discours RGPD/HDS de l'application.
+═════════════════════════════════════════════════════════════════════════ */
+
+const _ENC_PREFIX_AES = 'aesgcm$';
+
+// Cache mémoire de la clé AES importée (reset si l'userId change)
+let _aesKeyCache = null;
+let _aesKeyCacheUid = null;
+
+async function _getPatientAESKey() {
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  const dataKey = (typeof S !== 'undefined' && S?.dataKey) ? String(S.dataKey) : null;
+  if (!dataKey || !/^[a-f0-9]{64}$/i.test(dataKey)) return null; // pas de clé valide → mode legacy
+
+  if (_aesKeyCache && _aesKeyCacheUid === uid) return _aesKeyCache;
+
+  try {
+    const keyBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) keyBytes[i] = parseInt(dataKey.substr(i*2, 2), 16);
+    const k = await crypto.subtle.importKey(
+      'raw', keyBytes,
+      { name: 'AES-GCM', length: 256 },
+      false, ['encrypt', 'decrypt']
+    );
+    _aesKeyCache = k;
+    _aesKeyCacheUid = uid;
+    return k;
+  } catch (e) {
+    console.warn('[AMI] _getPatientAESKey KO:', e.message);
+    return null;
+  }
+}
+
+// Helpers binaires base64 (URL-safe stocké en standard pour compatibilité)
+function _bytesToB64IDB(bytes) {
+  let s = ''; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+function _b64ToBytesIDB(b64) {
+  const s = atob(b64); const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+/* ── Chiffrement legacy (v1) — conservé pour décoder l'existant ──
+   ⚠️ Ne PAS utiliser pour de nouvelles écritures. _dec détecte le format
+   et utilise cette voie uniquement pour les données legacy en IDB. */
 function _patientKey() {
-  // ⚠️ IMPORTANT RGPD/sync : la clé est dérivée de l'userId (stable entre appareils),
+  // ⚠️ IMPORTANT RGPD/sync : la clé legacy est dérivée de l'userId (stable entre appareils),
   // PAS du token JWT (qui change à chaque session/appareil et casserait la sync).
-  // L'userId est identique sur PC et mobile pour le même compte.
   const uid = S?.user?.id || S?.user?.email || 'local';
   let h = 0;
   for (let i = 0; i < uid.length; i++) h = (Math.imul(31, h) + uid.charCodeAt(i)) | 0;
   return 'pk_' + String(Math.abs(h));
 }
-function _enc(obj)  { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _patientKey()))); } catch { return null; } }
-function _dec(str)  { try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; } }
+function _encLegacy(obj)  { try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj) + '|' + _patientKey()))); } catch { return null; } }
+function _decLegacy(str)  { try { const raw = decodeURIComponent(escape(atob(str))); const sep = raw.lastIndexOf('|'); return JSON.parse(raw.slice(0, sep)); } catch { return null; } }
+
+/* ── _enc / _dec ASYNC v2 — production ──
+   (await _enc(obj)) → string AES-GCM si dataKey dispo, fallback legacy sinon.
+   _dec(str) → objet en clair, détecte automatiquement le format. */
+async function _enc(obj) {
+  try {
+    const key = await _getPatientAESKey();
+    if (!key) return _encLegacy(obj); // fallback legacy si pas de dataKey
+    const plain = new TextEncoder().encode(JSON.stringify(obj));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain);
+    return _ENC_PREFIX_AES + _bytesToB64IDB(iv) + '$' + _bytesToB64IDB(new Uint8Array(cipher));
+  } catch (e) {
+    console.warn('[AMI] _enc AES KO, fallback legacy:', e.message);
+    return _encLegacy(obj);
+  }
+}
+
+async function _dec(str) {
+  if (typeof str !== 'string' || !str) return null;
+  // Format AES-GCM v2 : aesgcm$iv$cipher
+  if (str.startsWith(_ENC_PREFIX_AES)) {
+    try {
+      const key = await _getPatientAESKey();
+      if (!key) {
+        console.warn('[AMI] _dec : donnée AES rencontrée sans dataKey — patient illisible.');
+        return null;
+      }
+      const parts = str.split('$');
+      if (parts.length !== 3) return null;
+      const iv = _b64ToBytesIDB(parts[1]);
+      const cipher = _b64ToBytesIDB(parts[2]);
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+      return JSON.parse(new TextDecoder().decode(plain));
+    } catch (e) {
+      console.warn('[AMI] _dec AES KO:', e.message);
+      return null;
+    }
+  }
+  // Sinon : legacy v1 (base64 obfusqué) — toujours décodable, sera ré-encrypté au save
+  return _decLegacy(str);
+}
 
 // ⚡ FIX Zones rentables — exposer _dec et helpers IDB en lecture pour map.js
 //    map.js doit pouvoir déchiffrer les fiches IDB pour récupérer lat/lng des
@@ -153,7 +260,7 @@ async function _migratePatientKeyIfNeeded() {
     if (!rows.length) { localStorage.setItem(FLAG, '1'); return; }
 
     // Essayer de déchiffrer avec la clé actuelle (nouvelle)
-    const sample = _dec(rows[0]._data);
+    const sample = await _dec(rows[0]._data);
     if (sample) { localStorage.setItem(FLAG, '1'); return; } // déjà compatible
 
     // Les données ne se déchiffrent pas → elles ont été chiffrées avec le token
@@ -238,7 +345,7 @@ async function getAllPatients() {
   try {
     await initPatientsDB();
     const rows = await _idbGetAll(PATIENTS_STORE);
-    return rows.map(r => ({ id: r.id, nom: r.nom||'', prenom: r.prenom||'', ...(_dec(r._data)||{}) }));
+    return await Promise.all(rows.map(async r => ({ id: r.id, nom: r.nom||'', prenom: r.prenom||'', ...((await _dec(r._data))||{}) })));
   } catch (e) { console.warn('[getAllPatients]', e.message); return []; }
 }
 
@@ -248,7 +355,7 @@ async function getPatientById(id) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === id);
     if (!row) return null;
-    return { id: row.id, nom: row.nom||'', prenom: row.prenom||'', ...(_dec(row._data)||{}) };
+    return { id: row.id, nom: row.nom||'', prenom: row.prenom||'', ...((await _dec(row._data))||{}) };
   } catch (e) { console.warn('[getPatientById]', e.message); return null; }
 }
 
@@ -258,7 +365,7 @@ async function patientAddConstante(patientId, mesure) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
     if (!Array.isArray(p.constantes)) p.constantes = [];
 
     // ── Règle : Patient existe → Upsert, jamais de push aveugle ──
@@ -289,7 +396,7 @@ async function patientAddConstante(patientId, mesure) {
       p.constantes.push(entry);
     }
 
-    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() };
     await _idbPut(PATIENTS_STORE, toStore);
     if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
   } catch (e) { console.warn('[patientAddConstante]', e.message); }
@@ -301,7 +408,7 @@ async function patientAddPilulier(patientId, pilulier) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
     if (!Array.isArray(p.piluliers)) p.piluliers = [];
 
     // ── Doctrine : Upsert, jamais de push aveugle ──────────────────────
@@ -328,7 +435,7 @@ async function patientAddPilulier(patientId, pilulier) {
     if (existIdx >= 0) p.piluliers[existIdx] = { ...p.piluliers[existIdx], ...entry };
     else p.piluliers.push(entry);
 
-    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() };
     await _idbPut(PATIENTS_STORE, toStore);
     if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
   } catch (e) { console.warn('[patientAddPilulier]', e.message); }
@@ -339,7 +446,7 @@ async function _editConstanteFromPatient(patientId, idx) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), id: row.id };
+  const p = { ...((await _dec(row._data))||{}), id: row.id };
   const c = (p.constantes || [])[idx];
   if (!c) return;
 
@@ -366,11 +473,11 @@ async function _deleteConstante(patientId, idx) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
     if (!Array.isArray(p.constantes)) return;
     // idx est issu du slice().reverse() → index réel = length-1-idx
     p.constantes.splice(p.constantes.length - 1 - idx, 1);
-    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() });
     if (typeof showToast === 'function') showToast('info', 'Mesure supprimée');
     _patTab('constantes', patientId);
   } catch (e) { if (typeof showToast === 'function') showToast('error', 'Erreur', e.message); }
@@ -383,10 +490,10 @@ async function _deletePilulierPatient(patientId, idx) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
     if (!Array.isArray(p.piluliers)) return;
     p.piluliers.splice(p.piluliers.length - 1 - idx, 1);
-    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+    await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() });
     if (typeof showToast === 'function') showToast('info', 'Pilulier supprimé');
     _patTab('pilulier', patientId);
   } catch (e) { if (typeof showToast === 'function') showToast('error', 'Erreur', e.message); }
@@ -408,12 +515,12 @@ async function _syncNotesIntoPatient(patientId) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
     // Embed les notes triées par date décroissante (sans l'id auto-increment IDB)
     p.notes_soins = notes
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .map(n => ({ texte: n.texte, date: n.date, heure: n.heure, date_edit: n.date_edit }));
-    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() };
     await _idbPut(PATIENTS_STORE, toStore);
     if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
   } catch (e) { console.warn('[_syncNotesIntoPatient]', e.message); }
@@ -572,7 +679,7 @@ async function savePatient() {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === editId);
     if (row) {
-      const prev = _dec(row._data) || {};
+      const prev = (await _dec(row._data)) || {};
       existingLat = prev.lat || null;
       existingLng = prev.lng || null;
     }
@@ -624,7 +731,7 @@ async function savePatient() {
     const rows0 = await _idbGetAll(PATIENTS_STORE);
     const row0  = rows0.find(r => r.id === editId);
     if (row0) {
-      const prev0 = _dec(row0._data) || {};
+      const prev0 = (await _dec(row0._data)) || {};
       if (prev0.ordonnances) patient.ordonnances = prev0.ordonnances;
       if (prev0.cotations)   patient.cotations   = prev0.cotations;
     }
@@ -634,7 +741,7 @@ async function savePatient() {
   if (editId && existingLat !== null) {
     const rows2 = await _idbGetAll(PATIENTS_STORE);
     const row2  = rows2.find(r => r.id === editId);
-    const prev = row2 ? (_dec(row2._data) || {}) : {};
+    const prev = row2 ? ((await _dec(row2._data)) || {}) : {};
     if (prev.adresse && prev.adresse !== patient.adresse) {
       delete patient.lat;
       delete patient.lng;
@@ -647,7 +754,7 @@ async function savePatient() {
     id:         patient.id,
     nom:        patient.nom,
     prenom:     patient.prenom,
-    _data:      _enc(patient),
+    _data:      (await _enc(patient)),
     updated_at: patient.updated_at,
   };
 
@@ -665,7 +772,7 @@ async function loadPatients() {
   if (!el) return;
 
   const rows = await _idbGetAll(PATIENTS_STORE);
-  const patients = rows.map(r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) }));
+  const patients = await Promise.all(rows.map(async r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...((await _dec(r._data))||{}) })));
 
   const query = (gv('pat-search')||'').toLowerCase();
   const filtered = query
@@ -715,7 +822,7 @@ async function openPatientDetail(id) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === id);
   if (!row) return;
-  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
   // Charger les notes de soin
   const notes = await _idbGetByIndex(NOTES_STORE, 'patient_id', id);
@@ -737,7 +844,7 @@ async function openPatientDetail(id) {
     }];
     // Persister la migration en IDB pour que tous les accès futurs trouvent le bon format
     try {
-      await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+      await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() });
     } catch(e) { console.warn('[Migration ordo openPatient]', e.message); }
   }
   if (!p.ordonnances) p.ordonnances = [];
@@ -851,7 +958,7 @@ function _patTab(tab, id) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === id);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
     // Migration rétrocompatibilité : ordo_date (ancien champ) → ordonnances[] (nouveau tableau)
     // ⚡ Condition stricte : uniquement si `ordonnances` n'existe PAS encore (jamais migré).
@@ -871,7 +978,7 @@ function _patTab(tab, id) {
       }];
       // Persister la migration en IDB pour que les prochains accès trouvent le bon format
       try {
-        await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() });
+        await _idbPut(PATIENTS_STORE, { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() });
       } catch(e) { console.warn('[Migration ordo]', e.message); }
     }
     if (!p.ordonnances) p.ordonnances = [];
@@ -2023,14 +2130,14 @@ async function _crDeleteFromCarnet(patientId, source, key) {
       const rows = await _idbGetAll(PATIENTS_STORE);
       const row  = rows.find(r => r.id === patientId);
       if (!row) return;
-      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
       if (Array.isArray(p.cotations)) {
         p.cotations = p.cotations.filter(c => {
           const cKey = c.invoice_number || c.cotation_id || c.id;
           return String(cKey) !== String(key);
         });
       }
-      const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+      const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() };
       await _idbPut(PATIENTS_STORE, toStore);
       if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
 
@@ -2055,7 +2162,7 @@ async function _crDeleteFromCarnet(patientId, source, key) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
     const arr = p[source];
     if (!Array.isArray(arr)) return;
@@ -2065,7 +2172,7 @@ async function _crDeleteFromCarnet(patientId, source, key) {
       return String(k) !== String(key);
     });
 
-    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: new Date().toISOString() };
+    const toStore = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: new Date().toISOString() };
     await _idbPut(PATIENTS_STORE, toStore);
     if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
 
@@ -2429,7 +2536,7 @@ async function _saveOrdo(patientId) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
   if (!pat.ordonnances) pat.ordonnances = [];
 
   const ordo = { id: editIdx >= 0 ? pat.ordonnances[editIdx].id : ('ordo_' + Date.now()), medecin, date_prescription: datePres, date_expiration: dateExp, duree, actes, notes, created_at: new Date().toISOString() };
@@ -2438,7 +2545,7 @@ async function _saveOrdo(patientId) {
   else pat.ordonnances.push(ordo);
 
   pat.updated_at = new Date().toISOString();
-  await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+  await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: (await _enc(pat)), updated_at: pat.updated_at });
 
   showToastSafe('✅ Ordonnance enregistrée.');
   checkOrdoExpiry();
@@ -2451,7 +2558,7 @@ function _editOrdo(patientId, idx) {
     const rows = await _idbGetAll(PATIENTS_STORE);
     const row  = rows.find(r => r.id === patientId);
     if (!row) return;
-    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+    const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
     const o = p.ordonnances?.[idx];
     if (!o) return;
     const editIdxEl = $('ordo-edit-idx');  if (editIdxEl) editIdxEl.value = idx;
@@ -2477,7 +2584,7 @@ async function _deleteOrdo(patientId, idx) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
   if (!Array.isArray(pat.ordonnances)) pat.ordonnances = [];
   pat.ordonnances.splice(idx, 1);
   // ⚡ Si l'array devient vide, nettoyer le vieux champ legacy ordo_date
@@ -2489,7 +2596,7 @@ async function _deleteOrdo(patientId, idx) {
     delete pat.ordo_date;
   }
   pat.updated_at = new Date().toISOString();
-  await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at });
+  await _idbPut(PATIENTS_STORE, { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: (await _enc(pat)), updated_at: pat.updated_at });
   showToastSafe('🗑️ Ordonnance supprimée.');
   checkOrdoExpiry();
   _patTab('ordos', patientId);
@@ -2500,7 +2607,7 @@ async function editPatient(patId) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patId);
   if (!row) return;
-  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
   // ⚠️ openAddPatient() remet _editingPatientId = null — on DOIT l'assigner APRÈS
   openAddPatient();
@@ -2629,7 +2736,7 @@ async function printCotationPatient(patientId, cotationIdx) {
       showToastSafe('❌ Patient introuvable.');
       return;
     }
-    const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
+    const p = { ...((await _dec(row._data)) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
     const c = p.cotations?.[cotationIdx];
     if (!c) {
       showToastSafe('❌ Cotation introuvable dans la fiche patient.');
@@ -2693,7 +2800,7 @@ async function editCotationPatient(patientId, cotationIdx) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  const p = { ...((await _dec(row._data))||{}), id: row.id, nom: row.nom, prenom: row.prenom };
   if (!p.cotations?.[cotationIdx]) return;
 
   const c = p.cotations[cotationIdx];
@@ -2787,7 +2894,7 @@ async function deleteCotationPatient(patientId, cotationIdx) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  const p = { ...((await _dec(row._data))||{}), id: row.id, nom: row.nom, prenom: row.prenom };
   if (!p.cotations) return;
 
   const cotToDelete = p.cotations[cotationIdx];
@@ -2795,7 +2902,7 @@ async function deleteCotationPatient(patientId, cotationIdx) {
 
   p.cotations.splice(cotationIdx, 1);
   p.updated_at = new Date().toISOString();
-  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: (await _enc(p)), updated_at: p.updated_at };
   await _idbPut(PATIENTS_STORE, toStore);
 
   if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
@@ -2827,7 +2934,7 @@ async function deleteAllCotationsPatient(patientId) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  const p = { ...((await _dec(row._data))||{}), id: row.id, nom: row.nom, prenom: row.prenom };
   const nb = p.cotations?.length || 0;
   if (!nb) { showToastSafe('ℹ️ Aucune cotation à supprimer.'); return; }
 
@@ -2839,7 +2946,7 @@ async function deleteAllCotationsPatient(patientId) {
 
   p.cotations   = [];
   p.updated_at  = new Date().toISOString();
-  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+  const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: (await _enc(p)), updated_at: p.updated_at };
   await _idbPut(PATIENTS_STORE, toStore);
 
   if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
@@ -2877,7 +2984,7 @@ async function syncCotationsPatient(patientId) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  const p = { ...((await _dec(row._data))||{}), id: row.id, nom: row.nom, prenom: row.prenom };
   const nomAff = `${p.prenom||''} ${p.nom}`.trim();
   if (!Array.isArray(p.cotations)) p.cotations = [];
 
@@ -2971,7 +3078,7 @@ async function syncCotationsPatient(patientId) {
 
     // ── 3. Sauvegarder IDB + push carnet_patients ────────────────────────
     p.updated_at = new Date().toISOString();
-    const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: _enc(p), updated_at: p.updated_at };
+    const toStore = { id: row.id, nom: row.nom, prenom: row.prenom, _data: (await _enc(p)), updated_at: p.updated_at };
     await _idbPut(PATIENTS_STORE, toStore);
     if (typeof _syncPatientNow === 'function') await _syncPatientNow(toStore);
 
@@ -2999,7 +3106,7 @@ async function facturePatientMois(patientId) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === patientId);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), id: row.id, nom: row.nom, prenom: row.prenom };
+  const p = { ...((await _dec(row._data))||{}), id: row.id, nom: row.nom, prenom: row.prenom };
 
   const now      = new Date();
   const annee    = now.getFullYear();
@@ -3209,7 +3316,7 @@ async function checkOrdoExpiry() {
     const alerts = [];
 
     for (const r of rows) {
-      const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
+      const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...((await _dec(r._data))||{}) };
       const nomAff = `${p.prenom||''} ${p.nom}`.trim();
 
       // Nouveau tableau ordonnances[]
@@ -3244,7 +3351,7 @@ async function coterDepuisPatient(id) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === id);
   if (!row) return;
-  const p = { ...(_dec(row._data)||{}), nom: row.nom, prenom: row.prenom };
+  const p = { ...((await _dec(row._data))||{}), nom: row.nom, prenom: row.prenom };
 
   // ── Pré-détection cotation existante ────────────────────────────────────
   // 🛡️ RENFORCEMENT « Carnet → Historique des soins » :
@@ -3394,7 +3501,7 @@ async function coterDepuisPatient(id) {
 async function exportPatientData() {
   const rows  = await _idbGetAll(PATIENTS_STORE);
   const notes = await _idbGetAll(NOTES_STORE);
-  const data  = rows.map(r => ({ ...(_dec(r._data)||{}), nom: r.nom, prenom: r.prenom }));
+  const data  = await Promise.all(rows.map(async r => ({ ...((await _dec(r._data))||{}), nom: r.nom, prenom: r.prenom })));
   const blob  = new Blob([JSON.stringify({ patients: data, notes, exported_at: new Date().toISOString() }, null, 2)], { type: 'application/json' });
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a'); a.href = url; a.download = 'mes-patients-ami.json'; document.body.appendChild(a); a.click();
@@ -3422,7 +3529,7 @@ let _selectedPatientIds = new Set();
    est mis en avant. 'live' = Pilotage journée. 'tur' = Tournée IA (défaut). */
 async function openPatientImportPicker(suggestedTarget) {
   const rows = await _idbGetAll(PATIENTS_STORE);
-  const patients = rows.map(r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) }));
+  const patients = await Promise.all(rows.map(async r => ({ id: r.id, nom: r.nom, prenom: r.prenom, ...((await _dec(r._data))||{}) })));
 
   if (!patients.length) {
     showToastSafe('⚠️ Aucun patient dans le carnet. Ajoutez des patients d\'abord.');
@@ -3667,10 +3774,10 @@ async function _importPickerPatients(target) {
   if (_selectedPatientIds.size === 0) { showToastSafe('⚠️ Sélectionnez au moins un patient.'); return; }
 
   const rows = await _idbGetAll(PATIENTS_STORE);
-  const allSelected = rows
+  const allSelected = await Promise.all(rows
     .filter(r => _selectedPatientIds.has(r.id))
-    .map(r => {
-      const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...(_dec(r._data)||{}) };
+    .map(async r => {
+      const p = { id: r.id, nom: r.nom, prenom: r.prenom, ...((await _dec(r._data))||{}) };
       const street = p.street || '';
       const zip    = p.zip    || '';
       const city   = p.city   || '';
@@ -3701,7 +3808,7 @@ async function _importPickerPatients(target) {
         // Conserver GPS déjà calculé si disponible
         ...(p.lat ? { lat: p.lat, lng: p.lng, geoScore: p.geoScore || 70 } : {}),
       };
-    });
+    }));
 
   // ── Filtre OBLIGATOIRE : rejeter les patients sans adresse exploitable ──
   // S'applique aux 2 cibles (Tournée IA + Pilotage journée) — le routage et
@@ -3781,7 +3888,7 @@ async function _importSinglePatient(id, target) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === id);
   if (!row) return;
-  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
   // Reconstruire l'adresse complète depuis les champs structurés
   const street  = p.street || '';
@@ -3877,7 +3984,7 @@ async function _geocodeAndSaveSingle(id) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === id);
   if (!row) return;
-  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
   const adresseGeo = p.addressFull || p.address ||
     [p.street, [p.zip, p.city].filter(Boolean).join(' '), 'France'].map(s=>(s||'').trim()).filter(Boolean).join(', ') ||
@@ -3898,7 +4005,7 @@ async function _geocodeAndSaveSingle(id) {
     id:         updated.id,
     nom:        updated.nom,
     prenom:     updated.prenom,
-    _data:      _enc(updated),
+    _data:      (await _enc(updated)),
     updated_at: new Date().toISOString(),
   };
   await _idbPut(PATIENTS_STORE, toStore);
@@ -3914,7 +4021,7 @@ async function _forceRegeocode(id) {
   const rows = await _idbGetAll(PATIENTS_STORE);
   const row  = rows.find(r => r.id === id);
   if (!row) return;
-  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+  const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
 
   const adresseGeo = p.addressFull || p.address ||
     [p.street, [p.zip, p.city].filter(Boolean).join(' '), 'France'].map(s=>(s||'').trim()).filter(Boolean).join(', ') ||
@@ -3948,7 +4055,7 @@ async function _forceRegeocode(id) {
     id:         updated.id,
     nom:        updated.nom,
     prenom:     updated.prenom,
-    _data:      _enc(updated),
+    _data:      (await _enc(updated)),
     updated_at: new Date().toISOString(),
   };
   await _idbPut(PATIENTS_STORE, toStore);
@@ -4031,7 +4138,7 @@ async function syncPatientsFromServer() {
 
       // Déchiffrer la version serveur dans tous les cas (nécessaire pour merger les cotations)
       let remoteDecoded = null;
-      try { remoteDecoded = _dec(rp.encrypted_data); } catch(_) {}
+      try { remoteDecoded = (await _dec(rp.encrypted_data)); } catch(_) {}
       if (!remoteDecoded) continue;
 
       if (!local) {
@@ -4047,7 +4154,7 @@ async function syncPatientsFromServer() {
 
       } else if (remoteDate >= localDate) {
         // ── Version serveur plus récente : remplacer ET merger les cotations locales ──
-        const localDecoded = _dec(local._data) || {};
+        const localDecoded = (await _dec(local._data)) || {};
         const localCots    = Array.isArray(localDecoded.cotations) ? localDecoded.cotations : [];
         const remoteCots   = Array.isArray(remoteDecoded.cotations) ? remoteDecoded.cotations : [];
 
@@ -4074,7 +4181,7 @@ async function syncPatientsFromServer() {
           id:         remoteId,
           nom:        remoteDecoded.nom  || '',
           prenom:     remoteDecoded.prenom || '',
-          _data:      _enc(remoteDecoded),
+          _data:      (await _enc(remoteDecoded)),
           updated_at: rp.updated_at,
         };
         await _idbPut(PATIENTS_STORE, toStore);
@@ -4083,7 +4190,7 @@ async function syncPatientsFromServer() {
       } else {
         // ── Version locale plus récente : garder le local ET merger les cotations distantes ──
         // C'est le cas principal du bug : navigateur plus récent, cotations mobiles absentes
-        const localDecoded = _dec(local._data) || {};
+        const localDecoded = (await _dec(local._data)) || {};
         const localCots    = Array.isArray(localDecoded.cotations) ? localDecoded.cotations : [];
         const remoteCots   = Array.isArray(remoteDecoded.cotations) ? remoteDecoded.cotations : [];
 
@@ -4118,7 +4225,7 @@ async function syncPatientsFromServer() {
             id:         remoteId,
             nom:        local.nom,
             prenom:     local.prenom,
-            _data:      _enc(localDecoded),
+            _data:      (await _enc(localDecoded)),
             updated_at: localDecoded.updated_at,
           };
           await _idbPut(PATIENTS_STORE, toStore);
@@ -4231,7 +4338,7 @@ async function syncCotationsFromServer() {
     const _CODES_MAJ_NS = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
 
     for (const row of localRows) {
-      const p = { ...(_dec(row._data) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
+      const p = { ...((await _dec(row._data)) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
       if (!Array.isArray(p.cotations)) p.cotations = [];
 
       // invoice_numbers déjà dans l'IDB — on ne touche pas à ces cotations
@@ -4367,7 +4474,7 @@ async function syncCotationsFromServer() {
         p.updated_at = new Date().toISOString();
         const toStore = {
           id: row.id, nom: p.nom || row.nom, prenom: p.prenom || row.prenom,
-          _data: _enc(p), updated_at: p.updated_at,
+          _data: (await _enc(p)), updated_at: p.updated_at,
         };
         await _idbPut(PATIENTS_STORE, toStore);
         if (typeof _syncPatientNow === 'function') _syncPatientNow(toStore).catch(() => {});
@@ -4429,12 +4536,13 @@ async function cotLoadPatientCache() {
   try {
     await initPatientsDB();
     const rows = await _idbGetAll(PATIENTS_STORE);
-    _cotPatientList = rows.map(r => ({
+    const _decoded = await Promise.all(rows.map(async r => ({
       id: r.id,
       nom: r.nom || '',
       prenom: r.prenom || '',
-      data: _dec(r._data) || {}
-    })).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom));
+      data: (await _dec(r._data)) || {}
+    })));
+    _cotPatientList = _decoded.sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom));
   } catch { _cotPatientList = []; }
 }
 
@@ -4610,7 +4718,7 @@ window.openCotationByInvoice = async function openCotationByInvoice(invoice) {
   try {
     const rows = await _idbGetAll(PATIENTS_STORE);
     for (const row of rows) {
-      const data = _dec(row._data) || {};
+      const data = (await _dec(row._data)) || {};
       const cots = Array.isArray(data.cotations) ? data.cotations : [];
       // Match strict invoice_number, OU match sur les 8 premiers chars de l'id
       // (cas fallback worker.js : `#${id.slice(0,8)}`)

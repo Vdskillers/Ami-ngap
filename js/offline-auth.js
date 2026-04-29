@@ -115,10 +115,19 @@
    * @param {string} token  — token session renvoyé par /webhook/auth-login
    * @param {string} role   — 'nurse' | 'admin'
    * @param {string} pin    — PIN en clair (utilisé pour chiffrer le token, non stocké)
+   * @param {string} dataKey — (optionnel) data_key hex 64 chars utilisée pour chiffrer l'IDB.
+   *                           Chiffrée par PIN, restituée à l'unlock pour permettre la
+   *                           lecture des patients hors-ligne.
    */
-  async function saveCredentials(user, token, role, pin) {
+  async function saveCredentials(user, token, role, pin, dataKey) {
     if (!user?.id || !token || !pin) throw new Error('Paramètres invalides');
     const encrypted = await encryptWithPIN(token, pin);
+    // ⚡ RGPD/HDS — la dataKey est chiffrée avec la même mécanique PBKDF2-PIN que le token,
+    //   pour qu'un device volé sans PIN ne puisse pas déchiffrer les patients en IDB.
+    let dataKeyEnc = null;
+    if (dataKey) {
+      try { dataKeyEnc = await encryptWithPIN(dataKey, pin); } catch (_) {}
+    }
     const record = {
       user_id:           String(user.id),
       email:             String(user.email || ''),
@@ -126,6 +135,7 @@
       prenom:            String(user.prenom || ''),
       role:              String(role || 'nurse'),
       token_enc:         encrypted,
+      data_key_enc:      dataKeyEnc, // null si pas de dataKey ou chiffrement KO
       last_online_check: Date.now(),
       expires_at:        Date.now() + OFFLINE_MAX_MS,
       created_at:        Date.now(),
@@ -186,9 +196,16 @@
     }
     // Succès : reset compteur
     _setPinMeta(userId, { attempts: 0, locked_until: 0 });
+    // ⚡ RGPD/HDS — déchiffrer la dataKey si présente (best-effort : si KO, on
+    //   tombe en mode legacy IDB côté patients.js, sans bloquer l'accès).
+    let dataKey = null;
+    if (rec.data_key_enc) {
+      try { dataKey = await decryptWithPIN(rec.data_key_enc, pin); } catch (_) {}
+    }
     return {
       token,
       role: rec.role,
+      dataKey,
       user: {
         id:     rec.user_id,
         email:  rec.email,

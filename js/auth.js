@@ -50,7 +50,7 @@ async function checkAuth(){
     if (info && info.session_valid) {
       const sess = await window.offlineAuth.showUnlockScreen();
       if (sess) {
-        ss.save(sess.token, sess.role, sess.user);
+        ss.save(sess.token, sess.role, sess.user, sess.dataKey||null);
         if (typeof initSecurity === 'function') initSecurity(sess.token);
         window.APP = window.APP || {};
         window.APP._offlineRestored = true;
@@ -321,7 +321,7 @@ async function login(){
       if (typeof _constDBUserId !== 'undefined') _constDBUserId = null;
     }
 
-    ss.save(d.token,d.role,d.user);
+    ss.save(d.token,d.role,d.user,d.data_key||null);
     /* ── Sécurité RGPD : chiffrement + audit ── */
     if(typeof initSecurity==='function') initSecurity(d.token);
 
@@ -334,7 +334,7 @@ async function login(){
           // 1er login sur cet appareil → PIN obligatoire pour activer le mode offline
           const pin = await window.offlineAuth.showPinCreationModal();
           if (pin) {
-            await window.offlineAuth.saveCredentials(d.user, d.token, d.role, pin);
+            await window.offlineAuth.saveCredentials(d.user, d.token, d.role, pin, d.data_key||null);
           }
         } else {
           // PIN déjà configuré → on ne peut pas rechiffrer sans connaître le PIN,
@@ -358,7 +358,7 @@ async function login(){
         ld('btn-l', false);
         const sess = await window.offlineAuth.showUnlockScreen();
         if (sess) {
-          ss.save(sess.token, sess.role, sess.user);
+          ss.save(sess.token, sess.role, sess.user, sess.dataKey||null);
           if (typeof initSecurity === 'function') initSecurity(sess.token);
           window.APP = window.APP || {};
           window.APP._offlineRestored = true;

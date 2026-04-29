@@ -102,10 +102,15 @@ const W='https://raspy-tooth-1a2f.vdskillers.workers.dev';
 let S=null, LIVE_PATIENT_ID=null;
 
 const ss={
-  save(t,r,u){ S={token:t,role:r,user:u}; APP.token=t; APP.role=r; APP.user=u; sessionStorage.setItem('ami',JSON.stringify(S)); },
-  clear(){ S=null; APP.token=null; APP.role=null; APP.user=null; sessionStorage.removeItem('ami'); },
-  load(){ try{ const x=sessionStorage.getItem('ami'); if(x){ S=JSON.parse(x); APP.token=S.token; APP.role=S.role; APP.user=S.user; return S; } }catch{} return null; },
-  tok(){ return S?.token||''; }
+  // ⚡ RGPD/HDS — dataKey (4e arg optionnel) : clé AES-256 hex envoyée par le worker
+  //    au login, utilisée par patients.js pour chiffrer/déchiffrer l'IDB en AES-GCM réel.
+  //    Stockée en sessionStorage (volatile, purgée à la fermeture de l'onglet) — JAMAIS
+  //    en localStorage. Si absente, patients.js retombe en mode legacy base64.
+  save(t,r,u,k){ S={token:t,role:r,user:u,dataKey:k||null}; APP.token=t; APP.role=r; APP.user=u; APP.dataKey=k||null; sessionStorage.setItem('ami',JSON.stringify(S)); },
+  clear(){ S=null; APP.token=null; APP.role=null; APP.user=null; APP.dataKey=null; sessionStorage.removeItem('ami'); },
+  load(){ try{ const x=sessionStorage.getItem('ami'); if(x){ S=JSON.parse(x); APP.token=S.token; APP.role=S.role; APP.user=S.user; APP.dataKey=S.dataKey||null; return S; } }catch{} return null; },
+  tok(){ return S?.token||''; },
+  dataKey(){ return S?.dataKey||null; }
 };
 
 /* ── 7. DOM HELPERS ──────────────────────────── */

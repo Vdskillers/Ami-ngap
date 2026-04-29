@@ -1275,13 +1275,15 @@ async function _hydrateCotationsCoords(cotations) {
     if (_idbGetAll) {
       const rows = await _idbGetAll(_store) || [];
       // Déchiffrer chaque row pour récupérer lat/lng (stockés dans _data)
-      patients = rows.map(r => {
+      // ⚡ RGPD/HDS — _dec est désormais async (AES-GCM réel via S.dataKey),
+      //   donc on utilise Promise.all pour préserver l'ordre et déchiffrer en parallèle.
+      patients = await Promise.all(rows.map(async r => {
         let body = {};
         if (_dec && r?._data) {
-          try { body = _dec(r._data) || {}; } catch(_) {}
+          try { body = (await _dec(r._data)) || {}; } catch(_) {}
         }
         return { id: r.id, nom: r.nom, prenom: r.prenom, ...body };
-      });
+      }));
     }
   } catch {}
 

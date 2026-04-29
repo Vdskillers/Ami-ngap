@@ -82,7 +82,7 @@ async function syncOfflineQueue() {
                 ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomLow)
               );
               if (_row && typeof _dec === 'function' && typeof _enc === 'function') {
-                const _p = { ...(_dec(_row._data)||{}), id: _row.id, nom: _row.nom, prenom: _row.prenom };
+                const _p = { ...((await _dec(_row._data))||{}), id: _row.id, nom: _row.nom, prenom: _row.prenom };
                 if (!Array.isArray(_p.cotations)) _p.cotations = [];
                 const _todayOQ = (payload.date_soin || new Date().toISOString().slice(0,10));
                 // Dédoublonnage strict :
@@ -111,7 +111,7 @@ async function syncOfflineQueue() {
                 if (_existOQ >= 0) { _p.cotations[_existOQ] = _cotOQ; }
                 else { _p.cotations.push(_cotOQ); }
                 _p.updated_at = new Date().toISOString();
-                await _idbPut(PATIENTS_STORE, { id: _p.id, nom: _p.nom, prenom: _p.prenom, _data: _enc(_p), updated_at: _p.updated_at });
+                await _idbPut(PATIENTS_STORE, { id: _p.id, nom: _p.nom, prenom: _p.prenom, _data: (await _enc(_p)), updated_at: _p.updated_at });
               }
             }
           } catch (_eOQ) { console.warn('[offline-queue] IDB save KO:', _eOQ.message); }

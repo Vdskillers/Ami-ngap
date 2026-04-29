@@ -30,43 +30,98 @@
               • Badge dynamique du nb d'incidents ouverts dans la nav admin
 */
 
-const CACHE_VERSION = 'ami-v5.10.10-cot-patnom-fix';
+const CACHE_VERSION = 'ami-v5.11.0-precache-complete';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
 /* ⚠️ Les fichiers sont à la racine du projet (pas dans /css/ ou /js/).
    Les anciens chemins ./css/... et ./js/... échouaient silencieusement
    au précache → rien n'était caché → au prochain offline l'app ne se
-   chargeait pas et Chrome affichait ERR_INTERNET_DISCONNECTED. */
+   chargeait pas et Chrome affichait ERR_INTERNET_DISCONNECTED.
+
+   ⚡ v5.11.0 — PRÉCACHE COMPLET : tous les modules JS de l'app sont
+   désormais pré-cachés à l'install, garantissant une disponibilité
+   offline 100% dès le 1er chargement. Avant, ~30 modules (patients.js,
+   incident.js, cabinet.js, signature.js…) étaient cachés en cache-first
+   au 1er fetch online → routes peu visitées cassées si offline avant
+   d'avoir été visitées au moins une fois. */
 const STATIC_ASSETS = [
+  // ── Racine / shell ────────────────────────────────────────────────
   './',
   './index.html',
+  './manifest.json',
+  // ── Styles ────────────────────────────────────────────────────────
   './style.css',
   './mobile-premium.css',
   './desktop-premium.css',
   './notes.css',
-  './manifest.json',
+  // ── Modules core ──────────────────────────────────────────────────
   './utils.js',
   './auth.js',
-  './admin.js',
-  './profil.js',
+  './ui.js',
+  './navigation.js',
+  './security.js',
+  './offline-auth.js',
+  './offline-queue.js',
+  './pwa.js',
+  './sw-version-check.js',
+  // ── Données / patients ────────────────────────────────────────────
+  './patients.js',
+  './patient-form.js',
+  './notes.js',
+  // ── Cotation / NGAP ───────────────────────────────────────────────
   './cotation.js',
+  './ngap-analyzer.js',
+  './ngap-correction-hints.js',
+  './ngap-ref-explorer.js',
+  './ngap-suggest.js',
+  './ngap-update-manager.js',
   './ngap-engine/ngap_engine.js',                      // ⚙️ moteur NGAP local (cotation offline) — colocalisé avec le référentiel
   './ngap-engine/ngap_referentiel_2026.json',          // 📚 référentiel NGAP — requis par le moteur offline
-  './voice.js',
-  './dashboard.js',
-  './ui.js',
-  './map.js',
+  // ── Tournée / planification ───────────────────────────────────────
+  './tournee.js',
   './uber.js',
   './ai-tournee.js',
   './ai-smart-tour.js',
   './ai-smart-ui.js',
-  './tournee.js',
   './ai-assistant.js',
-  './pwa.js',
-  './security.js',
-  './offline-auth.js',
-  './offline-queue.js',
+  './ai-layer.js',
+  './map.js',
+  './geocode.js',
+  // ── Cabinet / multi-IDE ───────────────────────────────────────────
+  './cabinet.js',
+  './consentements.js',
+  './signature.js',
+  './infirmiere-tools.js',
+  // ── Soins cliniques ───────────────────────────────────────────────
+  './bsi.js',
+  './bsi-engine.js',
+  './pilulier.js',
+  './alertes-medicaments.js',
+  './constantes.js',
+  './transmissions.js',
+  './cr-passage.js',
+  './copilote.js',
+  // ── Tableaux de bord / reporting ──────────────────────────────────
+  './dashboard.js',
+  './rapport.js',
+  './tresorerie.js',
+  // ── Admin / compliance / sécurité ─────────────────────────────────
+  './admin.js',
+  './admin-ngap.js',
+  './audit-cpam.js',
+  './compliance-engine.js',
+  './incident.js',                                     // 🚨 module Plan d'incident RGPD/CNIL — critique
+  './notif-messages.js',
+  // ── Profil / abonnement / contact / onboarding ────────────────────
+  './profil.js',
+  './subscription.js',
+  './contact.js',
+  './onboarding.js',
+  './extras.js',
+  // ── Voix ──────────────────────────────────────────────────────────
+  './voice.js',
+  // ── CDN ───────────────────────────────────────────────────────────
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
 ];

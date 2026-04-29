@@ -289,7 +289,7 @@ async function _syncPlanningToServer(patients) {
   try {
     let encrypted_data;
     if (typeof _enc === 'function') {
-      try { encrypted_data = _enc({ __weekly_planning: patients }); } catch { encrypted_data = JSON.stringify(patients); }
+      try { encrypted_data = await _enc({ __weekly_planning: patients }); } catch { encrypted_data = JSON.stringify(patients); }
     } else {
       encrypted_data = JSON.stringify(patients);
     }
@@ -341,7 +341,7 @@ async function _syncPlanningFromServer() {
     let remote = null;
     try {
       if (typeof _dec === 'function') {
-        const d = _dec(res.data.encrypted_data);
+        const d = await _dec(res.data.encrypted_data);
         remote = d?.__weekly_planning || null;
       }
       if (!remote) remote = JSON.parse(res.data.encrypted_data);
@@ -667,10 +667,10 @@ async function renderPlanning(d){
   try {
     if (typeof _idbGetAll === 'function') {
       const rows = await _idbGetAll(PATIENTS_STORE);
-      rows.forEach(r => {
-        const decoded = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
+      for (const r of rows) {
+        const decoded = (typeof _dec === 'function') ? ((await _dec(r._data)) || {}) : {};
         carnetIndex[r.id] = { nom: r.nom || '', prenom: r.prenom || '', ...decoded };
-      });
+      }
     }
   } catch(e) { console.warn('[Planning] IDB KO:', e.message); }
 
@@ -2811,7 +2811,7 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
 
           const rows = await _idbGetAll(PATIENTS_STORE);
           for (const row of rows) {
-            const p = { id: row.id, ...((typeof _dec === 'function' ? _dec(row._data) : {}) || {}) };
+            const p = { id: row.id, ...((typeof _dec === 'function' ? (await _dec(row._data)) : {}) || {}) };
             if (!Array.isArray(p.cotations)) continue;
             for (const cot of p.cotations) {
               if (cot._synced) continue;
@@ -2948,7 +2948,7 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
           const rows = await _idbGetAll(PATIENTS_STORE);
           const row  = rows.find(r => r.id === pid);
           if (!row) continue;
-          const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
+          const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data)) || {}) };
           if (!Array.isArray(pat.cotations)) continue;
           // Résolution : invoice_number connu, sinon (date + total) sur cotation non-synced
           const _dKey = (p._cotation?._tournee_date || new Date().toISOString()).slice(0, 10);
@@ -2966,7 +2966,7 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
             if (inv && !pat.cotations[cIdx].invoice_number) pat.cotations[cIdx].invoice_number = inv;
             pat.cotations[cIdx]._synced = true;
             pat.updated_at = new Date().toISOString();
-            const _tsM = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at };
+            const _tsM = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: (await _enc(pat)), updated_at: pat.updated_at };
             await _idbPut(PATIENTS_STORE, _tsM);
             if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsM).catch(() => {});
           }
@@ -2981,7 +2981,7 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
           const rows = await _idbGetAll(PATIENTS_STORE);
           const row  = rows.find(r => r.id === item._idb_patient_id);
           if (!row) continue;
-          const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data) || {}) };
+          const pat = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data)) || {}) };
           if (Array.isArray(pat.cotations)) {
             // Match prioritaire : invoice_number, sinon (date + total)
             let c = inv ? pat.cotations.find(x => x.invoice_number === inv) : null;
@@ -2997,7 +2997,7 @@ async function _syncCotationsToSupabase(patients, { skipIDB = false } = {}) {
             }
           }
           pat.updated_at = new Date().toISOString();
-          const _ts1 = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: _enc(pat), updated_at: pat.updated_at };
+          const _ts1 = { id: pat.id, nom: pat.nom, prenom: pat.prenom, _data: (await _enc(pat)), updated_at: pat.updated_at };
           await _idbPut(PATIENTS_STORE, _ts1);
           if (typeof _syncPatientNow === 'function') _syncPatientNow(_ts1).catch(() => {});
         } catch {}
@@ -3089,7 +3089,7 @@ async function autoFacturation(patient){
         const rows = await _idbGetAll(PATIENTS_STORE);
         const pid  = patient.patient_id || patient.id;
         const row  = rows.find(r => r.id === pid);
-        if (row && typeof _dec === 'function') ficheIDB = _dec(row._data) || {};
+        if (row && typeof _dec === 'function') ficheIDB = (await _dec(row._data)) || {};
       }
     } catch(_) {}
 
@@ -4087,12 +4087,11 @@ async function _autoAddImportedToCarnet(patients) {
     // Charger le carnet existant pour déduplication
     const rows = await _idbGetAll(PATIENTS_STORE);
     // Index de normalisation : "prénom nom" → true
-    const existIndex = new Set(
-      rows.map(r => {
-        const d = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
-        return _normalizePatientKey(r.nom, r.prenom, d);
-      }).filter(Boolean)
-    );
+    const _decoded = await Promise.all(rows.map(async r => {
+      const d = (typeof _dec === 'function') ? ((await _dec(r._data)) || {}) : {};
+      return _normalizePatientKey(r.nom, r.prenom, d);
+    }));
+    const existIndex = new Set(_decoded.filter(Boolean));
 
     let added = 0;
     for (const p of patients) {
@@ -4183,7 +4182,7 @@ async function _autoAddImportedToCarnet(patients) {
       };
 
       const id = p.patient_id || p.id || ('imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
-      const _tsImp = { id, nom: fiche.nom, prenom: fiche.prenom, _data: _enc(fiche), updated_at: fiche.updated_at };
+      const _tsImp = { id, nom: fiche.nom, prenom: fiche.prenom, _data: (await _enc(fiche)), updated_at: fiche.updated_at };
       await _idbPut(PATIENTS_STORE, _tsImp);
       if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsImp).catch(() => {});
 
@@ -5204,7 +5203,7 @@ async function _insertUrgentPatient(patientData) {
           id:         newPat.id,
           nom:        newPat.nom,
           prenom:     newPat.prenom,
-          _data:      (typeof _enc === 'function') ? _enc(newPat) : JSON.stringify(newPat),
+          _data:      (typeof _enc === 'function') ? (await _enc(newPat)) : JSON.stringify(newPat),
           updated_at: now,
         };
         await _idbPut(PATIENTS_STORE, row);
@@ -5239,13 +5238,14 @@ async function openUrgentPatientModal() {
   if (typeof _idbGetAll === 'function' && typeof PATIENTS_STORE !== 'undefined') {
     try {
       const rows = await _idbGetAll(PATIENTS_STORE);
-      carnet = rows.map(r => {
-        const d = (typeof _dec === 'function') ? (_dec(r._data) || {}) : {};
+      const _decoded = await Promise.all(rows.map(async r => {
+        const d = (typeof _dec === 'function') ? ((await _dec(r._data)) || {}) : {};
         return { id: r.id, nom: r.nom || d.nom || '', prenom: r.prenom || d.prenom || '',
                  ddn: d.ddn || '', amo: d.amo || '', amc: d.amc || '',
                  adresse: d.adresse || d.addressFull || '',
                  lat: d.lat || null, lng: d.lng || null };
-      }).filter(p => p.nom || p.prenom);
+      }));
+      carnet = _decoded.filter(p => p.nom || p.prenom);
       carnet.sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom, 'fr'));
     } catch(e) { console.warn('[AMI] openUrgentPatientModal carnet KO:', e.message); }
   }
@@ -5408,7 +5408,7 @@ async function _confirmUrgentPatient() {
         const rows = await _idbGetAll(PATIENTS_STORE);
         const row = rows.find(r => r.id === patId);
         if (row) {
-          const d = (typeof _dec === 'function') ? (_dec(row._data) || {}) : {};
+          const d = (typeof _dec === 'function') ? ((await _dec(row._data)) || {}) : {};
           lat = d.lat || null;
           lng = d.lng || null;
         }
@@ -5732,7 +5732,7 @@ function _validateCotationLive() {
       const rows = await _idbGetAll(PATIENTS_STORE);
       const row  = rows.find(r => r.id === pid);
       if (!row) return;
-      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...(_dec(row._data)||{}) };
+      const p = { id: row.id, nom: row.nom, prenom: row.prenom, ...((await _dec(row._data))||{}) };
       if (!p.cotations) p.cotations = [];
       const today     = (typeof _localDateStr === 'function') ? _localDateStr() : new Date().toISOString().slice(0, 10);
       // ⚡ Description enrichie : patient.description peut être "Diabète" brut.
@@ -5826,7 +5826,7 @@ function _validateCotationLive() {
         p.cotations.push(cotEntry);
       }
       p.updated_at = new Date().toISOString();
-      const _tsLive = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at };
+      const _tsLive = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: p.updated_at };
       await _idbPut(PATIENTS_STORE, _tsLive);
       if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsLive).catch(() => {});
 
@@ -5873,7 +5873,7 @@ function _validateCotationLive() {
                 p.cotations[finalIdx].invoice_number = invReturned;
                 p.cotations[finalIdx]._synced = true;
                 p.updated_at = new Date().toISOString();
-                const _tsLive2 = { id: p.id, nom: p.nom, prenom: p.prenom, _data: _enc(p), updated_at: p.updated_at };
+                const _tsLive2 = { id: p.id, nom: p.nom, prenom: p.prenom, _data: (await _enc(p)), updated_at: p.updated_at };
                 await _idbPut(PATIENTS_STORE, _tsLive2);
                 if (typeof _syncPatientNow === 'function') _syncPatientNow(_tsLive2).catch(() => {});
               }
@@ -5947,7 +5947,7 @@ async function _openCotationComplete() {
             ((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_nomCheckOC)
           );
       if (_rowOC && typeof _dec === 'function') {
-        const _patOC = { ...(_dec(_rowOC._data) || {}), id: _rowOC.id };
+        const _patOC = { ...((await _dec(_rowOC._data)) || {}), id: _rowOC.id };
         if (Array.isArray(_patOC.cotations)) {
           const _existIdxOC = _patOC.cotations.findIndex(c =>
             (c.date || '').slice(0, 10) === _dateForCheck
@@ -6126,7 +6126,7 @@ async function openCotationPatient(patientIndex) {
         : _allRows.find(r => (((r.prenom||'') + ' ' + (r.nom||'')).toLowerCase().includes(_patNom) || ((r.nom||'') + ' ' + (r.prenom||'')).toLowerCase().includes(_patNom)));
 
       if (_row && typeof _dec === 'function') {
-        const _pat = { ...(_dec(_row._data) || {}), id: _row.id };
+        const _pat = { ...((await _dec(_row._data)) || {}), id: _row.id };
         if (Array.isArray(_pat.cotations)) {
           // Chercher par date du patient (YYYY-MM-DD) — couvre Planning et Pilotage
           const _existIdx = _pat.cotations.findIndex(c =>
@@ -6245,7 +6245,7 @@ async function openCotationPatient(patientIndex) {
       const rows = await _idbGetAll(PATIENTS_STORE);
       const row  = rows.find(r => r.id === patient.patient_id || r.id === patient.id);
       if (row && typeof _dec === 'function') {
-        const pat = _dec(row._data) || {};
+        const pat = (await _dec(row._data)) || {};
         if (pat.actes_recurrents) actesRecurrents = pat.actes_recurrents;
       }
     }
