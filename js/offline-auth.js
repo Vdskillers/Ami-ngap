@@ -310,13 +310,13 @@
             et de la déverrouiller après 10 min d'inactivité.<br><br>
             Minimum 4 chiffres. À garder confidentiel.
           </div>
-          <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+          <input type="password" inputmode="numeric" maxlength="8" autofocus
                  class="oa-input" id="oa-pin-new" placeholder="••••" autocomplete="new-password">
-          <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+          <input type="password" inputmode="numeric" maxlength="8"
                  class="oa-input" id="oa-pin-confirm" placeholder="Confirmer"
                  autocomplete="new-password" style="margin-top:10px">
           <div class="oa-err" id="oa-pin-err"></div>
-          <button class="oa-btn" id="oa-pin-ok">✅ Activer le PIN</button>
+          <button class="oa-btn" id="oa-pin-ok" type="button">✅ Activer le PIN</button>
         </div>
       `;
       document.body.appendChild(ov);
@@ -326,7 +326,23 @@
       const err  = ov.querySelector('#oa-pin-err');
       const btn  = ov.querySelector('#oa-pin-ok');
 
-      setTimeout(() => inp1.focus(), 100);
+      // Stratégie de focus robuste (v9.1) — voir commentaire dans showUnlockScreen
+      function _tryFocusPin1() {
+        if (document.activeElement === inp1 || document.activeElement === inp2) return;
+        try { inp1.focus({ preventScroll: true }); } catch(_) {
+          try { inp1.focus(); } catch(__) {}
+        }
+      }
+      requestAnimationFrame(() => requestAnimationFrame(_tryFocusPin1));
+      setTimeout(_tryFocusPin1, 150);
+      setTimeout(_tryFocusPin1, 400);
+      setTimeout(_tryFocusPin1, 900);
+      ov.addEventListener('mousedown', (ev) => {
+        if (ev.target === inp1 || ev.target === inp2) return;
+        if (btn.contains(ev.target)) return;
+        setTimeout(_tryFocusPin1, 0);
+      });
+
       inp1.addEventListener('keypress', e => { if (e.key === 'Enter') inp2.focus(); });
       inp2.addEventListener('keypress', e => { if (e.key === 'Enter') btn.click(); });
 
@@ -374,11 +390,11 @@
             Connecté en tant que <b>${_esc(displayName)}</b><br>
             <span style="font-size:11px;color:#8b949e">Session valide ${daysLeft} jour${daysLeft>1?'s':''} offline</span>
           </div>
-          <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+          <input type="password" inputmode="numeric" maxlength="8" autofocus
                  class="oa-input" id="oa-unlock-pin" placeholder="••••" autocomplete="current-password">
           <div class="oa-err" id="oa-unlock-err"></div>
-          <button class="oa-btn" id="oa-unlock-ok">🔓 Déverrouiller</button>
-          <button class="oa-btn sec" id="oa-unlock-switch">Utiliser un autre compte</button>
+          <button class="oa-btn" id="oa-unlock-ok" type="button">🔓 Déverrouiller</button>
+          <button class="oa-btn sec" id="oa-unlock-switch" type="button">Utiliser un autre compte</button>
         </div>
       `;
       document.body.appendChild(ov);
@@ -388,14 +404,42 @@
       const btn    = ov.querySelector('#oa-unlock-ok');
       const btnAlt = ov.querySelector('#oa-unlock-switch');
 
-      setTimeout(() => inp.focus(), 100);
+      // ─── Stratégie de focus robuste (v9.1) ───
+      // Avant : un seul setTimeout 100ms → fragile. Sur Edge/Chrome, l'overlay
+      // peut ne pas être complètement peint (backdrop-filter, layout sticky)
+      // au moment où inp.focus() est appelé → le focus est silencieusement
+      // refusé et l'utilisateur ne peut pas taper son PIN sans cliquer
+      // d'abord ailleurs. Maintenant : 4 tentatives échelonnées + fallback
+      // click handler sur l'overlay.
+      function _tryFocusPin() {
+        if (document.activeElement === inp) return; // déjà focalisé
+        try { inp.focus({ preventScroll: true }); } catch(_) {
+          try { inp.focus(); } catch(__) {}
+        }
+      }
+      // 1) Au prochain frame une fois le DOM peint
+      requestAnimationFrame(() => requestAnimationFrame(_tryFocusPin));
+      // 2) Retries échelonnés pour rattraper les cas tardifs
+      setTimeout(_tryFocusPin, 150);
+      setTimeout(_tryFocusPin, 400);
+      setTimeout(_tryFocusPin, 900);
+      // 3) Fallback ultime : un clic n'importe où dans la modale (hors boutons)
+      //    re-déclenche le focus sur l'input. Évite à l'utilisateur d'avoir
+      //    à cliquer sur "Déverrouiller" pour débloquer la saisie.
+      ov.addEventListener('mousedown', (ev) => {
+        if (ev.target === inp) return;
+        if (btn.contains(ev.target) || btnAlt.contains(ev.target)) return;
+        // Si le clic est ailleurs sur la box / overlay → on focus l'input
+        setTimeout(_tryFocusPin, 0);
+      });
+
       inp.addEventListener('keypress', e => { if (e.key === 'Enter') btn.click(); });
 
       btn.addEventListener('click', async () => {
         const pin = inp.value.trim();
         err.textContent = '';
         inp.classList.remove('err');
-        if (!pin) { err.textContent = 'Saisissez votre PIN.'; inp.classList.add('err'); return; }
+        if (!pin) { err.textContent = 'Saisissez votre PIN.'; inp.classList.add('err'); _tryFocusPin(); return; }
         btn.disabled = true;
         try {
           const sess = await unlockWithPIN(info.id, pin);
@@ -406,7 +450,9 @@
           inp.classList.add('err');
           inp.value = '';
           btn.disabled = false;
-          setTimeout(() => inp.focus(), 300);
+          // Refocus avec la stratégie robuste
+          setTimeout(_tryFocusPin, 100);
+          setTimeout(_tryFocusPin, 400);
         }
       });
 
