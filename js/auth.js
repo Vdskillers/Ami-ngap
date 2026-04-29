@@ -63,7 +63,9 @@ function clientHasPermission(permission){
    Ajustement du délai par défaut : modifier IDLE_TIMEOUT_MS_DEFAULT.
 ─────────────────────────────────────────────────────────────── */
 const IDLE_TIMEOUT_MS_DEFAULT = 30 * 60 * 1000; // 30 minutes (recommandation santé)
-let _amiIdleTimer = null;
+const IDLE_WARNING_MS         = 60 * 1000;       // 60 sec avant expiration → toast d'avertissement
+let _amiIdleTimer    = null;
+let _amiIdleWarnTimer = null;
 let _amiIdleAttached = false;
 let _amiIdleHandling = false; // évite le re-entrée pendant le PIN unlock
 
@@ -95,15 +97,100 @@ function _amiHasPIN() {
   } catch { return false; }
 }
 
+/* ── Toast warning ────────────────────────────────────────────
+   Affiche une notification non-bloquante 60 sec avant le logout.
+   - Position : bas-centré, au-dessus du bottom nav (z-index 600)
+   - Theme : sombre AMI (#0b0f14 bg, #00d4aa accent)
+   - Auto-dismiss : sur click n'importe où dans la page (le click reset
+     déjà le timer via les listeners DOM standard) OU à l'expiration
+     (l'écran PIN/logout prend le relais).
+   - Skip : si tournée/voice active (cohérent avec la logique principale)
+─────────────────────────────────────────────────────────────── */
+const _AMI_IDLE_TOAST_ID = 'ami-idle-warning-toast';
+
+function _amiHideIdleWarning() {
+  const el = document.getElementById(_AMI_IDLE_TOAST_ID);
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
+
+function _amiShowIdleWarning() {
+  // Skip défensif : si l'utilisateur a entre-temps lancé une tournée
+  //   ou activé la voix, on ne montre pas le warning.
+  if (_amiIsActiveTournee() || _amiIsVoiceActive()) return;
+  if (document.getElementById(_AMI_IDLE_TOAST_ID)) return; // déjà affiché
+
+  const wrap = document.createElement('div');
+  wrap.id = _AMI_IDLE_TOAST_ID;
+  wrap.setAttribute('role', 'status');
+  wrap.setAttribute('aria-live', 'polite');
+  wrap.style.cssText = [
+    'position:fixed',
+    'left:50%',
+    'bottom:88px',
+    'transform:translateX(-50%)',
+    'z-index:600',
+    'max-width:min(420px, calc(100vw - 32px))',
+    'padding:14px 18px',
+    'background:linear-gradient(135deg, #0b0f14 0%, #131a23 100%)',
+    'border:1px solid rgba(0,212,170,.45)',
+    'border-radius:14px',
+    'color:#e6edf3',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+    'font-size:13px',
+    'line-height:1.4',
+    'box-shadow:0 12px 40px rgba(0,0,0,.55), 0 0 24px rgba(0,212,170,.18)',
+    'display:flex',
+    'align-items:center',
+    'gap:12px',
+    'animation:amiIdleSlideIn .25s ease-out',
+    'cursor:pointer',
+  ].join(';');
+  wrap.innerHTML =
+    '<span style="font-size:20px;flex-shrink:0">⏰</span>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="font-weight:600;color:#00d4aa;margin-bottom:2px">Session bientôt expirée</div>' +
+      '<div style="font-size:12px;color:#94a3b8">Touchez l\'écran pour rester connecté.</div>' +
+    '</div>' +
+    '<button type="button" style="flex-shrink:0;background:rgba(0,212,170,.15);border:1px solid rgba(0,212,170,.4);color:#00d4aa;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Je suis là</button>';
+
+  // Inject keyframe (idempotent)
+  if (!document.getElementById('ami-idle-toast-anim')) {
+    const style = document.createElement('style');
+    style.id = 'ami-idle-toast-anim';
+    style.textContent = '@keyframes amiIdleSlideIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}';
+    document.head.appendChild(style);
+  }
+
+  // Click n'importe où sur le toast → reset (le bouton hérite du bubbling)
+  wrap.addEventListener('click', () => {
+    _amiHideIdleWarning();
+    _amiIdleReset();
+  });
+
+  document.body.appendChild(wrap);
+}
+
 function _amiIdleReset() {
   if (window.AMI_DISABLE_IDLE === true) return;
-  if (_amiIdleTimer) clearTimeout(_amiIdleTimer);
+  if (_amiIdleTimer)     { clearTimeout(_amiIdleTimer);     _amiIdleTimer     = null; }
+  if (_amiIdleWarnTimer) { clearTimeout(_amiIdleWarnTimer); _amiIdleWarnTimer = null; }
+  // Si un toast warning était affiché, le retirer (l'utilisateur a fait
+  //   un mouvement → la session est ranimée).
+  _amiHideIdleWarning();
+
   if (window.AMI_FORCE_IDLE === true) {
-    // Mode debug : déclenche immédiatement (sans timer)
     queueMicrotask(_amiIdleExpire);
     return;
   }
-  _amiIdleTimer = setTimeout(_amiIdleExpire, _amiIdleTimeoutMs());
+
+  const total   = _amiIdleTimeoutMs();
+  const warnAt  = Math.max(0, total - IDLE_WARNING_MS);
+  // Timer 1 : warning toast (ne s'affiche pas si tournée/voice actif au moment du tick)
+  if (warnAt > 0) {
+    _amiIdleWarnTimer = setTimeout(_amiShowIdleWarning, warnAt);
+  }
+  // Timer 2 : expiration effective
+  _amiIdleTimer = setTimeout(_amiIdleExpire, total);
 }
 
 // Hook public : permet aux modules sans interaction DOM (sync, vocal, GPS)
@@ -113,6 +200,9 @@ window._amiIdleTouch = _amiIdleReset;
 async function _amiIdleExpire() {
   if (_amiIdleHandling) return;
   if (!S?.token) return;
+
+  // Le toast warning est remplacé par le flow d'expiration (PIN ou logout)
+  _amiHideIdleWarning();
 
   // 1. Tournée active ou voice active → on diffère, on ne déconnecte pas
   if (_amiIsActiveTournee() || _amiIsVoiceActive()) {
@@ -167,7 +257,9 @@ function _amiIdleAttach() {
 }
 
 function _amiIdleDetach() {
-  if (_amiIdleTimer) { clearTimeout(_amiIdleTimer); _amiIdleTimer = null; }
+  if (_amiIdleTimer)     { clearTimeout(_amiIdleTimer);     _amiIdleTimer     = null; }
+  if (_amiIdleWarnTimer) { clearTimeout(_amiIdleWarnTimer); _amiIdleWarnTimer = null; }
+  _amiHideIdleWarning();
   _amiIdleHandling = false;
   // On laisse les listeners attachés (rallumage automatique au prochain login)
 }

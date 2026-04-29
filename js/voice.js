@@ -56,9 +56,25 @@ function handleVoice(transcript,confidence){
 function toggleVoice(){if(voiceActive)stopVoice();else startVoice();}
 function startVoice(){
   if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){alert('Reconnaissance vocale non supportée. Utilisez Chrome.');return;}
+  // ⚡ Idle timeout : signaler une activité utilisateur dès l'activation vocale.
+  //    De toute façon le mode "voicebtn.listening" met l'idle en pause via
+  //    _amiIsVoiceActive(), mais on ré-arme aussi le timer par sécurité.
+  try { window._amiIdleTouch?.(); } catch {}
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   recognition=new SR();recognition.lang='fr-FR';recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;
-  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const res=e.results[i];if(res.isFinal)handleVoice(res[0].transcript,res[0].confidence);else{/* Ne pas afficher les résultats intermédiaires pendant le TTS */if(typeof _ttsActive==='undefined'||!_ttsActive)$('voice-interim').textContent=res[0].transcript;}}};
+  recognition.onresult=e=>{
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const res=e.results[i];
+      if(res.isFinal){
+        // ⚡ Chaque commande vocale finale = activité utilisateur → ré-arme l'idle timer.
+        try { window._amiIdleTouch?.(); } catch {}
+        handleVoice(res[0].transcript,res[0].confidence);
+      } else {
+        /* Ne pas afficher les résultats intermédiaires pendant le TTS */
+        if(typeof _ttsActive==='undefined'||!_ttsActive)$('voice-interim').textContent=res[0].transcript;
+      }
+    }
+  };
   recognition.onerror=e=>{if(e.error!=='no-speech')stopVoice();};
   recognition.onend=()=>{if(voiceActive)recognition.start();};
   recognition.start();voiceActive=true;
@@ -73,6 +89,10 @@ function stopVoice(){
   if(typeof stopVoiceNavigation==='function') stopVoiceNavigation();
   $('voicebtn').classList.remove('listening');$('voice-topbtn').classList.remove('active');$('voice-topbtn').textContent='🎤 Vocal';
   $('voice-toast').classList.remove('show');
+  // ⚡ Idle timeout : la voix s'arrête, on ré-arme depuis maintenant.
+  //    Sans ça, si l'utilisateur ne touche plus rien, le timer continuerait
+  //    de pointer vers une expiration ancrée à un événement précédent.
+  try { window._amiIdleTouch?.(); } catch {}
 }
 
 /* ============================================================

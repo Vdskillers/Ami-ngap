@@ -4182,6 +4182,9 @@ async function _forceRegeocode(id) {
 /* Pousse tous les patients locaux vers le serveur */
 async function syncPatientsToServer() {
   if (!S?.token) return;
+  // ⚡ Idle timeout : signaler activité au démarrage et à la fin d'une sync
+  //    réseau (push pouvant durer plusieurs sec sur connexion 3G en tournée).
+  try { window._amiIdleTouch?.(); } catch {}
   try {
     const rows = await _idbGetAll(PATIENTS_STORE);
     if (!rows.length) return;
@@ -4198,6 +4201,7 @@ async function syncPatientsToServer() {
     if (!res?.ok) throw new Error(res?.error || 'Erreur sync');
     console.info('[AMI] Sync push OK :', patients.length, 'patients');
     showToastSafe(`☁️ ${patients.length} patient(s) synchronisé(s).`);
+    try { window._amiIdleTouch?.(); } catch {}
   } catch(e) {
     console.warn('[AMI] Sync push KO :', e.message);
     showToastSafe('⚠️ Sync échouée : ' + e.message);
@@ -4207,6 +4211,8 @@ async function syncPatientsToServer() {
 /* Tire les patients du serveur et fusionne avec l'IDB local */
 async function syncPatientsFromServer() {
   if (!S?.token) return;
+  // ⚡ Idle timeout : ré-arme avant le pull (peut être lent sur grosse base)
+  try { window._amiIdleTouch?.(); } catch {}
   try {
     // ✅ v8.7 — Tente d'abord boot-sync (1 seul fetch pour 6 modules)
     let res = null;
@@ -4404,6 +4410,10 @@ async function _syncPatientNow(row) {
 ──────────────────────────────────────────────── */
 async function syncCotationsFromServer() {
   if (!S?.token) return;
+  // ⚡ Idle timeout : ré-arme avant le pull cotations (peut être lent : ~1 an
+  //    de cotations + déchiffrement local). Sans ça, sur une grosse base
+  //    chargée au login, le timer pouvait expirer pendant la sync.
+  try { window._amiIdleTouch?.(); } catch {}
   try {
     // Source de vérité principale : carnet_patients (géré par syncPatientsFromServer)
     // Ce module complète uniquement avec les cotations planning_patients
@@ -4440,8 +4450,16 @@ async function syncCotationsFromServer() {
     let totalUpdated = 0;
 
     const _CODES_MAJ_NS = new Set(['DIM','NUIT','NUIT_PROF','IFD','MIE','MCI','IK']);
+    let _ngLoopCounter = 0;
 
     for (const row of localRows) {
+      // ⚡ Idle touch périodique : tous les 25 patients, ré-arme le timer.
+      //    Pour une base de 500 patients × ~50ms de déchiffrement chacun, la
+      //    boucle peut durer 25 sec — au-delà, sans touch, l'idle pourrait
+      //    expirer pendant qu'on est encore en train de synchroniser.
+      if ((++_ngLoopCounter % 25) === 0) {
+        try { window._amiIdleTouch?.(); } catch {}
+      }
       const p = { ...((await _dec(row._data)) || {}), id: row.id, nom: row.nom, prenom: row.prenom };
       if (!Array.isArray(p.cotations)) p.cotations = [];
 
