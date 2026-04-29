@@ -213,9 +213,24 @@ async function clearSecureStore(storeName) {
 ════════════════════════════════════════════════ */
 
 const CONSENT_KEY = 'ami_rgpd_consent_v1';
+// ⚡ RGPD/HDS — version de la politique de confidentialité acceptée.
+//   Toute évolution majeure des CGU → bumper cette version + relancer la modale
+//   au prochain login pour ré-acceptation explicite.
+//   Stockée localement pour gating client + envoyée au worker pour traçabilité.
+const CONSENT_VERSION = '2026.04';
+const CONSENT_VERSION_KEY = 'ami_rgpd_consent_version';
+const CONSENT_DATE_KEY    = 'ami_rgpd_consent_date';
 
 function hasConsent() {
-  try { return localStorage.getItem(CONSENT_KEY) === 'accepted'; } catch { return false; }
+  try {
+    const v = localStorage.getItem(CONSENT_KEY);
+    if (v !== 'accepted') return false;
+    // Si la version a évolué et que la version localement acceptée est différente,
+    // forcer une nouvelle acceptation (CGU modifiées).
+    const acceptedVersion = localStorage.getItem(CONSENT_VERSION_KEY);
+    if (acceptedVersion && acceptedVersion !== CONSENT_VERSION) return false;
+    return true;
+  } catch { return false; }
 }
 
 /* Vérifie le consentement au démarrage — bloque si absent */
@@ -285,18 +300,86 @@ function showConsentModal() {
 }
 
 function acceptConsent() {
-  try { localStorage.setItem(CONSENT_KEY, 'accepted'); } catch {}
+  // ⚡ Persistance locale immédiate
+  const acceptedAt = new Date().toISOString();
+  try {
+    localStorage.setItem(CONSENT_KEY, 'accepted');
+    localStorage.setItem(CONSENT_VERSION_KEY, CONSENT_VERSION);
+    localStorage.setItem(CONSENT_DATE_KEY, acceptedAt);
+  } catch {}
   const modal = document.getElementById('rgpd-consent-modal');
   if (modal) modal.style.display = 'none';
-  log('Consentement RGPD accepté ✅');
+  log('Consentement RGPD accepté ✅ (v' + CONSENT_VERSION + ')');
+
+  /* ⚡ RGPD/HDS — Traçabilité BDD : si une session est active, on pousse
+     l'acceptation au worker pour stockage en table rgpd_consents.
+     Si aucune session (1ère acceptation pré-login) → on enqueue dans
+     localStorage et on retentera après login. */
+  _pushConsentToServer({ version: CONSENT_VERSION, accepted_at: acceptedAt });
+
   /* Initialiser la clé de chiffrement après consentement */
-  if (ss.tok()) initSessionKey(ss.tok());
+  if (typeof ss !== 'undefined' && ss.tok()) initSessionKey(ss.tok());
+}
+
+/* ⚡ Push consentement vers le worker (best-effort, non bloquant) */
+async function _pushConsentToServer({ version, accepted_at }) {
+  try {
+    if (typeof ss === 'undefined' || !ss.tok()) {
+      // Pas de session → on enqueue pour push après login
+      try {
+        localStorage.setItem('ami_rgpd_consent_pending', JSON.stringify({ version, accepted_at }));
+      } catch {}
+      return;
+    }
+    if (typeof wpost !== 'function') return;
+    await wpost('/webhook/consent-record', {
+      version,
+      accepted_at,
+      user_agent: (navigator.userAgent || '').slice(0, 300),
+    });
+    // Succès → purger le pending si présent
+    try { localStorage.removeItem('ami_rgpd_consent_pending'); } catch {}
+  } catch (e) {
+    // Best-effort : on garde le pending pour retry au prochain login
+    try {
+      localStorage.setItem('ami_rgpd_consent_pending', JSON.stringify({ version, accepted_at }));
+    } catch {}
+  }
+}
+
+/* ⚡ Au login, si un consentement local a été accepté hors-ligne,
+   on le synchronise vers le serveur. À appeler depuis auth.js après ss.save. */
+async function flushPendingConsent() {
+  try {
+    const pending = localStorage.getItem('ami_rgpd_consent_pending');
+    if (!pending) return;
+    const { version, accepted_at } = JSON.parse(pending);
+    await _pushConsentToServer({ version, accepted_at });
+  } catch {}
+}
+if (typeof window !== 'undefined') {
+  window.flushPendingConsent = flushPendingConsent;
 }
 
 function revokeConsent() {
   if (!confirm('⚠️ Révoquer votre consentement supprimera toutes vos données locales. Continuer ?')) return;
   purgeLocalData();
-  try { localStorage.removeItem(CONSENT_KEY); } catch {}
+  try {
+    localStorage.removeItem(CONSENT_KEY);
+    localStorage.removeItem(CONSENT_VERSION_KEY);
+    localStorage.removeItem(CONSENT_DATE_KEY);
+    localStorage.removeItem('ami_rgpd_consent_pending');
+  } catch {}
+  // ⚡ Notifier le serveur de la révocation (best-effort)
+  try {
+    if (typeof ss !== 'undefined' && ss.tok() && typeof wpost === 'function') {
+      wpost('/webhook/consent-record', {
+        version: CONSENT_VERSION,
+        accepted_at: new Date().toISOString(),
+        revoked: true,
+      }).catch(() => {});
+    }
+  } catch {}
   sessionStorage.clear();
   if (typeof ss !== 'undefined') ss.clear();
   showConsentModal();

@@ -324,6 +324,9 @@ async function login(){
     ss.save(d.token,d.role,d.user,d.data_key||null);
     /* ── Sécurité RGPD : chiffrement + audit ── */
     if(typeof initSecurity==='function') initSecurity(d.token);
+    /* ⚡ RGPD/HDS — flusher tout consentement accepté hors-ligne (avant login)
+       vers la table rgpd_consents pour traçabilité audit-ready. Best-effort. */
+    if (typeof flushPendingConsent === 'function') flushPendingConsent().catch(() => {});
 
     /* ── Mode hors-ligne : création PIN au 1er login, ou refresh des creds ── */
     if (window.offlineAuth) {
