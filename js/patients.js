@@ -276,6 +276,110 @@ async function _migratePatientKeyIfNeeded() {
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   🔐 RGPD/HDS — MIGRATION LEGACY → AES-GCM (Fix #B post-#7)
+   ────────────────────────────────────────────────────────────────────────
+   Au prochain login post-déploiement, force la ré-encryption des rows IDB
+   encore en format legacy (base64 obfusqué, début pas de "aesgcm$") vers
+   le nouveau format AES-256-GCM. Sans ça, les anciennes données restent
+   en clair sur le device tant qu'aucun _idbPut ne les touche (ex: fiche
+   patient consultée sans modification).
+
+   Idempotente : marqueur localStorage par utilisateur, skip si déjà fait.
+   Non-bloquante : tourne en arrière-plan, batch de 10 rows, avec yield.
+
+   Pré-requis : S.dataKey doit être active (sinon _enc renvoie du legacy →
+   no-op sécurisé). On vérifie en début de fonction.
+═════════════════════════════════════════════════════════════════════════ */
+async function _migrateLegacyToAES() {
+  // Pas de dataKey → on ne peut pas chiffrer en AES, skip silencieusement.
+  if (!S?.dataKey) return { ok: false, reason: 'no_dataKey' };
+  // Marqueur idempotent par utilisateur
+  const uid = S?.user?.id || S?.user?.email || 'local';
+  const FLAG = 'ami_idb_aes_migrated_v1_' + String(uid).replace(/[^a-zA-Z0-9]/g, '_');
+  try {
+    if (localStorage.getItem(FLAG)) return { ok: true, reason: 'already_migrated' };
+  } catch {}
+
+  let migrated = 0, skipped = 0, errors = 0;
+  try {
+    await initPatientsDB();
+    const rows = await _idbGetAll(PATIENTS_STORE);
+    if (!rows.length) {
+      try { localStorage.setItem(FLAG, '1'); } catch {}
+      return { ok: true, migrated: 0, total: 0 };
+    }
+
+    // Identifier uniquement les rows en format legacy (pas encore préfixés "aesgcm$")
+    const legacyRows = rows.filter(r => typeof r._data === 'string' && !r._data.startsWith('aesgcm$'));
+    const total = legacyRows.length;
+    if (total === 0) {
+      try { localStorage.setItem(FLAG, '1'); } catch {}
+      return { ok: true, migrated: 0, total: rows.length, skipped: rows.length };
+    }
+
+    console.info(`[AMI] Migration legacy → AES : ${total} fiche(s) à re-chiffrer (sur ${rows.length} totales)`);
+
+    // Batches de 10 avec yield pour ne pas bloquer le main thread
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < legacyRows.length; i += BATCH_SIZE) {
+      const batch = legacyRows.slice(i, i + BATCH_SIZE);
+      for (const row of batch) {
+        try {
+          // Déchiffrer en legacy (auto-détecté par _dec)
+          const decoded = await _dec(row._data);
+          if (!decoded) { skipped++; continue; }
+          // Re-chiffrer en AES (puisque S.dataKey est active)
+          const reEnc = await _enc({
+            ...decoded,
+            id: row.id, // garantit la cohérence des champs top-level
+            nom: row.nom,
+            prenom: row.prenom,
+          });
+          // Sécurité : vérifier qu'on a bien produit du AES (sinon abort cette row)
+          if (!reEnc || !reEnc.startsWith('aesgcm$')) {
+            console.warn('[AMI] Migration AES : _enc n\'a pas produit AES pour row', row.id, '— skip');
+            skipped++;
+            continue;
+          }
+          // Stocker en place, mêmes index, _data mis à jour
+          await _idbPut(PATIENTS_STORE, {
+            id:         row.id,
+            nom:        row.nom,
+            prenom:     row.prenom,
+            _data:      reEnc,
+            updated_at: row.updated_at || new Date().toISOString(),
+          });
+          migrated++;
+        } catch (rowErr) {
+          console.warn('[AMI] Migration AES row KO:', row?.id, rowErr.message);
+          errors++;
+        }
+      }
+      // Yield le main thread entre batchs (UI reste réactive)
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Marquer migration finie pour cet utilisateur (ne re-tournera pas à chaque login)
+    try { localStorage.setItem(FLAG, '1'); } catch {}
+
+    if (migrated > 0) {
+      console.info(`[AMI] ✅ Migration legacy → AES OK : ${migrated} fiche(s) re-chiffrée(s) en AES-256-GCM (${skipped} skip, ${errors} erreur(s))`);
+      // Optionnel : toast utilisateur (non obligatoire, ça doit être transparent)
+      if (typeof showToast === 'function' && migrated >= 5) {
+        showToast(`🔐 Sécurité renforcée : ${migrated} fiches patient mises à jour en AES-256.`, 'ok');
+      }
+    }
+    return { ok: true, migrated, total, skipped, errors };
+  } catch (e) {
+    console.warn('[AMI] _migrateLegacyToAES KO:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// Exposer pour appel externe (auth.js post-login)
+if (typeof window !== 'undefined') window._migrateLegacyToAES = _migrateLegacyToAES;
+
 
 /* Exécute une opération IDB avec retry automatique si la connexion se ferme */
 async function _idbExec(fn, retries = 2) {

@@ -288,6 +288,23 @@ async function login(){
     const d=await wpost('/webhook/auth-login',{email:em,password:pw});
     if(!d.ok)throw new Error(d.error||'Identifiants incorrects');
 
+    /* ⚡ MFA TOTP — admin nécessite second facteur.
+       2 cas : enrôlement (1ère fois) ou challenge (logins suivants). */
+    if (d.mfa_setup_required) {
+      ld('btn-l', false);
+      const ok = await _showMfaSetupModal(d);
+      if (!ok) { return; } // utilisateur a annulé → reste sur la page login
+      // _showMfaSetupModal a déjà appelé /auth-mfa-verify et stocké la session.
+      // La suite (showApp, init, etc.) est dans la fonction.
+      return;
+    }
+    if (d.mfa_required) {
+      ld('btn-l', false);
+      const ok = await _showMfaChallengeModal(d);
+      if (!ok) { return; }
+      return;
+    }
+
     /* ── Isolation RGPD : fermer la session précédente en mémoire ──
        APP.importedData et uberPatients sont des données de session (tournée du jour),
        pas des données persistantes — elles sont remises à zéro à chaque login.
@@ -353,6 +370,13 @@ async function login(){
     showApp();
     /* ── Initialiser le cabinet (mode multi-IDE) ── */
     if (typeof initCabinet === 'function') setTimeout(() => initCabinet(), 300);
+    /* ⚡ RGPD/HDS — Migration legacy → AES en arrière-plan (idempotente).
+       Au 1er login post-déploiement de #7, toutes les fiches IDB encore en
+       format base64 obfusqué seront re-chiffrées en AES-256-GCM. Aux logins
+       suivants, le marqueur localStorage skip immédiatement. */
+    if (typeof window !== 'undefined' && typeof window._migrateLegacyToAES === 'function') {
+      setTimeout(() => { window._migrateLegacyToAES().catch(() => {}); }, 3000);
+    }
   }catch(e){
     /* ── Fallback offline : si pas de réseau ET session offline existante pour ce user ── */
     if (!navigator.onLine && window.offlineAuth) {
@@ -536,4 +560,264 @@ function refreshMapSize(){
 }
 if(typeof window!=='undefined'){
   window.addEventListener('resize',()=>refreshMapSize());
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔐 MFA TOTP — Modales d'enrôlement et de challenge
+   ────────────────────────────────────────────────────────────────────────
+   Ces modales sont déclenchées par login() lorsque le worker renvoie
+   mfa_setup_required ou mfa_required. Compatibles smartphone (mobile-first).
+
+   - _showMfaSetupModal : 1ère fois — affiche QR code (via api.qrserver.com),
+     secret base32 pour saisie manuelle, deeplink otpauth, input 6 chiffres
+     pour confirmer.
+   - _showMfaChallengeModal : logins suivants — input 6 chiffres seulement.
+
+   Les deux modales appellent /webhook/auth-mfa-verify avec mfa_temp_token + code.
+   En cas de succès : ss.save + showApp + flush consent + migration AES.
+   En cas d'échec : message d'erreur + permission de réessayer (compteur côté worker).
+═════════════════════════════════════════════════════════════════════════ */
+
+/* Helper : finaliser la session après MFA OK (mêmes étapes que login normal) */
+async function _afterMfaSuccess(d) {
+  // Reset session précédente IDB
+  if (typeof APP !== 'undefined') {
+    APP.importedData = null;
+    APP.uberPatients = [];
+    APP.startPoint   = null;
+    APP.nextPatient  = null;
+  }
+  if (typeof _patientsDB !== 'undefined' && _patientsDB) {
+    try { _patientsDB.close(); } catch(_) {}
+    _patientsDB = null;
+    if (typeof _patientsDBUserId !== 'undefined') _patientsDBUserId = null;
+  }
+  if (typeof _sigDB !== 'undefined' && _sigDB) {
+    try { _sigDB.close(); } catch(_) {}
+    _sigDB = null;
+    if (typeof _sigDBUserId !== 'undefined') _sigDBUserId = null;
+  }
+  // Sauvegarde session
+  ss.save(d.token, d.role, d.user, d.data_key || null);
+  if (typeof initSecurity === 'function') initSecurity(d.token);
+  if (typeof flushPendingConsent === 'function') flushPendingConsent().catch(() => {});
+  showApp();
+  if (typeof initCabinet === 'function') setTimeout(() => initCabinet(), 300);
+  if (typeof window !== 'undefined' && typeof window._migrateLegacyToAES === 'function') {
+    setTimeout(() => { window._migrateLegacyToAES().catch(() => {}); }, 3000);
+  }
+}
+
+/* Modale d'ENRÔLEMENT TOTP — 1ère configuration admin.
+   Affiche : QR code + secret base32 + input code de confirmation.
+   Retourne : Promise<boolean> — true si enrôlement réussi, false si annulé. */
+function _showMfaSetupModal(d) {
+  return new Promise((resolve) => {
+    // Supprimer si modale existante
+    const old = document.getElementById('mfa-setup-modal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'mfa-setup-modal';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:99998;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.92);padding:20px;overflow-y:auto;
+    `;
+    // QR code via service public (suffit pour un secret à usage unique partagé entre le user et le serveur)
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(d.mfa_otpauth_url || '');
+    modal.innerHTML = `
+      <div style="background:#0b0f14;border:1px solid rgba(0,212,170,.3);border-radius:16px;
+                  padding:24px;max-width:480px;width:100%;color:#e2e8f0;font-family:sans-serif;
+                  max-height:90vh;overflow-y:auto">
+        <div style="font-size:32px;margin-bottom:8px;text-align:center">🔐</div>
+        <h2 style="font-size:20px;margin:0 0 8px;color:#fff;text-align:center">Activation du 2FA admin</h2>
+        <p style="font-size:13px;color:#94a3b8;line-height:1.6;margin:0 0 16px;text-align:center">
+          Scanne ce QR code avec <strong style="color:#e2e8f0">Google Authenticator</strong>,
+          <strong style="color:#e2e8f0">Authy</strong> ou <strong style="color:#e2e8f0">1Password</strong>.
+        </p>
+
+        <div style="background:#fff;padding:12px;border-radius:12px;margin:0 auto 16px;
+                    width:fit-content;display:flex;align-items:center;justify-content:center">
+          <img src="${qrUrl}" alt="QR code TOTP" width="240" height="240"
+               style="display:block" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <div style="display:none;color:#000;padding:20px;text-align:center;font-size:13px">
+            QR indisponible — utilisez le secret manuel ci-dessous.
+          </div>
+        </div>
+
+        <details style="margin:0 0 16px;background:rgba(0,212,170,.05);border-radius:8px;padding:10px 14px">
+          <summary style="cursor:pointer;font-size:13px;color:#00d4aa">Saisie manuelle / lien direct</summary>
+          <div style="margin-top:10px;font-size:12px">
+            <div style="color:#94a3b8;margin-bottom:4px">Secret base32 :</div>
+            <code style="display:block;background:#000;padding:8px;border-radius:6px;
+                         font-family:monospace;font-size:14px;color:#00d4aa;word-break:break-all;
+                         user-select:all;cursor:text">${(d.mfa_secret_base32 || '').match(/.{1,4}/g)?.join(' ') || ''}</code>
+            <div style="color:#94a3b8;margin:10px 0 4px">Lien otpauth (cliquable sur mobile) :</div>
+            <a href="${d.mfa_otpauth_url || '#'}" style="color:#00d4aa;font-size:11px;word-break:break-all">${d.mfa_otpauth_url || ''}</a>
+          </div>
+        </details>
+
+        <div style="margin:0 0 16px">
+          <label style="display:block;font-size:13px;color:#94a3b8;margin-bottom:6px">
+            Code à 6 chiffres généré par votre app :
+          </label>
+          <input id="mfa-setup-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                 autocomplete="one-time-code" placeholder="000000"
+                 style="width:100%;padding:14px;font-size:24px;text-align:center;letter-spacing:8px;
+                        background:#000;border:1px solid #1e2d3d;border-radius:10px;color:#fff;
+                        box-sizing:border-box;font-family:monospace" />
+          <div id="mfa-setup-err" style="display:none;color:#ef4444;font-size:12px;margin-top:8px"></div>
+        </div>
+
+        <button id="mfa-setup-confirm"
+          style="width:100%;background:#00d4aa;color:#000;border:none;padding:14px;border-radius:10px;
+                 font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px">
+          ✅ Activer le 2FA et se connecter
+        </button>
+        <button id="mfa-setup-cancel"
+          style="width:100%;background:transparent;color:#64748b;border:1px solid #1e2d3d;
+                 padding:10px;border-radius:10px;font-size:13px;cursor:pointer">
+          Annuler
+        </button>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const codeInput = document.getElementById('mfa-setup-code');
+    const errEl     = document.getElementById('mfa-setup-err');
+    const btnOk     = document.getElementById('mfa-setup-confirm');
+    const btnNo     = document.getElementById('mfa-setup-cancel');
+
+    if (codeInput) {
+      setTimeout(() => codeInput.focus(), 100);
+      codeInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+        if (errEl) errEl.style.display = 'none';
+      });
+      codeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') btnOk.click();
+      });
+    }
+
+    btnOk.onclick = async () => {
+      const code = (codeInput?.value || '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        errEl.textContent = 'Saisissez les 6 chiffres affichés par votre application.';
+        errEl.style.display = 'block';
+        return;
+      }
+      btnOk.disabled = true;
+      btnOk.innerHTML = '<span class="spin"></span> Vérification…';
+      try {
+        const r = await wpost('/webhook/auth-mfa-verify', {
+          temp_token: d.mfa_temp_token,
+          code,
+        });
+        if (!r.ok) throw new Error(r.error || 'Code incorrect');
+        modal.remove();
+        await _afterMfaSuccess(r);
+        resolve(true);
+      } catch (e) {
+        errEl.textContent = e.message || 'Erreur — réessayez.';
+        errEl.style.display = 'block';
+        btnOk.disabled = false;
+        btnOk.innerHTML = '✅ Activer le 2FA et se connecter';
+        if (codeInput) { codeInput.value = ''; codeInput.focus(); }
+      }
+    };
+    btnNo.onclick = () => { modal.remove(); resolve(false); };
+  });
+}
+
+/* Modale de CHALLENGE TOTP — logins suivants admin.
+   Affiche uniquement l'input 6 chiffres. */
+function _showMfaChallengeModal(d) {
+  return new Promise((resolve) => {
+    const old = document.getElementById('mfa-challenge-modal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'mfa-challenge-modal';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:99998;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.92);padding:20px;
+    `;
+    modal.innerHTML = `
+      <div style="background:#0b0f14;border:1px solid rgba(0,212,170,.3);border-radius:16px;
+                  padding:32px;max-width:380px;width:100%;color:#e2e8f0;font-family:sans-serif">
+        <div style="font-size:32px;margin-bottom:8px;text-align:center">🔐</div>
+        <h2 style="font-size:18px;margin:0 0 8px;color:#fff;text-align:center">Code 2FA admin</h2>
+        <p style="font-size:13px;color:#94a3b8;margin:0 0 20px;text-align:center;line-height:1.5">
+          Saisissez le code à 6 chiffres affiché par votre application
+          <strong style="color:#e2e8f0">Authenticator</strong>.
+        </p>
+
+        <input id="mfa-challenge-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+               autocomplete="one-time-code" placeholder="000000"
+               style="width:100%;padding:16px;font-size:28px;text-align:center;letter-spacing:10px;
+                      background:#000;border:1px solid #1e2d3d;border-radius:10px;color:#fff;
+                      box-sizing:border-box;font-family:monospace;margin-bottom:8px" />
+        <div id="mfa-challenge-err" style="display:none;color:#ef4444;font-size:12px;margin-bottom:12px;text-align:center"></div>
+
+        <button id="mfa-challenge-confirm"
+          style="width:100%;background:#00d4aa;color:#000;border:none;padding:14px;border-radius:10px;
+                 font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;margin-bottom:8px">
+          Valider
+        </button>
+        <button id="mfa-challenge-cancel"
+          style="width:100%;background:transparent;color:#64748b;border:1px solid #1e2d3d;
+                 padding:10px;border-radius:10px;font-size:13px;cursor:pointer">
+          Annuler
+        </button>
+        <p style="font-size:11px;color:#475569;text-align:center;margin:14px 0 0">
+          Le code change toutes les 30 secondes.
+        </p>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const codeInput = document.getElementById('mfa-challenge-code');
+    const errEl     = document.getElementById('mfa-challenge-err');
+    const btnOk     = document.getElementById('mfa-challenge-confirm');
+    const btnNo     = document.getElementById('mfa-challenge-cancel');
+
+    setTimeout(() => codeInput?.focus(), 100);
+    if (codeInput) {
+      codeInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+        if (errEl) errEl.style.display = 'none';
+        // Auto-submit dès 6 chiffres
+        if (e.target.value.length === 6) btnOk.click();
+      });
+      codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnOk.click(); });
+    }
+
+    btnOk.onclick = async () => {
+      const code = (codeInput?.value || '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        errEl.textContent = 'Saisissez les 6 chiffres affichés.';
+        errEl.style.display = 'block';
+        return;
+      }
+      btnOk.disabled = true;
+      btnOk.innerHTML = '<span class="spin"></span> Vérification…';
+      try {
+        const r = await wpost('/webhook/auth-mfa-verify', {
+          temp_token: d.mfa_temp_token,
+          code,
+        });
+        if (!r.ok) throw new Error(r.error || 'Code incorrect');
+        modal.remove();
+        await _afterMfaSuccess(r);
+        resolve(true);
+      } catch (e) {
+        errEl.textContent = e.message || 'Erreur — réessayez.';
+        errEl.style.display = 'block';
+        btnOk.disabled = false;
+        btnOk.innerHTML = 'Valider';
+        if (codeInput) { codeInput.value = ''; codeInput.focus(); }
+      }
+    };
+    btnNo.onclick = () => { modal.remove(); resolve(false); };
+  });
 }
