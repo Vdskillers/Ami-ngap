@@ -404,13 +404,21 @@
       const btn    = ov.querySelector('#oa-unlock-ok');
       const btnAlt = ov.querySelector('#oa-unlock-switch');
 
-      // ─── Stratégie de focus robuste (v9.1) ───
-      // Avant : un seul setTimeout 100ms → fragile. Sur Edge/Chrome, l'overlay
-      // peut ne pas être complètement peint (backdrop-filter, layout sticky)
-      // au moment où inp.focus() est appelé → le focus est silencieusement
-      // refusé et l'utilisateur ne peut pas taper son PIN sans cliquer
-      // d'abord ailleurs. Maintenant : 4 tentatives échelonnées + fallback
-      // click handler sur l'overlay.
+      // ─── Stratégie de focus robuste (v9.1, renforcée v9.2) ───
+      // Le simple focus() échoue dans plusieurs cas :
+      //   (a) overlay pas encore peint (backdrop-filter, animation oaFade)
+      //   (b) `autofocus` ignoré sur un élément créé via appendChild
+      //   (c) main thread saturé par les sync de boot (re-chiffrement legacy,
+      //       BootSync pull, consentSyncPull, etc.)
+      //   (d) un autre module (security.js, idle warning, sw-version-check…)
+      //       crée un overlay concurrent et vole le focus
+      //
+      // v9.1 essayait 4 retries de focus(). Ça ne suffit pas dans le cas (c)/(d)
+      // observé sur Edge. v9.2 ajoute un FILET DE SÉCURITÉ : un listener
+      // `keydown` en capture sur document qui, tant que la modale est visible,
+      // redirige toute frappe de chiffre vers l'input — peu importe où le
+      // focus se trouve réellement. L'utilisateur peut donc taper son PIN
+      // immédiatement, même si le focus visuel est ailleurs.
       function _tryFocusPin() {
         if (document.activeElement === inp) return; // déjà focalisé
         try { inp.focus({ preventScroll: true }); } catch(_) {
@@ -419,19 +427,73 @@
       }
       // 1) Au prochain frame une fois le DOM peint
       requestAnimationFrame(() => requestAnimationFrame(_tryFocusPin));
-      // 2) Retries échelonnés pour rattraper les cas tardifs
+      // 2) Retries échelonnés pour rattraper les cas tardifs (animation oaFade
+      //    dure 250ms, sync boot peuvent bloquer plus longtemps)
       setTimeout(_tryFocusPin, 150);
       setTimeout(_tryFocusPin, 400);
       setTimeout(_tryFocusPin, 900);
+      setTimeout(_tryFocusPin, 1500);
+      setTimeout(_tryFocusPin, 3000);
       // 3) Fallback ultime : un clic n'importe où dans la modale (hors boutons)
-      //    re-déclenche le focus sur l'input. Évite à l'utilisateur d'avoir
-      //    à cliquer sur "Déverrouiller" pour débloquer la saisie.
+      //    re-déclenche le focus sur l'input.
       ov.addEventListener('mousedown', (ev) => {
         if (ev.target === inp) return;
         if (btn.contains(ev.target) || btnAlt.contains(ev.target)) return;
-        // Si le clic est ailleurs sur la box / overlay → on focus l'input
         setTimeout(_tryFocusPin, 0);
       });
+
+      // 4) FILET DE SÉCURITÉ v9.2 : capture globale des keydown.
+      //    Tant que la modale est dans le DOM, on intercepte les touches
+      //    chiffres / Backspace / Enter au niveau document et on les
+      //    applique à l'input même si le focus est ailleurs. Ça garantit
+      //    que la frappe fonctionne au premier coup.
+      const _onGlobalKey = (ev) => {
+        // Seulement quand la modale est encore montée
+        if (!ov.isConnected) {
+          document.removeEventListener('keydown', _onGlobalKey, true);
+          return;
+        }
+        // Si l'input a déjà le focus, le navigateur gère normalement
+        if (document.activeElement === inp) return;
+        // Si l'utilisateur a focus sur le bouton (Tab puis Espace par ex.),
+        // on laisse passer pour ne pas bloquer la navigation clavier.
+        if (document.activeElement === btn || document.activeElement === btnAlt) return;
+
+        const k = ev.key;
+        // Chiffres → injecter dans l'input
+        if (/^[0-9]$/.test(k)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (inp.value.length < (inp.maxLength || 8)) {
+            inp.value += k;
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          _tryFocusPin();
+          return;
+        }
+        // Backspace → effacer un chiffre
+        if (k === 'Backspace') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          inp.value = inp.value.slice(0, -1);
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          _tryFocusPin();
+          return;
+        }
+        // Enter → soumettre
+        if (k === 'Enter') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          btn.click();
+          return;
+        }
+      };
+      document.addEventListener('keydown', _onGlobalKey, true); // capture phase
+
+      // 5) Cleanup automatique du listener global au démontage
+      function _cleanupGlobalKey() {
+        document.removeEventListener('keydown', _onGlobalKey, true);
+      }
 
       inp.addEventListener('keypress', e => { if (e.key === 'Enter') btn.click(); });
 
@@ -443,6 +505,7 @@
         btn.disabled = true;
         try {
           const sess = await unlockWithPIN(info.id, pin);
+          _cleanupGlobalKey();
           ov.remove();
           resolve(sess);
         } catch (e) {
@@ -457,6 +520,7 @@
       });
 
       btnAlt.addEventListener('click', () => {
+        _cleanupGlobalKey();
         ov.remove();
         resolve(null); // fallback login classique
       });
