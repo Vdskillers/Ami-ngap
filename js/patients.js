@@ -2945,40 +2945,65 @@ async function _cascadeDeleteConstantesForPatient(patientId) {
   }
 }
 
-/* v9.1 — Cascade ordonnances (localStorage 'ami_ordonnances').
+/* v9.1 — Cascade ordonnances (localStorage).
    ⚠️ Particularité : les entries n'ont pas de patient_id rempli (toujours null
    dans le code de _saveOrdos, cf. infirmiere-tools.js:847). Le lien avec le
    patient se fait par le champ texte 'patient' (nom complet). On match donc
    par nom normalisé (case-insensitive, espaces normalisés) pour ne supprimer
    QUE les ordonnances explicitement attachées au patient supprimé. Les
    ordonnances "manuelles" sans correspondance avec un patient du carnet ne
-   sont pas touchées. */
+   sont pas touchées.
+
+   Deux clés traitées :
+     • 'ami_ordonnances'         → format actuel, source unique d'écriture
+       (infirmiere-tools.js)
+     • 'ami_ordonnances_<uid>'   → format legacy, encore lu par cabinet.js:1014
+       lors du push cabinet. Aucune écriture moderne, mais des données peuvent
+       subsister depuis une ancienne version. On nettoie aussi par sécurité
+       pour ne pas leaker un nom de patient supprimé via le push cabinet. */
 async function _cascadeDeleteOrdonnancesForPatient(patientId, patientName) {
   try {
     if (typeof localStorage === 'undefined') return;
-    const raw = localStorage.getItem('ami_ordonnances');
-    if (!raw) return;
-    let ordos;
-    try { ordos = JSON.parse(raw); } catch { return; }
-    if (!Array.isArray(ordos) || !ordos.length) return;
 
     const _norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
     const targetById   = String(patientId);
     const targetByName = _norm(patientName);
 
-    const before = ordos.length;
-    const filtered = ordos.filter(o => {
-      // Match prioritaire par patient_id si jamais il a été rempli
-      if (o._patient_id && String(o._patient_id) === targetById) return false;
-      // Sinon match par nom normalisé
-      if (targetByName && _norm(o.patient) === targetByName) return false;
-      return true;
-    });
-    const removed = before - filtered.length;
-    if (!removed) return;
+    // Liste des clés à nettoyer
+    const keys = ['ami_ordonnances'];
+    const uid = (typeof APP !== 'undefined' && APP?.user?.id)
+      ? APP.user.id
+      : (typeof S !== 'undefined' && S?.user?.id ? S.user.id : null);
+    if (uid) keys.push('ami_ordonnances_' + uid);
 
-    localStorage.setItem('ami_ordonnances', JSON.stringify(filtered));
-    console.info('[AMI] Cascade ordonnances : %d ordonnance(s) supprimée(s) pour patient %s', removed, patientId);
+    let totalRemoved = 0;
+    for (const key of keys) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        let ordos;
+        try { ordos = JSON.parse(raw); } catch { continue; }
+        if (!Array.isArray(ordos) || !ordos.length) continue;
+
+        const before = ordos.length;
+        const filtered = ordos.filter(o => {
+          // Match prioritaire par patient_id si jamais il a été rempli
+          if (o._patient_id && String(o._patient_id) === targetById) return false;
+          // Sinon match par nom normalisé
+          if (targetByName && _norm(o.patient) === targetByName) return false;
+          return true;
+        });
+        const removed = before - filtered.length;
+        if (!removed) continue;
+
+        localStorage.setItem(key, JSON.stringify(filtered));
+        totalRemoved += removed;
+        console.info('[AMI] Cascade ordonnances [%s] : %d ordonnance(s) supprimée(s) pour patient %s', key, removed, patientId);
+      } catch (e) {
+        console.warn('[cascade ordo] clé', key, 'KO :', e?.message);
+      }
+    }
+    if (totalRemoved === 0) return;
   } catch (e) {
     console.warn('[cascade ordo] fatal', e?.message);
   }
