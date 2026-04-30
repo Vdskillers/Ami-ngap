@@ -1778,28 +1778,19 @@ async function _uberFSDrawRoute() {
   const next = APP.get('nextPatient');
   if (!pos || !next || !next.lat || !next.lng) return;
 
-  console.log('[UBER-FS-OSRM] Fetching route from', pos, 'to', next);
-
   // v9.3 — Plus de polyline droite pointillée temporaire.
-  // v9.5 — `geometries=polyline` (défaut OSRM, plus stable que geojson).
+  // v9.6 — geometries=geojson re-activé (le bug venait du SW qui cachait les
+  // requêtes externes avec ignoreSearch:true, désormais bypass dans sw.js).
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=polyline`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson`;
     const d = await window._osrmFetchSafe(url, {
       signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined,
     });
-    console.log('[UBER-FS-OSRM] Response:', d ? `code=${d.code}, routes=${d.routes?.length || 0}` : 'null');
 
-    if (!d || d.code !== 'Ok' || !d.routes?.[0]) {
-      console.warn('[UBER-FS-OSRM] Invalid OSRM response, no route drawn');
-      return;
-    }
+    if (!d || d.code !== 'Ok' || !d.routes?.[0]) return;
+    if (!_uberFSMap) return; // overlay fermé entre temps
 
-    if (!_uberFSMap) {
-      console.warn('[UBER-FS-OSRM] FS map closed during fetch');
-      return;
-    }
-
-    // v9.4/v9.5 — Décodage adaptatif : OSRM peut renvoyer GeoJSON OU polyline encodé
+    // Décodage adaptatif : OSRM peut renvoyer GeoJSON OU polyline encodé
     const geom = d.routes[0].geometry;
     let latlngs = null;
     if (geom && typeof geom === 'object' && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
@@ -1808,16 +1799,11 @@ async function _uberFSDrawRoute() {
                && typeof window.decodeOsrmPolyline === 'function') {
       latlngs = window.decodeOsrmPolyline(geom, 5);
     }
-    if (!latlngs || latlngs.length < 2) {
-      console.warn('[UBER-FS-OSRM] No valid geometry in OSRM response');
-      return;
-    }
+    if (!latlngs || latlngs.length < 2) return;
 
     _uberFSRoutePoly = L.polyline(latlngs, {
       color: '#ffb547', weight: 5, opacity: 0.85,
     }).addTo(_uberFSMap);
-
-    console.log('[UBER-FS-OSRM] ✅ Route drawn with', latlngs.length, 'points');
 
     // Stocker durée + distance pour le HUD
     const dist = (d.routes[0].distance / 1000).toFixed(1);
@@ -1834,7 +1820,8 @@ async function _uberFSDrawRoute() {
       `;
     }
   } catch (e) {
-    console.error('[UBER-FS-OSRM] ❌ Exception:', e?.message || e);
+    // OSRM KO → pas de tracé visible
+    log('[Uber FS] OSRM route KO:', e.message);
   }
 }
 

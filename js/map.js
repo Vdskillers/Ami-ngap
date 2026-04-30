@@ -762,15 +762,12 @@ async function useLiveMyLocation() {
 window.renderPatientsOnMap = function(patients, startPoint) {
     return new Promise((resolve, reject) => {
       try {
-        console.log('[MAP-OSRM] renderPatientsOnMap called — patients:', patients?.length, 'startPoint:', startPoint);
-
         // Résoudre l'instance Leaflet réelle — APP.map peut être l'instance directe
         // (assignée par extras.js) ou APP.map.instance (namespace utils.js)
         const _map = (APP.map && typeof APP.map.invalidateSize === 'function')
           ? APP.map
           : APP.map?.instance;
         if (!_map || typeof _map.invalidateSize !== 'function') {
-          console.warn('[MAP-OSRM] No valid Leaflet instance found in APP.map');
           resolve(); return;
         }
         // Réassigner APP.map à l'instance pour que le reste du code fonctionne
@@ -839,8 +836,6 @@ window.renderPatientsOnMap = function(patients, startPoint) {
         withCoords.forEach(function(p) { allPts.push([p.lat, p.lng]); });
 
         if (allPts.length >= 2) {
-          console.log('[MAP-OSRM] allPts:', allPts.length, 'points → preparing OSRM fetch');
-
           // ⚠️ MOBILE FIX : sur mobile, le conteneur Leaflet a souvent
           // une taille 0×0 au premier paint (layout pas stabilisé).
           // Sans invalidateSize() AVANT fitBounds, la map calcule ses
@@ -860,58 +855,31 @@ window.renderPatientsOnMap = function(patients, startPoint) {
             try {
               const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
 
-              // v9.5 — Utiliser `geometries=polyline` (défaut OSRM, le plus stable).
-              // Le serveur public router.project-osrm.org ne retourne parfois RIEN
-              // dans `geometry` quand on demande `geometries=geojson`. Avec polyline
-              // (défaut), la geometry est toujours renvoyée sous forme de string
-              // encodée précision 5 — qu'on décode via window.decodeOsrmPolyline.
+              // v9.6 — Bug du SW corrigé (cache des API externes désactivé).
+              // OSRM honore correctement `geometries=geojson` quand on bypass
+              // le cache du Service Worker. Le décodeur polyline reste en
+              // fallback au cas où le serveur retournerait du polyline string.
               const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
-                + '?overview=full&geometries=polyline&steps=false';
-              console.log('[MAP-OSRM] Fetching:', url.substring(0, 120) + '...');
+                + '?overview=full&geometries=geojson&steps=false';
 
               const data = (typeof window._osrmFetchSafe === 'function')
                 ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
                 : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
-              console.log('[MAP-OSRM] Response received:', data ? `code=${data.code}, routes=${data.routes?.length || 0}` : 'null');
+              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+              const geom = data.routes[0].geometry;
 
-              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
-                console.warn('[MAP-OSRM] Invalid OSRM response, no route drawn');
-                return;
-              }
-              const route0 = data.routes[0];
-              const geom = route0.geometry;
-
-              // Diagnostic défensif : ne plante jamais sur undefined
-              const geomDesc = geom === undefined ? 'UNDEFINED'
-                : geom === null ? 'NULL'
-                : typeof geom === 'string' ? `string[${geom.length}] sample="${geom.substring(0, 40)}..."`
-                : `object keys=[${Object.keys(geom).join(',')}]`;
-              console.log('[MAP-OSRM] geometry:', geomDesc);
-              console.log('[MAP-OSRM] route0 keys:', Object.keys(route0).join(','));
-
-              // Décodage adaptatif :
-              //  - Cas 1 : objet GeoJSON → utilisation directe
-              //  - Cas 2 : string polyline → décodage manuel
-              //  - Sinon : pas de tracé
+              // Décodage adaptatif : objet GeoJSON OU string polyline encodée
               let latlngs = null;
               if (geom && typeof geom === 'object' && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
                 latlngs = geom.coordinates.map(function(c) { return [c[1], c[0]]; });
-                console.log('[MAP-OSRM] Decoded as GeoJSON →', latlngs.length, 'points');
               }
-              else if (typeof geom === 'string' && geom.length > 0) {
-                latlngs = (typeof window.decodeOsrmPolyline === 'function')
-                  ? window.decodeOsrmPolyline(geom, 5)
-                  : null;
-                console.log('[MAP-OSRM] Decoded as polyline string →', latlngs ? latlngs.length : 0, 'points');
+              else if (typeof geom === 'string' && geom.length > 0
+                       && typeof window.decodeOsrmPolyline === 'function') {
+                latlngs = window.decodeOsrmPolyline(geom, 5);
               }
 
-              if (!latlngs || latlngs.length < 2) {
-                console.warn('[MAP-OSRM] No valid geometry in OSRM response');
-                return;
-              }
-
-              console.log('[MAP-OSRM] Drawing route polyline with', latlngs.length, 'points');
+              if (!latlngs || latlngs.length < 2) return;
 
               // ⚠️ Re-invalidateSize JUSTE AVANT d'ajouter la route :
               // sur mobile, le container peut avoir été redimensionné
@@ -928,14 +896,11 @@ window.renderPatientsOnMap = function(patients, startPoint) {
               // Ré-ajuster la vue sur la vraie géométrie (englobe tous les détours)
               APP.map.fitBounds(APP._routePolyline.getBounds(), { padding: [40, 40], maxZoom: 15 });
 
-              console.log('[MAP-OSRM] ✅ Route polyline drawn successfully');
-
             } catch(e) {
-              console.error('[MAP-OSRM] ❌ Exception during OSRM fetch/draw:', e?.message || e);
+              // Silencieux — pas de tracé visible si OSRM KO
+              console.warn('[MAP-OSRM] OSRM fetch/draw KO:', e?.message || e);
             }
           })();
-        } else {
-          console.log('[MAP-OSRM] allPts.length < 2 — no route to draw');
         }
 
         // Dernier filet de sécurité : repaint forcé après stabilisation

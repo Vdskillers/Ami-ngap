@@ -43,7 +43,7 @@
                   install)
 */
 
-const CACHE_VERSION = 'ami-v5.12.0-paths-fix';
+const CACHE_VERSION = 'ami-v5.12.1-osrm-bypass';
 const CACHE_STATIC  = CACHE_VERSION + '-static';
 const CACHE_TILES   = CACHE_VERSION + '-tiles';
 
@@ -206,6 +206,25 @@ self.addEventListener('fetch', function(e) {
   if (url.hostname.includes('tile.openstreetmap') || url.pathname.match(/\/\d+\/\d+\/\d+\.png$/)) {
     e.respondWith(tileStrategy(req));
     return;
+  }
+
+  /* ✅ v5.12.1 — APIs EXTERNES : NE JAMAIS CACHER (let pass through).
+     ────────────────────────────────────────────────────────────────
+     Le bug v9.x du tracé OSRM disparu venait d'ici : les requêtes vers
+     router.project-osrm.org tombaient dans `cacheFirst` (cache générique
+     ci-dessous) avec `ignoreSearch: true`, donc la PREMIÈRE réponse cachée
+     (typiquement un appel avec `overview=false` qui ne renvoie PAS de
+     geometry) était servie indéfiniment pour TOUS les appels suivants —
+     même avec `overview=full&geometries=polyline`. Résultat : `geometry`
+     était `undefined` et le tracé invisible.
+     Solution : bypass complet pour ces hosts. Chaque requête va toujours
+     en direct au réseau, jamais dans le cache du SW. */
+  if (url.hostname.includes('router.project-osrm.org') ||
+      url.hostname.includes('nominatim.openstreetmap.org') ||
+      url.hostname.includes('api-adresse.data.gouv.fr') ||
+      url.hostname.includes('data.geopf.fr') ||
+      url.hostname.includes('wxs.ign.fr')) {
+    return; /* laisser passer normalement, pas de cache SW */
   }
 
   /* API Cloudflare Worker → network only, pas de cache */
