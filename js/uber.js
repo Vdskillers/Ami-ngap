@@ -1802,7 +1802,7 @@ async function _uberFSDrawRoute() {
     if (!latlngs || latlngs.length < 2) return;
 
     _uberFSRoutePoly = L.polyline(latlngs, {
-      color: '#ffb547', weight: 5, opacity: 0.85,
+      color: '#00d4aa', weight: 5, opacity: 0.9,
     }).addTo(_uberFSMap);
 
     // Stocker durée + distance pour le HUD
