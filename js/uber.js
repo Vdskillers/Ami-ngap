@@ -1800,7 +1800,20 @@ async function _uberFSDrawRoute() {
       return;
     }
 
-    const latlngs = d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    // v9.4 — Décodage adaptatif : OSRM peut renvoyer GeoJSON OU polyline encodé
+    const geom = d.routes[0].geometry;
+    let latlngs = null;
+    if (geom && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+      latlngs = geom.coordinates.map(c => [c[1], c[0]]);
+    } else if (typeof geom === 'string' && geom.length > 0
+               && typeof window.decodeOsrmPolyline === 'function') {
+      latlngs = window.decodeOsrmPolyline(geom, 5);
+    }
+    if (!latlngs || latlngs.length < 2) {
+      console.warn('[UBER-FS-OSRM] No valid geometry in OSRM response');
+      return;
+    }
+
     _uberFSRoutePoly = L.polyline(latlngs, {
       color: '#ffb547', weight: 5, opacity: 0.85,
     }).addTo(_uberFSMap);

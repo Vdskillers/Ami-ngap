@@ -5,6 +5,46 @@
 //  Reverse geocoding automatique après correction
 // ─────────────────────────────────────────────────────────────
 
+// ═══════════════════════════════════════════════════════════════
+//  v9.4 — Décodeur de polyline encodée (format Google/OSRM)
+//  ───────────────────────────────────────────────────────────
+//  OSRM peut renvoyer geometry sous forme de string polyline encodée
+//  (précision 5 par défaut) au lieu de GeoJSON, même quand on demande
+//  `geometries=geojson` — observé sur le serveur public router.project-osrm.org
+//  selon les versions / charges.
+//  Ce décodeur convertit la string en tableau [[lat,lng], ...] pour Leaflet.
+// ═══════════════════════════════════════════════════════════════
+function decodeOsrmPolyline(str, precision) {
+  if (typeof str !== 'string' || !str.length) return [];
+  precision = precision || 5;
+  const factor = Math.pow(10, precision);
+  let index = 0, lat = 0, lng = 0;
+  const coords = [];
+  while (index < str.length) {
+    let result = 1, shift = 0, b;
+    do {
+      b = str.charCodeAt(index++) - 63 - 1;
+      result += b << shift;
+      shift += 5;
+    } while (b >= 0x1f);
+    const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lat += dlat;
+
+    result = 1; shift = 0;
+    do {
+      b = str.charCodeAt(index++) - 63 - 1;
+      result += b << shift;
+      shift += 5;
+    } while (b >= 0x1f);
+    const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lng += dlng;
+
+    coords.push([lat / factor, lng / factor]); // [lat, lng] — direct pour Leaflet
+  }
+  return coords;
+}
+window.decodeOsrmPolyline = decodeOsrmPolyline;
+
 let correctionMode   = false;
 let correctionMarker = null;
 
@@ -838,15 +878,29 @@ window.renderPatientsOnMap = function(patients, startPoint) {
                 console.warn('[MAP-OSRM] Invalid OSRM response, no route drawn');
                 return;
               }
-              const geojson = data.routes[0].geometry; // GeoJSON LineString
-              if (!geojson || !Array.isArray(geojson.coordinates) || geojson.coordinates.length < 2) {
+              const geojson = data.routes[0].geometry; // GeoJSON LineString (ou polyline string si geometries non honoré)
+
+              // Diagnostic : afficher type et structure de geometry
+              console.log('[MAP-OSRM] geometry type:', typeof geojson, '— sample:',
+                typeof geojson === 'string' ? geojson.substring(0, 60) + '...' :
+                JSON.stringify(geojson).substring(0, 200));
+
+              // Cas 1 : OSRM a honoré geometries=geojson → objet { type: "LineString", coordinates: [...] }
+              let latlngs = null;
+              if (geojson && Array.isArray(geojson.coordinates) && geojson.coordinates.length >= 2) {
+                latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
+                console.log('[MAP-OSRM] Decoded as GeoJSON →', latlngs.length, 'points');
+              }
+              // Cas 2 : OSRM a renvoyé un polyline encodé (string) → décodage manuel
+              else if (typeof geojson === 'string' && geojson.length > 0) {
+                latlngs = decodeOsrmPolyline(geojson, 5); // précision 5 par défaut OSRM
+                console.log('[MAP-OSRM] Decoded as polyline string →', latlngs.length, 'points');
+              }
+
+              if (!latlngs || latlngs.length < 2) {
                 console.warn('[MAP-OSRM] No valid geometry in OSRM response');
                 return;
               }
-
-              // Convertir [lng, lat] → [lat, lng] pour Leaflet
-              const latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
-              if (!latlngs.length) return;
 
               console.log('[MAP-OSRM] Drawing route polyline with', latlngs.length, 'points');
 
