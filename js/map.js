@@ -860,12 +860,13 @@ window.renderPatientsOnMap = function(patients, startPoint) {
             try {
               const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
 
-              // v9.1 — Toggle "Éviter autoroutes" retiré. OSRM public ne supporte
-              // ni `exclude=motorway` (HTTP 400) ni `alternatives=true&number=3`
-              // de façon fiable sur trajets longs (HTTP 400 observé). On garde
-              // uniquement le profil driving standard (fastest).
+              // v9.5 — Utiliser `geometries=polyline` (défaut OSRM, le plus stable).
+              // Le serveur public router.project-osrm.org ne retourne parfois RIEN
+              // dans `geometry` quand on demande `geometries=geojson`. Avec polyline
+              // (défaut), la geometry est toujours renvoyée sous forme de string
+              // encodée précision 5 — qu'on décode via window.decodeOsrmPolyline.
               const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
-                + '?overview=full&geometries=geojson&steps=false';
+                + '?overview=full&geometries=polyline&steps=false';
               console.log('[MAP-OSRM] Fetching:', url.substring(0, 120) + '...');
 
               const data = (typeof window._osrmFetchSafe === 'function')
@@ -878,23 +879,31 @@ window.renderPatientsOnMap = function(patients, startPoint) {
                 console.warn('[MAP-OSRM] Invalid OSRM response, no route drawn');
                 return;
               }
-              const geojson = data.routes[0].geometry; // GeoJSON LineString (ou polyline string si geometries non honoré)
+              const route0 = data.routes[0];
+              const geom = route0.geometry;
 
-              // Diagnostic : afficher type et structure de geometry
-              console.log('[MAP-OSRM] geometry type:', typeof geojson, '— sample:',
-                typeof geojson === 'string' ? geojson.substring(0, 60) + '...' :
-                JSON.stringify(geojson).substring(0, 200));
+              // Diagnostic défensif : ne plante jamais sur undefined
+              const geomDesc = geom === undefined ? 'UNDEFINED'
+                : geom === null ? 'NULL'
+                : typeof geom === 'string' ? `string[${geom.length}] sample="${geom.substring(0, 40)}..."`
+                : `object keys=[${Object.keys(geom).join(',')}]`;
+              console.log('[MAP-OSRM] geometry:', geomDesc);
+              console.log('[MAP-OSRM] route0 keys:', Object.keys(route0).join(','));
 
-              // Cas 1 : OSRM a honoré geometries=geojson → objet { type: "LineString", coordinates: [...] }
+              // Décodage adaptatif :
+              //  - Cas 1 : objet GeoJSON → utilisation directe
+              //  - Cas 2 : string polyline → décodage manuel
+              //  - Sinon : pas de tracé
               let latlngs = null;
-              if (geojson && Array.isArray(geojson.coordinates) && geojson.coordinates.length >= 2) {
-                latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
+              if (geom && typeof geom === 'object' && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+                latlngs = geom.coordinates.map(function(c) { return [c[1], c[0]]; });
                 console.log('[MAP-OSRM] Decoded as GeoJSON →', latlngs.length, 'points');
               }
-              // Cas 2 : OSRM a renvoyé un polyline encodé (string) → décodage manuel
-              else if (typeof geojson === 'string' && geojson.length > 0) {
-                latlngs = decodeOsrmPolyline(geojson, 5); // précision 5 par défaut OSRM
-                console.log('[MAP-OSRM] Decoded as polyline string →', latlngs.length, 'points');
+              else if (typeof geom === 'string' && geom.length > 0) {
+                latlngs = (typeof window.decodeOsrmPolyline === 'function')
+                  ? window.decodeOsrmPolyline(geom, 5)
+                  : null;
+                console.log('[MAP-OSRM] Decoded as polyline string →', latlngs ? latlngs.length : 0, 'points');
               }
 
               if (!latlngs || latlngs.length < 2) {

@@ -1781,10 +1781,9 @@ async function _uberFSDrawRoute() {
   console.log('[UBER-FS-OSRM] Fetching route from', pos, 'to', next);
 
   // v9.3 — Plus de polyline droite pointillée temporaire.
-  // On attend la vraie géométrie OSRM puis on l'affiche directement.
-  // Si OSRM échoue → pas de tracé du tout (UX préférée à un pointillé).
+  // v9.5 — `geometries=polyline` (défaut OSRM, plus stable que geojson).
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=polyline`;
     const d = await window._osrmFetchSafe(url, {
       signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined,
     });
@@ -1800,10 +1799,10 @@ async function _uberFSDrawRoute() {
       return;
     }
 
-    // v9.4 — Décodage adaptatif : OSRM peut renvoyer GeoJSON OU polyline encodé
+    // v9.4/v9.5 — Décodage adaptatif : OSRM peut renvoyer GeoJSON OU polyline encodé
     const geom = d.routes[0].geometry;
     let latlngs = null;
-    if (geom && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+    if (geom && typeof geom === 'object' && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
       latlngs = geom.coordinates.map(c => [c[1], c[0]]);
     } else if (typeof geom === 'string' && geom.length > 0
                && typeof window.decodeOsrmPolyline === 'function') {
