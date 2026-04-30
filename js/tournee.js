@@ -2145,14 +2145,10 @@ async function getOsrmRoute(waypoints){
   if(!waypoints||waypoints.length<2)return null;
   try{
     const coords = waypoints.map(w=>`${w.lng},${w.lat}`).join(';');
-    // v5.9.2 — Utiliser le helper centralisé qui respecte _osrmExcludeSupported
-    // (évite le 400 si le serveur ne supporte pas exclude). Ne génère PAS
-    // 'motorway,toll' (toll non supporté), mais 'motorway' seul.
-    const excludeParam = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
-      ? window._osrmExcludeParam()
-      : '';
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false${excludeParam}`;
-    // v5.9.2 — Fetch safe avec fallback automatique sur 400
+    // v9.2 — Toggle "Éviter autoroutes" retiré (cf. uber.js v9.1).
+    // Profil driving standard (fastest), pas de paramètre exclude.
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false`;
+    // Fetch safe avec fallback automatique sur erreur réseau / 4xx
     const d = (typeof window._osrmFetchSafe === 'function')
       ? await window._osrmFetchSafe(url)
       : await fetch(url).then(r => r.json()).catch(() => null);
@@ -2162,7 +2158,7 @@ async function getOsrmRoute(waypoints){
       total_km:  Math.round(route.distance/100)/10,
       total_min: Math.round(route.duration/60),
       legs: route.legs.map(l=>({km:Math.round(l.distance/100)/10, min:Math.round(l.duration/60)})),
-      avoid_motorway: !!excludeParam,
+      avoid_motorway: false,
     };
   }catch{return null;}
 }

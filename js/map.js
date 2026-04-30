@@ -642,68 +642,11 @@ function useMyLocation(patientId) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Afficher tous les patients sur la carte
-// ─────────────────────────────────────────────────────────────
-function renderPatientsOnMap(patients) {
-  if (!APP.map) return;
-
-  // supprimer les markers existants
-  if (APP.markers) {
-    APP.markers.forEach(m => APP.map.removeLayer(m));
-  }
-  APP.markers = [];
-
-  patients.forEach((p, idx) => {
-    if (!p.lat || !p.lng) return;
-
-    const color = p.geoScore >= 70 ? '#1D9E75'
-                : p.geoScore >= 50 ? '#EF9F27'
-                : '#E24B4A';
-
-    const marker = L.marker([p.lat, p.lng], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="
-          width:32px;height:32px;
-          background:${color};
-          border:2px solid white;
-          border-radius:50%;
-          display:flex;align-items:center;justify-content:center;
-          font-size:12px;font-weight:600;color:white;
-          box-shadow:0 2px 6px rgba(0,0,0,0.25);">
-          ${idx + 1}
-        </div>`,
-        iconSize:   [32, 32],
-        iconAnchor: [16, 16],
-      }),
-    });
-
-    // Construire les champs d'affichage proprement
-    const _name    = ((p.nom||'') + ' ' + (p.prenom||'')).trim()
-                   || p.name || p.patient || p.label || p.description || ('Patient ' + (idx+1));
-    const _addr    = (p.adresse || p.addressFull || p.address || '').replace(/🕐[^,]*/g,'').trim().replace(/,\s*$/, '');
-    const _heure   = p.heure_preferee || p.heure_soin || p.heure || '';
-    const _score   = typeof p.geoScore === 'number' ? p.geoScore : (p.geoScore ? parseInt(p.geoScore) : 0);
-    const _navData = JSON.stringify({
-      lat: p.lat, lng: p.lng,
-      address: _addr, addressFull: _addr, adresse: _addr,
-      geoScore: _score
-    }).replace(/"/g, '&quot;');
-
-    marker.bindPopup(`
-      <strong>${_name}</strong><br>
-      ${_addr ? `<span style="font-size:12px">${_addr}</span><br>` : ''}
-      ${_heure ? `<span style="font-size:11px;color:#888">🕐 ${_heure}</span><br>` : ''}
-      <small style="color:${_score>=70?'#1D9E75':_score>=50?'#EF9F27':'#E24B4A'}">Score géo : ${_score}/100</small><br>
-      <a href="#" onclick="openNavigation(${_navData})">Naviguer</a> |
-      <a href="#" onclick="enableCorrectionMode(${p.lat}, ${p.lng})">Corriger position</a>
-    `);
-
-    marker.addTo(APP.map);
-    APP.markers.push(marker);
-  });
-}
-
+//  v9.2 — Suppression de la version legacy `function renderPatientsOnMap`
+//  qui prenait la priorité sur la version IIFE moderne via hoisting,
+//  empêchant l'affichage du tracé OSRM et du marker point de départ.
+//  La seule définition active est désormais `window.renderPatientsOnMap`
+//  ci-dessous (lignes ~720+).
 // ─────────────────────────────────────────────────────────────
 //  Recherche d'adresse pour le point de départ du Pilotage Live
 // ─────────────────────────────────────────────────────────────
@@ -772,10 +715,11 @@ async function useLiveMyLocation() {
 
 //  Accepte (patients, startPoint?) — retourne une Promise
 //  Compatible avec tournee.js qui appelle .catch()
+//  v9.2 — Sortie de l'IIFE (la déclaration legacy a été supprimée plus haut),
+//  assignation directe à window.renderPatientsOnMap pour éviter toute
+//  ambiguïté de hoisting / shadowing.
 // ─────────────────────────────────────────────────────────────
-(function() {
-  // Remplacement dynamique pour éviter les problèmes de redéclaration
-  window.renderPatientsOnMap = function(patients, startPoint) {
+window.renderPatientsOnMap = function(patients, startPoint) {
     return new Promise((resolve, reject) => {
       try {
         // Résoudre l'instance Leaflet réelle — APP.map peut être l'instance directe
@@ -890,38 +834,38 @@ async function useLiveMyLocation() {
                 ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
                 : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
+              // ⚠️ v9.2 — Si OSRM échoue à n'importe quelle étape, la polyline
+              // droite pointillée DOIT rester en place. On ne la retire QUE
+              // si on est sûr de pouvoir la remplacer par une vraie géométrie.
               if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
               const geojson = data.routes[0].geometry; // GeoJSON LineString
-
-              if (!geojson || !Array.isArray(geojson.coordinates)) return;
+              if (!geojson || !Array.isArray(geojson.coordinates) || geojson.coordinates.length < 2) return;
 
               // Convertir [lng, lat] → [lat, lng] pour Leaflet
               const latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
+              if (!latlngs.length) return;
 
-              // Supprimer la polyline droite temporaire
-              if (APP._routePolyline) {
-                try { APP.map.removeLayer(APP._routePolyline); } catch(_) {}
-                APP._routePolyline = null;
-              }
-
-              // ⚠️ Re-invalidateSize AVANT d'ajouter la vraie route :
-              // sur mobile, le container peut avoir été redimensionné
-              // entre le premier rendu et l'arrivée de la réponse OSRM
-              // (ex : header qui se stabilise, bannière offline qui apparaît).
+              // Créer la nouvelle polyline AVANT de retirer l'ancienne
+              // (au moins une polyline est toujours visible à l'écran).
               try { APP.map.invalidateSize(); } catch(_) {}
 
-              // Dessiner la vraie route sur les routes
-              APP._routePolyline = L.polyline(latlngs, {
+              const newPoly = L.polyline(latlngs, {
                 color:   '#00d4aa',
                 weight:  4,
                 opacity: 0.85,
               }).addTo(APP.map);
 
+              // Maintenant qu'on a la vraie route, on peut retirer la temporaire
+              if (APP._routePolyline) {
+                try { APP.map.removeLayer(APP._routePolyline); } catch(_) {}
+              }
+              APP._routePolyline = newPoly;
+
               // Ré-ajuster la vue sur la vraie géométrie
               APP.map.fitBounds(APP._routePolyline.getBounds(), { padding: [40, 40], maxZoom: 15 });
 
             } catch(e) {
-              // Silencieux — la polyline droite reste en fallback
+              // Silencieux — la polyline droite reste en fallback visible
             }
           })();
         }
@@ -943,8 +887,7 @@ async function useLiveMyLocation() {
         reject(e);
       }
     });
-  };
-})();
+};
 
 /* ════════════════════════════════════════════════
    HEATMAP DES ZONES RENTABLES — v1.0
