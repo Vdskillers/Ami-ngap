@@ -681,6 +681,53 @@ async function renderPlanning(d){
     if (k) uberIndex[k] = p;
   });
 
+  // ⚡ FIX cotation fantôme — résolution de la cotation par (patient, date).
+  //    Sans ce helper, un patient récurrent sur jeudi+samedi se voyait
+  //    propager la cotation faite jeudi à TOUS ses jours virtuels (samedi inclus,
+  //    même quand samedi est dans le futur et qu'aucun soin n'a eu lieu).
+  //    Règle : une cotation n'est attachée que si sa date matche le jour
+  //    planifié. Sinon → null (pas de badge "✅ Cotation" sur ce jour).
+  //
+  //    Sources consultées dans l'ordre :
+  //      1) Cotation live (uberPatients) — uniquement si _tournee_date == dateISO
+  //      2) Cotation historique (fiche.cotations[]) — match date exacte
+  //
+  //    Le _cotation passé sur le patient brut (p._cotation) est aussi vérifié
+  //    par les appelants quand pertinent.
+  function _findCotForDate(pid, dateISO) {
+    if (!pid || !dateISO) return null;
+    const d10 = String(dateISO).slice(0, 10);
+    // 1) Cotation live en mémoire (uberPatients) — match strict sur _tournee_date
+    const u = uberIndex[pid];
+    if (u && u._cotation && u._cotation.validated) {
+      const ud = String(u._cotation._tournee_date || u._cotation.date || u._cotation.date_soin || '').slice(0, 10);
+      if (ud && ud === d10) return u._cotation;
+    }
+    // 2) Cotation historique de la fiche carnet
+    const fiche = carnetIndex[pid] || {};
+    if (Array.isArray(fiche.cotations)) {
+      const _hist = fiche.cotations.find(c => {
+        const cd = String(c.date || c.date_soin || '').slice(0, 10);
+        return cd && cd === d10;
+      });
+      if (_hist) {
+        return {
+          actes:          Array.isArray(_hist.actes) ? _hist.actes : [],
+          total:          parseFloat(_hist.total || 0),
+          validated:      true,
+          invoice_number: _hist.invoice_number || null,
+          heure:          _hist.heure || _hist.heure_soin || '',
+          auto:           _hist.source === 'tournee_auto' || _hist.source === 'uber_auto',
+          _tournee_date:  d10,
+          _heure_reelle:  _hist.heure || _hist.heure_soin || null,
+          _synced:        true,
+          _from:          'fiche.cotations',
+        };
+      }
+    }
+    return null;
+  }
+
   // ── Construire la liste enrichie ──────────────────────────────────────────
   const patients = rawPatients.map((p, idx) => {
     const pid   = p.patient_id || p.id || '';
@@ -716,28 +763,21 @@ async function renderPlanning(d){
     //    celle du planning. Si trouvée → on l'expose en _cotation pour que
     //    nbCot/totalCot/caValTotal puissent la compter.
     //
-    //    Ordre de priorité : p._cotation (live, ex: tournée IA en cours) >
-    //    uber._cotation (mémoire uberPatients) > fiche.cotations[] (carnet).
-    let _cotFromCarnet = null;
-    if (Array.isArray(fiche.cotations) && fiche.cotations.length && date) {
-      const _dateISO10 = String(date).slice(0, 10);
-      const _matched = fiche.cotations.find(c => {
-        const cDate = String(c.date || c.date_soin || '').slice(0, 10);
-        return cDate && cDate === _dateISO10;
-      });
-      if (_matched) {
-        _cotFromCarnet = {
-          actes:          Array.isArray(_matched.actes) ? _matched.actes : [],
-          total:          parseFloat(_matched.total || 0),
-          validated:      true,
-          invoice_number: _matched.invoice_number || null,
-          heure:          _matched.heure || _matched.heure_soin || '',
-          auto:           _matched.source === 'tournee_auto' || _matched.source === 'uber_auto',
-          // marqueur pour traçabilité
-          _from:          'fiche.cotations',
-        };
-      }
-    }
+    //    ⚡ FIX cotation fantôme (jours futurs) :
+    //    On ne propage p._cotation / uber._cotation QUE si leur date matche
+    //    la date planifiée du patient. Sinon (patient récurrent sans date,
+    //    OU cotation appartenant à un autre jour), on retourne null ici.
+    //    Pour les patients récurrents, la résolution par-jour-virtuel est
+    //    faite plus bas dans la boucle d'expansion (byDay).
+    const _cotMatchesDate = (cot, planDate) => {
+      if (!cot || !planDate) return false;
+      const cd = String(cot._tournee_date || cot.date || cot.date_soin || '').slice(0, 10);
+      const pd = String(planDate).slice(0, 10);
+      return !!(cd && pd && cd === pd);
+    };
+    const _liveCot = _cotMatchesDate(p._cotation,    date) ? p._cotation    : null;
+    const _uberCot = (!_liveCot && _cotMatchesDate(uber._cotation, date)) ? uber._cotation : null;
+    const _cotFromCarnet = (!_liveCot && !_uberCot) ? _findCotForDate(pid, date) : null;
 
     return {
       ...p,
@@ -753,7 +793,7 @@ async function renderPlanning(d){
       //    flux qui ne passent pas par le carnet (imports calendrier "live").
       heure_preferee:   fiche.heure_preferee || p.heure_preferee || p.heure_soin || p.heure || '',
       heure_soin:       fiche.heure_preferee || p.heure_soin     || p.heure_preferee || p.heure || '',
-      _cotation:        p._cotation || uber._cotation || _cotFromCarnet,
+      _cotation:        _liveCot || _uberCot || _cotFromCarnet,
       done:             p.done   || p._done   || uber.done   || false,
       absent:           p.absent || p._absent || uber.absent || false,
       _planIdx:         idx,
@@ -855,9 +895,16 @@ async function renderPlanning(d){
         }
         // Copie virtuelle : on assigne la date du jour de la semaine en cours
         // (date d'affichage uniquement — _recurrence reste source de vérité)
+        // ⚡ FIX cotation fantôme : pour chaque jour virtuel récurrent, on
+        //    cherche une cotation qui matche cette date précise (live ou
+        //    historique). Si aucune → _cotation = null (pas de badge sur ce
+        //    jour). Évite que la cotation faite jeudi apparaisse sur samedi.
+        const _pidVirt = p.patient_id || p.id || '';
+        const _cotForDay = _findCotForDate(_pidVirt, dateThisWeek);
         byDay[jour].patients.push({
           ...p,
           date: dateThisWeek,
+          _cotation: _cotForDay,
           _virtualFromRecurrence: true,
         });
       });
@@ -1256,11 +1303,15 @@ async function renderPlanning(d){
           // ⚡ Patient récurrent : inclus si jour ∈ p._recurrence.jours.
           //    Chaque jour matchant produit une carte virtuelle datée pour
           //    cohérence d'affichage (date du jour de la semaine en cours).
+          //    ⚡ FIX cotation fantôme : on lookup la cotation par date pour
+          //    n'afficher le badge que sur le jour réel du soin.
           if (p._recurrence && Array.isArray(p._recurrence.jours)) {
             if (p._recurrence.jours.includes(j)) {
               const dateThisWeek = weekDateKeys[ji];
+              const _pidVirtCab = p.patient_id || p.id || '';
+              const _cotForDayCab = _findCotForDate(_pidVirtCab, dateThisWeek);
               allDayPats.push({
-                p: { ...p, date: dateThisWeek, _virtualFromRecurrence: true },
+                p: { ...p, date: dateThisWeek, _cotation: _cotForDayCab, _virtualFromRecurrence: true },
                 ideId, color: a.color, prenom: a.prenom,
               });
             }
@@ -1634,6 +1685,10 @@ window.planningImportDayToTour = async function(jourKey, dateISO) {
     allPatients.forEach(p => {
       // ⚡ Patient récurrent : inclus si jourKey ∈ p._recurrence.jours
       //    On crée une copie virtuelle datée pour la Tournée IA (qui s'attend à une date).
+      //    ⚡ FIX cotation fantôme : on ne carry _cotation que si sa date matche
+      //    le jour importé. Sinon (ex: import samedi mais cotation faite jeudi),
+      //    on strippe pour éviter que la tournée IA hérite d'une cotation
+      //    appartenant à un autre jour.
       if (p._recurrence && Array.isArray(p._recurrence.jours)) {
         if (!p._recurrence.jours.includes(jourKey)) return;
         // Vérification optionnelle des bornes
@@ -1645,7 +1700,9 @@ window.planningImportDayToTour = async function(jourKey, dateISO) {
           const fin = p._recurrence.fin.slice(0, 10);
           if (dateISO > fin) return;
         }
-        patientsDuJour.push({ ...p, date: dateISO, _virtualFromRecurrence: true });
+        const _cotDateImport = String(p._cotation?._tournee_date || p._cotation?.date || p._cotation?.date_soin || '').slice(0, 10);
+        const _cotForImport  = (_cotDateImport && _cotDateImport === dateISO) ? p._cotation : null;
+        patientsDuJour.push({ ...p, date: dateISO, _cotation: _cotForImport, _virtualFromRecurrence: true });
         return;
       }
       // Patient ponctuel : filtrer par date stricte (string YYYY-MM-DD ou parsing local)
@@ -2145,10 +2202,14 @@ async function getOsrmRoute(waypoints){
   if(!waypoints||waypoints.length<2)return null;
   try{
     const coords = waypoints.map(w=>`${w.lng},${w.lat}`).join(';');
-    // v9.2 — Toggle "Éviter autoroutes" retiré (cf. uber.js v9.1).
-    // Profil driving standard (fastest), pas de paramètre exclude.
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false`;
-    // Fetch safe avec fallback automatique sur erreur réseau / 4xx
+    // v5.9.2 — Utiliser le helper centralisé qui respecte _osrmExcludeSupported
+    // (évite le 400 si le serveur ne supporte pas exclude). Ne génère PAS
+    // 'motorway,toll' (toll non supporté), mais 'motorway' seul.
+    const excludeParam = (typeof window !== 'undefined' && typeof window._osrmExcludeParam === 'function')
+      ? window._osrmExcludeParam()
+      : '';
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&steps=false${excludeParam}`;
+    // v5.9.2 — Fetch safe avec fallback automatique sur 400
     const d = (typeof window._osrmFetchSafe === 'function')
       ? await window._osrmFetchSafe(url)
       : await fetch(url).then(r => r.json()).catch(() => null);
@@ -2158,7 +2219,7 @@ async function getOsrmRoute(waypoints){
       total_km:  Math.round(route.distance/100)/10,
       total_min: Math.round(route.duration/60),
       legs: route.legs.map(l=>({km:Math.round(l.distance/100)/10, min:Math.round(l.duration/60)})),
-      avoid_motorway: false,
+      avoid_motorway: !!excludeParam,
     };
   }catch{return null;}
 }
