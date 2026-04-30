@@ -1778,6 +1778,8 @@ async function _uberFSDrawRoute() {
   const next = APP.get('nextPatient');
   if (!pos || !next || !next.lat || !next.lng) return;
 
+  console.log('[UBER-FS-OSRM] Fetching route from', pos, 'to', next);
+
   // v9.3 — Plus de polyline droite pointillée temporaire.
   // On attend la vraie géométrie OSRM puis on l'affiche directement.
   // Si OSRM échoue → pas de tracé du tout (UX préférée à un pointillé).
@@ -1786,14 +1788,24 @@ async function _uberFSDrawRoute() {
     const d = await window._osrmFetchSafe(url, {
       signal: AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined,
     });
-    if (!d || d.code !== 'Ok' || !d.routes?.[0]) return;
+    console.log('[UBER-FS-OSRM] Response:', d ? `code=${d.code}, routes=${d.routes?.length || 0}` : 'null');
 
-    if (!_uberFSMap) return; // overlay fermé entre temps
+    if (!d || d.code !== 'Ok' || !d.routes?.[0]) {
+      console.warn('[UBER-FS-OSRM] Invalid OSRM response, no route drawn');
+      return;
+    }
+
+    if (!_uberFSMap) {
+      console.warn('[UBER-FS-OSRM] FS map closed during fetch');
+      return;
+    }
 
     const latlngs = d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
     _uberFSRoutePoly = L.polyline(latlngs, {
       color: '#ffb547', weight: 5, opacity: 0.85,
     }).addTo(_uberFSMap);
+
+    console.log('[UBER-FS-OSRM] ✅ Route drawn with', latlngs.length, 'points');
 
     // Stocker durée + distance pour le HUD
     const dist = (d.routes[0].distance / 1000).toFixed(1);
@@ -1810,8 +1822,7 @@ async function _uberFSDrawRoute() {
       `;
     }
   } catch (e) {
-    // OSRM KO → pas de tracé visible
-    log('[Uber FS] OSRM route KO:', e.message);
+    console.error('[UBER-FS-OSRM] ❌ Exception:', e?.message || e);
   }
 }
 

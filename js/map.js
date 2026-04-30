@@ -722,12 +722,17 @@ async function useLiveMyLocation() {
 window.renderPatientsOnMap = function(patients, startPoint) {
     return new Promise((resolve, reject) => {
       try {
+        console.log('[MAP-OSRM] renderPatientsOnMap called — patients:', patients?.length, 'startPoint:', startPoint);
+
         // Résoudre l'instance Leaflet réelle — APP.map peut être l'instance directe
         // (assignée par extras.js) ou APP.map.instance (namespace utils.js)
         const _map = (APP.map && typeof APP.map.invalidateSize === 'function')
           ? APP.map
           : APP.map?.instance;
-        if (!_map || typeof _map.invalidateSize !== 'function') { resolve(); return; }
+        if (!_map || typeof _map.invalidateSize !== 'function') {
+          console.warn('[MAP-OSRM] No valid Leaflet instance found in APP.map');
+          resolve(); return;
+        }
         // Réassigner APP.map à l'instance pour que le reste du code fonctionne
         APP.map = _map;
 
@@ -794,6 +799,8 @@ window.renderPatientsOnMap = function(patients, startPoint) {
         withCoords.forEach(function(p) { allPts.push([p.lat, p.lng]); });
 
         if (allPts.length >= 2) {
+          console.log('[MAP-OSRM] allPts:', allPts.length, 'points → preparing OSRM fetch');
+
           // ⚠️ MOBILE FIX : sur mobile, le conteneur Leaflet a souvent
           // une taille 0×0 au premier paint (layout pas stabilisé).
           // Sans invalidateSize() AVANT fitBounds, la map calcule ses
@@ -819,17 +826,29 @@ window.renderPatientsOnMap = function(patients, startPoint) {
               // uniquement le profil driving standard (fastest).
               const url = 'https://router.project-osrm.org/route/v1/driving/' + coords
                 + '?overview=full&geometries=geojson&steps=false';
+              console.log('[MAP-OSRM] Fetching:', url.substring(0, 120) + '...');
+
               const data = (typeof window._osrmFetchSafe === 'function')
                 ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
                 : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
-              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
+              console.log('[MAP-OSRM] Response received:', data ? `code=${data.code}, routes=${data.routes?.length || 0}` : 'null');
+
+              if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
+                console.warn('[MAP-OSRM] Invalid OSRM response, no route drawn');
+                return;
+              }
               const geojson = data.routes[0].geometry; // GeoJSON LineString
-              if (!geojson || !Array.isArray(geojson.coordinates) || geojson.coordinates.length < 2) return;
+              if (!geojson || !Array.isArray(geojson.coordinates) || geojson.coordinates.length < 2) {
+                console.warn('[MAP-OSRM] No valid geometry in OSRM response');
+                return;
+              }
 
               // Convertir [lng, lat] → [lat, lng] pour Leaflet
               const latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
               if (!latlngs.length) return;
+
+              console.log('[MAP-OSRM] Drawing route polyline with', latlngs.length, 'points');
 
               // ⚠️ Re-invalidateSize JUSTE AVANT d'ajouter la route :
               // sur mobile, le container peut avoir été redimensionné
@@ -846,10 +865,14 @@ window.renderPatientsOnMap = function(patients, startPoint) {
               // Ré-ajuster la vue sur la vraie géométrie (englobe tous les détours)
               APP.map.fitBounds(APP._routePolyline.getBounds(), { padding: [40, 40], maxZoom: 15 });
 
+              console.log('[MAP-OSRM] ✅ Route polyline drawn successfully');
+
             } catch(e) {
-              // Silencieux — pas de tracé visible si OSRM KO
+              console.error('[MAP-OSRM] ❌ Exception during OSRM fetch/draw:', e?.message || e);
             }
           })();
+        } else {
+          console.log('[MAP-OSRM] allPts.length < 2 — no route to draw');
         }
 
         // Dernier filet de sécurité : repaint forcé après stabilisation
