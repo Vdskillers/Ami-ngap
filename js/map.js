@@ -6,6 +6,39 @@
 // ─────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
+//  PATCH PERFORMANCE : willReadFrequently par défaut sur canvas 2D
+//  ───────────────────────────────────────────────────────────
+//  leaflet-heat.js (plugin tiers chargé via CDN) crée des canvas 2D
+//  et y exécute plusieurs getImageData() sans le flag willReadFrequently,
+//  ce qui déclenche le warning :
+//    "Canvas2D: Multiple readback operations using getImageData are
+//     faster with the willReadFrequently attribute set to true."
+//
+//  On patche HTMLCanvasElement.prototype.getContext pour ajouter
+//  willReadFrequently:true par défaut sur les contexts 2D, UNIQUEMENT
+//  quand l'appelant n'a pas fourni d'options. Aucun impact sur les
+//  contexts WebGL/2D existants qui spécifient déjà leurs options.
+//  Le flag est un simple hint de performance — aucune régression possible.
+//  Idempotent : marqueur _amiPatched pour éviter une double-application.
+// ═══════════════════════════════════════════════════════════════
+(function patchCanvasGetContext() {
+  if (typeof HTMLCanvasElement === 'undefined') return;
+  const proto = HTMLCanvasElement.prototype;
+  if (proto._amiPatched) return;
+  const orig = proto.getContext;
+  proto.getContext = function(type, attrs) {
+    if (type === '2d' && (attrs == null || typeof attrs !== 'object')) {
+      return orig.call(this, type, { willReadFrequently: true });
+    }
+    if (type === '2d' && typeof attrs === 'object' && attrs.willReadFrequently === undefined) {
+      attrs.willReadFrequently = true;
+    }
+    return orig.call(this, type, attrs);
+  };
+  proto._amiPatched = true;
+})();
+
+// ═══════════════════════════════════════════════════════════════
 //  v9.4 — Décodeur de polyline encodée (format Google/OSRM)
 //  ───────────────────────────────────────────────────────────
 //  OSRM peut renvoyer geometry sous forme de string polyline encodée
