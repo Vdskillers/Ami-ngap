@@ -1901,7 +1901,10 @@ function _renderPlaCarnetList() {
     const sel  = _plaCarnetState.selection[p.id];
     const isSelected = !!sel;
     const jours = sel?.jours || [];
-    const mode  = sel?.mode  || 'recurrent';
+    // ⚡ Mode par défaut : 'week' (cette semaine uniquement) — sécurité.
+    //    Si l'infirmière coche un patient par erreur, l'entrée ne sera pas
+    //    récurrente. Pour rendre récurrent, choix explicite requis.
+    const mode  = sel?.mode  || 'week';
     const label = _plaPatientLabel(p);
     const actes = (p.actes_recurrents || '').slice(0, 80);
     const safeId = String(p.id).replace(/'/g, "\\'");
@@ -1920,20 +1923,21 @@ function _renderPlaCarnetList() {
       </button>`;
     }).join('');
 
-    // Toggle mode (récurrent / une fois)
+    // Toggle mode — ⚡ ORDRE : "Cette semaine uniquement" en premier (option par
+    // défaut), "Récurrent" en second. Évite les ajouts récurrents par mégarde.
     const modeUI = `<div style="display:flex;gap:6px;align-items:center;font-family:var(--fm);font-size:11px;flex-wrap:wrap">
       <span style="color:var(--m)">Mode :</span>
-      <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid ${mode==='recurrent'?'rgba(168,85,247,.4)':'var(--b)'};background:${mode==='recurrent'?'rgba(168,85,247,.1)':'transparent'};color:${mode==='recurrent'?'#a855f7':'var(--t)'}">
-        <input type="radio" name="pla-mode-${safeId}" value="recurrent" ${mode==='recurrent'?'checked':''}
-          onchange="planningSetPatientMode('${safeId}','recurrent')"
-          style="accent-color:#a855f7;width:11px;height:11px">
-        🔁 Récurrent (chaque semaine)
-      </label>
       <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid ${mode==='week'?'rgba(79,168,255,.4)':'var(--b)'};background:${mode==='week'?'rgba(79,168,255,.08)':'transparent'};color:${mode==='week'?'var(--a2)':'var(--t)'}">
         <input type="radio" name="pla-mode-${safeId}" value="week" ${mode==='week'?'checked':''}
           onchange="planningSetPatientMode('${safeId}','week')"
           style="accent-color:var(--a2);width:11px;height:11px">
         📌 Cette semaine uniquement
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid ${mode==='recurrent'?'rgba(168,85,247,.4)':'var(--b)'};background:${mode==='recurrent'?'rgba(168,85,247,.1)':'transparent'};color:${mode==='recurrent'?'#a855f7':'var(--t)'}">
+        <input type="radio" name="pla-mode-${safeId}" value="recurrent" ${mode==='recurrent'?'checked':''}
+          onchange="planningSetPatientMode('${safeId}','recurrent')"
+          style="accent-color:#a855f7;width:11px;height:11px">
+        🔁 Récurrent (chaque semaine)
       </label>
     </div>`;
 
@@ -1964,9 +1968,13 @@ function _renderPlaCarnetList() {
 
 window.planningToggleCarnetPatient = function(patientId, checked) {
   if (checked) {
+    // ⚡ Mode par défaut : 'week' (cette semaine uniquement) — sécurité.
+    //    Évite la création d'une récurrence hebdomadaire en cas d'ajout
+    //    par erreur. L'infirmière doit choisir explicitement le mode
+    //    récurrent si elle le souhaite.
     _plaCarnetState.selection[patientId] = _plaCarnetState.selection[patientId] || {
       jours: [],
-      mode:  'recurrent',
+      mode:  'week',
     };
   } else {
     delete _plaCarnetState.selection[patientId];
