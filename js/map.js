@@ -801,25 +801,14 @@ window.renderPatientsOnMap = function(patients, startPoint) {
           // hors-champ et l'utilisateur ne voit que les markers.
           try { APP.map.invalidateSize(); } catch(_) {}
 
-          // Toujours afficher une polyline droite immédiatement (fallback visible)
-          APP._routePolyline = L.polyline(allPts, {
-            color: '#00d4aa', weight: 2.5, opacity: 0.35, dashArray: '5,7'
-          }).addTo(APP.map);
-
-          // Ajuster la vue dès maintenant avec les points connus
+          // Cadrer la vue sur les markers connus immédiatement
+          // (avant le fetch OSRM, pour que la map soit déjà bien positionnée).
           APP.map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 });
 
-          // Re-invalidateSize après le premier repaint pour rattraper
-          // les cas où le container n'était toujours pas mesuré
-          // (observé sur Chrome Android avec header sticky + safe-area).
-          setTimeout(function() {
-            try {
-              APP.map.invalidateSize();
-              APP.map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 });
-            } catch(_) {}
-          }, 150);
-
-          // Puis charger la géométrie routière réelle depuis OSRM en arrière-plan
+          // v9.3 — Plus de polyline droite pointillée temporaire.
+          // On attend la vraie géométrie OSRM puis on l'affiche directement.
+          // OSRM répond généralement en 200-500ms → perception instantanée.
+          // Si OSRM échoue → pas de tracé du tout (UX préférée à un pointillé).
           (async function() {
             try {
               const coords = allPts.map(function(pt) { return pt[1] + ',' + pt[0]; }).join(';');
@@ -834,9 +823,6 @@ window.renderPatientsOnMap = function(patients, startPoint) {
                 ? await window._osrmFetchSafe(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
                 : await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json()).catch(() => null);
 
-              // ⚠️ v9.2 — Si OSRM échoue à n'importe quelle étape, la polyline
-              // droite pointillée DOIT rester en place. On ne la retire QUE
-              // si on est sûr de pouvoir la remplacer par une vraie géométrie.
               if (!data || data.code !== 'Ok' || !data.routes || !data.routes[0]) return;
               const geojson = data.routes[0].geometry; // GeoJSON LineString
               if (!geojson || !Array.isArray(geojson.coordinates) || geojson.coordinates.length < 2) return;
@@ -845,27 +831,23 @@ window.renderPatientsOnMap = function(patients, startPoint) {
               const latlngs = geojson.coordinates.map(function(c) { return [c[1], c[0]]; });
               if (!latlngs.length) return;
 
-              // Créer la nouvelle polyline AVANT de retirer l'ancienne
-              // (au moins une polyline est toujours visible à l'écran).
+              // ⚠️ Re-invalidateSize JUSTE AVANT d'ajouter la route :
+              // sur mobile, le container peut avoir été redimensionné
+              // entre le premier rendu et l'arrivée de la réponse OSRM.
               try { APP.map.invalidateSize(); } catch(_) {}
 
-              const newPoly = L.polyline(latlngs, {
+              // Dessiner la vraie route routière (turquoise plein)
+              APP._routePolyline = L.polyline(latlngs, {
                 color:   '#00d4aa',
                 weight:  4,
                 opacity: 0.85,
               }).addTo(APP.map);
 
-              // Maintenant qu'on a la vraie route, on peut retirer la temporaire
-              if (APP._routePolyline) {
-                try { APP.map.removeLayer(APP._routePolyline); } catch(_) {}
-              }
-              APP._routePolyline = newPoly;
-
-              // Ré-ajuster la vue sur la vraie géométrie
+              // Ré-ajuster la vue sur la vraie géométrie (englobe tous les détours)
               APP.map.fitBounds(APP._routePolyline.getBounds(), { padding: [40, 40], maxZoom: 15 });
 
             } catch(e) {
-              // Silencieux — la polyline droite reste en fallback visible
+              // Silencieux — pas de tracé visible si OSRM KO
             }
           })();
         }

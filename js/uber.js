@@ -1778,13 +1778,9 @@ async function _uberFSDrawRoute() {
   const next = APP.get('nextPatient');
   if (!pos || !next || !next.lat || !next.lng) return;
 
-  // Polyline droite immédiate (fallback visible avant OSRM)
-  const fallback = L.polyline([[pos.lat, pos.lng], [next.lat, next.lng]], {
-    color: '#ffb547', weight: 3, opacity: 0.5, dashArray: '6,8',
-  }).addTo(_uberFSMap);
-  _uberFSRoutePoly = fallback;
-
-  // Route OSRM réelle (asynchrone, remplace le fallback)
+  // v9.3 — Plus de polyline droite pointillée temporaire.
+  // On attend la vraie géométrie OSRM puis on l'affiche directement.
+  // Si OSRM échoue → pas de tracé du tout (UX préférée à un pointillé).
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${pos.lng},${pos.lat};${next.lng},${next.lat}?overview=full&geometries=geojson`;
     const d = await window._osrmFetchSafe(url, {
@@ -1794,10 +1790,6 @@ async function _uberFSDrawRoute() {
 
     if (!_uberFSMap) return; // overlay fermé entre temps
 
-    // Remplacer la polyline droite par la vraie route
-    if (_uberFSRoutePoly) {
-      try { _uberFSMap.removeLayer(_uberFSRoutePoly); } catch (_) {}
-    }
     const latlngs = d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
     _uberFSRoutePoly = L.polyline(latlngs, {
       color: '#ffb547', weight: 5, opacity: 0.85,
@@ -1818,7 +1810,7 @@ async function _uberFSDrawRoute() {
       `;
     }
   } catch (e) {
-    // OSRM KO → on garde le fallback dashé
+    // OSRM KO → pas de tracé visible
     log('[Uber FS] OSRM route KO:', e.message);
   }
 }
